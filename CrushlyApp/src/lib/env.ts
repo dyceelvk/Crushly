@@ -46,3 +46,42 @@ export function normalizeProjectUrl(raw: string | undefined | null): string {
     return '';
   }
 }
+
+/** Minimal base64url → string (no atob/Buffer, so it runs anywhere). */
+function decodeBase64(b64: string): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = b64.replace(/[^A-Za-z0-9+/]/g, '');
+  let out = '';
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = alphabet.indexOf(clean[i]);
+    const b = alphabet.indexOf(clean[i + 1] ?? 'A');
+    const c = alphabet.indexOf(clean[i + 2] ?? 'A');
+    const d = alphabet.indexOf(clean[i + 3] ?? 'A');
+    out += String.fromCharCode((a << 2) | (b >> 4), ((b & 15) << 4) | (c >> 2), ((c & 3) << 6) | d);
+  }
+  return out;
+}
+
+/** The Postgres role a legacy JWT key carries (`"role":"service_role"` etc.). */
+function jwtRole(key: string): string | null {
+  const parts = key.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(decodeBase64(parts[1]));
+    return typeof payload.role === 'string' ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True for keys that must never reach a client bundle: the new `sb_secret_…`
+ * keys and legacy `service_role` JWTs. (The counterpart safe keys are the
+ * `sb_publishable_…` keys and legacy `anon` JWTs.)
+ */
+export function looksLikeSecretKey(raw: string | undefined | null): boolean {
+  const v = cleanEnvValue(raw);
+  if (!v) return false;
+  if (v.startsWith('sb_secret_')) return true;
+  return jwtRole(v) === 'service_role';
+}

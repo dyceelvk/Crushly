@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { cleanEnvValue, normalizeProjectUrl } from './env';
+import { cleanEnvValue, looksLikeSecretKey, normalizeProjectUrl } from './env';
 
 test('cleanEnvValue strips whitespace and stray quotes', () => {
   assert.equal(cleanEnvValue('  "abc"  '), 'abc');
@@ -47,4 +47,19 @@ test('unusable values normalize to empty', () => {
   assert.equal(normalizeProjectUrl(null), '');
   assert.equal(normalizeProjectUrl('not a url'), '');
   assert.equal(normalizeProjectUrl('just some words'), '');
+});
+
+test('secret keys are detected and never pass as client keys', () => {
+  const jwt = (role: string) => {
+    const enc = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return `${enc({ alg: 'HS256' })}.${enc({ iss: 'supabase', role, iat: 1 })}.sig`;
+  };
+  assert.equal(looksLikeSecretKey('sb_secret_abc123'), true);
+  assert.equal(looksLikeSecretKey('"sb_secret_abc123"'), true);
+  assert.equal(looksLikeSecretKey(jwt('service_role')), true);
+  // Safe client keys pass.
+  assert.equal(looksLikeSecretKey('sb_publishable_abc123'), false);
+  assert.equal(looksLikeSecretKey(jwt('anon')), false);
+  assert.equal(looksLikeSecretKey(''), false);
+  assert.equal(looksLikeSecretKey(undefined), false);
 });

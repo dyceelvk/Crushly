@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
-import { cleanEnvValue, normalizeProjectUrl } from '../lib/env';
+import { cleanEnvValue, looksLikeSecretKey, normalizeProjectUrl } from '../lib/env';
 import { storage } from '../lib/storage';
 
 /**
@@ -22,11 +22,13 @@ const SUPABASE_ANON_KEY = cleanEnvValue(process.env.EXPO_PUBLIC_SUPABASE_ANON_KE
 export const isConfigured = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
 
 /** Why the build can't reach the backend, for the sign-in screens to explain. */
-export const configProblem: 'none' | 'missing' | 'bad-url' = isConfigured
-  ? 'none'
-  : RAW_URL && !SUPABASE_URL
-    ? 'bad-url'
-    : 'missing';
+export const configProblem: 'none' | 'missing' | 'bad-url' | 'secret-key' = looksLikeSecretKey(SUPABASE_ANON_KEY)
+  ? 'secret-key'
+  : isConfigured
+    ? 'none'
+    : RAW_URL && !SUPABASE_URL
+      ? 'bad-url'
+      : 'missing';
 
 /** Session storage: OS keychain/keystore on device, localStorage on the web. */
 const authStorage = {
@@ -62,6 +64,12 @@ export class ApiError extends Error {
 }
 
 export function requireConfig(): void {
+  if (configProblem === 'secret-key') {
+    throw new ApiError(
+      0,
+      'This build has the SECRET Supabase key (sb_secret_/service_role) — it must never ship in the app. Use the Publishable key (or legacy anon public) instead.',
+    );
+  }
   if (configProblem === 'bad-url') {
     throw new ApiError(
       0,

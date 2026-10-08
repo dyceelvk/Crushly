@@ -18,6 +18,7 @@ const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
 function NotConfiguredNotice() {
   const { colors } = useTheme();
   const badUrl = configProblem === 'bad-url';
+  const secretKey = configProblem === 'secret-key';
   return (
     <View
       accessibilityRole="alert"
@@ -25,11 +26,15 @@ function NotConfiguredNotice() {
     >
       <Ionicons name="link-outline" size={20} color={colors.gold} />
       <View style={{ flex: 1 }}>
-        <Txt variant="smallStrong">{badUrl ? 'Supabase URL looks wrong' : 'Backend not connected'}</Txt>
+        <Txt variant="smallStrong">
+          {secretKey ? 'Wrong Supabase key — secret key detected' : badUrl ? 'Supabase URL looks wrong' : 'Backend not connected'}
+        </Txt>
         <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-          {badUrl
-            ? 'EXPO_PUBLIC_SUPABASE_URL should be the bare Project URL — https://<ref>.supabase.co — with nothing after it (not /rest/v1, not a connection string). Fix it in Netlify: Site settings → Environment variables, then clear-cache redeploy.'
-            : 'This build has no Supabase project behind it yet. In Netlify: Site settings → Environment variables → add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then redeploy. The README walks through the whole setup.'}
+          {secretKey
+            ? 'EXPO_PUBLIC_SUPABASE_ANON_KEY holds the SECRET key (sb_secret_… or service_role) — that one bypasses all security and must never ship in the app. Supabase → Settings → API Keys → copy the Publishable key (or the legacy anon public key) instead.'
+            : badUrl
+              ? 'EXPO_PUBLIC_SUPABASE_URL should be the bare Project URL — https://<ref>.supabase.co — with nothing after it (not /rest/v1, not a connection string). Fix it in Netlify: Site settings → Environment variables, then clear-cache redeploy.'
+              : 'This build has no Supabase project behind it yet. In Netlify: Site settings → Environment variables → add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then redeploy. The README walks through the whole setup.'}
         </Txt>
       </View>
     </View>

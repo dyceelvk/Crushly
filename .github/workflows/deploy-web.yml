@@ -11,7 +11,9 @@
 #                                Site ID  (mencrushly: 9524369e-5044-4562-b504-3a62456403e9)
 #   EXPO_PUBLIC_SUPABASE_URL     Supabase → Project Settings → API → Project URL
 #                                (the bare https://<ref>.supabase.co)
-#   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Project Settings → API → anon public
+#   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Settings → API Keys → Publishable key
+#                                (sb_publishable_…), or Legacy API keys tab → anon public.
+#                                NEVER the sb_secret_/service_role key.
 #
 # Never commit these values or paste them into chat.
 #
