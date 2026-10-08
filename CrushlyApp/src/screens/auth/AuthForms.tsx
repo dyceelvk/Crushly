@@ -150,7 +150,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
 
 export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const { colors } = useTheme();
-  const { signUp } = useAuth();
+  const { signUp, verifySignupOtp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [adult, setAdult] = useState(false);
@@ -158,6 +158,9 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const [loading, setLoading] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [resent, setResent] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const passwordRef = useRef<TextInput>(null);
 
   const strength = password.length === 0 ? null : password.length < 8 ? 'Too short' : /[0-9]/.test(password) && /[A-Za-z]/.test(password) && password.length >= 10 ? 'Strong' : 'Good';
@@ -184,22 +187,75 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
     }
   };
 
+  const submitCode = async (c: string) => {
+    if (c.length !== 6 || verifying || !sentTo) return;
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      await verifySignupOtp(sentTo, c);
+      // Success flips auth state to onboarding/ready — the navigator takes over.
+    } catch (err) {
+      setVerifyError((err as Error).message);
+      setVerifying(false);
+    }
+  };
+
   if (sentTo) {
     return (
-      <Screen footer={<Button title="Back to sign in" onPress={() => navigation.replace('SignIn')} />}>
+      <Screen footer={<Button title="Verify & continue" onPress={() => void submitCode(code)} loading={verifying} disabled={code.length !== 6} />}>
         <Header back />
         <CrushlyMark size={44} />
         <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-          Check your inbox
+          Enter your code
         </Txt>
         <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
-          We sent a confirmation link to{' '}
-          <Txt variant="bodyStrong">{sentTo}</Txt>. Open it on this device to activate your account — you’ll
+          We sent a code to{' '}
+          <Txt variant="bodyStrong">{sentTo}</Txt>. Enter it below to activate your account — you’ll
           be signed in automatically.
         </Txt>
+        <View
+          style={{
+            marginTop: space.xl,
+            backgroundColor: colors.goldSoft,
+            borderRadius: 16,
+            borderWidth: 1.5,
+            borderColor: code.length ? colors.gold : colors.goldSoft,
+          }}
+        >
+          <TextInput
+            value={code}
+            onChangeText={(t) => {
+              const c = t.replace(/[^0-9]/g, '').slice(0, 6);
+              setCode(c);
+              setVerifyError(null);
+              if (c.length === 6) void submitCode(c);
+            }}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            textContentType="oneTimeCode"
+            autoComplete="sms-otp"
+            maxLength={6}
+            placeholder="000000"
+            placeholderTextColor={colors.textMuted}
+            accessibilityLabel="Confirmation code"
+            style={{
+              textAlign: 'center',
+              fontSize: 30,
+              fontWeight: '800',
+              letterSpacing: 10,
+              color: colors.text,
+              paddingVertical: 16,
+            }}
+          />
+        </View>
+        {verifyError ? (
+          <Txt variant="small" color="danger" align="center" style={{ marginTop: space.sm }}>
+            {verifyError}
+          </Txt>
+        ) : null}
         <View style={{ marginTop: space.xl, gap: space.sm }}>
           <Button
-            title={resent === 'done' ? 'Email sent again' : 'Resend email'}
+            title={resent === 'done' ? 'Code sent again' : 'Resend code'}
             variant="outline"
             size="md"
             icon="mail-outline"
@@ -224,9 +280,11 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
             </Txt>
           )}
         </View>
-        <Txt variant="small" color="textMuted" style={{ marginTop: space.lg }}>
-          Wrong address? Go back and create your account again with the right one.
-        </Txt>
+        <Pressable onPress={() => navigation.replace('SignIn')} style={{ marginTop: space.lg, alignSelf: 'center' }}>
+          <Txt variant="small" color="textMuted">
+            Wrong address? Go back to sign in.
+          </Txt>
+        </Pressable>
       </Screen>
     );
   }

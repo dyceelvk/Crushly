@@ -12,6 +12,8 @@ type AuthContextValue = {
   me: Me | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  /** Verifies the emailed one-time code and signs the member in. */
+  verifySignupOtp: (email: string, token: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Re-reads the member after onboarding/account changes. */
   refresh: () => Promise<Me | null>;
@@ -111,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         const msg = String(error.message ?? '');
         if (/invalid login credentials/i.test(msg)) throw new ApiError(401, 'That email and password don’t match.');
-        if (/not confirmed/i.test(msg)) throw new ApiError(403, 'Confirm your email first — open the link we sent to your inbox, then sign in.');
+        if (/not confirmed/i.test(msg)) throw new ApiError(403, 'Your email isn’t confirmed yet — enter the code from your inbox during sign up, or run sign up again to get a new code.');
         if (!msg) throw new ApiError(400, 'Enter your email and password.');
         throw new ApiError(error.status ?? 400, msg);
       }
@@ -134,8 +136,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!data.session) {
         throw new ApiError(
           202,
-          'Check your inbox — tap the confirmation link and you’ll be signed straight in.',
+          'Check your inbox — we emailed your confirmation code.',
         );
+      }
+      await afterAuth();
+    },
+    [afterAuth],
+  );
+
+  const verifySignupOtp = useCallback(
+    async (email: string, token: string) => {
+      requireConfig();
+      const code = token.trim();
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: code,
+        type: 'signup',
+      });
+      if (error) {
+        const msg = String(error.message ?? '');
+        if (/expired/i.test(msg)) {
+          throw new ApiError(410, 'That code has expired — tap Resend code for a fresh one.');
+        }
+        if (/invalid|token|otp/i.test(msg)) {
+          throw new ApiError(400, 'That code didn’t work — check for typos, or resend a new one.');
+        }
+        throw new ApiError(error.status ?? 400, msg || 'We couldn’t verify that code.');
+      }
+      if (!data.session) {
+        throw new ApiError(400, 'That code didn’t work — check for typos, or resend a new one.');
       }
       await afterAuth();
     },
@@ -165,8 +194,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : me && !me.onboarded ? 'onboarding' : 'ready';
 
   const value = useMemo(
-    () => ({ status, me, signIn, signUp, signOut, refresh, forget }),
-    [status, me, signIn, signUp, signOut, refresh, forget],
+    () => ({ status, me, signIn, signUp, verifySignupOtp, signOut, refresh, forget }),
+    [status, me, signIn, signUp, verifySignupOtp, signOut, refresh, forget],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

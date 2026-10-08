@@ -106,7 +106,10 @@ zero:
 
 ## Gmail confirmation emails
 
-Sign-up confirmation (and password-reset) emails are sent through your Gmail via SMTP.
+Sign-up confirmation emails are sent through your Gmail via SMTP as **6-digit codes**
+(no links to click): the branded template with the Crushly logo lives in
+`supabase/email-templates/confirm-signup.html` and is re-applied on every deploy —
+edit that file (not the dashboard) to change the email.
 Wire it once — it lives in GitHub secrets and re-applies on every deploy:
 
 1. Turn on **2-Step Verification**: https://myaccount.google.com/signinoptions/two-step-verification
@@ -117,7 +120,9 @@ Wire it once — it lives in GitHub secrets and re-applies on every deploy:
    - `GMAIL_SMTP_USER` — your full Gmail address (e.g. `Dyceelvk@gmail.com`)
    - `GMAIL_SMTP_PASS` — the 16-character App Password from step 2
 4. Tell the agent "done" — the next deploy wires it (SMTP `smtp.gmail.com:465`, Confirm email ON,
-   Site URL `https://mencrushly.netlify.app`). The `Wire Gmail confirmation` step reports success.
+   Site URL `https://mencrushly.netlify.app`, branded OTP template). The `Wire Gmail confirmation`
+   step reports success. The logo the email embeds is served from
+   `https://mencrushly.netlify.app/brand/crushly-mark.png` (repo: `CrushlyApp/public/brand/`).
 
 Prefer clicking by hand? SMTP lives at
 https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/providers (Email → SMTP Settings)

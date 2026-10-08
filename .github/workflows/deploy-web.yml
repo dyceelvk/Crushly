@@ -134,10 +134,23 @@ jobs:
 
           status, cfg2 = call("GET")
           ok = (cfg2.get("smtp_host") == "smtp.gmail.com" and cfg2.get("mailer_autoconfirm") is False)
-          if ok:
-              print("::notice::Gmail confirmation wired: smtp.gmail.com:465 sender " + gmail + ", Confirm email ON, Site URL https://mencrushly.netlify.app. Signup + password-reset emails now go out via Gmail.")
-          else:
+          if not ok:
               print("::warning::PATCH succeeded but the config did not stick - check Authentication -> SMTP settings in the Supabase dashboard.")
+          else:
+              print("::notice::Gmail confirmation wired: smtp.gmail.com:465 sender " + gmail + ", Confirm email ON, Site URL https://mencrushly.netlify.app. Signup + password-reset emails now go out via Gmail.")
+              # Brand the confirm-signup email: Crushly logo + OTP code hero (no link).
+              if "mailer_templates_confirmation_body" in cfg2:
+                  html = open("supabase/email-templates/confirm-signup.html", encoding="utf-8").read()
+                  t_payload = {"mailer_templates_confirmation_body": html}
+                  if "mailer_subjects_confirmation" in cfg2:
+                      t_payload["mailer_subjects_confirmation"] = "Your Crushly code"
+                  t_status, t_out = call("PATCH", t_payload)
+                  if t_status < 300:
+                      print("::notice::Confirm-signup email template live: Crushly-branded OTP code email (source: supabase/email-templates/confirm-signup.html).")
+                  else:
+                      print(f"::warning::Template PATCH failed HTTP {t_status}: {scrub(json.dumps(t_out)[:300])} - paste supabase/email-templates/confirm-signup.html into Authentication -> Email Templates instead.")
+              else:
+                  print("::warning::Auth config API exposes no template fields - paste supabase/email-templates/confirm-signup.html into Authentication -> Email Templates -> Confirm signup.")
           PY
 
       - name: Install & test
