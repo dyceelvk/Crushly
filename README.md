@@ -66,9 +66,10 @@ zero:
      2. GitHub repo → **Settings → Secrets and variables → Actions** →
         **New repository secret** → name it `SUPABASE_DB_URL`, paste the URI.
      Never commit that value or paste it into chat.
-   - **No CLI, one time**: open the project's **SQL editor**, paste all of
-     [`supabase/setup.sql`](supabase/setup.sql) and Run — it's re-runnable and
-     self-healing. (Generated from the migrations via `npm run bundle:sql`.)
+   - **No CLI, one time**: run the three parts in [`supabase/setup/`](supabase/setup/)
+     in the project's **SQL editor** (each file on GitHub has a copy button),
+     or paste the all-in-one [`supabase/setup.sql`](supabase/setup.sql) —
+     either way it's re-runnable and self-healing.
    - **Local CLI**: `supabase link --project-ref <ref> && supabase db push`
      (full steps in [`supabase/README.md`](supabase/README.md)).
    Never load `seed.sql` into a live project — it's the fictional demo

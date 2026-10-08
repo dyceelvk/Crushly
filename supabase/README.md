@@ -37,10 +37,22 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
 ## Run it on a hosted project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Create the schema — in the dashboard's **SQL editor**, or with the CLI.
-   Pasting without the fuss: open each file on GitHub and click the **copy
-   button** (clipboard icon, top-right of the code box) — no text selection
-   needed. Run the three parts **in order**, each in its own New query:
+2. Create the schema — easiest first:
+   - **GitHub Actions (recommended — no copy-paste at all)**: add one
+     repository secret and [`db-migrations.yml`](../.github/workflows/db-migrations.yml)
+     runs `supabase db push` against your project whenever `migrations/`
+     change (or manually: **Actions** tab → *Deploy database migrations* →
+     **Run workflow**):
+     1. Supabase → **Project Settings → Database → Connection string** →
+        **Session pooler** → **URI** — replace `[YOUR-PASSWORD]` with your
+        database password (reset it on that page if you lost it).
+     2. GitHub repo → **Settings → Secrets and variables → Actions** →
+        **New repository secret** → name it `SUPABASE_DB_URL`, paste the URI.
+     Never commit that value or paste it into chat.
+   - **SQL editor, one migration at a time**: open each file on GitHub and
+     click the **copy button** (clipboard icon, top-right of the code box) —
+     no text selection needed. Run the three parts **in order**, each in its
+     own New query:
 
    | File | What it makes |
    | --- | --- |
