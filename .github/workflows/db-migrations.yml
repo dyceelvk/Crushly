@@ -50,7 +50,7 @@ jobs:
             exit 1
           fi
           # Diagnostics with the password hidden — these show in run annotations.
-          safe=$(printf '%s' "$SUPABASE_DB_URL" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#')
+          safe=$(printf '%s' "$SUPABASE_DB_URL" | sed -E 's#(://[^:/]+):.*@(.*)$#\1:***@\2#')
           echo "::notice::Using SUPABASE_DB_URL (password hidden): $safe"
           case "$SUPABASE_DB_URL" in
             *"[YOUR-PASSWORD]"*)
@@ -67,9 +67,9 @@ jobs:
               echo "::warning::Host is not the Session pooler (*.pooler.supabase.com). GitHub runners often cannot reach the direct/db.* host (IPv6-only). Use the project's Connect button → Session pooler → URI." ;;
           esac
           if ! out=$(supabase db push --db-url "$SUPABASE_DB_URL" 2>&1); then
-            safe_out=$(printf '%s' "$out" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#' | tr '\n' ' ' | cut -c1-800)
+            safe_out=$(printf '%s' "$out" | sed -E 's#(://[^:/]+):.*@(.*)$#\1:***@\2#' | tr '\n' ' ' | cut -c1-800)
             echo "::error::supabase db push failed: $safe_out"
-            printf '%s\n' "$out" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#'
+            printf '%s\n' "$out" | sed -E 's#(://[^:/]+):.*@(.*)$#\1:***@\2#'
             exit 1
           fi
           printf '%s\n' "$out"
