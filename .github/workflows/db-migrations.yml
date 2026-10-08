@@ -49,7 +49,30 @@ jobs:
             echo "::error::SUPABASE_DB_URL secret is not set. Add it under Settings → Secrets and variables → Actions (see .github/workflows/db-migrations.yml)."
             exit 1
           fi
-          supabase db push --db-url "$SUPABASE_DB_URL"
+          # Diagnostics with the password hidden — these show in run annotations.
+          safe=$(printf '%s' "$SUPABASE_DB_URL" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#')
+          echo "::notice::Using SUPABASE_DB_URL (password hidden): $safe"
+          case "$SUPABASE_DB_URL" in
+            *"[YOUR-PASSWORD]"*)
+              echo "::error::SUPABASE_DB_URL still contains the [YOUR-PASSWORD] placeholder — replace it with your real database password."
+              exit 1 ;;
+          esac
+          case "$SUPABASE_DB_URL" in
+            postgresql://*:6543/*|postgres://*:6543/*)
+              echo "::warning::This looks like the Transaction pooler (port 6543). Prefer Session pooler (port 5432) for migrations." ;;
+          esac
+          case "$SUPABASE_DB_URL" in
+            *pooler.supabase.com*|*localhost*|*127.0.0.1*) : ;;
+            *)
+              echo "::warning::Host is not the Session pooler (*.pooler.supabase.com). GitHub runners often cannot reach the direct/db.* host (IPv6-only). Use the project's Connect button → Session pooler → URI." ;;
+          esac
+          if ! out=$(supabase db push --db-url "$SUPABASE_DB_URL" 2>&1); then
+            safe_out=$(printf '%s' "$out" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#' | tr '\n' ' ' | cut -c1-800)
+            echo "::error::supabase db push failed: $safe_out"
+            printf '%s\n' "$out" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#'
+            exit 1
+          fi
+          printf '%s\n' "$out"
 
       - name: Verify schema landed
         env:
