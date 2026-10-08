@@ -189,8 +189,8 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
         </Txt>
         <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
           We sent a confirmation link to{' '}
-          <Txt variant="bodyStrong">{sentTo}</Txt>. Open it to activate your account, then sign in to start
-          meeting people.
+          <Txt variant="bodyStrong">{sentTo}</Txt>. Open it on this device to activate your account — you’ll
+          be signed in automatically.
         </Txt>
         <View style={{ marginTop: space.xl, gap: space.sm }}>
           <Button

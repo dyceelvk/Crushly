@@ -47,33 +47,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     qc.clear();
   }, [qc]);
 
+  /** Adopt whatever session supabase-js now holds (startup, sign-in, or an email link landing). */
+  const adoptSession = useCallback(async () => {
+    setSignedIn(true);
+    try {
+      const current = await getMe();
+      qc.setQueryData(keys.me, current);
+      setMeState(current);
+    } catch (e) {
+      // Offline: keep the session and let screens show their own retry states.
+      if (!(e instanceof ApiError && e.isNetwork)) {
+        setSignedIn(false);
+      }
+    }
+  }, [qc]);
+
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
-        if (data.session) {
-          setSignedIn(true);
-          try {
-            const current = await getMe();
-            qc.setQueryData(keys.me, current);
-            setMeState(current);
-          } catch (e) {
-            // Offline: keep the session and let screens show their own retry states.
-            if (!(e instanceof ApiError && e.isNetwork)) {
-              setSignedIn(false);
-            }
-          }
-        }
+        if (data.session && !cancelled) await adoptSession();
       } finally {
-        setRestoring(false);
+        if (!cancelled) setRestoring(false);
       }
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') void forget();
+    // Sessions can arrive after startup — confirmation links landing on the
+    // URL, token refreshes, or another tab signing in. Adopt them instead of
+    // bouncing the member back to the sign-in/up screens.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        void forget();
+        return;
+      }
+      if (session && ['SIGNED_IN', 'TOKEN_REFRESHED', 'INITIAL_SESSION', 'USER_UPDATED'].includes(event)) {
+        // Defer: this callback runs under supabase-js's auth lock.
+        setTimeout(() => {
+          if (!cancelled) void adoptSession();
+        }, 0);
+      }
     });
-    return () => sub.subscription.unsubscribe();
-  }, [qc, forget]);
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [qc, forget, adoptSession]);
 
   const afterAuth = useCallback(
     async () => {

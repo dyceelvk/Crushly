@@ -41,6 +41,10 @@ export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABAS
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: Platform.OS === 'web',
+    // Implicit flow: confirmation links carry the session in the URL fragment,
+    // so they work even when opened from an email app's in-app browser (no PKCE
+    // code-verifier to find in that browser's storage).
+    flowType: 'implicit',
   },
 });
 
