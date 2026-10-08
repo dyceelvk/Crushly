@@ -272,6 +272,39 @@ jobs:
 
       # Netlify's git integration deploys this repo on every push (primary channel).
       # This step is the Actions-side deployer; it needs a token with Deploy scope.
+      # If the Actions-side deploy can't run (token scope), fall back to triggering
+      # a Netlify git build via a build hook so the live site always catches up.
+      - name: Trigger Netlify git build (fallback)
+        continue-on-error: true
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -uo pipefail
+          curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=5" \
+            | jq -r '.[] | "recent deploy: \(.state) \(.commit_ref[0:7] // "none") \"\(.title // "" | .[0:30])\" \(.created_at)"' 2>/dev/null \
+            | sed 's/^/::notice::/' || true
+          hook=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks" \
+            | jq -r '.[] | select(.title=="ci-trigger") | .url' | head -1)
+          if [ -z "$hook" ]; then
+            resp=$(curl -s -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H "Content-Type: application/json" \
+              -d '{"branch":"arena/927d4af8-crushly","title":"ci-trigger"}' \
+              "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks")
+            hook=$(printf '%s' "$resp" | jq -r '.url // empty')
+          fi
+          if [ -n "$hook" ]; then
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$hook")
+            if [ "$code" = "200" ]; then
+              echo "::notice::Triggered a Netlify git build of the latest commit - mencrushly.netlify.app updates in a couple of minutes."
+            else
+              echo "::warning::Build hook trigger returned HTTP $code."
+            fi
+          else
+            echo "::warning::Could not create a Netlify build hook (token scope). Turn ON auto publishing: https://app.netlify.com/sites/mencrushly/configuration/deploys"
+          fi
+
       - name: Deploy to Netlify
         continue-on-error: true
         env:
