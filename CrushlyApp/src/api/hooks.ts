@@ -1,0 +1,422 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { api, appendFile } from './client';
+import type {
+  AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
+  DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
+} from './types';
+
+export const keys = {
+  me: ['me'] as const,
+  discover: ['discover'] as const,
+  user: (id: number) => ['user', id] as const,
+  crushes: ['crushes'] as const,
+  conversations: ['conversations'] as const,
+  conversation: (id: number) => ['conversation', id] as const,
+  moments: ['moments'] as const,
+  notifications: ['notifications'] as const,
+  badges: ['badges'] as const,
+  blocks: ['blocks'] as const,
+};
+
+/* ------------------------------------------------------------------ queries */
+
+export const useMe = (enabled = true) =>
+  useQuery({ queryKey: keys.me, queryFn: () => api.get<Me>('/me'), enabled, staleTime: 30_000 });
+
+export const useDiscover = () =>
+  useQuery({ queryKey: keys.discover, queryFn: () => api.get<DiscoverPage>('/discover?limit=30'), staleTime: 60_000 });
+
+export const useUser = (id: number) =>
+  useQuery({ queryKey: keys.user(id), queryFn: () => api.get<FullProfile>(`/users/${id}`), staleTime: 30_000 });
+
+export const useCrushes = () =>
+  useQuery({ queryKey: keys.crushes, queryFn: () => api.get<CrushesResponse>('/crushes'), staleTime: 15_000 });
+
+export const useConversations = () =>
+  useQuery({
+    queryKey: keys.conversations,
+    queryFn: () => api.get<{ items: ConversationSummary[] }>('/conversations').then((r) => r.items),
+    staleTime: 5_000,
+    refetchInterval: 12_000,
+  });
+
+export const useConversation = (id: number) =>
+  useQuery({ queryKey: keys.conversation(id), queryFn: () => api.get<ConversationDetail>(`/conversations/${id}`) });
+
+export const useMoments = () =>
+  useQuery({ queryKey: keys.moments, queryFn: () => api.get<MomentsFeed>('/moments'), staleTime: 20_000 });
+
+export const useNotifications = () =>
+  useQuery({
+    queryKey: keys.notifications,
+    queryFn: () => api.get<{ items: AppNotification[] }>('/notifications').then((r) => r.items),
+    staleTime: 5_000,
+  });
+
+export const useBlocks = () =>
+  useQuery({ queryKey: keys.blocks, queryFn: () => api.get<{ items: BlockedMember[] }>('/blocks').then((r) => r.items) });
+
+/** Polls lightweight counters; pauses while the app is backgrounded. */
+export function useBadges(enabled: boolean) {
+  const [active, setActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
+  return useQuery({
+    queryKey: keys.badges,
+    queryFn: () => api.get<Badges>('/me/badges'),
+    enabled,
+    refetchInterval: active ? 10_000 : false,
+  });
+}
+
+/* ---------------------------------------------------------------- mutations */
+
+const setMe = (qc: QueryClient) => (me: Me) => qc.setQueryData(keys.me, me);
+
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Record<string, unknown>) => api.patch<Me>('/me/profile', patch),
+    onSuccess: (me) => {
+      setMe(qc)(me);
+      qc.invalidateQueries({ queryKey: keys.discover });
+    },
+  });
+}
+
+export function useUpdatePreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (prefs: Preferences) => api.put<Me>('/me/preferences', prefs),
+    onSuccess: (me) => {
+      setMe(qc)(me);
+      qc.invalidateQueries({ queryKey: keys.discover });
+    },
+  });
+}
+
+export function useUpdatePrivacy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<Privacy>) => api.patch<Me>('/me/privacy', patch),
+    onMutate: async (patch) => {
+      // Toggles feel instant; we roll back if the server disagrees.
+      const prev = qc.getQueryData<Me>(keys.me);
+      if (prev) qc.setQueryData<Me>(keys.me, { ...prev, privacy: { ...prev.privacy, ...patch } });
+      return { prev };
+    },
+    onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(keys.me, ctx.prev),
+    onSuccess: setMe(qc),
+  });
+}
+
+export function useUpdateNotificationSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<NotificationSettings>) => api.patch<Me>('/me/notification-settings', patch),
+    onMutate: async (patch) => {
+      const prev = qc.getQueryData<Me>(keys.me);
+      if (prev) qc.setQueryData<Me>(keys.me, { ...prev, notifications: { ...prev.notifications, ...patch } });
+      return { prev };
+    },
+    onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(keys.me, ctx.prev),
+    onSuccess: setMe(qc),
+  });
+}
+
+export function useUploadPhoto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ uri, mimeType }: { uri: string; mimeType?: string }) => {
+      const form = new FormData();
+      const type = mimeType || 'image/jpeg';
+      await appendFile(form, 'photo', uri, `photo.${type.split('/')[1] || 'jpg'}`, type);
+      return api.upload<Me>('/me/photos', form);
+    },
+    onSuccess: setMe(qc),
+  });
+}
+
+export function useDeletePhoto() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.delete<Me>(`/me/photos/${id}`), onSuccess: setMe(qc) });
+}
+
+export function useReorderPhotos() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (ids: number[]) => api.put<Me>('/me/photos/order', { ids }), onSuccess: setMe(qc) });
+}
+
+function removeFromDiscover(qc: QueryClient, id: number) {
+  qc.setQueryData<DiscoverPage>(keys.discover, (page) =>
+    page ? { ...page, items: page.items.filter((p) => p.id !== id), total: Math.max(0, page.total - 1) } : page,
+  );
+}
+
+export function useCrush() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, deep, note }: { id: number; deep?: boolean; note?: string }) =>
+      api.post<CrushResult>(`/users/${id}/crush`, { deep, note }),
+    onSuccess: (_res, { id }) => {
+      removeFromDiscover(qc, id);
+      qc.invalidateQueries({ queryKey: keys.crushes });
+      qc.invalidateQueries({ queryKey: keys.user(id) });
+      qc.invalidateQueries({ queryKey: keys.me });
+      qc.invalidateQueries({ queryKey: keys.badges });
+    },
+  });
+}
+
+export function useUndoCrush() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/users/${id}/crush`),
+    onSuccess: (_r, id) => {
+      qc.invalidateQueries({ queryKey: keys.crushes });
+      qc.invalidateQueries({ queryKey: keys.user(id) });
+      qc.invalidateQueries({ queryKey: keys.discover });
+    },
+  });
+}
+
+export function usePass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.post(`/users/${id}/pass`),
+    onMutate: (id) => removeFromDiscover(qc, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.crushes }),
+    onError: () => qc.invalidateQueries({ queryKey: keys.discover }),
+  });
+}
+
+function invalidateSocial(qc: QueryClient, id: number) {
+  removeFromDiscover(qc, id);
+  qc.removeQueries({ queryKey: keys.user(id) });
+  for (const k of [keys.crushes, keys.conversations, keys.moments, keys.notifications, keys.badges, keys.blocks]) {
+    qc.invalidateQueries({ queryKey: k });
+  }
+}
+
+export function useBlock() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.post(`/users/${id}/block`), onSuccess: (_r, id) => invalidateSocial(qc, id) });
+}
+
+export function useUnblock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/users/${id}/block`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.blocks });
+      qc.invalidateQueries({ queryKey: keys.discover });
+    },
+  });
+}
+
+export function useReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; reason: string; details?: string; context?: string; alsoBlock?: boolean }) =>
+      api.post<{ ok: true; blocked: boolean }>(`/users/${id}/report`, body),
+    onSuccess: (res, { id }) => res.blocked && invalidateSocial(qc, id),
+  });
+}
+
+export function useRemoveConnection() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.delete(`/connections/${id}`), onSuccess: (_r, id) => invalidateSocial(qc, id) });
+}
+
+export function useOpenConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) => api.post<{ id: number }>('/conversations', { userId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.conversations }),
+  });
+}
+
+export function useMarkNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { ids?: number[]; kinds?: string[] } = {}) => api.post('/notifications/read', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.notifications });
+      qc.invalidateQueries({ queryKey: keys.badges });
+    },
+  });
+}
+
+export function useMomentReaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, kind }: { id: number; kind: string | null }) => api.post<Moment>(`/moments/${id}/react`, { kind }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.moments }),
+  });
+}
+
+/* ------------------------------------------------------------------- chat */
+
+const POLL_MS = 3000;
+
+/**
+ * Conversation state: initial page, incremental polling for new messages,
+ * paging back through history, and optimistic sends with retry.
+ */
+export function useChat(conversationId: number) {
+  const qc = useQueryClient();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const lastIdRef = useRef(0);
+  const lastReadRef = useRef<number | null>(null);
+
+  const markRead = useCallback(() => {
+    api.post(`/conversations/${conversationId}/read`).then(() => {
+      qc.invalidateQueries({ queryKey: keys.badges });
+      qc.invalidateQueries({ queryKey: keys.conversations });
+    }).catch(() => {});
+  }, [conversationId, qc]);
+
+  const applyReadState = useCallback((lastReadMine: number | null) => {
+    lastReadRef.current = lastReadMine;
+    if (!lastReadMine) return;
+    setMessages((prev) => prev.map((m) => (m.mine && !m.readAt && m.id <= lastReadMine ? { ...m, readAt: Date.now() } : m)));
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<{ items: Message[]; hasMore: boolean; lastReadMine: number | null }>(
+        `/conversations/${conversationId}/messages?limit=40`,
+      );
+      setMessages(res.items);
+      setHasMore(res.hasMore);
+      lastIdRef.current = res.items.length ? res.items[res.items.length - 1].id : 0;
+      markRead();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [conversationId, markRead]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (loading || error) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (AppState.currentState !== 'active') return;
+      try {
+        const res = await api.get<{ items: Message[]; lastReadMine: number | null }>(
+          `/conversations/${conversationId}/messages?after=${lastIdRef.current}`,
+        );
+        if (cancelled) return;
+        if (res.items.length) {
+          lastIdRef.current = res.items[res.items.length - 1].id;
+          setMessages((prev) => {
+            const known = new Set(prev.map((m) => m.id));
+            return [...prev, ...res.items.filter((m) => !known.has(m.id))];
+          });
+          if (res.items.some((m) => !m.mine)) markRead();
+        }
+        if (res.lastReadMine !== lastReadRef.current) applyReadState(res.lastReadMine);
+      } catch {
+        /* transient; next tick retries */
+      }
+    };
+    const timer = setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [conversationId, loading, error, markRead, applyReadState]);
+
+  const loadOlder = useCallback(async () => {
+    if (!hasMore || loadingMore || !messages.length) return;
+    setLoadingMore(true);
+    try {
+      const firstId = messages.find((m) => m.id > 0)?.id;
+      const res = await api.get<{ items: Message[]; hasMore: boolean }>(`/conversations/${conversationId}/messages?before=${firstId}&limit=40`);
+      setMessages((prev) => [...res.items, ...prev]);
+      setHasMore(res.hasMore);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [conversationId, hasMore, loadingMore, messages]);
+
+  type Draft =
+    | { kind: 'text'; body: string }
+    | { kind: 'sticker'; sticker: string }
+    | { kind: 'profile'; profileId: number }
+    | { kind: 'photo'; uri: string; mimeType?: string }
+    | { kind: 'voice'; uri: string; duration: number; mimeType?: string };
+
+  const send = useCallback(
+    async (draft: Draft, retryLocalId?: string) => {
+      const localId = retryLocalId || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const optimistic: Message = {
+        id: -Date.now(),
+        localId,
+        conversationId,
+        senderId: 0,
+        mine: true,
+        kind: draft.kind,
+        body: draft.kind === 'text' ? draft.body : '',
+        mediaUrl: draft.kind === 'photo' || draft.kind === 'voice' ? draft.uri : null,
+        meta: draft.kind === 'sticker' ? { sticker: draft.sticker } : draft.kind === 'voice' ? { duration: draft.duration } : {},
+        createdAt: Date.now(),
+        readAt: null,
+        reactions: [],
+        pending: true,
+      };
+      setMessages((prev) => (retryLocalId ? prev.map((m) => (m.localId === localId ? optimistic : m)) : [...prev, optimistic]));
+      try {
+        let saved: Message;
+        if (draft.kind === 'photo' || draft.kind === 'voice') {
+          const form = new FormData();
+          form.append('kind', draft.kind);
+          if (draft.kind === 'voice') form.append('duration', String(draft.duration));
+          const type = draft.mimeType || (draft.kind === 'photo' ? 'image/jpeg' : 'audio/m4a');
+          const ext = type.includes('webm') ? 'webm' : type.split('/')[1] || 'bin';
+          await appendFile(form, 'media', draft.uri, `${draft.kind}.${ext}`, type);
+          saved = await api.upload<Message>(`/conversations/${conversationId}/messages`, form);
+        } else {
+          saved = await api.post<Message>(`/conversations/${conversationId}/messages`, draft);
+        }
+        lastIdRef.current = Math.max(lastIdRef.current, saved.id);
+        setMessages((prev) => {
+          const without = prev.filter((m) => m.id !== saved.id);
+          return without.map((m) => (m.localId === localId ? saved : m));
+        });
+        qc.invalidateQueries({ queryKey: keys.conversations });
+        return { ok: true as const };
+      } catch (e) {
+        setMessages((prev) => prev.map((m) => (m.localId === localId ? { ...m, pending: false, failed: true, meta: { ...m.meta, draft } } : m)));
+        return { ok: false as const, error: (e as Error).message };
+      }
+    },
+    [conversationId, qc],
+  );
+
+  const discard = useCallback((localId: string) => setMessages((prev) => prev.filter((m) => m.localId !== localId)), []);
+
+  const react = useCallback(async (messageId: number, kind = 'crush') => {
+    const updated = await api.post<Message>(`/messages/${messageId}/react`, { kind });
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
+  }, []);
+
+  return { messages, loading, error, reload: load, hasMore, loadOlder, loadingMore, send, discard, react };
+}
+
+export type ChatDraft = Parameters<ReturnType<typeof useChat>['send']>[0];

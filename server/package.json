@@ -1,0 +1,23 @@
+{
+  "name": "crushly-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Crushly API — auth, profiles, discovery, crushes, messaging, Moments, notifications and safety.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
+    "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
+    "verify-user": "node --disable-warning=ExperimentalWarning scripts/verify-user.js",
+    "reports": "node --disable-warning=ExperimentalWarning scripts/reports.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.4.0"
+  }
+}
