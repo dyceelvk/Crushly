@@ -489,6 +489,29 @@ export async function resendConfirmation(email: string): Promise<void> {
   if (error) throw toApiError(error);
 }
 
+export async function sendPasswordReset(email: string): Promise<void> {
+  const next = email.trim().toLowerCase();
+  const { error } = await supabase.auth.resetPasswordForEmail(next, {
+    redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+  });
+  if (error) throw toApiError(error);
+}
+
+/** Verify the emailed recovery code (the "code" path — the "link" path lands with a recovery session). */
+export async function verifyRecoveryOtp(email: string, token: string): Promise<void> {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: token.trim(),
+    type: 'recovery',
+  });
+  if (error) {
+    const msg = String(error.message ?? '');
+    if (/expired/i.test(msg)) throw new ApiError(410, 'That code has expired — send a new one.');
+    throw new ApiError(400, 'That code didn’t work — check for typos, or send a new one.');
+  }
+  if (!data.session) throw new ApiError(400, 'That code didn’t work — check for typos, or send a new one.');
+}
+
 export async function signOutOtherSessions(): Promise<void> {
   const { error } = await supabase.auth.signOut({ scope: 'others' });
   if (error) throw toApiError(error);

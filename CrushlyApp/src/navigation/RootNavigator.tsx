@@ -13,7 +13,7 @@ import { notificationText } from '../screens/notifications/Notifications';
 
 import { SplashScreen } from '../screens/auth/Splash';
 import { WelcomeScreen } from '../screens/auth/Welcome';
-import { SignInScreen, SignUpScreen } from '../screens/auth/AuthForms';
+import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } from '../screens/auth/AuthForms';
 import {
   OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
 } from '../screens/onboarding/Onboarding';
@@ -102,7 +102,12 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="SignIn" component={SignInScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="SignUp" component={SignUpScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="Info" component={InfoScreen} />
+        </Stack.Group>
+      ) : status === 'resetting' ? (
+        <Stack.Group screenOptions={{ animation: reduceMotion ? 'none' : 'fade' }}>
+          <Stack.Screen name="SetPassword" component={SetPasswordScreen} />
         </Stack.Group>
       ) : status === 'onboarding' ? (
         <Stack.Group>

@@ -120,6 +120,11 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
           icon="lock-closed-outline"
         />
       </View>
+      <Pressable onPress={() => navigation.navigate('ForgotPassword')} accessibilityRole="link" style={{ marginTop: space.sm, alignSelf: 'center', padding: 8 }}>
+        <Txt variant="small" color="textSecondary">
+          Forgot password? <Txt variant="smallStrong" color="gold">Reset it</Txt>
+        </Txt>
+      </Pressable>
       <Pressable onPress={() => navigation.replace('SignUp')} accessibilityRole="link" style={{ marginTop: space.lg, alignSelf: 'center', padding: 8 }}>
         <Txt variant="small" color="textSecondary">
           New here? <Txt variant="smallStrong" color="gold">Create an account</Txt>
@@ -404,6 +409,233 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
           Already a member? <Txt variant="smallStrong" color="gold">Sign in</Txt>
         </Txt>
       </Pressable>
+    </Screen>
+  );
+}
+
+export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword'>) {
+  const { colors } = useTheme();
+  const [email, setEmail] = useState('');
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [mode, setMode] = useState<'choose' | 'code'>('choose');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [linkState, setLinkState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const { setNewPassword } = useAuth();
+
+  const send = async (target = email) => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(target.trim())) {
+      setError('Enter a valid email address.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await service.sendPasswordReset(target);
+      setSentTo(target.trim().toLowerCase());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveWithCode = async () => {
+    if (!sentTo) return;
+    if (code.length !== 6) return setError('Enter the 6-digit code from your email.');
+    if (password.length < 8) return setError('Use at least 8 characters for your new password.');
+    if (password !== confirm) return setError('The two passwords don’t match.');
+    setError(null);
+    setBusy(true);
+    try {
+      await service.verifyRecoveryOtp(sentTo, code);
+      await setNewPassword(password);
+      // Success flips auth state — the navigator takes over.
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  if (sentTo) {
+    return (
+      <Screen
+        footer={
+          mode === 'code' ? (
+            <Button title="Save new password" onPress={() => void saveWithCode()} loading={busy} />
+          ) : undefined
+        }
+      >
+        <Header back onBack={() => navigation.replace('SignIn')} />
+        <CrushlyMark size={44} />
+        <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
+          Check your inbox
+        </Txt>
+        <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
+          We sent a code and a link to{' '}
+          <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you prefer to set a new password.
+        </Txt>
+
+        {mode === 'choose' ? (
+          <View style={{ marginTop: space.xl, gap: space.sm }}>
+            <Button title="Verify with code" icon="keypad-outline" onPress={() => setMode('code')} />
+            <Button
+              title="Get a link"
+              variant="outline"
+              icon="link-outline"
+              loading={linkState === 'busy'}
+              onPress={async () => {
+                setLinkState('busy');
+                try {
+                  await service.sendPasswordReset(sentTo);
+                  setLinkState('done');
+                } catch {
+                  setLinkState('error');
+                }
+              }}
+            />
+            {linkState === 'done' ? (
+              <Txt variant="small" color="gold" align="center">
+                Link sent! Open the newest email and tap “Reset my password”.
+              </Txt>
+            ) : linkState === 'error' ? (
+              <Txt variant="small" color="danger" align="center">
+                Couldn’t send just now — wait a minute and try again.
+              </Txt>
+            ) : (
+              <Txt variant="small" color="textMuted" align="center">
+                The code is fastest. The link works great from your phone.
+              </Txt>
+            )}
+          </View>
+        ) : (
+          <>
+            {error ? <Banner message={error} /> : null}
+            <View style={{ gap: space.md, marginTop: space.lg }}>
+              <Input
+                label="Code from your email"
+                value={code}
+                onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                placeholder="000000"
+                keyboardType="number-pad"
+                inputMode="numeric"
+                textContentType="oneTimeCode"
+                maxLength={6}
+                icon="keypad-outline"
+              />
+              <Input
+                label="New password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="At least 8 characters"
+                secureTextEntry
+                autoComplete="new-password"
+                textContentType="newPassword"
+                icon="lock-closed-outline"
+              />
+              <Input
+                label="Repeat new password"
+                value={confirm}
+                onChangeText={setConfirm}
+                placeholder="One more time"
+                secureTextEntry
+                autoComplete="new-password"
+                icon="lock-closed-outline"
+              />
+            </View>
+          </>
+        )}
+
+        <Pressable onPress={() => navigation.replace('SignIn')} style={{ marginTop: space.xl, alignSelf: 'center' }}>
+          <Txt variant="small" color="textMuted">
+            Back to sign in
+          </Txt>
+        </Pressable>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen keyboard footer={<Button title="Send reset email" onPress={() => void send()} loading={busy} />}>
+      <Header back onBack={() => navigation.replace('SignIn')} />
+      <CrushlyMark size={44} />
+      <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
+        Reset your password
+      </Txt>
+      <Txt variant="body" color="textSecondary" style={{ marginTop: 8, marginBottom: space.xl }}>
+        Tell us the email you signed up with and we’ll send a code and a link to set a new password.
+      </Txt>
+      {error ? <Banner message={error} /> : null}
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        placeholder="you@example.com"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        icon="mail-outline"
+      />
+    </Screen>
+  );
+}
+
+export function SetPasswordScreen() {
+  const { setNewPassword } = useAuth();
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (password.length < 8) return setError('Use at least 8 characters for your new password.');
+    if (password !== confirm) return setError('The two passwords don’t match.');
+    setError(null);
+    setBusy(true);
+    try {
+      await setNewPassword(password);
+      // Success flips auth state — the navigator takes over.
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Screen keyboard footer={<Button title="Save new password" onPress={() => void save()} loading={busy} />}>
+      <CrushlyMark size={44} />
+      <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
+        Choose a new password
+      </Txt>
+      <Txt variant="body" color="textSecondary" style={{ marginTop: 8, marginBottom: space.xl }}>
+        You’re signed in — just pick a new password and you’re back in.
+      </Txt>
+      {error ? <Banner message={error} /> : null}
+      <View style={{ gap: space.md }}>
+        <Input
+          label="New password"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="At least 8 characters"
+          secureTextEntry
+          autoComplete="new-password"
+          textContentType="newPassword"
+          icon="lock-closed-outline"
+        />
+        <Input
+          label="Repeat new password"
+          value={confirm}
+          onChangeText={setConfirm}
+          placeholder="One more time"
+          secureTextEntry
+          autoComplete="new-password"
+          icon="lock-closed-outline"
+        />
+      </View>
     </Screen>
   );
 }

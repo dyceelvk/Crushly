@@ -1,11 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, requireConfig, supabase } from '../api/client';
+import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
 import { keys } from '../api/hooks';
 import { getMe } from '../api/service';
 import type { Me } from '../api/types';
 
-export type AuthStatus = 'restoring' | 'signedOut' | 'onboarding' | 'ready';
+export type AuthStatus = 'restoring' | 'signedOut' | 'onboarding' | 'resetting' | 'ready';
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -14,6 +14,8 @@ type AuthContextValue = {
   signUp: (email: string, password: string) => Promise<void>;
   /** Verifies the emailed one-time code and signs the member in. */
   verifySignupOtp: (email: string, token: string) => Promise<void>;
+  /** Sets a new password while holding a recovery session (link or code path). */
+  setNewPassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Re-reads the member after onboarding/account changes. */
   refresh: () => Promise<Me | null>;
@@ -30,6 +32,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
+  const [mustSetPassword, setMustSetPassword] = useState(false);
   const [restoring, setRestoring] = useState(true);
   const [me, setMeState] = useState<Me | null>(null);
 
@@ -46,8 +49,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const forget = useCallback(async () => {
     setSignedIn(false);
     setMeState(null);
+    setMustSetPassword(false);
     qc.clear();
   }, [qc]);
+
+  // A recovery email link lands with #...type=recovery — route those members
+  // straight to the "choose a new password" screen instead of the app.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && /type=recovery/.test(window.location.hash)) {
+      setMustSetPassword(true);
+    }
+  }, []);
 
   /** Adopt whatever session supabase-js now holds (startup, sign-in, or an email link landing). */
   const adoptSession = useCallback(async () => {
@@ -171,6 +183,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [afterAuth],
   );
 
+  const setNewPassword = useCallback(
+    async (password: string) => {
+      requireConfig();
+      const pw = String(password ?? '');
+      if (pw.length < 8) throw new ApiError(400, 'Use at least 8 characters.');
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) throw toApiError(error);
+      setMustSetPassword(false);
+      await afterAuth();
+    },
+    [afterAuth],
+  );
+
   const signOut = useCallback(async () => {
     try {
       await supabase.auth.signOut();
@@ -191,11 +216,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [qc]);
 
-  const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : me && !me.onboarded ? 'onboarding' : 'ready';
+  const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : mustSetPassword ? 'resetting' : me && !me.onboarded ? 'onboarding' : 'ready';
 
   const value = useMemo(
-    () => ({ status, me, signIn, signUp, verifySignupOtp, signOut, refresh, forget }),
-    [status, me, signIn, signUp, verifySignupOtp, signOut, refresh, forget],
+    () => ({ status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget }),
+    [status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

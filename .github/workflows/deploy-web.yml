@@ -144,9 +144,12 @@ jobs:
                   print(f"::notice::Template API keys seen: {sorted(t_keys)}")
                   if "mailer_templates_confirmation_content" in cfg2:
                       html = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/confirm-signup.html"), encoding="utf-8").read()
+                      recovery = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/recovery.html"), encoding="utf-8").read()
                       t_payload = {
                           "mailer_templates_confirmation_content": html,
                           "mailer_subjects_confirmation": "{{ .Token }} is your Crushly code",
+                          "mailer_templates_recovery_content": recovery,
+                          "mailer_subjects_recovery": "{{ .Token }} is your Crushly reset code",
                       }
                       t_status, t_out = call("PATCH", t_payload)
                       if t_status < 300:

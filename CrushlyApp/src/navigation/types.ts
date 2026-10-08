@@ -15,6 +15,8 @@ export type RootStackParamList = {
   Welcome: undefined;
   SignIn: undefined;
   SignUp: undefined;
+  ForgotPassword: undefined;
+  SetPassword: undefined;
   OnboardingIntentions: undefined;
   OnboardingBasics: undefined;
   OnboardingPhotos: undefined;
