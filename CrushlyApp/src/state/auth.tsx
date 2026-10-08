@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, supabase } from '../api/client';
+import { ApiError, requireConfig, supabase } from '../api/client';
 import { keys } from '../api/hooks';
 import { getMe } from '../api/service';
 import type { Me } from '../api/types';
@@ -87,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
+      requireConfig();
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) {
         const msg = String(error.message ?? '');
@@ -102,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = useCallback(
     async (email: string, password: string) => {
+      requireConfig();
       const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
       if (error) {
         const msg = String(error.message ?? '');

@@ -6,13 +6,33 @@ import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { CrushlyMark } from '../../components/Logo';
-import { ApiError } from '../../api/client';
+import { ApiError, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
 const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
+
+function NotConfiguredNotice() {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: colors.goldSoft, borderRadius: 14, padding: 14, marginBottom: space.md }}
+    >
+      <Ionicons name="link-outline" size={20} color={colors.gold} />
+      <View style={{ flex: 1 }}>
+        <Txt variant="smallStrong">Backend not connected</Txt>
+        <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
+          This build has no Supabase project behind it yet. In Netlify: Site settings → Environment variables →
+          add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then redeploy. The README walks
+          through the whole setup.
+        </Txt>
+      </View>
+    </View>
+  );
+}
 
 function Banner({ message }: { message: string }) {
   const { colors } = useTheme();
@@ -63,6 +83,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
       <Txt variant="body" color="textSecondary" style={{ marginTop: 4, marginBottom: space.xl }}>
         Good to see you again.
       </Txt>
+      {!isConfigured ? <NotConfiguredNotice /> : null}
       {error ? <Banner message={error} /> : null}
       <View style={{ gap: space.md }}>
         <Input
@@ -185,6 +206,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
       <Txt variant="body" color="textSecondary" style={{ marginTop: 4, marginBottom: space.xl }}>
         Your email stays private. It’s never shown on your profile.
       </Txt>
+      {!isConfigured ? <NotConfiguredNotice /> : null}
       {errors.form ? <Banner message={errors.form} /> : null}
       <View style={{ gap: space.md }}>
         <Input

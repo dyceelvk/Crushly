@@ -37,13 +37,23 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
 ## Run it on a hosted project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Push the schema: `supabase link --project-ref <ref> && supabase db push`
-   (this also runs `seed.sql`; comment it out first if you want an empty app).
-3. In **Authentication → Providers → Email**, turn *Confirm email* off for the
-   smoothest demo (or keep it on — the app will ask members to confirm first).
-4. Upload the demo photos with `npm run seed:photos` as above, using the
-   project URL and its **service role** key.
-5. Copy the project URL and **anon** key into the app env (below).
+2. Create the schema — either paste `setup.sql` (generated from
+   `migrations/` by `npm run bundle:sql`) into the dashboard's **SQL editor**
+   and Run, or with the CLI:
+
+```bash
+supabase link --project-ref <ref>
+supabase db push                  # migrations only — no seed
+```
+
+3. In **Authentication → URL configuration**, set **Site URL** (and redirect
+   URLs) to your app's domain so confirmation emails link back to it. New
+   projects confirm emails by default; turn that off in
+   **Authentication → Providers → Email** only for a private preview.
+4. Copy the project URL and **anon** key into the app env (below) or your
+   Netlify environment.
+5. Optional, **local evaluation only**: `npm run seed:photos` uploads the demo
+   portraits (needs the project URL and its **service role** key).
 
 ## How it fits together
 

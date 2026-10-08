@@ -51,29 +51,37 @@ cd supabase && npm run admin -- purge-demo             # delete demo members + p
 
 ## Deploy for real (Netlify + Supabase)
 
-A productive deployment has real accounts and no seeded data:
+A productive deployment has real accounts and no seeded data. Four steps from
+zero:
 
-1. Create a project at [supabase.com](https://supabase.com) and push the schema
-   (migrations only — no seed):
-   `supabase link --project-ref <ref> && supabase db push`
-   (full steps in [`supabase/README.md`](supabase/README.md)).
-2. In **Supabase → Authentication → URL configuration**, set **Site URL** (and
-   redirect URLs) to your Netlify domain — confirmation and reset emails link
-   back to the app from there.
-3. Connect this repository to [Netlify](https://app.netlify.com) and set the
-   **Production branch** to `arena/927d4af8-crushly`
+1. **Create the backend.** New project at [supabase.com](https://supabase.com),
+   then create the schema — whichever you find easier:
+   - **No CLI**: open the project's **SQL editor**, paste all of
+     [`supabase/setup.sql`](supabase/setup.sql) and Run. (It's generated from
+     the migrations via `npm run bundle:sql`.)
+   - **CLI**: `supabase link --project-ref <ref> && supabase db push`
+     (full steps in [`supabase/README.md`](supabase/README.md)).
+   Never load `seed.sql` into a live project — it's the fictional demo
+   community. If it ever lands there, `npm run admin -- purge-demo` removes it.
+2. **Wire up email links.** In **Supabase → Authentication → URL
+   configuration**, set **Site URL** (and redirect URLs) to your Netlify domain
+   — confirmation and reset emails link back to the app from there. New
+   projects confirm emails by default; turn that off in **Authentication →
+   Providers → Email** only if you want instant sign-in for a private preview.
+3. **Connect Netlify.** Import this repository and set the **Production
+   branch** to `arena/927d4af8-crushly`
    (Site configuration → Build & deploy → Deploy contexts). `main` only holds
    the archive zip — building `main` publishes an empty site where every URL
-   returns Netlify's "Page not found".
-4. `netlify.toml` already knows how to build the app (build from the repo root
-   → `CrushlyApp/dist`, SPA redirects) — leave the UI build fields empty so the
-   file wins.
-5. In **Site settings → Environment variables**, add:
+   returns Netlify's "Page not found". `netlify.toml` already knows how to
+   build the app (repo root → `CrushlyApp/dist`, SPA redirects) — leave the UI
+   build fields empty so the file wins.
+4. **Set env vars and deploy.** In **Site settings → Environment variables**:
    - `EXPO_PUBLIC_SUPABASE_URL` — your Supabase project URL
    - `EXPO_PUBLIC_SUPABASE_ANON_KEY` — your Supabase anon (public) key
-6. Deploy and sign up. Supabase asks new members to confirm their email; the
-   app shows a "Check your inbox" screen and continues once they click the
-   link. Native builds (TestFlight / Play Store) use the same env vars — see
+
+   Then trigger a deploy and sign up for real. If the env vars are missing the
+   sign-in screen says so instead of failing mysteriously. Native builds
+   (TestFlight / Play Store) use the same env vars — see
    [`CrushlyApp/README.md`](CrushlyApp/README.md).
 
 ## What works end to end

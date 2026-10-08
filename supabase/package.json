@@ -5,7 +5,8 @@
   "description": "Database scripts for the Crushly Supabase backend.",
   "scripts": {
     "seed:photos": "node scripts/seed-storage.mjs",
-    "admin": "node scripts/admin.mjs"
+    "admin": "node scripts/admin.mjs",
+    "bundle:sql": "node scripts/bundle-setup.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0"
