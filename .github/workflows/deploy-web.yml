@@ -288,15 +288,20 @@ jobs:
 
           # If the newest build failed, pull its log and surface the real error.
           latest=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=1")
+          dep_id=$(printf '%s' "$latest" | jq -r '.[0].id // empty')
           dep_state=$(printf '%s' "$latest" | jq -r '.[0].state // empty')
           log_url=$(printf '%s' "$latest" | jq -r '.[0].log_access_address // empty')
-          if [ "$dep_state" = "error" ] && [ -n "$log_url" ]; then
-            echo "::warning::Latest Netlify build FAILED - error lines from its log:"
-            curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$log_url" \
-              | grep -iE "error|failed|cannot|not found|out of memory|killed|bad option|unsupported" \
-              | tail -10 | cut -c1-300 | sed 's/^/::warning::log: /' || true
-            echo "log tail:"
-            curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$log_url" | tail -12
+          if [ -z "$log_url" ] && [ -n "$dep_id" ]; then
+            log_url=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/deploys/$dep_id" | jq -r '.log_access_address // empty')
+          fi
+          echo "::notice::deploy=$dep_id state=$dep_state log_url_set=$([ -n "$log_url" ] && echo yes || echo no)"
+          if [ "$dep_state" = "error" ]; then
+            echo "::warning::Latest Netlify build FAILED - full log: https://app.netlify.com/sites/mencrushly/deploys/$dep_id"
+            if [ -n "$log_url" ]; then
+              curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$log_url" \
+                | grep -iE "error|failed|cannot|not found|out of memory|killed|bad option|unsupported|engines" \
+                | tail -6 | cut -c1-280 | sed 's/^/::warning::log: /' || true
+            fi
           fi
 
           # Most common cause of sudden build failures: an old default Node.
@@ -305,7 +310,7 @@ jobs:
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H "Content-Type: application/json" \
             -d '{"context":"production","value":"22","scopes":["builds"]}' \
             "https://api.netlify.com/api/v1/accounts/6ac6c7195129a1601843b70a/env/NODE_VERSION")
-          echo "NODE_VERSION pin attempt: HTTP $env_code - $(head -c 150 /tmp/envres.json)"
+          echo "::notice::NODE_VERSION pin attempt: HTTP $env_code - $(head -c 120 /tmp/envres.json)"
           hook=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks" \
             | jq -r '.[] | select(.title=="ci-trigger") | .url' | head -1)
