@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!data.session) {
         throw new ApiError(
           202,
-          'Check your inbox — we sent a link to confirm your email. Then sign in to start meeting people.',
+          'Check your inbox — tap the confirmation link and you’ll be signed straight in.',
         );
       }
       await afterAuth();

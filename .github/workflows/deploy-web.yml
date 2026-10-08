@@ -65,6 +65,81 @@ jobs:
             echo "::notice::Primary deploys still happen via Netlify's git integration on every push. To make Actions-side deploys work, replace NETLIFY_AUTH_TOKEN with a token that includes the Deploys scope (see annotations)."
           fi
 
+      # Wires Gmail as the confirmation-email sender + auth URLs via the
+      # Supabase Management API (idempotent; runs on every deploy).
+      # Needs secrets: SUPABASE_ACCESS_TOKEN, GMAIL_SMTP_USER, GMAIL_SMTP_PASS.
+      - name: Wire Gmail confirmation (SMTP + auth URLs)
+        continue-on-error: true
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
+          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+        run: |
+          set -uo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${GMAIL_SMTP_USER:-}" ] || [ -z "${GMAIL_SMTP_PASS:-}" ]; then
+            echo "::notice::Gmail confirmation not wired yet (optional, takes 2 min): add secrets SUPABASE_ACCESS_TOKEN + GMAIL_SMTP_USER + GMAIL_SMTP_PASS - steps in README 'Gmail confirmation emails'."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json, os, sys, urllib.request, urllib.error
+
+          PROJECT = "yzcssyebozfkmojqqdhc"
+          URL = f"https://api.supabase.com/v1/projects/{PROJECT}/config/auth"
+          tok = os.environ["SUPABASE_ACCESS_TOKEN"]
+          gmail = os.environ["GMAIL_SMTP_USER"]
+          gpas = os.environ["GMAIL_SMTP_PASS"]
+
+          def call(method, body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(URL, data=data, method=method, headers={
+                  "Authorization": f"Bearer {tok}", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return r.status, json.loads(r.read() or b"{}")
+              except urllib.error.HTTPError as e:
+                  try:
+                      return e.code, json.loads(e.read() or b"{}")
+                  except Exception:
+                      return e.code, {}
+
+          def scrub(text):
+              return str(text).replace(gpas, "***")
+
+          status, cfg = call("GET")
+          if status >= 300:
+              print(f"::warning::Supabase auth-config GET failed HTTP {status} - is SUPABASE_ACCESS_TOKEN valid and fresh? Create one at https://supabase.com/dashboard/account/tokens")
+              sys.exit(0)
+
+          payload = {
+              "external_email_enabled": True,
+              "mailer_autoconfirm": False,          # Confirm email stays ON
+              "smtp_admin_email": gmail,
+              "smtp_host": "smtp.gmail.com",
+              "smtp_port": 465,
+              "smtp_user": gmail,
+              "smtp_pass": gpas,
+              "smtp_sender_name": "Crushly",
+          }
+          if "site_url" in cfg:
+              payload["site_url"] = "https://mencrushly.netlify.app"
+          if "uri_allow_list" in cfg:
+              payload["uri_allow_list"] = "https://mencrushly.netlify.app/**,http://localhost:8081/**"
+          elif "additional_redirect_urls" in cfg:
+              payload["additional_redirect_urls"] = ["https://mencrushly.netlify.app/**", "http://localhost:8081/**"]
+
+          status, out = call("PATCH", payload)
+          if status >= 300:
+              print(f"::warning::SMTP config PATCH failed HTTP {status}: {scrub(json.dumps(out)[:400])} - fall back to the dashboard steps in the README.")
+              sys.exit(0)
+
+          status, cfg2 = call("GET")
+          ok = (cfg2.get("smtp_host") == "smtp.gmail.com" and cfg2.get("mailer_autoconfirm") is False)
+          if ok:
+              print("::notice::Gmail confirmation wired: smtp.gmail.com:465 sender " + gmail + ", Confirm email ON, Site URL https://mencrushly.netlify.app. Signup + password-reset emails now go out via Gmail.")
+          else:
+              print("::warning::PATCH succeeded but the config did not stick - check Authentication -> SMTP settings in the Supabase dashboard.")
+          PY
+
       - name: Install & test
         run: |
           npm ci --include=dev

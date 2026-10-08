@@ -104,6 +104,27 @@ zero:
    Then sign up for real. Native builds (TestFlight / Play Store) use the same
    env values — see [`CrushlyApp/README.md`](CrushlyApp/README.md).
 
+## Gmail confirmation emails
+
+Sign-up confirmation (and password-reset) emails are sent through your Gmail via SMTP.
+Wire it once — it lives in GitHub secrets and re-applies on every deploy:
+
+1. Turn on **2-Step Verification**: https://myaccount.google.com/signinoptions/two-step-verification
+2. Create an **App Password** (name it `Crushly SMTP`, choose Mail): https://myaccount.google.com/apppasswords
+   → you get a 16-character password. Never paste it in chat — secrets only.
+3. Add three secrets at https://github.com/dyceelvk/Crushly/settings/secrets/actions :
+   - `SUPABASE_ACCESS_TOKEN` — create one at https://supabase.com/dashboard/account/tokens
+   - `GMAIL_SMTP_USER` — your full Gmail address (e.g. `Dyceelvk@gmail.com`)
+   - `GMAIL_SMTP_PASS` — the 16-character App Password from step 2
+4. Tell the agent "done" — the next deploy wires it (SMTP `smtp.gmail.com:465`, Confirm email ON,
+   Site URL `https://mencrushly.netlify.app`). The `Wire Gmail confirmation` step reports success.
+
+Prefer clicking by hand? SMTP lives at
+https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/providers (Email → SMTP Settings)
+and the link landing pages at
+https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/url-configuration
+(Site URL `https://mencrushly.netlify.app`, add `https://mencrushly.netlify.app/**` as a redirect).
+
 ## Quick links (this project)
 
 | Where | Link |
