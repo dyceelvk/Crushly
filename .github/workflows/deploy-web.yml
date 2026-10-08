@@ -130,9 +130,8 @@ jobs:
           if ! out=$(npx --yes netlify-cli@latest deploy --prod --dir=dist --message="Deploy ${{ github.sha }}" --debug 2>&1); then
             # Mask the token value itself, whatever it looks like.
             safe_out=${out//$NETLIFY_AUTH_TOKEN/***}
-            echo "::error::netlify deploy failed (details below as annotations):"
-            printf '%s\n' "$safe_out" | grep -nE "api/v1|Forbidden|403|401|DeployError|JSONHTTPError|message|scope" | tail -15 | sed 's/^/::error::/log line /'
-            printf '%s\n' "$safe_out" | tail -25
+            echo "::error::netlify deploy failed: $(printf '%s' "$safe_out" | tail -c 1400 | tr '\n' ' ')"
+            printf '%s\n' "$safe_out" | tail -30
             exit 1
           fi
           printf '%s\n' "$out"
