@@ -6,6 +6,7 @@
  *   node scripts/admin.mjs verify-user --reject  <email>     mark rejected + notify
  *   node scripts/admin.mjs reports [--status open|resolved|all]
  *   node scripts/admin.mjs reports --resolve <id>            mark a report handled
+ *   node scripts/admin.mjs purge-demo [--dry-run]            remove seeded demo data
  *
  * Uses the service role key (never ship it in the app) against a local
  * `supabase start` stack or a hosted project:
@@ -174,6 +175,45 @@ async function resolveReport() {
   console.log(`Report #${id} marked handled.`);
 }
 
+async function purgeDemo() {
+  const dryRun = Boolean(flags['dry-run']);
+  const { data: demos, error } = await supabase.from('profiles').select('id, auth_user_id, email, name').eq('is_demo', true);
+  if (error) fail(error.message);
+  const rows = demos ?? [];
+  if (!rows.length) console.log('No demo members found — nothing to purge.');
+  else {
+    table(
+      rows.map((r) => ({ id: r.id, email: r.email, name: r.name })),
+      [
+        { header: 'id', key: 'id' },
+        { header: 'email', key: 'email' },
+        { header: 'name', key: 'name' },
+      ],
+    );
+    if (dryRun) {
+      console.log(`\nDry run: would delete ${rows.length} demo member(s) and everything they touched (crushes, chats, moments, notifications).`);
+    } else {
+      for (const r of rows) {
+        // Deleting the auth user cascades to profiles and every member row.
+        const { error: delErr } = await supabase.auth.admin.deleteUser(r.auth_user_id);
+        if (delErr) fail(`failed to delete ${r.email}: ${delErr.message}`);
+      }
+      console.log(`Deleted ${rows.length} demo member(s) and everything they touched.`);
+    }
+  }
+  const { data: files, error: listErr } = await supabase.storage.from('media').list('seed', { limit: 1000 });
+  if (listErr) fail(listErr.message);
+  const names = (files ?? []).filter((f) => f.name).map((f) => `seed/${f.name}`);
+  if (!names.length) console.log('No demo photos in media/seed/.');
+  else if (dryRun) console.log(`Dry run: would remove ${names.length} demo photo(s) from media/seed/.`);
+  else {
+    const { error: rmErr } = await supabase.storage.from('media').remove(names);
+    if (rmErr) fail(rmErr.message);
+    console.log(`Removed ${names.length} demo photo(s) from media/seed/.`);
+  }
+  if (dryRun) console.log('\nNothing was deleted. Drop --dry-run to purge.');
+}
+
 switch (`cmd:${cmd}`) {
   case 'cmd:verify-user':
     if (flags.list !== undefined || flags.all) await listVerifications();
@@ -185,6 +225,9 @@ switch (`cmd:${cmd}`) {
     if (flags.resolve !== undefined || positionals[0]) await resolveReport();
     else await listReports();
     break;
+  case 'cmd:purge-demo':
+    await purgeDemo();
+    break;
   default:
-    fail('usage: admin.mjs verify-user ... | reports ...');
+    fail('usage: admin.mjs verify-user ... | reports ... | purge-demo [--dry-run]');
 }

@@ -1,6 +1,6 @@
 # Crushly app
 
-Expo (SDK 57) and React Native 0.86, written in TypeScript. The same codebase runs on iOS, Android and web. See the [root README](../README.md) for setup, the demo account and feature status.
+Expo (SDK 57) and React Native 0.86, written in TypeScript. The same codebase runs on iOS, Android and web. See the [root README](../README.md) for setup and feature status.
 
 ```bash
 npm install

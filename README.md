@@ -5,7 +5,7 @@ A premium dating and social app for gay, bi and queer men. *Meet men. Make conne
 | Folder | What it is |
 | --- | --- |
 | [`CrushlyApp/`](CrushlyApp/) | The app. Expo (React Native) for iOS, Android and web, written in TypeScript. |
-| [`supabase/`](supabase/) | The backend. Supabase: Postgres schema + row-level security, RPC functions, Auth, Storage and the demo seed. |
+| [`supabase/`](supabase/) | The backend. Supabase: Postgres schema + row-level security, RPC functions, Auth, Storage and an optional demo seed. |
 | [`netlify.toml`](netlify.toml) | Web deployment: builds the Expo web export on Netlify. |
 
 There is no server to run — the app talks to Supabase directly.
@@ -16,13 +16,13 @@ Requires **Node 22+**, [Docker](https://docs.docker.com/) and the
 [Supabase CLI](https://supabase.com/docs/guides/local-development).
 
 ```bash
-# 1. Backend: local Supabase stack + demo community (port 54321)
+# 1. Backend: local Supabase stack (port 54321)
 supabase start
-supabase db reset                 # migrations + seed.sql
+supabase db reset                 # schema + optional demo community (seed.sql)
 cd supabase && npm install
 SUPABASE_URL=http://127.0.0.1:54321 \
 SUPABASE_SERVICE_ROLE_KEY=<from `supabase status`> \
-npm run seed:photos               # demo portraits into Storage
+npm run seed:photos               # demo portraits into Storage (skip for a clean stack)
 cd ..
 
 # 2. App
@@ -34,31 +34,47 @@ npm start                         # Expo dev server: press i / a, or scan the QR
 
 The web app also runs from the same dev server (`npm run web`).
 
-### Demo account
+### Optional: the demo community
 
-Sign in with **daniel@crushly.app / crushly123**, or tap *Explore the demo community* on the sign-in screen. Every seeded member is a real account with the password `crushly123`, so you can sign in as anyone in a second browser and test both sides of a Crush or a conversation. For example, crush back on **Marcus** from Daniel's account to see a Mutual Crush.
+`seed.sql` fills a **local** stack with fictional members (password `crushly123`
+for all) so you can click around without juggling two accounts — for example
+sign in as **daniel@crushly.app** and crush back **Marcus** to see a Mutual
+Crush. It stays out of the product: the sign-in screen's *Explore the demo
+community* button only appears when you set `EXPO_PUBLIC_DEMO_LOGIN=1`, and
+every seeded member is flagged `is_demo`. If demo data ever reaches a live
+project, purge it so only real members remain:
 
-Reset the demo data at any time with `supabase db reset` (then re-run `npm run seed:photos`).
+```bash
+cd supabase && npm run admin -- purge-demo --dry-run   # preview
+cd supabase && npm run admin -- purge-demo             # delete demo members + photos
+```
 
-## Deploy the web app on Netlify
+## Deploy for real (Netlify + Supabase)
 
-1. Connect this repository to [Netlify](https://app.netlify.com) and set the
+A productive deployment has real accounts and no seeded data:
+
+1. Create a project at [supabase.com](https://supabase.com) and push the schema
+   (migrations only — no seed):
+   `supabase link --project-ref <ref> && supabase db push`
+   (full steps in [`supabase/README.md`](supabase/README.md)).
+2. In **Supabase → Authentication → URL configuration**, set **Site URL** (and
+   redirect URLs) to your Netlify domain — confirmation and reset emails link
+   back to the app from there.
+3. Connect this repository to [Netlify](https://app.netlify.com) and set the
    **Production branch** to `arena/927d4af8-crushly`
    (Site configuration → Build & deploy → Deploy contexts). `main` only holds
    the archive zip — building `main` publishes an empty site where every URL
    returns Netlify's "Page not found".
-2. `netlify.toml` already knows how to build the app (build from the repo root
+4. `netlify.toml` already knows how to build the app (build from the repo root
    → `CrushlyApp/dist`, SPA redirects) — leave the UI build fields empty so the
    file wins.
-3. In **Site settings → Environment variables**, add:
+5. In **Site settings → Environment variables**, add:
    - `EXPO_PUBLIC_SUPABASE_URL` — your Supabase project URL
    - `EXPO_PUBLIC_SUPABASE_ANON_KEY` — your Supabase anon (public) key
-4. Deploy. Native builds (TestFlight / Play Store) use the same env vars — see
+6. Deploy and sign up. Supabase asks new members to confirm their email; the
+   app shows a "Check your inbox" screen and continues once they click the
+   link. Native builds (TestFlight / Play Store) use the same env vars — see
    [`CrushlyApp/README.md`](CrushlyApp/README.md).
-
-For the backend, create a project at [supabase.com](https://supabase.com) and run
-`supabase link --project-ref <ref> && supabase db push` — full steps in
-[`supabase/README.md`](supabase/README.md).
 
 ## What works end to end
 

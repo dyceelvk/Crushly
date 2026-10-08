@@ -6,12 +6,13 @@ import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { CrushlyMark } from '../../components/Logo';
+import { ApiError } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
-const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN !== '0';
+const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
 
 function Banner({ message }: { message: string }) {
   const { colors } = useTheme();
@@ -127,6 +128,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const [adult, setAdult] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; adult?: string; form?: string }>({});
   const [loading, setLoading] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const passwordRef = useRef<TextInput>(null);
 
   const strength = password.length === 0 ? null : password.length < 8 ? 'Too short' : /[0-9]/.test(password) && /[A-Za-z]/.test(password) && password.length >= 10 ? 'Strong' : 'Good';
@@ -142,10 +144,36 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
     try {
       await signUp(email.trim(), password);
     } catch (err) {
+      // Supabase asks the member to confirm their email before the first sign-in.
+      if (err instanceof ApiError && err.status === 202) {
+        setSentTo(email.trim().toLowerCase());
+        setLoading(false);
+        return;
+      }
       setErrors({ form: (err as Error).message });
       setLoading(false);
     }
   };
+
+  if (sentTo) {
+    return (
+      <Screen footer={<Button title="Back to sign in" onPress={() => navigation.replace('SignIn')} />}>
+        <Header back />
+        <CrushlyMark size={44} />
+        <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
+          Check your inbox
+        </Txt>
+        <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
+          We sent a confirmation link to{' '}
+          <Txt variant="bodyStrong">{sentTo}</Txt>. Open it to activate your account, then sign in to start
+          meeting people.
+        </Txt>
+        <Txt variant="small" color="textMuted" style={{ marginTop: space.lg }}>
+          Wrong address? Go back and create your account again with the right one.
+        </Txt>
+      </Screen>
+    );
+  }
 
   return (
     <Screen keyboard footer={<Button title="Create account" onPress={submit} loading={loading} />}>

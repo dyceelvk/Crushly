@@ -79,9 +79,11 @@ npm run admin -- reports --resolve 3
 Approving sets the member to `verified` and drops a `verified` notification
 (and a `verification_rejected` one when rejecting), so it shows up in the app.
 
-## Demo accounts
+## Optional demo data
 
-Every seeded member is real — password `crushly123` for all of them:
+`seed.sql` is for local evaluation only — never load it into a live project as
+content. Every seeded member is flagged `is_demo` and is a real account with
+the password `crushly123` (so you can sign in as anyone and test both sides):
 
 | Email | Notes |
 | --- | --- |
@@ -90,3 +92,12 @@ Every seeded member is real — password `crushly123` for all of them:
 | Everyone else | Unverified, variously active. Tobi and Seun have no photos — same as the original demo. |
 
 Reset at any time: `supabase db reset` (and re-run `npm run seed:photos`).
+
+If demo data ever reaches a live project, purge it — this deletes the demo
+members (and everything they touched) and their photos, leaving real accounts
+untouched:
+
+```bash
+npm run admin -- purge-demo --dry-run   # preview
+npm run admin -- purge-demo             # wipe it
+```

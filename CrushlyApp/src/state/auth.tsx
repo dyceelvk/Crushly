@@ -91,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         const msg = String(error.message ?? '');
         if (/invalid login credentials/i.test(msg)) throw new ApiError(401, 'That email and password don’t match.');
+        if (/not confirmed/i.test(msg)) throw new ApiError(403, 'Confirm your email first — open the link we sent to your inbox, then sign in.');
         if (!msg) throw new ApiError(400, 'Enter your email and password.');
         throw new ApiError(error.status ?? 400, msg);
       }
