@@ -143,7 +143,7 @@ jobs:
                   t_keys = [k for k in cfg2 if k.startswith("mailer_templates") or k.startswith("mailer_subjects")]
                   print(f"::notice::Template API keys seen: {sorted(t_keys)}")
                   if "mailer_templates_confirmation_content" in cfg2:
-                      html = open("supabase/email-templates/confirm-signup.html", encoding="utf-8").read()
+                      html = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/confirm-signup.html"), encoding="utf-8").read()
                       t_payload = {
                           "mailer_templates_confirmation_content": html,
                           "mailer_subjects_confirmation": "{{ .Token }} is your Crushly code",
