@@ -115,7 +115,7 @@ jobs:
               "mailer_autoconfirm": False,          # Confirm email stays ON
               "smtp_admin_email": gmail,
               "smtp_host": "smtp.gmail.com",
-              "smtp_port": 465,
+              "smtp_port": "465",  # string per API schema
               "smtp_user": gmail,
               "smtp_pass": gpas,
               "smtp_sender_name": "Crushly",
