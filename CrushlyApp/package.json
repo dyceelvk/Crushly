@@ -49,7 +49,7 @@
     "web": "expo start --web",
     "build:web": "expo export -p web --output-dir dist",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/lib/format.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/env.test.ts"
+    "test": "node --import tsx --test src/lib/format.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/env.test.ts src/lib/auth.test.ts"
   },
   "private": true
 }

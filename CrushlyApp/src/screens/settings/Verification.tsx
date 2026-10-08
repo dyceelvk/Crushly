@@ -10,6 +10,7 @@ import { VerifiedBadge } from '../../components/Badges';
 import { useToast } from '../../components/Toast';
 import { keys, useMe } from '../../api/hooks';
 import { submitVerification, type AiVerificationResult } from '../../api/service';
+import { drawPosePair } from '../../lib/auth';
 import { pickImage, type PickedImage } from '../../lib/media';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
@@ -95,10 +96,7 @@ const POSE_LIBRARY: PoseDef[] = [
 ];
 
 function drawSteps(): PoseDef[] {
-  const a = Math.floor(Math.random() * POSE_LIBRARY.length);
-  let b = Math.floor(Math.random() * POSE_LIBRARY.length);
-  while (b === a) b = Math.floor(Math.random() * POSE_LIBRARY.length);
-  return [POSE_LIBRARY[a], POSE_LIBRARY[b]];
+  return drawPosePair(POSE_LIBRARY);
 }
 
 type Phase = 'intro' | 'capture' | 'review' | 'result';

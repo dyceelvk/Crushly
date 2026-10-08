@@ -7,6 +7,7 @@ import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { CrushlyMark } from '../../components/Logo';
 import * as service from '../../api/service';
+import { sanitizeOtp, passwordStrength } from '../../lib/auth';
 import { ApiError, configProblem, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -170,7 +171,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const [linkState, setLinkState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const passwordRef = useRef<TextInput>(null);
 
-  const strength = password.length === 0 ? null : password.length < 8 ? 'Too short' : /[0-9]/.test(password) && /[A-Za-z]/.test(password) && password.length >= 10 ? 'Strong' : 'Good';
+  const strength = passwordStrength(password);
 
   const submit = async () => {
     const next: typeof errors = {};
@@ -270,7 +271,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
               <TextInput
                 value={code}
                 onChangeText={(t) => {
-                  const c = t.replace(/[^0-9]/g, '').slice(0, 6);
+                  const c = sanitizeOtp(t);
                   setCode(c);
                   setVerifyError(null);
                   if (c.length === 6) void submitCode(c);
@@ -518,7 +519,7 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
               <Input
                 label="Code from your email"
                 value={code}
-                onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                onChangeText={(t) => setCode(sanitizeOtp(t))}
                 placeholder="000000"
                 keyboardType="number-pad"
                 inputMode="numeric"
