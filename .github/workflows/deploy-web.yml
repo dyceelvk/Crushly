@@ -81,4 +81,12 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx --yes netlify-cli@latest deploy --prod --dir=dist --message="Deploy ${{ github.sha }}"
+        run: |
+          if ! out=$(npx --yes netlify-cli@latest deploy --prod --dir=dist --message="Deploy ${{ github.sha }}" 2>&1); then
+            # Mask the token value itself, whatever it looks like.
+            safe_out=${out//$NETLIFY_AUTH_TOKEN/***}
+            echo "::error::netlify deploy failed: $(printf '%s' "$safe_out" | tr '\n' ' ' | cut -c1-800)"
+            printf '%s\n' "$safe_out"
+            exit 1
+          fi
+          printf '%s\n' "$out"
