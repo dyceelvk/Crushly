@@ -1,0 +1,82 @@
+# Builds the Expo web export and deploys it to Netlify — every secret lives in
+# GitHub, so the site config is one place to manage.
+#
+# One-time setup (GitHub → Settings → Secrets and variables → Actions):
+#   https://github.com/dyceelvk/Crushly/settings/secrets/actions
+#
+#   NETLIFY_AUTH_TOKEN           Netlify → https://app.netlify.com/user/applications
+#                                → Applications → Personal access tokens →
+#                                New access token (any name, e.g. "github-actions").
+#   NETLIFY_SITE_ID              Netlify → Site configuration → General →
+#                                Site ID  (mencrushly: 9524369e-5044-4562-b504-3a62456403e9)
+#   EXPO_PUBLIC_SUPABASE_URL     Supabase → Project Settings → API → Project URL
+#                                (the bare https://<ref>.supabase.co)
+#   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Project Settings → API → anon public
+#
+# Never commit these values or paste them into chat.
+#
+# Runs on every push to the main line, or manually from the Actions tab.
+# If Netlify's own git builds are still on, turn them off (Site configuration →
+# Build & deploy → your repository → "Stop auto publishing") so this workflow
+# is the single deployer.
+
+name: Deploy web app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, arena/**]
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & deploy to Netlify
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CrushlyApp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: CrushlyApp/package-lock.json
+
+      - name: Check secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          for v in NETLIFY_AUTH_TOKEN NETLIFY_SITE_ID EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub secrets:$missing — add them under Settings → Secrets and variables → Actions (see .github/workflows/deploy-web.yml for where to find each value)."
+            exit 1
+          fi
+
+      - name: Install & test
+        run: |
+          npm ci --include=dev
+          npm run typecheck
+          npm test
+
+      - name: Build web export
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npm run build:web
+
+      - name: Deploy to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli@latest deploy --prod --dir=dist --message="Deploy ${{ github.sha }}"

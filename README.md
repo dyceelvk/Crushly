@@ -79,21 +79,43 @@ zero:
    — confirmation and reset emails link back to the app from there. New
    projects confirm emails by default; turn that off in **Authentication →
    Providers → Email** only if you want instant sign-in for a private preview.
-3. **Connect Netlify.** Import this repository and set the **Production
-   branch** to `arena/927d4af8-crushly`
-   (Site configuration → Build & deploy → Deploy contexts). `main` only holds
-   the archive zip — building `main` publishes an empty site where every URL
-   returns Netlify's "Page not found". `netlify.toml` already knows how to
-   build the app (repo root → `CrushlyApp/dist`, SPA redirects) — leave the UI
-   build fields empty so the file wins.
-4. **Set env vars and deploy.** In **Site settings → Environment variables**:
-   - `EXPO_PUBLIC_SUPABASE_URL` — your Supabase project URL
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY` — your Supabase anon (public) key
+3. **Put the deploy secrets in GitHub** and the
+   [`deploy-web.yml`](.github/workflows/deploy-web.yml) workflow builds the
+   app and deploys it to Netlify on every push (or manually from the Actions
+   tab — *Deploy web app* → **Run workflow**). Five repository secrets
+   (Settings → Secrets and variables → Actions):
+   | Secret | Where the value comes from |
+   | --- | --- |
+   | `SUPABASE_DB_URL` | Supabase → Project Settings → Database → Connection string → Session pooler → URI |
+   | `EXPO_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL (bare `https://<ref>.supabase.co`) |
+   | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → anon `public` key |
+   | `NETLIFY_AUTH_TOKEN` | [Netlify → Personal access tokens](https://app.netlify.com/user/applications) → New access token |
+   | `NETLIFY_SITE_ID` | Netlify → Site configuration → General → Site ID |
 
-   Then trigger a deploy and sign up for real. If the env vars are missing the
-   sign-in screen says so instead of failing mysteriously. Native builds
-   (TestFlight / Play Store) use the same env vars — see
-   [`CrushlyApp/README.md`](CrushlyApp/README.md).
+   The build reads the Supabase values from secrets, so nothing has to be
+   configured in Netlify itself. If the app ever shows "Backend not
+   connected", the env secrets are missing — the workflow says exactly which.
+4. **One Netlify toggle.** So Actions is the only deployer, turn off Netlify's
+   own git builds: Netlify → Site configuration → Build & deploy → your
+   repository → **Stop auto publishing**. (Leave the site connected; the
+   `netlify.toml` redirects/headers are baked into the export either way.)
+
+   Then sign up for real. Native builds (TestFlight / Play Store) use the same
+   env values — see [`CrushlyApp/README.md`](CrushlyApp/README.md).
+
+## Quick links (this project)
+
+| Where | Link |
+| --- | --- |
+| GitHub secrets (all five go here) | https://github.com/dyceelvk/Crushly/settings/secrets/actions |
+| GitHub Actions (run/see workflows) | https://github.com/dyceelvk/Crushly/actions |
+| Netlify personal access tokens | https://app.netlify.com/user/applications |
+| Netlify site (deploys) | https://app.netlify.com/sites/mencrushly/deploys |
+| Netlify site configuration (Site ID, git builds) | https://app.netlify.com/sites/mencrushly/configuration |
+| Supabase SQL editor (fallback setup) | https://supabase.com/dashboard/project/_/sql/new |
+| Supabase API keys (URL + anon) | https://supabase.com/dashboard/project/_/settings/api |
+| Supabase database (connection string) | https://supabase.com/dashboard/project/_/settings/database |
+| Supabase auth settings (confirm email, URLs) | https://supabase.com/dashboard/project/_/auth/providers |
 
 ## What works end to end
 
