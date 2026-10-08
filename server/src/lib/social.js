@@ -83,7 +83,7 @@ export function messagingBlockReason(viewerId, targetId) {
   const rule = target?.who_can_message || 'mutual';
   if (rule === 'everyone') return null;
   if (rule === 'crushes' && hasCrush(targetId, viewerId)) return null;
-  if (rule === 'crushes') return `${name} only hears from people he has crushed on. Send a Crush and see if it's mutual.`;
+  if (rule === 'crushes') return `${name} only hears from people they've crushed on. Send a Crush and see if it's mutual.`;
   return `${name} only receives messages from Mutual Crushes. Send a Crush first.`;
 }
 

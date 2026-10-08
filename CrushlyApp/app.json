@@ -1,0 +1,84 @@
+{
+  "expo": {
+    "name": "Crushly",
+    "slug": "crushly",
+    "scheme": "crushly",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#070708",
+    "primaryColor": "#D8B46A",
+    "description": "Crushly — a private, modern social space for men looking for men.",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.crushly",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Crushly uses your camera for profile photos, Moments and verification selfies.",
+        "NSPhotoLibraryUsageDescription": "Crushly lets you choose photos for your profile, Moments and messages.",
+        "NSMicrophoneUsageDescription": "Crushly uses your microphone to record voice messages.",
+        "NSLocationWhenInUseUsageDescription": "Crushly uses your approximate location to show distance. Your exact location is never shared."
+      }
+    },
+    "android": {
+      "package": "app.crushly",
+      "adaptiveIcon": {
+        "backgroundColor": "#070708",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "name": "Crushly",
+      "shortName": "Crushly",
+      "themeColor": "#070708",
+      "backgroundColor": "#070708",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-image",
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Crushly uses your microphone to record voice messages."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#070708",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Crushly lets you choose photos for your profile, Moments and messages.",
+          "cameraPermission": "Crushly uses your camera for profile photos, Moments and verification selfies."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Crushly uses your approximate location to show distance. Your exact location is never shared."
+        }
+      ]
+    ]
+  }
+}
