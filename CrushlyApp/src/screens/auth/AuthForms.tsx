@@ -6,6 +6,7 @@ import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { CrushlyMark } from '../../components/Logo';
+import * as service from '../../api/service';
 import { ApiError, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -150,6 +151,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const [errors, setErrors] = useState<{ email?: string; password?: string; adult?: string; form?: string }>({});
   const [loading, setLoading] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [resent, setResent] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const passwordRef = useRef<TextInput>(null);
 
   const strength = password.length === 0 ? null : password.length < 8 ? 'Too short' : /[0-9]/.test(password) && /[A-Za-z]/.test(password) && password.length >= 10 ? 'Strong' : 'Good';
@@ -189,6 +191,33 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
           <Txt variant="bodyStrong">{sentTo}</Txt>. Open it to activate your account, then sign in to start
           meeting people.
         </Txt>
+        <View style={{ marginTop: space.xl, gap: space.sm }}>
+          <Button
+            title={resent === 'done' ? 'Email sent again' : 'Resend email'}
+            variant="outline"
+            size="md"
+            icon="mail-outline"
+            loading={resent === 'busy'}
+            onPress={async () => {
+              setResent('busy');
+              try {
+                await service.resendConfirmation(sentTo);
+                setResent('done');
+              } catch {
+                setResent('error');
+              }
+            }}
+          />
+          {resent === 'error' ? (
+            <Txt variant="small" color="danger" align="center">
+              Couldn’t resend just now — wait a minute and try again.
+            </Txt>
+          ) : (
+            <Txt variant="small" color="textMuted" align="center">
+              No email after a minute? Check spam, or resend.
+            </Txt>
+          )}
+        </View>
         <Txt variant="small" color="textMuted" style={{ marginTop: space.lg }}>
           Wrong address? Go back and create your account again with the right one.
         </Txt>

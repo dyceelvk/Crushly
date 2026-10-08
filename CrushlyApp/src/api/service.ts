@@ -444,6 +444,11 @@ export async function updateAccount(body: {
   return { me: await getMe(), emailPending };
 }
 
+export async function resendConfirmation(email: string): Promise<void> {
+  const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim().toLowerCase() });
+  if (error) throw toApiError(error);
+}
+
 export async function signOutOtherSessions(): Promise<void> {
   const { error } = await supabase.auth.signOut({ scope: 'others' });
   if (error) throw toApiError(error);
