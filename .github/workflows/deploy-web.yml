@@ -106,19 +106,18 @@ jobs:
             | jq -r '.[] | "account: \(.name) (id \(.id)) — role: \(.role_slug // .type_name // "?")"' 2>/dev/null \
             | sed 's/^/::notice::/' || true
 
-          # Write probe: can the token mutate the site at all? (read-only tokens get 403)
-          wc=$(curl -s -o /tmp/wprobe.json -w "%{http_code}" -X POST \
+          # Write probe: no-op site update (name set to its current value).
+          # A read-only token gets 403 here even though GET worked.
+          wc=$(curl -s -o /tmp/wprobe.json -w "%{http_code}" -X PATCH \
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H "Content-Type: application/json" \
-            -d '{"key":"CRUSHLY_WRITE_PROBE","value":"1","scopes":["builds"]}' \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/env")
-          echo "write probe: HTTP $wc"
-          curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/env/CRUSHLY_WRITE_PROBE"
+            -d "{\"name\": \"$name\"}" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")
+          echo "write probe: HTTP $wc — $(head -c 300 /tmp/wprobe.json)"
           case "$wc" in
             2*)
-              echo "::notice::Token CAN write to the site - not read-only. If deploy still 403s, the account needs the Developer or Owner team role." ;;
+              echo "::notice::Token CAN write to the site - it is not read-only. If the deploy still fails 403, the missing permission is deploy-specific." ;;
             401|403)
-              echo "::error::Token is READ-ONLY (write probe HTTP $wc). Create a NEW Personal access token with full access at https://app.netlify.com/user/applications - use the 'Personal access tokens' section (NOT OAuth applications), then update the NETLIFY_AUTH_TOKEN secret." ;;
+              echo "::error::Token is READ-ONLY (write probe HTTP $wc: $(head -c 300 /tmp/wprobe.json)). Create a NEW Personal access token at https://app.netlify.com/user/applications in the 'Personal access tokens' section (NOT OAuth applications, NOT a scoped/read-only or Team access token), then update the NETLIFY_AUTH_TOKEN secret." ;;
             *)
               echo "::warning::Write probe returned HTTP $wc - $(head -c 200 /tmp/wprobe.json)" ;;
           esac
@@ -131,8 +130,9 @@ jobs:
           if ! out=$(npx --yes netlify-cli@latest deploy --prod --dir=dist --message="Deploy ${{ github.sha }}" --debug 2>&1); then
             # Mask the token value itself, whatever it looks like.
             safe_out=${out//$NETLIFY_AUTH_TOKEN/***}
-            echo "::error::netlify deploy failed: $(printf '%s' "$safe_out" | tr '\n' ' ' | cut -c1-2000)"
-            printf '%s\n' "$safe_out" | tail -40
+            echo "::error::netlify deploy failed (details below as annotations):"
+            printf '%s\n' "$safe_out" | grep -nE "api/v1|Forbidden|403|401|DeployError|JSONHTTPError|message|scope" | tail -15 | sed 's/^/::error::/log line /'
+            printf '%s\n' "$safe_out" | tail -25
             exit 1
           fi
           printf '%s\n' "$out"
