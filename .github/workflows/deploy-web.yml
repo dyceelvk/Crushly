@@ -264,6 +264,20 @@ jobs:
             else
               echo "::warning::Didit probe FAILED (HTTP $probe): $(head -c 300 /tmp/probe.json) - use the PRIMARY key from the SAME application as the workflow, and make sure the workflow is published."
             fi
+
+            # Session-creation probe: the exact call didit-session makes (throwaway
+            # session, deleted right after — sandbox sessions are free).
+            sres=$(curl -s -o /tmp/sess.json -w "%{http_code}" -X POST \
+              "https://verification.didit.me/v3/session/" \
+              -H "x-api-key: $DIDIT_API_KEY" -H "Content-Type: application/json" \
+              -d "{\"workflow_id\": \"$DIDIT_WORKFLOW_ID\", \"vendor_data\": \"ci-probe\", \"callback\": \"$site_url/?didit=done\", \"callback_method\": \"both\", \"language\": \"en\", \"contact_details\": {\"email\": \"ci-probe@crushly.app\"}, \"metadata\": {\"probe\": true}}")
+            if [ "${sres:0:1}" = "2" ]; then
+              sid=$(jq -r '.session_id // empty' /tmp/sess.json)
+              echo "::notice::Session probe OK: POST /v3/session/ created a throwaway session (HTTP $sres)."
+              [ -n "$sid" ] && curl -s -o /dev/null -X DELETE -H "x-api-key: $DIDIT_API_KEY" "https://verification.didit.me/v3/session/$sid/delete/"
+            else
+              echo "::warning::Session probe FAILED (HTTP $sres): $(head -c 400 /tmp/sess.json) - this is the exact call didit-session makes; if the key/workflow probes passed, the workflow is likely NOT PUBLISHED in the Didit console."
+            fi
           fi
           schema=$(curl -s -o /tmp/schema.json -w "%{http_code}" \
             -H "apikey: ${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" \
