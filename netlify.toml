@@ -16,7 +16,7 @@
 # [build] base, so Netlify's base/publish resolution can't hide the dist/ folder.
 
 [build]
-  command = "cd CrushlyApp && npm ci --include=dev && npm run build:web"
+  command = "bash build.sh"   # cwd-agnostic: finds the app whether Netlify starts at the root or inside CrushlyApp
   publish = "CrushlyApp/dist"
 
 [build.environment]

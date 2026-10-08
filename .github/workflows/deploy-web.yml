@@ -295,6 +295,11 @@ jobs:
             log_url=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/deploys/$dep_id" | jq -r '.log_access_address // empty')
           fi
           echo "::notice::deploy=$dep_id state=$dep_state log_url_set=$([ -n "$log_url" ] && echo yes || echo no)"
+          if [ -n "$dep_id" ]; then
+            curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/deploys/$dep_id" \
+              | jq -r '"deploy detail: state=\(.state) error_message=\(.error_message // "none") summary=\(.summary // "none") cause=\(.cause // "none")"' \
+              | cut -c1-320 | sed 's/^/::warning::/' || true
+          fi
           if [ "$dep_state" = "error" ]; then
             echo "::warning::Latest Netlify build FAILED - full log: https://app.netlify.com/sites/mencrushly/deploys/$dep_id"
             if [ -n "$log_url" ]; then
