@@ -12,9 +12,11 @@ insert into storage.buckets (id, name, public)
 values ('media', 'media', true), ('verification', 'verification', false)
 on conflict (id) do nothing;
 
+drop policy if exists "media_public_read" on storage.objects;
 create policy "media_public_read" on storage.objects
   for select to public using (bucket_id = 'media');
 
+drop policy if exists "media_insert_own" on storage.objects;
 create policy "media_insert_own" on storage.objects
   for insert to authenticated with check (
     bucket_id = 'media'
@@ -22,6 +24,7 @@ create policy "media_insert_own" on storage.objects
     and (storage.foldername(name))[2] = public.me_id()::text
   );
 
+drop policy if exists "media_delete_own" on storage.objects;
 create policy "media_delete_own" on storage.objects
   for delete to authenticated using (
     bucket_id = 'media'
@@ -29,6 +32,7 @@ create policy "media_delete_own" on storage.objects
     and (storage.foldername(name))[2] = public.me_id()::text
   );
 
+drop policy if exists "verification_self_read" on storage.objects;
 create policy "verification_self_read" on storage.objects
   for select to authenticated using (
     bucket_id = 'verification'
@@ -36,6 +40,7 @@ create policy "verification_self_read" on storage.objects
     and (storage.foldername(name))[2] = public.me_id()::text
   );
 
+drop policy if exists "verification_self_insert" on storage.objects;
 create policy "verification_self_insert" on storage.objects
   for insert to authenticated with check (
     bucket_id = 'verification'

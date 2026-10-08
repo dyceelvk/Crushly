@@ -31,7 +31,7 @@ end $$;
 
 -- ------------------------------------------------------------------- tables
 
-create table public.profiles (
+create table if not exists public.profiles (
   id                    bigint generated always as identity primary key,
   auth_user_id          uuid not null unique references auth.users(id) on delete cascade,
   -- Denormalized from auth for scripts and admin tools; the app reads the auth email.
@@ -59,16 +59,16 @@ create table public.profiles (
   updated_at            bigint not null default public.now_ms()
 );
 
-create table public.photos (
+create table if not exists public.photos (
   id          bigint generated always as identity primary key,
   user_id     bigint not null references public.profiles(id) on delete cascade,
   url         text not null,               -- storage path in the `media` bucket
   position    integer not null default 0,
   created_at  bigint not null default public.now_ms()
 );
-create index photos_user_position_idx on public.photos (user_id, position, id);
+create index if not exists photos_user_position_idx on public.photos (user_id, position, id);
 
-create table public.preferences (
+create table if not exists public.preferences (
   user_id        bigint primary key references public.profiles(id) on delete cascade,
   age_min        integer not null default 18,
   age_max        integer not null default 45,
@@ -78,7 +78,7 @@ create table public.preferences (
   verified_only  boolean not null default false
 );
 
-create table public.privacy (
+create table if not exists public.privacy (
   user_id            bigint primary key references public.profiles(id) on delete cascade,
   show_distance      boolean not null default true,
   show_online        boolean not null default true,
@@ -95,7 +95,7 @@ create table public.privacy (
   incognito          boolean not null default false            -- Crushly Plus (not purchasable yet)
 );
 
-create table public.notification_settings (
+create table if not exists public.notification_settings (
   user_id          bigint primary key references public.profiles(id) on delete cascade,
   messages         boolean not null default true,
   crushes          boolean not null default true,
@@ -103,7 +103,7 @@ create table public.notification_settings (
   recommendations  boolean not null default false
 );
 
-create table public.crushes (
+create table if not exists public.crushes (
   from_id     bigint not null references public.profiles(id) on delete cascade,
   to_id       bigint not null references public.profiles(id) on delete cascade,
   deep        boolean not null default false,
@@ -112,9 +112,9 @@ create table public.crushes (
   primary key (from_id, to_id),
   check (from_id <> to_id)
 );
-create index crushes_to_idx on public.crushes (to_id, created_at);
+create index if not exists crushes_to_idx on public.crushes (to_id, created_at);
 
-create table public.passes (
+create table if not exists public.passes (
   from_id     bigint not null references public.profiles(id) on delete cascade,
   to_id       bigint not null references public.profiles(id) on delete cascade,
   created_at  bigint not null default public.now_ms(),
@@ -122,7 +122,7 @@ create table public.passes (
 );
 
 -- user_a is always the lower id (enforced by trigger).
-create table public.connections (
+create table if not exists public.connections (
   user_a      bigint not null references public.profiles(id) on delete cascade,
   user_b      bigint not null references public.profiles(id) on delete cascade,
   created_at  bigint not null default public.now_ms(),
@@ -130,7 +130,7 @@ create table public.connections (
   check (user_a < user_b)
 );
 
-create table public.conversations (
+create table if not exists public.conversations (
   id              bigint generated always as identity primary key,
   user_a          bigint not null references public.profiles(id) on delete cascade,
   user_b          bigint not null references public.profiles(id) on delete cascade,
@@ -141,7 +141,7 @@ create table public.conversations (
   check (user_a < user_b)
 );
 
-create table public.messages (
+create table if not exists public.messages (
   id              bigint generated always as identity primary key,
   conversation_id bigint not null references public.conversations(id) on delete cascade,
   sender_id       bigint not null references public.profiles(id) on delete cascade,
@@ -153,9 +153,9 @@ create table public.messages (
   created_at      bigint not null default public.now_ms(),
   read_at         bigint
 );
-create index messages_conversation_idx on public.messages (conversation_id, id);
+create index if not exists messages_conversation_idx on public.messages (conversation_id, id);
 
-create table public.message_reactions (
+create table if not exists public.message_reactions (
   message_id  bigint not null references public.messages(id) on delete cascade,
   user_id     bigint not null references public.profiles(id) on delete cascade,
   kind        text not null default 'crush'
@@ -164,7 +164,7 @@ create table public.message_reactions (
   primary key (message_id, user_id)
 );
 
-create table public.moments (
+create table if not exists public.moments (
   id          bigint generated always as identity primary key,
   user_id     bigint not null references public.profiles(id) on delete cascade,
   kind        text not null check (kind in ('text', 'photo')),
@@ -176,16 +176,16 @@ create table public.moments (
   created_at  bigint not null default public.now_ms(),
   expires_at  bigint not null
 );
-create index moments_expires_idx on public.moments (expires_at);
+create index if not exists moments_expires_idx on public.moments (expires_at);
 
-create table public.moment_views (
+create table if not exists public.moment_views (
   moment_id   bigint not null references public.moments(id) on delete cascade,
   user_id     bigint not null references public.profiles(id) on delete cascade,
   created_at  bigint not null default public.now_ms(),
   primary key (moment_id, user_id)
 );
 
-create table public.moment_reactions (
+create table if not exists public.moment_reactions (
   moment_id   bigint not null references public.moments(id) on delete cascade,
   user_id     bigint not null references public.profiles(id) on delete cascade,
   kind        text not null check (kind in ('crush', 'fire', 'laugh', 'wow', 'clap')),
@@ -193,7 +193,7 @@ create table public.moment_reactions (
   primary key (moment_id, user_id)
 );
 
-create table public.notifications (
+create table if not exists public.notifications (
   id          bigint generated always as identity primary key,
   user_id     bigint not null references public.profiles(id) on delete cascade,
   kind        text not null
@@ -205,9 +205,9 @@ create table public.notifications (
   created_at  bigint not null default public.now_ms(),
   read_at     bigint
 );
-create index notifications_user_idx on public.notifications (user_id, id);
+create index if not exists notifications_user_idx on public.notifications (user_id, id);
 
-create table public.blocks (
+create table if not exists public.blocks (
   blocker_id  bigint not null references public.profiles(id) on delete cascade,
   blocked_id  bigint not null references public.profiles(id) on delete cascade,
   created_at  bigint not null default public.now_ms(),
@@ -215,7 +215,7 @@ create table public.blocks (
   check (blocker_id <> blocked_id)
 );
 
-create table public.reports (
+create table if not exists public.reports (
   id            bigint generated always as identity primary key,
   reporter_id   bigint not null references public.profiles(id) on delete cascade,
   reported_id   bigint not null references public.profiles(id) on delete cascade,
@@ -228,7 +228,7 @@ create table public.reports (
   handled       boolean not null default false
 );
 
-create table public.verification_requests (
+create table if not exists public.verification_requests (
   id            bigint generated always as identity primary key,
   user_id       bigint not null references public.profiles(id) on delete cascade,
   selfie_path   text not null,             -- storage path in the private `verification` bucket
@@ -256,8 +256,10 @@ begin
   return new;
 end $$;
 
+drop trigger if exists connections_pair_normalize on public.connections;
 create trigger connections_pair_normalize before insert or update on public.connections
   for each row execute function public.pair_normalize();
+drop trigger if exists conversations_pair_normalize on public.conversations;
 create trigger conversations_pair_normalize before insert or update on public.conversations
   for each row execute function public.pair_normalize();
 
@@ -276,6 +278,7 @@ begin
   return new;
 end $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
@@ -303,36 +306,47 @@ alter table public.verification_requests enable row level security;
 -- Members only ever read their own raw rows. Everything cross-member is served
 -- by the SECURITY DEFINER functions in 0002_functions.sql.
 
+drop policy if exists profiles_own on public.profiles;
 create policy profiles_own on public.profiles
   for select to authenticated using (auth_user_id = auth.uid());
+drop policy if exists profiles_update_own on public.profiles;
 create policy profiles_update_own on public.profiles
   for update to authenticated using (auth_user_id = auth.uid()) with check (auth_user_id = auth.uid());
 
+drop policy if exists photos_own on public.photos;
 create policy photos_own on public.photos
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists preferences_own on public.preferences;
 create policy preferences_own on public.preferences
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists privacy_own on public.privacy;
 create policy privacy_own on public.privacy
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists notification_settings_own on public.notification_settings;
 create policy notification_settings_own on public.notification_settings
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
 -- Relationship rows are readable by their participants; writes go through RPCs.
+drop policy if exists crushes_pair on public.crushes;
 create policy crushes_pair on public.crushes
   for select to authenticated using (from_id = public.me_id() or to_id = public.me_id());
 
+drop policy if exists passes_own on public.passes;
 create policy passes_own on public.passes
   for select to authenticated using (from_id = public.me_id());
 
+drop policy if exists connections_pair on public.connections;
 create policy connections_pair on public.connections
   for select to authenticated using (user_a = public.me_id() or user_b = public.me_id());
 
+drop policy if exists conversations_pair on public.conversations;
 create policy conversations_pair on public.conversations
   for select to authenticated using (user_a = public.me_id() or user_b = public.me_id());
 
+drop policy if exists messages_pair on public.messages;
 create policy messages_pair on public.messages
   for select to authenticated using (
     conversation_id in (
@@ -340,6 +354,7 @@ create policy messages_pair on public.messages
     )
   );
 
+drop policy if exists message_reactions_pair on public.message_reactions;
 create policy message_reactions_pair on public.message_reactions
   for select to authenticated using (
     message_id in (
@@ -350,25 +365,59 @@ create policy message_reactions_pair on public.message_reactions
   );
 
 -- Moments: the feed itself comes from an RPC; members manage their own moments.
+drop policy if exists moments_own on public.moments;
 create policy moments_own on public.moments
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists moment_views_own on public.moment_views;
 create policy moment_views_own on public.moment_views
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists moment_reactions_own on public.moment_reactions;
 create policy moment_reactions_own on public.moment_reactions
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists notifications_own on public.notifications;
 create policy notifications_own on public.notifications
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
 
+drop policy if exists blocks_own on public.blocks;
 create policy blocks_own on public.blocks
   for all to authenticated using (blocker_id = public.me_id()) with check (blocker_id = public.me_id());
 
+drop policy if exists reports_insert_own on public.reports;
 create policy reports_insert_own on public.reports
   for insert to authenticated with check (reporter_id = public.me_id());
+drop policy if exists reports_select_own on public.reports;
 create policy reports_select_own on public.reports
   for select to authenticated using (reporter_id = public.me_id());
 
+drop policy if exists verification_own on public.verification_requests;
 create policy verification_own on public.verification_requests
   for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+-- ------------------------------------------------------------- heal signups
+-- If this schema is pasted onto a project where people already signed up,
+-- their member rows were never created (the trigger didn't exist yet). Give
+-- those accounts their rows now. A no-op on an empty project; safe to re-run.
+do $$
+begin
+  insert into public.profiles (auth_user_id, email, created_at, updated_at, last_active_at)
+  select u.id, coalesce(u.email, ''), public.now_ms(), public.now_ms(), public.now_ms()
+  from auth.users u
+  where not exists (select 1 from public.profiles p where p.auth_user_id = u.id);
+
+  insert into public.preferences (user_id)
+  select p.id from public.profiles p
+  where not exists (select 1 from public.preferences x where x.user_id = p.id);
+
+  insert into public.privacy (user_id)
+  select p.id from public.profiles p
+  where not exists (select 1 from public.privacy x where x.user_id = p.id);
+
+  insert into public.notification_settings (user_id)
+  select p.id from public.profiles p
+  where not exists (select 1 from public.notification_settings x where x.user_id = p.id);
+exception when others then
+  raise notice 'backfill skipped: %', sqlerrm;
+end $$;

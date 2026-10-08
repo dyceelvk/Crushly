@@ -55,6 +55,12 @@ def main() -> int:
         for f in sorted(MIGRATIONS.iterdir()):
             if not run_file(f):
                 return 1
+        # Re-apply every migration: the SQL is intentionally re-runnable so
+        # setup.sql can be pasted into a live project again without errors.
+        for f in sorted(MIGRATIONS.iterdir()):
+            if not run_file(f):
+                return 1
+        print('migrations applied twice (idempotent)')
         if not run_file(SEED):
             return 1
         print('migrations + seed applied')

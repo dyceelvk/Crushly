@@ -92,6 +92,12 @@ export function toApiError(err: unknown): ApiError {
       'The Supabase URL in this build is wrong. Use the bare Project URL — https://<ref>.supabase.co — not /rest/v1 or a connection string.',
     );
   }
+  if (/could not find the table|schema cache/i.test(message)) {
+    return new ApiError(
+      0,
+      'The database schema isn’t set up on this Supabase project yet. Open its SQL editor, run supabase/setup.sql (see the README), then try again.',
+    );
+  }
   if (message === 'Failed to fetch' || /network|fetch failed|offline/i.test(message)) {
     return new ApiError(0, 'You seem to be offline. Check your connection and try again.');
   }
