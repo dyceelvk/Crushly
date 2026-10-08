@@ -91,6 +91,28 @@ begin
   assert j ->> 'kind' = 'profile' and (j -> 'meta' ->> 'profileId') = jayden_id::text,
     'profile share message';
 
+  -- Video notes and call requests are first-class message kinds.
+  j := public.send_message(conv_id, 'video'::text, ''::text, 'media/messages/demo/note.mp4'::text, '{"duration":12}'::jsonb);
+  assert j ->> 'kind' = 'video' and (j -> 'meta' ->> 'duration') = '12', 'video note message';
+
+  begin
+    perform public.send_message(conv_id, 'video'::text, ''::text, null::text, '{}'::jsonb);
+    raise exception 'video note without media should fail';
+  exception when others then
+    if sqlerrm like '%without media should fail%' then raise; end if;
+  end;
+
+  j := public.send_message(conv_id, 'call'::text, ''::text, null::text, '{"channel":"call-test-123"}'::jsonb);
+  assert j ->> 'kind' = 'call' and j ->> 'body' = 'Voice call' and (j -> 'meta' ->> 'channel') = 'call-test-123',
+    'call request message carries its channel';
+
+  begin
+    perform public.send_message(conv_id, 'call'::text, ''::text, null::text, '{}'::jsonb);
+    raise exception 'call request without channel should fail';
+  exception when others then
+    if sqlerrm like '%without channel should fail%' then raise; end if;
+  end;
+
   j := public.toggle_message_reaction(msg_id, 'crush');
   assert jsonb_array_length(j -> 'reactions') = 1, 'crush reaction recorded';
 
@@ -99,7 +121,7 @@ begin
   set role authenticated;
   perform public.mark_conversation_read(conv_id);
   j := public.get_messages(conv_id, 0, 0, 40);
-  assert jsonb_array_length(j -> 'items') = 3, 'Marcus sees the three messages';
+  assert jsonb_array_length(j -> 'items') = 5, 'Marcus sees the five messages (text, sticker, profile, video, call)';
   perform set_config('request.jwt.claim.sub', daniel::text, false);
   j := public.get_messages(conv_id, 0, 0, 40);
   assert (j ->> 'lastReadMine') is not null and (j ->> 'lastReadMine')::bigint >= msg_id,

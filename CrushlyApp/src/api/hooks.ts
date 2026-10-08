@@ -351,7 +351,9 @@ export function useChat(conversationId: number) {
     | { kind: 'sticker'; sticker: string }
     | { kind: 'profile'; profileId: number }
     | { kind: 'photo'; uri: string; mimeType?: string }
-    | { kind: 'voice'; uri: string; duration: number; mimeType?: string };
+    | { kind: 'voice'; uri: string; duration: number; mimeType?: string }
+    | { kind: 'video'; uri: string; duration: number; mimeType?: string }
+    | { kind: 'call'; channel: string };
 
   const send = useCallback(
     async (draft: Draft, retryLocalId?: string) => {
@@ -363,9 +365,16 @@ export function useChat(conversationId: number) {
         senderId: 0,
         mine: true,
         kind: draft.kind,
-        body: draft.kind === 'text' ? draft.body : '',
-        mediaUrl: draft.kind === 'photo' || draft.kind === 'voice' ? draft.uri : null,
-        meta: draft.kind === 'sticker' ? { sticker: draft.sticker } : draft.kind === 'voice' ? { duration: draft.duration } : {},
+        body: draft.kind === 'text' ? draft.body : draft.kind === 'call' ? 'Voice call' : '',
+        mediaUrl: draft.kind === 'photo' || draft.kind === 'voice' || draft.kind === 'video' ? draft.uri : null,
+        meta:
+          draft.kind === 'sticker'
+            ? { sticker: draft.sticker }
+            : draft.kind === 'voice' || draft.kind === 'video'
+              ? { duration: draft.duration }
+              : draft.kind === 'call'
+                ? { channel: draft.channel }
+                : {},
         createdAt: Date.now(),
         readAt: null,
         reactions: [],

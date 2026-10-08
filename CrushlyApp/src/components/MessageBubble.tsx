@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Txt } from './Txt';
 import { Photo, Avatar } from './Photo';
 import { VerifiedBadge } from './Badges';
@@ -135,6 +136,9 @@ function BareContent({ m }: { m: Message }) {
       </View>
     );
   }
+  if (m.kind === 'video') {
+    return <VideoNoteBubble m={m} />;
+  }
   // shared profile
   return (
     <View style={{ width: 220, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldLine }}>
@@ -184,6 +188,43 @@ function MomentQuote({ m }: { m: Message }) {
             {m.meta.momentBody}
           </Txt>
         ) : null}
+      </View>
+    </View>
+  );
+}
+
+function VideoNoteBubble({ m }: { m: Message }) {
+  const { colors } = useTheme();
+  const player = useVideoPlayer(m.mediaUrl ? mediaUrl(m.mediaUrl) ?? null : null, (p) => {
+    p.loop = false;
+  });
+  return (
+    <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000', width: 220 }}>
+      <VideoView
+        player={player}
+        style={{ width: 220, height: 280 }}
+        contentFit="cover"
+        nativeControls
+        accessibilityLabel={`Video note, ${durationLabel(Number(m.meta.duration) || 0)}`}
+      />
+      {m.pending ? <ActivityIndicator size="small" color={colors.gold} style={{ position: 'absolute', top: 8, right: 8 }} /> : null}
+    </View>
+  );
+}
+
+function CallRequest({ m, ink }: { m: Message; ink: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 150 }}>
+      <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: ink === '#FFFFFF' ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)' }}>
+        <Ionicons name="call" size={18} color={ink} />
+      </View>
+      <View>
+        <Txt variant="bodyStrong" color={ink}>
+          Voice call
+        </Txt>
+        <Txt variant="caption" color={ink} style={{ opacity: 0.75 }}>
+          {m.mine ? 'You requested a call' : 'Wants to call you'}
+        </Txt>
       </View>
     </View>
   );
@@ -245,6 +286,10 @@ function describe(m: Message): string {
       return `Photo${m.body ? `, ${m.body}` : ''}`;
     case 'voice':
       return `Voice message, ${durationLabel(Number(m.meta.duration) || 0)}`;
+    case 'video':
+      return `Video note, ${durationLabel(Number(m.meta.duration) || 0)}`;
+    case 'call':
+      return 'Voice call request';
     case 'sticker':
       return `${STICKERS.find((s) => s.key === m.meta.sticker)?.label ?? ''} sticker`;
     case 'profile':

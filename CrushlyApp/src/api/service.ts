@@ -28,7 +28,9 @@ export type SendDraft =
   | { kind: 'sticker'; sticker: string }
   | { kind: 'profile'; profileId: number }
   | { kind: 'photo'; uri: string; mimeType?: string; caption?: string }
-  | { kind: 'voice'; uri: string; duration: number; mimeType?: string };
+  | { kind: 'voice'; uri: string; duration: number; mimeType?: string }
+  | { kind: 'video'; uri: string; duration: number; mimeType?: string }
+  | { kind: 'call'; channel: string };
 
 const unwrap = <T>(res: { data: T | null; error: unknown }): T => {
   if (res.error) throw toApiError(res.error);

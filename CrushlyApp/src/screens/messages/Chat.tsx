@@ -22,6 +22,9 @@ import { STICKERS } from '../../lib/catalog';
 import { dayLabel, durationLabel } from '../../lib/format';
 import { pickImage } from '../../lib/media';
 import { useLiveCamera } from '../../components/CameraCapture';
+import { useVideoNote } from '../../components/VideoNote';
+import { CallSheet } from '../../components/CallSheet';
+import { CallManager, newCallChannel, type CallState } from '../../lib/call';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -54,6 +57,70 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recState = useAudioRecorderState(recorder, 250);
+
+  /* ------------------------------------------------------------ video notes */
+  const videoNote = useVideoNote();
+  const sendVideoNote = async () => {
+    setTray(false);
+    try {
+      const note = await videoNote.record();
+      if (!note) return;
+      send({ kind: 'video', uri: note.uri, duration: note.duration, mimeType: note.mimeType });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Video note not recorded', message: (e as Error).message });
+    }
+  };
+
+  /* ------------------------------------------------------------------- calls */
+  const [callState, setCallState] = useState<CallState>('idle');
+  const [callMuted, setCallMuted] = useState(false);
+  const [callChannel, setCallChannel] = useState('');
+  const callRef = useRef<CallManager | null>(null);
+  const seenCalls = useRef<Set<number>>(new Set());
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const getCall = useCallback(() => {
+    if (!callRef.current) {
+      callRef.current = new CallManager({
+        onState: (s) => setCallState(s),
+        onRemote: (stream) => {
+          const el = remoteAudioRef.current;
+          if (el) el.srcObject = stream;
+        },
+        onError: (message) => toast({ kind: 'error', title: 'Call problem', message }),
+        onEnd: (reason) => {
+          if (reason && reason !== 'Ended') toast({ kind: 'info', title: 'Call ended', message: reason });
+        },
+      });
+    }
+    return callRef.current;
+  }, [toast]);
+
+  const startCall = async () => {
+    setTray(false);
+    if (Platform.OS !== 'web') {
+      toast({ kind: 'info', title: 'Calls are on the web app for now', message: 'Send a voice or video note instead.' });
+      return;
+    }
+    if (callState !== 'idle') return;
+    const channel = newCallChannel();
+    setCallChannel(channel);
+    send({ kind: 'call', channel });
+    await getCall().call(channel);
+  };
+
+  // Incoming call requests arrive as 'call' messages; prompt once per request.
+  useEffect(() => {
+    if (callState !== 'idle') return;
+    const incoming = chat.messages.find(
+      (m) => m.kind === 'call' && !m.mine && m.meta?.channel && !seenCalls.current.has(m.id) && Date.now() - m.createdAt < 45_000,
+    );
+    if (incoming?.meta?.channel) {
+      seenCalls.current.add(incoming.id);
+      setCallChannel(String(incoming.meta.channel));
+      getCall().incoming(String(incoming.meta.channel));
+    }
+  }, [chat.messages, callState, getCall]);
 
   const peer = conv?.peer;
   const canSend = conv ? conv.canSend && !conv.closed : false;
@@ -297,6 +364,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.sm }}>
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
+                  <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
+                  <TrayButton icon="call-outline" label="Call" onPress={startCall} />
                   <TrayButton icon="person-circle-outline" label="Share profile" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
                 <Txt variant="label" color="textMuted" style={{ marginBottom: 6 }}>
@@ -377,6 +446,29 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           </View>
         )}
         {cam.node}
+        {videoNote.node}
+        {Platform.OS === 'web'
+          ? (() => {
+              const { unstable_createElement } = require('react-native-web') as typeof import('react-native-web');
+              return unstable_createElement('audio', {
+                ref: remoteAudioRef,
+                autoPlay: true,
+                playsInline: true,
+                style: { display: 'none' },
+              });
+            })()
+          : null}
+        <CallSheet
+          visible={callState !== 'idle'}
+          state={callState}
+          peerName={peer?.name ?? 'Your match'}
+          peerPhoto={peer?.photo}
+          muted={callMuted}
+          onAccept={() => getCall().accept(callChannel)}
+          onDecline={() => getCall().decline()}
+          onHangup={() => getCall().hangup()}
+          onToggleMute={() => setCallMuted(getCall().toggleMute())}
+        />
       </KeyboardAvoidingView>
 
       {/* Long-press actions */}

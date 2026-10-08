@@ -283,7 +283,7 @@ RPC functions and Storage):
 - Discover with filters (age, distance, connection type, interests). Distance is always rounded and exact location is never returned.
 - Crush, Deep Crush with a note, Pass, Mutual Crush celebration, and removing a Connection
 - Crushes: *Crushing on you* / *Your crushes* / *Mutual Crushes*
-- Messaging: text, photos, voice notes, stickers, shared profiles, Crush reactions, optional read receipts, and new messages within ~3 seconds
+- Messaging: text, photos, voice notes, **video notes**, **voice calls** (peer-to-peer WebRTC on the web app), stickers, shared profiles, Crush reactions, optional read receipts, and new messages within ~3 seconds
 - Message search: filter conversations by name, preview or message text
 - Moments (expire after 24h): text or photo, viewer with reply, react and Crush
 - Notification center with live in-app toasts
@@ -301,6 +301,8 @@ These features need a third-party service or a human in the loop. Rather than pr
 | **Verification review** | Didit settles most sessions automatically. "In Review" cases queue for a human: `npm run admin -- review-verification` (optionally with the admin-only AI assist `ai-assist`). |
 | **Reports** | Stored in `reports`. Triaged with `supabase/scripts/admin.mjs reports` — no moderator dashboard yet. |
 | **Push notifications** | In-app notifications and toasts work. OS push needs Expo push credentials and isn't wired up yet. |
+| **Voice calls** | Real peer-to-peer WebRTC audio calls (signalled over Supabase Realtime, STUN via Google). **Web only** — React Native needs a native WebRTC module; the call button says so honestly on native and suggests a voice/video note instead. |
+| **Video notes** | Record up to 60s (web: in-app recorder; native: device camera), send as a message, play inline. |
 | **GIFs** | Replaced by a built-in sticker pack, so no GIF API key is needed. |
 | **Realtime** | Polling through react-query (a few seconds in an open chat). Supabase Realtime channels are an easy swap-in when you scale. |
 

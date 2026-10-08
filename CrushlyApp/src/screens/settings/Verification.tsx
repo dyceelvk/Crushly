@@ -16,7 +16,7 @@ import type { ScreenProps } from '../../navigation/types';
 
 /** What Didit checks for the member — the hosted flow runs these for us. */
 const DIDIT_STEPS = [
-  { icon: 'card-outline' as const, title: 'Scan your ID', body: 'Didit reads your document — Crushly never sees it.' },
+  { icon: 'card-outline' as const, title: 'Scan your ID', body: 'Your document is read by our identity partner — Crushly never sees it.' },
   { icon: 'happy-outline' as const, title: 'Liveness check', body: 'A quick face scan proves you’re really there.' },
   { icon: 'git-compare-outline' as const, title: 'Face match', body: 'Your selfie is matched to your document photo.' },
 ];
@@ -54,7 +54,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
     const params = new URLSearchParams(window.location.search);
     if (params.get('didit') === 'done') {
       window.history.replaceState({}, '', window.location.pathname);
-      toast({ kind: 'info', title: 'Back from Didit', message: 'Checking your result…' });
+      toast({ kind: 'info', title: 'Back from verification', message: 'Checking your result…' });
       void refresh();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,8 +69,8 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
       else await Linking.openURL(url);
       toast({
         kind: 'success',
-        title: 'Didit is open',
-        message: 'Finish the steps there, then come back and tap “Check status”.',
+        title: 'Verification opened',
+        message: 'Finish the steps, and you’ll be redirected back to Crushly. Then tap “Check status”.',
       });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t start verification', message: (e as Error).message });
@@ -86,7 +86,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
           <View style={{ gap: space.xs }}>
             {!pending ? (
               <Button
-                title={rejected ? 'Try verification again' : 'Verify with Didit'}
+                title={rejected ? 'Try verification again' : 'Start verification'}
                 icon="shield-checkmark-outline"
                 onPress={start}
                 loading={busy}
@@ -139,7 +139,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             Verification in progress
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Finish the steps in the Didit window, then come back here. Results usually land within a minute — the webhook settles it automatically.
+            Crushly redirects you to our identity partner for the checks. When you finish, you’ll be redirected back to Crushly — results usually land within a minute.
           </Txt>
         </View>
       ) : (
@@ -148,7 +148,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             Prove it’s really you
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Verification runs through Didit — a certified identity check. It takes about two minutes.
+            Verification runs through our certified identity partner. Crushly will redirect you there — and back — in about two minutes.
           </Txt>
           <View style={{ width: w, gap: space.sm, marginTop: space.xs }}>
             {DIDIT_STEPS.map((s) => (
@@ -178,7 +178,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
           </View>
           <View style={{ width: w, padding: space.md, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
             <Txt variant="small" color="textSecondary">
-              Your ID document is checked by Didit and never shown to Crushly or other members. Only the pass/fail result reaches your profile.
+              Your ID document is checked by our certified identity partner and never shown to Crushly or other members. Only the pass/fail result reaches your profile.
             </Txt>
           </View>
         </View>
