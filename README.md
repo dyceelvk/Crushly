@@ -60,9 +60,10 @@ zero:
      [`db-migrations.yml`](.github/workflows/db-migrations.yml) workflow pushes
      `supabase/migrations/` to your project automatically on every migration
      change (or manually from the Actions tab → *Run workflow*):
-     1. Supabase → **Project Settings → Database → Connection string** →
-        **Session pooler** → **URI**. Replace `[YOUR-PASSWORD]` with your
-        database password (reset it on that page if you lost it).
+     1. In your Supabase project, click **Connect** at the top of the page →
+        **Session pooler** → copy the URI. Replace `[YOUR-PASSWORD]` with
+        your database password (Settings → Database → *Reset database
+        password* if you lost it; percent-encode special characters).
      2. GitHub repo → **Settings → Secrets and variables → Actions** →
         **New repository secret** → name it `SUPABASE_DB_URL`, paste the URI.
      Never commit that value or paste it into chat.
@@ -86,7 +87,7 @@ zero:
    (Settings → Secrets and variables → Actions):
    | Secret | Where the value comes from |
    | --- | --- |
-   | `SUPABASE_DB_URL` | Supabase → Project Settings → Database → Connection string → Session pooler → URI |
+   | `SUPABASE_DB_URL` | Supabase project → **Connect** button (top of the page) → **Session pooler** → the URI string, with `[YOUR-PASSWORD]` replaced |
    | `EXPO_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL (bare `https://<ref>.supabase.co`) |
    | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → anon `public` key |
    | `NETLIFY_AUTH_TOKEN` | [Netlify → Personal access tokens](https://app.netlify.com/user/applications) → New access token |
@@ -114,7 +115,8 @@ zero:
 | Netlify site configuration (Site ID, git builds) | https://app.netlify.com/sites/mencrushly/configuration |
 | Supabase SQL editor (fallback setup) | https://supabase.com/dashboard/project/_/sql/new |
 | Supabase API keys (URL + anon) | https://supabase.com/dashboard/project/_/settings/api |
-| Supabase database (connection string) | https://supabase.com/dashboard/project/_/settings/database |
+| Supabase database (reset DB password) | https://supabase.com/dashboard/project/_/settings/database |
+| Supabase Connect dialog (Session pooler URI) | https://supabase.com/dashboard/project/_/connect |
 | Supabase auth settings (confirm email, URLs) | https://supabase.com/dashboard/project/_/auth/providers |
 
 ## What works end to end

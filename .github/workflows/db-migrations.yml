@@ -2,10 +2,12 @@
 #
 # One-time setup (GitHub → Settings → Secrets and variables → Actions):
 #   Secret name:  SUPABASE_DB_URL
-#   Value:        the Postgres connection URI from
-#                 Supabase → Project Settings → Database → Connection string
-#                 → Session pooler → URI  (replace [YOUR-PASSWORD] with your
-#                 database password; reset it on that page if you lost it).
+#   Value:        the Postgres connection URI from the project's Connect
+#                 dialog (button at the top of any project page) →
+#                 "Session pooler" → URI. Replace [YOUR-PASSWORD] with your
+#                 database password (Settings → Database → Reset database
+#                 password if lost; percent-encode special characters).
+#                 Want host *.pooler.supabase.com and port 5432.
 #
 # Never commit this value or paste it into chat.
 #
