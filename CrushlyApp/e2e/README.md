@@ -27,9 +27,9 @@ app; only the browser is downloaded when you run the suite.
    https://github.com/dyceelvk/Crushly/actions/workflows/e2e.yml
    (pick the site if you're not testing the default https://mencrushly.netlify.app)
 
-> Note: until the Netlify credit block is lifted, the live site still serves an
-> older build without the reset flow — run this **after** the next successful
-> deploy, or point `base_url` at a fresh deploy preview.
+> The workflow resolves the live site URL from the `NETLIFY_SITE_ID` secret
+> automatically (currently https://crushlyi.netlify.app) — the `base_url` input
+> is only a fallback. Override it to test a deploy preview instead.
 
 ## Run it locally
 

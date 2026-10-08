@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: 'Site under test'
+        description: 'Fallback site under test (the live site URL is resolved from NETLIFY_SITE_ID automatically)'
         required: false
-        default: 'https://mencrushly.netlify.app'
+        default: 'https://crushlyi.netlify.app'
 
 permissions:
   contents: read
@@ -34,9 +34,22 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      # Follow whichever site the deploy pipeline targets (works across accounts).
+      - name: Resolve live site URL
+        id: site
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          url=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.ssl_url // empty')
+          [ -n "$url" ] || url="${{ inputs.base_url }}"
+          echo "Testing site: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
       - name: Run e2e
         env:
-          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_BASE_URL: ${{ steps.site.outputs.url }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx playwright test --config CrushlyApp/e2e/playwright.config.ts --reporter=list

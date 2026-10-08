@@ -337,18 +337,7 @@ jobs:
             fi
           fi
 
-          # Most common cause of sudden build failures: an old default Node.
-          # Try to pin Node 22 via the env API (site-level vars override netlify.toml).
-          # The account slug is resolved from the site so this works on any account.
-          site_acct=$(printf '%s' "$site_json" | jq -r '.account_id // empty')
-          acct_slug=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/accounts" \
-            | jq -r --arg a "$site_acct" '.[] | select(.id == $a) | .slug // empty' | head -1)
-          [ -n "$acct_slug" ] || acct_slug="$site_acct"
-          env_code=$(curl -s -o /tmp/envres.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H "Content-Type: application/json" \
-            -d '{"context":"production","value":"22","scopes":["builds"]}' \
-            "https://api.netlify.com/api/v1/accounts/$acct_slug/env/NODE_VERSION")
-          echo "::notice::NODE_VERSION pin attempt (account $acct_slug): HTTP $env_code - $(head -c 120 /tmp/envres.json)"
+          # Node is pinned to 22 in netlify.toml (the git builds honor it).
           hook=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks" \
             | jq -r '.[] | select(.title=="ci-trigger") | .url' | head -1)
@@ -375,7 +364,10 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          if ! out=$(npx --yes netlify-cli@latest deploy --prod --dir=dist --message="Deploy ${{ github.sha }}" --debug 2>&1); then
+          # From the repo root: netlify.toml (and build.sh) live there, and the
+          # site's configured build command resolves relative to it.
+          cd "$GITHUB_WORKSPACE"
+          if ! out=$(npx --yes netlify-cli@latest deploy --prod --dir=CrushlyApp/dist --message="Deploy ${{ github.sha }}" --debug 2>&1); then
             # Mask the token value itself, whatever it looks like.
             safe_out=${out//$NETLIFY_AUTH_TOKEN/***}
             echo "::error::netlify deploy failed: $(printf '%s' "$safe_out" | tail -c 1400 | tr '\n' ' ')"

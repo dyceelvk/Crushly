@@ -145,6 +145,13 @@ secret, so nothing in the repo changes:
    The same switch works in reverse later: point `NETLIFY_SITE_ID` back and the
    pipeline follows.
 
+   **Current state (2026-10-08):** the pipeline targets site `crushlyi` on a
+   second Netlify account, and **https://crushlyi.netlify.app serves the latest
+   commit** — the old account's "credit usage exceeded" block no longer matters.
+   The old `mencrushly.netlify.app` still serves the frozen build; if you want
+   that name back on the new account, rename the old site (step 3 above) and
+   rename `crushlyi` to `mencrushly` — the pipeline follows on the next deploy.
+
 ## AI profile verification
 
 Members follow two illustrated poses (`CrushlyApp/assets/poses/`), the app uploads the
@@ -176,15 +183,17 @@ Wire it once — it lives in GitHub secrets and re-applies on every deploy:
    - `GMAIL_SMTP_USER` — your full Gmail address (e.g. `Dyceelvk@gmail.com`)
    - `GMAIL_SMTP_PASS` — the 16-character App Password from step 2
 4. Tell the agent "done" — the next deploy wires it (SMTP `smtp.gmail.com:465`, Confirm email ON,
-   Site URL `https://mencrushly.netlify.app`, branded OTP template). The `Wire Gmail confirmation`
-   step reports success. The logo the email embeds is served from
-   `https://mencrushly.netlify.app/brand/crushly-mark.png` (repo: `CrushlyApp/public/brand/`).
+   branded OTP template). The `Wire Gmail confirmation` step reports success and
+   points Supabase at whichever site the pipeline targets — currently
+   **https://crushlyi.netlify.app** (see *Switch the live site to another Netlify
+   account* above). The logo the email embeds is served from
+   `<live site>/brand/crushly-mark.png` (repo: `CrushlyApp/public/brand/`).
 
 Prefer clicking by hand? SMTP lives at
 https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/providers (Email → SMTP Settings)
 and the link landing pages at
 https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/url-configuration
-(Site URL `https://mencrushly.netlify.app`, add `https://mencrushly.netlify.app/**` as a redirect).
+(Site URL = your live site's URL, plus `<live site>/**` as a redirect).
 
 ## Quick links (this project)
 
@@ -193,8 +202,10 @@ https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/url-configurati
 | GitHub secrets (all five go here) | https://github.com/dyceelvk/Crushly/settings/secrets/actions |
 | GitHub Actions (run/see workflows) | https://github.com/dyceelvk/Crushly/actions |
 | Netlify personal access tokens | https://app.netlify.com/user/applications |
-| Netlify site (deploys) | https://app.netlify.com/sites/mencrushly/deploys |
-| Netlify site configuration (Site ID, git builds) | https://app.netlify.com/sites/mencrushly/configuration |
+| Live site | https://crushlyi.netlify.app (follows the `NETLIFY_SITE_ID` secret) |
+| Netlify site (deploys) | https://app.netlify.com/sites/crushlyi/deploys |
+| Netlify site configuration (Site ID, git builds) | https://app.netlify.com/sites/crushlyi/configuration |
+| E2E auth-journey checks (manual run) | https://github.com/dyceelvk/Crushly/actions/workflows/e2e.yml |
 | Supabase SQL editor (fallback setup) | https://supabase.com/dashboard/project/_/sql/new |
 | Supabase API keys (URL + anon) | https://supabase.com/dashboard/project/_/settings/api |
 | Supabase database (reset DB password) | https://supabase.com/dashboard/project/_/settings/database |
