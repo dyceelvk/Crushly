@@ -15,21 +15,91 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
-/** The illustrated pose process — the app and the AI both know exactly what to expect. */
-const STEPS = [
+/** The illustrated pose library — the app and the AI both know exactly what to expect.
+ *  Each verification attempt draws two random poses so no two check-ins look alike. */
+type PoseDef = { pose: string; title: string; body: string; image: number };
+
+const POSE_LIBRARY: PoseDef[] = [
   {
     pose: 'Peace sign & smile',
-    title: 'Pose 1 — Peace sign & smile',
+    title: 'Peace sign & smile',
     body: 'Smile big and hold up a peace sign beside your face.',
     image: require('../../../assets/poses/pose-1.png'),
   },
   {
     pose: 'Hand on cheek, tilt',
-    title: 'Pose 2 — Hand on cheek',
+    title: 'Hand on cheek',
     body: 'Rest one hand softly on your cheek and tilt your head a little.',
     image: require('../../../assets/poses/pose-2.png'),
   },
+  {
+    pose: 'Wink & wave',
+    title: 'Wink & wave',
+    body: 'Wink one eye and give a little wave beside your face.',
+    image: require('../../../assets/poses/pose-3.png'),
+  },
+  {
+    pose: 'Thumbs up',
+    title: 'Thumbs up',
+    body: 'Give a cheerful thumbs up with one hand near your chest.',
+    image: require('../../../assets/poses/pose-4.png'),
+  },
+  {
+    pose: 'Heart fingers',
+    title: 'Heart fingers',
+    body: 'Make a small heart shape with one hand beside your face.',
+    image: require('../../../assets/poses/pose-5.png'),
+  },
+  {
+    pose: 'Finger heart',
+    title: 'Finger heart',
+    body: 'Cross your thumb and index finger for a tiny finger heart near your cheek.',
+    image: require('../../../assets/poses/pose-6.png'),
+  },
+  {
+    pose: 'Flower hand',
+    title: 'Flower hand',
+    body: 'Curve one hand beside your face like a flower petal.',
+    image: require('../../../assets/poses/pose-7.png'),
+  },
+  {
+    pose: 'Hand on hip',
+    title: 'Hand on hip',
+    body: 'Rest one hand on your hip and give a confident smile.',
+    image: require('../../../assets/poses/pose-8.png'),
+  },
+  {
+    pose: 'Blowing a kiss',
+    title: 'Blowing a kiss',
+    body: 'Blow a kiss with one hand near your lips.',
+    image: require('../../../assets/poses/pose-9.png'),
+  },
+  {
+    pose: 'Celebration arm',
+    title: 'Celebration arm',
+    body: 'Raise one arm up in celebration.',
+    image: require('../../../assets/poses/pose-10.png'),
+  },
+  {
+    pose: 'Hand behind head',
+    title: 'Hand behind head',
+    body: 'Rest one hand behind your head with a playful look.',
+    image: require('../../../assets/poses/pose-11.png'),
+  },
+  {
+    pose: 'Salute & wink',
+    title: 'Salute & wink',
+    body: 'Give a playful salute with one hand and wink.',
+    image: require('../../../assets/poses/pose-12.png'),
+  },
 ];
+
+function drawSteps(): PoseDef[] {
+  const a = Math.floor(Math.random() * POSE_LIBRARY.length);
+  let b = Math.floor(Math.random() * POSE_LIBRARY.length);
+  while (b === a) b = Math.floor(Math.random() * POSE_LIBRARY.length);
+  return [POSE_LIBRARY[a], POSE_LIBRARY[b]];
+}
 
 type Phase = 'intro' | 'capture' | 'review' | 'result';
 
@@ -41,13 +111,14 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
   const { data: me } = useMe();
   const [phase, setPhase] = useState<Phase>('intro');
   const [index, setIndex] = useState(0);
+  const [steps, setSteps] = useState<PoseDef[]>(() => drawSteps());
   const [captures, setCaptures] = useState<(PickedImage | null)[]>([null, null]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AiVerificationResult | null>(null);
   const status = me?.verification.status ?? 'none';
 
   const w = Math.min(contentWidth - gutter * 2, 320);
-  const step = STEPS[index];
+  const step = steps[index];
 
   const capture = async () => {
     const img = await pickImage({ camera: true, square: true });
@@ -65,7 +136,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
       const items = captures.map((c, i) => ({
         uri: c!.uri,
         mimeType: c!.mimeType,
-        pose: STEPS[i].pose,
+        pose: steps[i].pose,
       }));
       const { me: next, result: verdict } = await submitVerification(items);
       qc.setQueryData(keys.me, next);
@@ -79,6 +150,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
   };
 
   const reset = () => {
+    setSteps(drawSteps());
     setCaptures([null, null]);
     setIndex(0);
     setResult(null);
@@ -177,7 +249,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
         ) : phase === 'capture' ? (
           captures[index] ? (
             <View style={{ gap: space.xs }}>
-              {index < STEPS.length - 1 ? (
+              {index < steps.length - 1 ? (
                 <Button title="Next pose" icon="arrow-forward" onPress={() => setIndex(index + 1)} />
               ) : (
                 <Button title="Review my selfies" icon="checkmark" onPress={() => setPhase('review')} />
@@ -253,7 +325,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
       ) : phase === 'capture' ? (
         <View style={{ alignItems: 'center', marginTop: space.lg }}>
           <Txt variant="label" color="textMuted">
-            {step.title}
+            Pose {index + 1} — {step.title}
           </Txt>
           <View style={{ width: w, height: w, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldLine, marginTop: space.sm }}>
             <Image source={step.image} style={{ width: '100%', height: '100%' }} resizeMode="cover" accessibilityLabel={`Illustration: ${step.title}`} />
@@ -282,7 +354,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
               <View key={i} style={{ alignItems: 'center' }}>
                 <Photo uri={c?.uri} style={{ width: w / 2 - space.md, height: w / 2 - space.md, borderRadius: radius.lg }} contentPosition="center" alt={`Selfie ${i + 1}`} />
                 <Txt variant="small" color="textMuted" style={{ marginTop: 6 }}>
-                  {STEPS[i].pose}
+                  {steps[i].pose}
                 </Txt>
               </View>
             ))}
