@@ -37,9 +37,23 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
 ## Run it on a hosted project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Create the schema — either paste `setup.sql` (generated from
-   `migrations/` by `npm run bundle:sql`) into the dashboard's **SQL editor**
-   and Run, or with the CLI:
+2. Create the schema — in the dashboard's **SQL editor**, or with the CLI.
+   Pasting without the fuss: open each file on GitHub and click the **copy
+   button** (clipboard icon, top-right of the code box) — no text selection
+   needed. Run the three parts **in order**, each in its own New query:
+
+   | File | What it makes |
+   | --- | --- |
+   | [`setup/01-schema.sql`](setup/01-schema.sql) | tables, security rules, signup trigger |
+   | [`setup/02-functions.sql`](setup/02-functions.sql) | all the RPCs the app calls |
+   | [`setup/03-storage.sql`](setup/03-storage.sql) | media buckets + upload rules |
+
+   `setup.sql` is the same thing as one file if you prefer a single paste
+   (generated from `migrations/` by `npm run bundle:sql`). Re-running any of
+   them is safe. Sanity check afterwards: `select to_regclass('public.profiles');`
+   must return `profiles`.
+
+   Or with the CLI:
 
 ```bash
 supabase link --project-ref <ref>
