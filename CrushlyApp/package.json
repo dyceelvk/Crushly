@@ -37,6 +37,7 @@
     "react-native-web": "~0.21.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/node": "^26.6.4",
     "@types/react": "~19.2.2",
     "tsx": "^4.23.15",
@@ -49,6 +50,7 @@
     "web": "expo start --web",
     "build:web": "expo export -p web --output-dir dist",
     "typecheck": "tsc --noEmit",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
     "test": "node --import tsx --test src/lib/format.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/env.test.ts src/lib/auth.test.ts"
   },
   "private": true

@@ -1,0 +1,42 @@
+# Manual end-to-end checks of the auth journeys against a deployed site.
+# @playwright/test is a dev-only dependency (never shipped in the app bundle);
+# only the Chromium browser is downloaded here.
+# Secrets: EXPO_PUBLIC_SUPABASE_URL (already set) + SUPABASE_SERVICE_ROLE_KEY.
+name: E2E (live site)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Site under test'
+        required: false
+        default: 'https://mencrushly.netlify.app'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Signup code/link + password reset
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # App dependencies — includes dev-only @playwright/test and @supabase/supabase-js.
+      - name: Install app dependencies
+        run: npm ci --prefix CrushlyApp
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e
+        env:
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx playwright test --config CrushlyApp/e2e/playwright.config.ts --reporter=list
