@@ -32,8 +32,12 @@ src/
 - **Web**: Netlify builds this folder via the root `netlify.toml`
   (`npm run build:web` → `dist/`). Set `EXPO_PUBLIC_SUPABASE_URL` and
   `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the Netlify environment.
-- **iOS / Android**: set the same two env vars before `eas build` (or bake them
-  into a CI secret). Everything else is standard Expo.
+- **iOS / Android**: `eas.json` is set up (development / preview / production
+  builds). Set the same two env vars before `eas build` (or bake them into a CI
+  secret). Everything else is standard Expo.
+
+Tests: `npm test` runs the unit tests (format helpers, message previews, Moments
+feed grouping); `npm run typecheck` is the type gate. Both run in CI.
 
 ## Design rules
 

@@ -60,6 +60,25 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
 - **Errors** from RPCs use `__CRUSHLY__<status>__<code>__<message>`, which the
   app's `src/api/client.ts` turns back into typed `ApiError`s.
 
+## Ops tooling
+
+`scripts/admin.mjs` is the human-review tooling the app deliberately doesn't
+fake — approving verification selfies and triaging reports:
+
+```bash
+export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...   # service role, never in the app
+
+npm run admin -- verify-user --list            # pending selfie reviews
+npm run admin -- verify-user --approve daniel@crushly.app
+npm run admin -- verify-user --reject  daniel@crushly.app
+npm run admin -- reports                       # open reports (reported member's email, reason)
+npm run admin -- reports --status all
+npm run admin -- reports --resolve 3
+```
+
+Approving sets the member to `verified` and drops a `verified` notification
+(and a `verification_rejected` one when rejecting), so it shows up in the app.
+
 ## Demo accounts
 
 Every seeded member is real — password `crushly123` for all of them:

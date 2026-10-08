@@ -1,4 +1,6 @@
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { ageFromBirthdate } from '../lib/format';
+import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import {
   INTENTIONS as catalogIntentions,
   INTERESTS as catalogInterests,
@@ -28,8 +30,6 @@ export type SendDraft =
   | { kind: 'photo'; uri: string; mimeType?: string; caption?: string }
   | { kind: 'voice'; uri: string; duration: number; mimeType?: string };
 
-type RpcMoment = Moment & { author: MomentAuthor };
-
 const unwrap = <T>(res: { data: T | null; error: unknown }): T => {
   if (res.error) throw toApiError(res.error);
   return res.data as T;
@@ -44,17 +44,6 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   } catch (e) {
     throw e instanceof ApiError ? e : toApiError(e);
   }
-}
-
-function ageFromBirthdate(birthdate?: string | null): number | null {
-  if (!birthdate) return null;
-  const [y, m, d] = birthdate.split('-').map(Number);
-  if (!y || !m || !d) return null;
-  const today = new Date();
-  let age = today.getUTCFullYear() - y;
-  const beforeBirthday = today.getUTCMonth() + 1 < m || (today.getUTCMonth() + 1 === m && today.getUTCDate() < d);
-  if (beforeBirthday) age -= 1;
-  return age;
 }
 
 function snapCoordinate(value: unknown): number | null {
@@ -413,7 +402,11 @@ export async function submitVerification({ uri, pose, mimeType }: { uri: string;
   return getMe();
 }
 
-export async function updateAccount(body: { currentPassword: string; email?: string; newPassword?: string }): Promise<Me> {
+export async function updateAccount(body: {
+  currentPassword: string;
+  email?: string;
+  newPassword?: string;
+}): Promise<{ me: Me; emailPending: boolean }> {
   const email = await myEmail();
   const check = await supabase.auth.signInWithPassword({ email, password: String(body.currentPassword ?? '') });
   if (check.error) throw new ApiError(403, 'Your current password isn’t right.');
@@ -433,11 +426,22 @@ export async function updateAccount(body: { currentPassword: string; email?: str
     if (error) throw toApiError(error);
   }
   if (update.password) await supabase.auth.signOut({ scope: 'others' }).catch(() => {});
+  let emailPending = false;
   if (update.email) {
-    const id = await meId();
-    unwrap(await supabase.from('profiles').update({ email: update.email }).eq('id', id));
+    // Supabase often requires confirming both addresses before an email change
+    // lands (auth keeps the old email and stashes `new_email` until then). Only
+    // mirror it into the profile once it's actually in effect — never advertise
+    // an unconfirmed address.
+    const { data } = await supabase.auth.getUser();
+    const user = data.user as { email?: string; new_email?: string | null } | null;
+    if (user?.email === update.email && !user?.new_email) {
+      const id = await meId();
+      unwrap(await supabase.from('profiles').update({ email: update.email }).eq('id', id));
+    } else {
+      emailPending = true;
+    }
   }
-  return getMe();
+  return { me: await getMe(), emailPending };
 }
 
 export async function signOutOtherSessions(): Promise<void> {
@@ -593,33 +597,10 @@ export async function reactToMessage(messageId: number, kind = 'crush'): Promise
 
 export async function momentsFeed(): Promise<MomentsFeed> {
   const [flat, me] = await Promise.all([
-    rpc<RpcMoment[]>('visible_moments'),
+    rpc<FeedMoment[]>('visible_moments'),
     myAuthorCard(),
   ]);
-  const groups = new Map<number, { user: MomentAuthor; moments: Moment[] }>();
-  for (const { author, ...m } of flat ?? []) {
-    const entry = groups.get(m.userId) ?? { user: author, moments: [] };
-    entry.moments.push(m as Moment);
-    groups.set(m.userId, entry);
-  }
-  const mineEntry = groups.get(me.id);
-  groups.delete(me.id);
-  const others = [...groups.values()].map((g) => ({
-    user: g.user,
-    moments: g.moments,
-    hasUnseen: g.moments.some((m) => !m.seen),
-    latestAt: g.moments[g.moments.length - 1].createdAt,
-  }));
-  others.sort(
-    (a, b) =>
-      Number(b.hasUnseen) - Number(a.hasUnseen) ||
-      Number(b.user.mutual) - Number(a.user.mutual) ||
-      b.latestAt - a.latestAt,
-  );
-  return {
-    mine: { user: mineEntry?.user ?? me, moments: mineEntry?.moments ?? [] },
-    others,
-  };
+  return groupMomentFeed(flat ?? [], me);
 }
 
 async function myAuthorCard(): Promise<MomentAuthor> {

@@ -80,8 +80,8 @@ These features need a third-party service or a human in the loop. Rather than pr
 | Feature | Status |
 | --- | --- |
 | **Crushly Plus** | The paywall screen records interest (`profiles.plus_interest`). There's no payment provider yet, so nothing is charged and no Plus features unlock. Incognito returns `402 plus_required`. |
-| **Verification review** | Selfies land in the private `verification` bucket and wait for a human. Approve them with SQL against `verification_requests` / `profiles.verification`. |
-| **Reports** | Stored in `reports`. There's no moderator dashboard yet. |
+| **Verification review** | Selfies land in the private `verification` bucket and wait for a human. Approve or reject them with `supabase/scripts/admin.mjs verify-user`. |
+| **Reports** | Stored in `reports`. Triaged with `supabase/scripts/admin.mjs reports` — no moderator dashboard yet. |
 | **Push notifications** | In-app notifications and toasts work. OS push needs Expo push credentials and isn't wired up yet. |
 | **GIFs** | Replaced by a built-in sticker pack, so no GIF API key is needed. |
 | **Realtime** | Polling through react-query (a few seconds in an open chat). Supabase Realtime channels are an easy swap-in when you scale. |
@@ -95,12 +95,14 @@ These features need a third-party service or a human in the loop. Rather than pr
 ## Tests
 
 ```bash
-cd CrushlyApp && npm run typecheck
+# App: typecheck + unit tests (format helpers, message previews, Moments feed)
+cd CrushlyApp && npm run typecheck && npm test
 
 # Backend: schema, seed and RPC smoke tests on a throwaway Postgres
 python -m venv /tmp/pgvenv && /tmp/pgvenv/bin/pip install pgserver psycopg2-binary
 /tmp/pgvenv/bin/python supabase/tests/run.py
 ```
 
-The database logic lives in `supabase/migrations/` (SQL functions mirror the
-old Express routes one for one); `supabase/README.md` explains the layout.
+Both run on every push in `.github/workflows/ci.yml`. The database logic lives
+in `supabase/migrations/` (SQL functions mirror the old Express routes one for
+one); `supabase/README.md` explains the layout.

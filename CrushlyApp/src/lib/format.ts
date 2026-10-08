@@ -40,6 +40,18 @@ export function durationLabel(seconds: number): string {
 
 export const nameAge = (name: string, age: number | null) => (age ? `${name}, ${age}` : name);
 
+/** Whole years since `YYYY-MM-DD`, or null when there is no usable birthdate. */
+export function ageFromBirthdate(birthdate?: string | null): number | null {
+  if (!birthdate) return null;
+  const [y, m, d] = birthdate.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const today = new Date();
+  let age = today.getUTCFullYear() - y;
+  const beforeBirthday = today.getUTCMonth() + 1 < m || (today.getUTCMonth() + 1 === m && today.getUTCDate() < d);
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
 export function list(items: string[], max = 3) {
   if (items.length <= max) return items.join(' • ');
   return `${items.slice(0, max).join(' • ')} +${items.length - max}`;

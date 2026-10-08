@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, arena/**]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  app:
+    name: Typecheck, test & web build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CrushlyApp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: CrushlyApp/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:web
+
+  backend:
+    name: Database migrations & RLS smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pgserver psycopg2-binary
+      - run: python supabase/tests/run.py

@@ -122,9 +122,17 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
   const account = useMutation({
     mutationFn: (body: { currentPassword: string; email?: string; newPassword?: string }) => service.updateAccount(body),
     onSuccess: (m, body) => {
-      qc.setQueryData(keys.me, m);
+      qc.setQueryData(keys.me, m.me);
       close();
-      toast({ kind: 'success', title: body.email ? 'Email updated' : 'Password changed', message: body.newPassword ? 'Other devices have been signed out.' : undefined });
+      toast({
+        kind: 'success',
+        title: body.email ? (m.emailPending ? 'Confirm your new email' : 'Email updated') : 'Password changed',
+        message: m.emailPending
+          ? 'We sent confirmation links to both addresses. It activates once you confirm.'
+          : body.newPassword
+            ? 'Other devices have been signed out.'
+            : undefined,
+      });
     },
     onError: (e) => setError((e as Error).message),
   });
