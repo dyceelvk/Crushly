@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
+import { cleanEnvValue, normalizeProjectUrl } from '../lib/env';
 import { storage } from '../lib/storage';
 
 /**
@@ -12,10 +13,20 @@ import { storage } from '../lib/storage';
  *   EXPO_PUBLIC_SUPABASE_URL       e.g. https://abcd.supabase.co
  *   EXPO_PUBLIC_SUPABASE_ANON_KEY  the public anon key
  */
-const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+// The dashboard hands out URLs with paths (/rest/v1/ …) — normalize to the
+// bare project origin so supabase-js builds valid /auth/v1 endpoints.
+const RAW_URL = cleanEnvValue(process.env.EXPO_PUBLIC_SUPABASE_URL);
+const SUPABASE_URL = normalizeProjectUrl(RAW_URL);
+const SUPABASE_ANON_KEY = cleanEnvValue(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 
 export const isConfigured = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+
+/** Why the build can't reach the backend, for the sign-in screens to explain. */
+export const configProblem: 'none' | 'missing' | 'bad-url' = isConfigured
+  ? 'none'
+  : RAW_URL && !SUPABASE_URL
+    ? 'bad-url'
+    : 'missing';
 
 /** Session storage: OS keychain/keystore on device, localStorage on the web. */
 const authStorage = {
@@ -47,6 +58,12 @@ export class ApiError extends Error {
 }
 
 export function requireConfig(): void {
+  if (configProblem === 'bad-url') {
+    throw new ApiError(
+      0,
+      'The Supabase URL in this build is wrong. Use the bare Project URL — https://<ref>.supabase.co — not /rest/v1 or a connection string.',
+    );
+  }
   if (!isConfigured) {
     throw new ApiError(
       0,
@@ -65,6 +82,12 @@ export function toApiError(err: unknown): ApiError {
   const message = String(e?.message ?? 'Something went wrong. Please try again.');
   const m = /^__CRUSHLY__(\d+?)__([a-z0-9_]*?)__([\s\S]*)$/.exec(message);
   if (m) return new ApiError(Number(m[1]), m[3] || message, m[2] || undefined);
+  if (/invalid path specified/i.test(message)) {
+    return new ApiError(
+      0,
+      'The Supabase URL in this build is wrong. Use the bare Project URL — https://<ref>.supabase.co — not /rest/v1 or a connection string.',
+    );
+  }
   if (message === 'Failed to fetch' || /network|fetch failed|offline/i.test(message)) {
     return new ApiError(0, 'You seem to be offline. Check your connection and try again.');
   }
