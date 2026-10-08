@@ -381,11 +381,34 @@ export async function recordPlusInterest(): Promise<Me> {
  * arrives via the didit-webhook edge function (or a poll through didit-status).
  * The AI reviewer is an admin-only assist and is never called from here.
  */
+
+/** Invoke an edge function, surfacing the function's own JSON error message. */
+async function invokeFunction<T>(name: string): Promise<T> {
+  const res = await supabase.functions.invoke(name, { body: {} });
+  if (res.error) {
+    // FunctionsHttpError carries the raw Response in .context — read the
+    // function's { error, detail } JSON so members see the real message.
+    let message = '';
+    let status = 502;
+    try {
+      const ctx = (res.error as { context?: Response }).context;
+      status = ctx?.status ?? 502;
+      const body = await ctx?.json();
+      if (body && typeof body === 'object') {
+        const b = body as { error?: unknown; detail?: unknown; message?: unknown };
+        message = String(b.error ?? b.detail ?? b.message ?? '');
+      }
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(status, message || (res.error as Error).message);
+  }
+  return res.data as T;
+}
+
 export async function startDiditVerification(): Promise<{ url: string; sessionId: string }> {
-  const res = await supabase.functions.invoke('didit-session', { body: {} });
-  if (res.error) throw toApiError(res.error);
-  const d = (res.data ?? {}) as { url?: string; session_id?: string; error?: string };
-  if (!d.url) throw new ApiError(502, d.error || 'Couldn’t start verification — try again.');
+  const d = await invokeFunction<{ url?: string; session_id?: string; error?: string }>('didit-session');
+  if (!d?.url) throw new ApiError(502, d?.error || 'Couldn’t start verification — try again.');
   return { url: d.url, sessionId: String(d.session_id ?? '') };
 }
 
@@ -396,10 +419,8 @@ export type DiditStatusResponse = {
 };
 
 export async function getDiditStatus(): Promise<DiditStatusResponse> {
-  const res = await supabase.functions.invoke('didit-status', { body: {} });
-  if (res.error) throw toApiError(res.error);
-  const d = (res.data ?? {}) as Partial<DiditStatusResponse> & { error?: string };
-  if (!d.status) throw new ApiError(502, d.error || 'Couldn’t check the status — try again.');
+  const d = await invokeFunction<Partial<DiditStatusResponse> & { error?: string }>('didit-status');
+  if (!d?.status) throw new ApiError(502, d?.error || 'Couldn’t check the status — try again.');
   return { status: d.status, diditStatus: d.diditStatus ?? null, sessionId: d.sessionId ?? null };
 }
 

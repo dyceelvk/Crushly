@@ -205,6 +205,7 @@ jobs:
           DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
           DIDIT_WORKFLOW_ID: ${{ secrets.DIDIT_WORKFLOW_ID }}
           DIDIT_WEBHOOK_SECRET: ${{ secrets.DIDIT_WEBHOOK_SECRET }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
@@ -251,6 +252,27 @@ jobs:
             echo "::notice::No OPENAI_API_KEY - the admin AI assist (npm run admin -- ai-assist) stays off until it is added."
           else
             echo "::notice::OPENAI_API_KEY wired - the AI review assist is available to administrators only (npm run admin -- ai-assist)."
+          fi
+
+          # Live probes: prove the wiring before members hit it.
+          if [ -n "${DIDIT_API_KEY:-}" ] && [ -n "${DIDIT_WORKFLOW_ID:-}" ]; then
+            probe=$(curl -s -o /tmp/probe.json -w "%{http_code}" \
+              -H "x-api-key: $DIDIT_API_KEY" \
+              "https://verification.didit.me/v3/workflows/$DIDIT_WORKFLOW_ID")
+            if [ "$probe" = "200" ]; then
+              echo "::notice::Didit probe OK: API key + workflow are valid (GET /v3/workflows/{id} -> 200)."
+            else
+              echo "::warning::Didit probe FAILED (HTTP $probe): $(head -c 300 /tmp/probe.json) - use the PRIMARY key from the SAME application as the workflow, and make sure the workflow is published."
+            fi
+          fi
+          schema=$(curl -s -o /tmp/schema.json -w "%{http_code}" \
+            -H "apikey: ${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" \
+            -H "Authorization: Bearer ${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" \
+            "https://yzcssyebozfkmojqqdhc.supabase.co/rest/v1/verification_requests?select=didit_session_id&limit=1")
+          if [ "$schema" = "200" ]; then
+            echo "::notice::Schema probe OK: the Didit columns are live (verification_requests.didit_session_id answers)."
+          else
+            echo "::warning::Schema probe FAILED (HTTP $schema): $(head -c 300 /tmp/schema.json) - run the Deploy database migrations workflow (https://github.com/dyceelvk/Crushly/actions/workflows/db-migrations.yml)."
           fi
 
           echo "--- deploying edge functions ---"
