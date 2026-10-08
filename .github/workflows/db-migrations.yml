@@ -1,0 +1,63 @@
+# Pushes supabase/migrations to the live Supabase project — no SQL copy-paste.
+#
+# One-time setup (GitHub → Settings → Secrets and variables → Actions):
+#   Secret name:  SUPABASE_DB_URL
+#   Value:        the Postgres connection URI from
+#                 Supabase → Project Settings → Database → Connection string
+#                 → Session pooler → URI  (replace [YOUR-PASSWORD] with your
+#                 database password; reset it on that page if you lost it).
+#
+# Never commit this value or paste it into chat.
+#
+# Runs when migrations change on the main line, or manually from the Actions
+# tab ("Run workflow"). seed.sql is deliberately NOT pushed — demo data stays
+# out of the live project.
+
+name: Deploy database migrations
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, arena/**]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/db-migrations.yml'
+
+concurrency:
+  group: db-migrations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  push:
+    name: supabase db push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Push migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set. Add it under Settings → Secrets and variables → Actions (see .github/workflows/db-migrations.yml)."
+            exit 1
+          fi
+          supabase db push --db-url "$SUPABASE_DB_URL"
+
+      - name: Verify schema landed
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          # Reality check against the database itself: the app's core table
+          # must exist after a successful push.
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
+          out=$(psql "$SUPABASE_DB_URL" -tAc "select to_regclass('public.profiles') is not null;")
+          echo "profiles table exists: $out"
+          if [ "$out" != "t" ]; then
+            echo "::error::Migrations reported success but public.profiles is missing — wrong database?"
+            exit 1
+          fi

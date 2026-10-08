@@ -55,11 +55,21 @@ A productive deployment has real accounts and no seeded data. Four steps from
 zero:
 
 1. **Create the backend.** New project at [supabase.com](https://supabase.com),
-   then create the schema — whichever you find easier:
-   - **No CLI**: open the project's **SQL editor**, paste all of
-     [`supabase/setup.sql`](supabase/setup.sql) and Run. (It's generated from
-     the migrations via `npm run bundle:sql`.)
-   - **CLI**: `supabase link --project-ref <ref> && supabase db push`
+   then create the schema — easiest first:
+   - **GitHub Actions (recommended)**: add one repository secret and the
+     [`db-migrations.yml`](.github/workflows/db-migrations.yml) workflow pushes
+     `supabase/migrations/` to your project automatically on every migration
+     change (or manually from the Actions tab → *Run workflow*):
+     1. Supabase → **Project Settings → Database → Connection string** →
+        **Session pooler** → **URI**. Replace `[YOUR-PASSWORD]` with your
+        database password (reset it on that page if you lost it).
+     2. GitHub repo → **Settings → Secrets and variables → Actions** →
+        **New repository secret** → name it `SUPABASE_DB_URL`, paste the URI.
+     Never commit that value or paste it into chat.
+   - **No CLI, one time**: open the project's **SQL editor**, paste all of
+     [`supabase/setup.sql`](supabase/setup.sql) and Run — it's re-runnable and
+     self-healing. (Generated from the migrations via `npm run bundle:sql`.)
+   - **Local CLI**: `supabase link --project-ref <ref> && supabase db push`
      (full steps in [`supabase/README.md`](supabase/README.md)).
    Never load `seed.sql` into a live project — it's the fictional demo
    community. If it ever lands there, `npm run admin -- purge-demo` removes it.
