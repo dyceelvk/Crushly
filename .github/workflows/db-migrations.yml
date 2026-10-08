@@ -94,4 +94,10 @@ jobs:
             echo "::error::The on_auth_user_created trigger is missing — new signups would not get member rows."
             exit 1
           fi
-          echo "::notice::Database schema is live: profiles + signup trigger verified."
+          demo=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from public.profiles where is_demo);")
+          echo "demo rows present: $demo"
+          if [ "$demo" = "t" ]; then
+            echo "::error::Demo seed data found in the live database — run: cd supabase && npm run admin -- purge-demo"
+            exit 1
+          fi
+          echo "::notice::Database schema is live: profiles + signup trigger verified, no demo data."
