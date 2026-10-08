@@ -78,8 +78,9 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          # Reality check against the database itself: the app's core table
-          # must exist after a successful push.
+          # Reality checks against the database itself: the app's core table and
+          # the signup trigger (which creates member rows for new accounts)
+          # must both exist after a successful push.
           command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
           out=$(psql "$SUPABASE_DB_URL" -tAc "select to_regclass('public.profiles') is not null;")
           echo "profiles table exists: $out"
@@ -87,3 +88,10 @@ jobs:
             echo "::error::Migrations reported success but public.profiles is missing — wrong database?"
             exit 1
           fi
+          trg=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from pg_trigger where tgname = 'on_auth_user_created');")
+          echo "signup trigger exists: $trg"
+          if [ "$trg" != "t" ]; then
+            echo "::error::The on_auth_user_created trigger is missing — new signups would not get member rows."
+            exit 1
+          fi
+          echo "::notice::Database schema is live: profiles + signup trigger verified."
