@@ -104,6 +104,21 @@ zero:
    Then sign up for real. Native builds (TestFlight / Play Store) use the same
    env values — see [`CrushlyApp/README.md`](CrushlyApp/README.md).
 
+## AI profile verification
+
+Members follow two illustrated poses (`CrushlyApp/assets/poses/`), the app uploads the
+selfies to the private `verification` bucket, and the `verify-identity` edge function
+compares them with their profile photos using a vision model — verified members get the
+badge instantly, mismatches can retake, and anything the AI can't handle stays queued for
+manual review (`npm run admin -- review-verification`).
+
+- One secret keeps it automatic: **`OPENAI_API_KEY`** at
+  https://github.com/dyceelvk/Crushly/settings/secrets/actions
+  (create one at https://platform.openai.com/api-keys). The deploy wires it into the
+  project and deploys `supabase/functions/verify-identity/index.ts` on every push.
+- Optional `AI_MODEL` repo secret overrides the default `gpt-4o-mini`.
+- Without an AI key, verification still works — requests queue for human review.
+
 ## Gmail confirmation emails
 
 Sign-up confirmation emails are sent through your Gmail via SMTP as **6-digit codes**

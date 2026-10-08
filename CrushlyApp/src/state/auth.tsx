@@ -136,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!data.session) {
         throw new ApiError(
           202,
-          'Check your inbox — we emailed your confirmation code.',
+          'Check your inbox — we sent a code and a link. Use whichever you prefer.',
         );
       }
       await afterAuth();

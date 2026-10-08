@@ -161,6 +161,8 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'choose' | 'code'>('choose');
+  const [linkState, setLinkState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const passwordRef = useRef<TextInput>(null);
 
   const strength = password.length === 0 ? null : password.length < 8 ? 'Too short' : /[0-9]/.test(password) && /[A-Za-z]/.test(password) && password.length >= 10 ? 'Strong' : 'Good';
@@ -200,86 +202,117 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
     }
   };
 
+  const sendLink = async () => {
+    if (!sentTo || linkState === 'busy') return;
+    setLinkState('busy');
+    try {
+      await service.resendConfirmation(sentTo);
+      setLinkState('done');
+    } catch {
+      setLinkState('error');
+    }
+  };
+
   if (sentTo) {
     return (
-      <Screen footer={<Button title="Verify & continue" onPress={() => void submitCode(code)} loading={verifying} disabled={code.length !== 6} />}>
+      <Screen
+        footer={
+          mode === 'code' ? (
+            <Button title="Verify & continue" onPress={() => void submitCode(code)} loading={verifying} disabled={code.length !== 6} />
+          ) : undefined
+        }
+      >
         <Header back />
         <CrushlyMark size={44} />
         <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-          Enter your code
+          Check your inbox
         </Txt>
         <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
-          We sent a code to{' '}
-          <Txt variant="bodyStrong">{sentTo}</Txt>. Enter it below to activate your account — you’ll
-          be signed in automatically.
+          We sent a code and a link to{' '}
+          <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you prefer — you’ll be signed in
+          automatically either way.
         </Txt>
-        <View
-          style={{
-            marginTop: space.xl,
-            backgroundColor: colors.goldSoft,
-            borderRadius: 16,
-            borderWidth: 1.5,
-            borderColor: code.length ? colors.gold : colors.goldSoft,
-          }}
-        >
-          <TextInput
-            value={code}
-            onChangeText={(t) => {
-              const c = t.replace(/[^0-9]/g, '').slice(0, 6);
-              setCode(c);
-              setVerifyError(null);
-              if (c.length === 6) void submitCode(c);
-            }}
-            keyboardType="number-pad"
-            inputMode="numeric"
-            textContentType="oneTimeCode"
-            autoComplete="sms-otp"
-            maxLength={6}
-            placeholder="000000"
-            placeholderTextColor={colors.textMuted}
-            accessibilityLabel="Confirmation code"
-            style={{
-              textAlign: 'center',
-              fontSize: 30,
-              fontWeight: '800',
-              letterSpacing: 10,
-              color: colors.text,
-              paddingVertical: 16,
-            }}
-          />
-        </View>
-        {verifyError ? (
-          <Txt variant="small" color="danger" align="center" style={{ marginTop: space.sm }}>
-            {verifyError}
-          </Txt>
-        ) : null}
-        <View style={{ marginTop: space.xl, gap: space.sm }}>
-          <Button
-            title={resent === 'done' ? 'Code sent again' : 'Resend code'}
-            variant="outline"
-            size="md"
-            icon="mail-outline"
-            loading={resent === 'busy'}
-            onPress={async () => {
-              setResent('busy');
-              try {
-                await service.resendConfirmation(sentTo);
-                setResent('done');
-              } catch {
-                setResent('error');
-              }
-            }}
-          />
-          {resent === 'error' ? (
-            <Txt variant="small" color="danger" align="center">
-              Couldn’t resend just now — wait a minute and try again.
-            </Txt>
-          ) : (
-            <Txt variant="small" color="textMuted" align="center">
-              No email after a minute? Check spam, or resend.
-            </Txt>
-          )}
-        </View>
+
+        {mode === 'choose' ? (
+          <View style={{ marginTop: space.xl, gap: space.sm }}>
+            <Button title="Verify with code" icon="keypad-outline" onPress={() => setMode('code')} />
+            <Button title="Get a link" variant="outline" icon="link-outline" loading={linkState === 'busy'} onPress={() => void sendLink()} />
+            {linkState === 'done' ? (
+              <Txt variant="small" color="gold" align="center" style={{ marginTop: 4 }}>
+                Link sent! Open the newest email and tap “Confirm my email”.
+              </Txt>
+            ) : linkState === 'error' ? (
+              <Txt variant="small" color="danger" align="center">
+                Couldn’t send just now — wait a minute and try again.
+              </Txt>
+            ) : (
+              <Txt variant="small" color="textMuted" align="center">
+                The code is fastest. The link works great from your phone.
+              </Txt>
+            )}
+          </View>
+        ) : (
+          <>
+            <View
+              style={{
+                marginTop: space.xl,
+                backgroundColor: colors.goldSoft,
+                borderRadius: 16,
+                borderWidth: 1.5,
+                borderColor: code.length ? colors.gold : colors.goldSoft,
+              }}
+            >
+              <TextInput
+                value={code}
+                onChangeText={(t) => {
+                  const c = t.replace(/[^0-9]/g, '').slice(0, 6);
+                  setCode(c);
+                  setVerifyError(null);
+                  if (c.length === 6) void submitCode(c);
+                }}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                textContentType="oneTimeCode"
+                autoComplete="sms-otp"
+                maxLength={6}
+                placeholder="000000"
+                placeholderTextColor={colors.textMuted}
+                accessibilityLabel="Confirmation code"
+                autoFocus
+                style={{
+                  textAlign: 'center',
+                  fontSize: 30,
+                  fontWeight: '800',
+                  letterSpacing: 10,
+                  color: colors.text,
+                  paddingVertical: 16,
+                }}
+              />
+            </View>
+            {verifyError ? (
+              <Txt variant="small" color="danger" align="center" style={{ marginTop: space.sm }}>
+                {verifyError}
+              </Txt>
+            ) : null}
+            <View style={{ marginTop: space.lg, gap: space.sm }}>
+              <Button title="Get a link instead" variant="outline" icon="link-outline" loading={linkState === 'busy'} onPress={() => void sendLink()} />
+              {linkState === 'done' ? (
+                <Txt variant="small" color="gold" align="center">
+                  Link sent! Open the newest email and tap “Confirm my email”.
+                </Txt>
+              ) : linkState === 'error' ? (
+                <Txt variant="small" color="danger" align="center">
+                  Couldn’t send just now — wait a minute and try again.
+                </Txt>
+              ) : (
+                <Txt variant="small" color="textMuted" align="center">
+                  No code? We can email a link instead.
+                </Txt>
+              )}
+            </View>
+          </>
+        )}
+
         <Pressable onPress={() => navigation.replace('SignIn')} style={{ marginTop: space.lg, alignSelf: 'center' }}>
           <Txt variant="small" color="textMuted">
             Wrong address? Go back to sign in.

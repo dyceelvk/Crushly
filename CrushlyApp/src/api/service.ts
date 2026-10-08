@@ -387,19 +387,59 @@ export function nextVerificationPose(): string {
 }
 
 /**
- * Verification: the member submits a live selfie copying a random pose.
- * The request is queued for human review — nobody is verified automatically.
+ * Verification: the member copies two illustrated poses for a live selfie set.
+ * The AI reviewer compares the selfies with their profile photos in seconds;
+ * if no AI key is wired yet, the request stays queued for human review.
  */
-export async function submitVerification({ uri, pose, mimeType }: { uri: string; pose: string; mimeType?: string }): Promise<Me> {
+export type VerificationCapture = { uri: string; pose: string; mimeType?: string };
+export type AiVerificationResult = { status: 'verified' | 'rejected' | 'pending'; reason: string };
+
+export async function submitVerification(captures: VerificationCapture[]): Promise<{ me: Me; result: AiVerificationResult }> {
+  if (!captures.length) throw new ApiError(400, 'Add at least one selfie.');
   const id = await meId();
   const profile = unwrap(await supabase.from('profiles').select('verification').eq('id', id).single()) as { verification: string };
   if (profile.verification === 'verified') throw new ApiError(400, 'You’re already verified.');
-  const type = mimeType || 'image/jpeg';
-  const path = await uploadMediaFile('verification', `selfies/${id}/${Date.now()}.${extensionFor(type, 'jpg')}`, uri, type);
+  const paths: string[] = [];
+  for (let i = 0; i < captures.length; i++) {
+    const c = captures[i];
+    const type = c.mimeType || 'image/jpeg';
+    paths.push(await uploadMediaFile('verification', `selfies/${id}/${Date.now()}_${i}.${extensionFor(type, 'jpg')}`, c.uri, type));
+  }
   unwrap(await supabase.from('verification_requests').update({ status: 'superseded' }).eq('user_id', id).eq('status', 'pending'));
-  unwrap(await supabase.from('verification_requests').insert({ user_id: id, selfie_path: path, pose: str(pose, 'Pose', { required: true, max: 80 }) }));
+  const inserted = unwrap(
+    await supabase
+      .from('verification_requests')
+      .insert({
+        user_id: id,
+        selfie_path: paths[0],
+        selfies: paths.slice(1),
+        pose: captures.map((c) => c.pose).join(' + ').slice(0, 80),
+      })
+      .select('id')
+      .single(),
+  ) as { id: number };
   unwrap(await supabase.from('profiles').update({ verification: 'pending' }).eq('id', id));
-  return getMe();
+  const result = await runAiVerification(inserted.id);
+  return { me: await getMe(), result };
+}
+
+async function runAiVerification(requestId: number): Promise<AiVerificationResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('verify-identity', {
+      body: { request_id: requestId },
+    });
+    if (error) {
+      return { status: 'pending', reason: 'AI review is unavailable right now — our team will check your selfie manually.' };
+    }
+    const d = (data ?? {}) as { status?: string; reason?: string };
+    const status = d.status === 'verified' ? 'verified' : d.status === 'rejected' ? 'rejected' : 'pending';
+    return {
+      status,
+      reason: String(d.reason ?? (status === 'verified' ? 'You’re verified.' : '')),
+    };
+  } catch {
+    return { status: 'pending', reason: 'AI review is unavailable right now — our team will check your selfie manually.' };
+  }
 }
 
 export async function updateAccount(body: {

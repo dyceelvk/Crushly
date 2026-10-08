@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, Platform, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Screen, Header, useLayout } from '../../components/Layout';
@@ -9,12 +9,29 @@ import { Photo, Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { useToast } from '../../components/Toast';
 import { keys, useMe } from '../../api/hooks';
-import { nextVerificationPose, submitVerification } from '../../api/service';
-import type { Me } from '../../api/types';
+import { submitVerification, type AiVerificationResult } from '../../api/service';
 import { pickImage, type PickedImage } from '../../lib/media';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
+
+/** The illustrated pose process — the app and the AI both know exactly what to expect. */
+const STEPS = [
+  {
+    pose: 'Peace sign & smile',
+    title: 'Pose 1 — Peace sign & smile',
+    body: 'Smile big and hold up a peace sign beside your face.',
+    image: require('../../../assets/poses/pose-1.png'),
+  },
+  {
+    pose: 'Hand on cheek, tilt',
+    title: 'Pose 2 — Hand on cheek',
+    body: 'Rest one hand softly on your cheek and tilt your head a little.',
+    image: require('../../../assets/poses/pose-2.png'),
+  },
+];
+
+type Phase = 'intro' | 'capture' | 'review' | 'result';
 
 export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) {
   const { colors } = useTheme();
@@ -22,36 +39,38 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
   const toast = useToast();
   const qc = useQueryClient();
   const { data: me } = useMe();
-  const [step, setStep] = useState<'intro' | 'pose' | 'review'>('intro');
-  const [pose, setPose] = useState<string | null>(null);
-  const [selfie, setSelfie] = useState<PickedImage | null>(null);
+  const [phase, setPhase] = useState<Phase>('intro');
+  const [index, setIndex] = useState(0);
+  const [captures, setCaptures] = useState<(PickedImage | null)[]>([null, null]);
   const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<AiVerificationResult | null>(null);
   const status = me?.verification.status ?? 'none';
 
-  useEffect(() => {
-    if (step === 'pose' && !pose) {
-      setPose(nextVerificationPose());
-    }
-  }, [step, pose, toast]);
+  const w = Math.min(contentWidth - gutter * 2, 320);
+  const step = STEPS[index];
 
   const capture = async () => {
     const img = await pickImage({ camera: true, square: true });
     if (!img) return;
     if ('error' in img) return toast({ kind: 'error', title: 'Camera unavailable', message: img.error });
-    setSelfie(img);
-    setStep('review');
+    setCaptures((prev) => prev.map((c, i) => (i === index ? img : c)));
+    if (index < STEPS.length - 1) setIndex(index + 1);
+    else setPhase('review');
   };
 
   const submit = async () => {
-    if (!selfie || !pose) return;
+    if (captures.some((c) => !c)) return;
     setBusy(true);
     try {
-      const next = await submitVerification({ uri: selfie.uri, pose, mimeType: selfie.mimeType });
+      const items = captures.map((c, i) => ({
+        uri: c!.uri,
+        mimeType: c!.mimeType,
+        pose: STEPS[i].pose,
+      }));
+      const { me: next, result: verdict } = await submitVerification(items);
       qc.setQueryData(keys.me, next);
-      toast({ kind: 'success', title: 'Selfie submitted', message: 'We’ll review it shortly and let you know.' });
-      setStep('intro');
-      setSelfie(null);
-      setPose(null);
+      setResult(verdict);
+      setPhase('result');
     } catch (e) {
       toast({ kind: 'error', title: 'Not submitted', message: (e as Error).message });
     } finally {
@@ -59,9 +78,14 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
     }
   };
 
-  const w = Math.min(contentWidth - gutter * 2, 320);
+  const reset = () => {
+    setCaptures([null, null]);
+    setIndex(0);
+    setResult(null);
+    setPhase('capture');
+  };
 
-  if (status === 'verified') {
+  if (status === 'verified' && phase !== 'result') {
     return (
       <Screen>
         <Header title="Verification" back />
@@ -83,38 +107,109 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
     );
   }
 
-  if (status === 'pending' && step === 'intro') {
+  if (status === 'pending' && phase === 'intro') {
     return (
-      <Screen>
+      <Screen footer={<Button title="Submit a new selfie" variant="outline" onPress={reset} />}>
         <Header title="Verification" back />
         <View style={{ alignItems: 'center', marginTop: space.xl }}>
           <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: colors.goldSoft, alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name="hourglass-outline" size={36} color={colors.gold} />
           </View>
           <Txt variant="heading" align="center" style={{ marginTop: space.lg }}>
-            We’re reviewing your selfie
+            Review in progress
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ marginTop: 6, maxWidth: 340 }}>
-            A real person on our team compares it with your photos. You’ll get a notification as soon as it’s done.
+            Most checks finish in seconds. If our team needs a closer look, you’ll get a notification as soon as it’s done.
           </Txt>
-          <Button title="Submit a new selfie" variant="ghost" onPress={() => setStep('pose')} style={{ marginTop: space.lg }} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (phase === 'result' && result) {
+    const ok = result.status === 'verified';
+    const pending = result.status === 'pending';
+    return (
+      <Screen footer={<Button title={ok ? 'Done' : pending ? 'Back' : 'Try again'} onPress={() => (ok || pending ? navigation.goBack() : reset())} />}>
+        <Header title="Get verified" back onBack={() => navigation.goBack()} />
+        <View style={{ alignItems: 'center', marginTop: space.xl }}>
+          <View
+            style={{
+              width: 96,
+              height: 96,
+              borderRadius: 48,
+              backgroundColor: ok ? colors.goldSoft : pending ? colors.goldSoft : colors.dangerSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {ok ? <VerifiedBadge size={56} /> : <Ionicons name={pending ? 'hourglass-outline' : 'alert-circle-outline'} size={44} color={pending ? colors.gold : colors.danger} />}
+          </View>
+          <Txt variant="heading" align="center" style={{ marginTop: space.lg }}>
+            {ok ? 'You’re verified!' : pending ? 'Almost there' : 'Not quite this time'}
+          </Txt>
+          <Txt variant="body" color="textSecondary" align="center" style={{ marginTop: 8, maxWidth: 330 }}>
+            {result.reason ||
+              (ok
+                ? 'The blue check is yours.'
+                : pending
+                  ? 'Our team will finish the review shortly.'
+                  : 'The selfie didn’t match your profile photos clearly enough.')}
+          </Txt>
+          {ok ? (
+            <View style={{ marginTop: space.lg, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <VerifiedBadge size={18} />
+              <Txt variant="small" color="textMuted" style={{ flex: 1, maxWidth: 280 }}>
+                Verified members get this small check next to their name. Free, always.
+              </Txt>
+            </View>
+          ) : null}
         </View>
       </Screen>
     );
   }
 
   return (
-    <Screen footer={
-      step === 'intro' ? <Button title="Start verification" onPress={() => setStep('pose')} /> :
-      step === 'pose' ? <Button title={Platform.OS === 'web' ? 'Choose your selfie' : 'Take my selfie'} icon="camera-outline" onPress={capture} disabled={!pose} /> :
-      <View style={{ gap: space.xs }}>
-        <Button title="Submit for review" onPress={submit} loading={busy} />
-        <Button title="Retake" variant="ghost" onPress={capture} />
-      </View>
-    }>
-      <Header title="Get verified" back onBack={step === 'intro' ? undefined : () => setStep(step === 'review' ? 'pose' : 'intro')} />
+    <Screen
+      footer={
+        phase === 'intro' ? (
+          <Button title="Start verification" onPress={() => setPhase('capture')} />
+        ) : phase === 'capture' ? (
+          captures[index] ? (
+            <View style={{ gap: space.xs }}>
+              {index < STEPS.length - 1 ? (
+                <Button title="Next pose" icon="arrow-forward" onPress={() => setIndex(index + 1)} />
+              ) : (
+                <Button title="Review my selfies" icon="checkmark" onPress={() => setPhase('review')} />
+              )}
+              <Button title="Retake this one" variant="ghost" onPress={capture} />
+            </View>
+          ) : (
+            <Button
+              title={Platform.OS === 'web' ? 'Choose your selfie' : 'Take my selfie'}
+              icon="camera-outline"
+              onPress={capture}
+            />
+          )
+        ) : (
+          <View style={{ gap: space.xs }}>
+            <Button title="Check my selfies" icon="sparkles-outline" onPress={submit} loading={busy} />
+            <Button title="Retake photos" variant="ghost" onPress={reset} />
+          </View>
+        )
+      }
+    >
+      <Header
+        title="Get verified"
+        back
+        onBack={
+          phase === 'intro'
+            ? undefined
+            : () => (phase === 'capture' && index > 0 ? setIndex(index - 1) : setPhase(phase === 'review' ? 'capture' : 'intro'))
+        }
+      />
 
-      {step === 'intro' ? (
+      {phase === 'intro' ? (
         <>
           <Txt variant="accent" color="textSecondary">
             Make your profile more trustworthy.
@@ -123,15 +218,15 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             <View style={{ marginTop: space.lg, padding: space.md, borderRadius: radius.md, backgroundColor: colors.dangerSoft, flexDirection: 'row', gap: 10 }}>
               <Ionicons name="information-circle-outline" size={20} color={colors.danger} />
               <Txt variant="small" style={{ flex: 1 }}>
-                Your last selfie couldn’t be matched. Make sure your face is clearly lit and you copy the pose exactly.
+                Your last selfie couldn’t be matched. Make sure your face is clearly lit and copy the poses exactly.
               </Txt>
             </View>
           ) : null}
           <View style={{ marginTop: space.xl, gap: space.lg }}>
             {[
-              { icon: 'hand-left-outline' as const, title: 'Copy a pose', body: 'We’ll show you a simple pose so we know it’s a live photo.' },
-              { icon: 'camera-outline' as const, title: 'Take a selfie', body: 'Good light, face the camera, no sunglasses.' },
-              { icon: 'person-outline' as const, title: 'A real person reviews it', body: 'We compare it with your profile photos. Your selfie is never shown to anyone.' },
+              { icon: 'images-outline' as const, title: 'Follow the poses', body: 'Two simple illustrated poses — we’ll show you exactly how.' },
+              { icon: 'camera-outline' as const, title: 'Take two selfies', body: 'Good light, face the camera, no sunglasses.' },
+              { icon: 'sparkles-outline' as const, title: 'AI checks it in seconds', body: 'Our AI compares your selfies with your profile photos to make sure it’s really you.' },
             ].map((s, i) => (
               <View key={s.title} style={{ flexDirection: 'row', gap: space.md }}>
                 <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldLine, alignItems: 'center', justifyContent: 'center' }}>
@@ -151,30 +246,49 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
           <View style={{ marginTop: space.xl, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <VerifiedBadge size={18} />
             <Txt variant="small" color="textMuted" style={{ flex: 1 }}>
-              Verified members get this small check next to their name. Free, always.
+              Verified members get this small check next to their name. Your selfies stay private and are never shown to other members.
             </Txt>
           </View>
         </>
-      ) : step === 'pose' ? (
+      ) : phase === 'capture' ? (
         <View style={{ alignItems: 'center', marginTop: space.lg }}>
-          <View style={{ width: w, height: w, borderRadius: radius.xl, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldLine, alignItems: 'center', justifyContent: 'center', padding: space.xl }}>
-            <Ionicons name="hand-left-outline" size={56} color={colors.gold} />
-            <Txt variant="label" color="textMuted" style={{ marginTop: space.lg }}>
-              Your pose
-            </Txt>
-            <Txt variant="heading" align="center" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">
-              {pose ?? '…'}
-            </Txt>
-          </View>
-          <Txt variant="small" color="textSecondary" align="center" style={{ marginTop: space.lg, maxWidth: 320 }}>
-            Hold the pose and take a clear selfie. Only our review team sees it, and it’s deleted after review.
+          <Txt variant="label" color="textMuted">
+            {step.title}
           </Txt>
+          <View style={{ width: w, height: w, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldLine, marginTop: space.sm }}>
+            <Image source={step.image} style={{ width: '100%', height: '100%' }} resizeMode="cover" accessibilityLabel={`Illustration: ${step.title}`} />
+          </View>
+          <Txt variant="body" align="center" color="textSecondary" style={{ marginTop: space.md, maxWidth: 320 }}>
+            {step.body}
+          </Txt>
+          {captures[index] ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.md }}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.gold} />
+              <Txt variant="smallStrong">Captured — nice one!</Txt>
+            </View>
+          ) : (
+            <Txt variant="small" color="textMuted" align="center" style={{ marginTop: space.md, maxWidth: 320 }}>
+              Copy the illustration as closely as you can. Only the verification system sees these photos.
+            </Txt>
+          )}
         </View>
       ) : (
-        <View style={{ alignItems: 'center', marginTop: space.lg }}>
-          <Photo uri={selfie?.uri} style={{ width: w, height: w, borderRadius: radius.xl }} contentPosition="center" alt="Your selfie" />
-          <Txt variant="small" color="textSecondary" align="center" style={{ marginTop: space.md }}>
-            Pose: {pose}
+        <View style={{ alignItems: 'center', marginTop: space.lg, gap: space.md }}>
+          <Txt variant="heading" align="center">
+            Looking good
+          </Txt>
+          <View style={{ flexDirection: 'row', gap: space.md }}>
+            {captures.map((c, i) => (
+              <View key={i} style={{ alignItems: 'center' }}>
+                <Photo uri={c?.uri} style={{ width: w / 2 - space.md, height: w / 2 - space.md, borderRadius: radius.lg }} contentPosition="center" alt={`Selfie ${i + 1}`} />
+                <Txt variant="small" color="textMuted" style={{ marginTop: 6 }}>
+                  {STEPS[i].pose}
+                </Txt>
+              </View>
+            ))}
+          </View>
+          <Txt variant="small" color="textSecondary" align="center" style={{ maxWidth: 320 }}>
+            Our AI will compare these with your profile photos. It usually takes just a few seconds.
           </Txt>
         </View>
       )}
