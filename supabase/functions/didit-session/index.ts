@@ -1,0 +1,99 @@
+// didit-session — starts a Didit hosted verification session for the signed-in
+// member. Didit runs the checks (ID document, liveness, face match); we store
+// the session and hand back its URL. Results arrive via the didit-webhook
+// function (authoritative), or the member taps "Check status" which polls
+// Didit through didit-status.
+//
+// Secrets: SUPABASE_* (automatic) + DIDIT_API_KEY, DIDIT_WORKFLOW_ID, APP_URL.
+
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { DIDIT_BASE } from '../_shared/didit.ts';
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+
+  const apiKey = Deno.env.get('DIDIT_API_KEY') ?? '';
+  const workflowId = Deno.env.get('DIDIT_WORKFLOW_ID') ?? '';
+  const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/+$/, '');
+  if (!apiKey || !workflowId || !appUrl) {
+    return json(
+      { error: 'Verification is not configured yet — add the DIDIT_API_KEY, DIDIT_WORKFLOW_ID and APP_URL secrets.' },
+      503,
+    );
+  }
+
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const anon = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  const userClient = createClient(url, anon, { global: { headers: { Authorization: authHeader } } });
+  const { data: who, error: whoErr } = await userClient.auth.getUser();
+  const user = who?.user;
+  if (whoErr || !user) return json({ error: 'sign in required' }, 401);
+  const admin = createClient(url, serviceKey);
+
+  const { data: profile, error: profErr } = await admin
+    .from('profiles')
+    .select('id, email, verification')
+    .eq('auth_user_id', user.id)
+    .maybeSingle();
+  if (profErr || !profile) return json({ error: 'profile not found' }, 404);
+  if (profile.verification === 'verified') return json({ error: 'You’re already verified.' }, 400);
+
+  let session: { session_id?: string; url?: string; status?: string };
+  try {
+    const res = await fetch(`${DIDIT_BASE}/v3/session/`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workflow_id: workflowId,
+        vendor_data: String(profile.id),
+        callback: `${appUrl}/?didit=done`,
+        callback_method: 'both',
+        language: 'en',
+        contact_details: { email: profile.email },
+        metadata: { profile_id: profile.id },
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return json({ error: `Didit session failed (HTTP ${res.status})`, detail: body?.detail ?? body?.message }, 502);
+    }
+    session = body;
+  } catch {
+    return json({ error: 'Couldn’t reach Didit — try again in a moment.' }, 502);
+  }
+  if (!session.session_id || !session.url) {
+    return json({ error: 'Didit returned an unexpected response.' }, 502);
+  }
+
+  // One live session per member: retire older pending requests, record this one.
+  await admin.from('verification_requests').update({ status: 'superseded' }).eq('user_id', profile.id).eq('status', 'pending');
+  const { error: insErr } = await admin.from('verification_requests').insert({
+    user_id: profile.id,
+    selfie_path: null,
+    pose: null,
+    status: 'pending',
+    didit_session_id: session.session_id,
+    didit_status: session.status ?? 'Not Started',
+  });
+  if (insErr) return json({ error: 'Couldn’t record the session.' }, 500);
+  await admin.from('profiles').update({ verification: 'pending' }).eq('id', profile.id);
+
+  return json({ url: session.url, session_id: session.session_id });
+});

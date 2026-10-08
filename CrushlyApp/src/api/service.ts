@@ -375,71 +375,32 @@ export async function recordPlusInterest(): Promise<Me> {
   return getMe();
 }
 
-const VERIFICATION_POSES = [
-  'Hold up a peace sign next to your face',
-  'Touch your chin with your thumb',
-  'Give a thumbs up beside your cheek',
-  'Point at the camera with one finger',
-];
-
-export function nextVerificationPose(): string {
-  return VERIFICATION_POSES[Math.floor(Math.random() * VERIFICATION_POSES.length)];
-}
-
 /**
- * Verification: the member copies two illustrated poses for a live selfie set.
- * The AI reviewer compares the selfies with their profile photos in seconds;
- * if no AI key is wired yet, the request stays queued for human review.
+ * Verification runs through Didit (hosted ID + liveness + face-match flow).
+ * The member app only starts a session and checks the result; the decision
+ * arrives via the didit-webhook edge function (or a poll through didit-status).
+ * The AI reviewer is an admin-only assist and is never called from here.
  */
-export type VerificationCapture = { uri: string; pose: string; mimeType?: string };
-export type AiVerificationResult = { status: 'verified' | 'rejected' | 'pending'; reason: string };
-
-export async function submitVerification(captures: VerificationCapture[]): Promise<{ me: Me; result: AiVerificationResult }> {
-  if (!captures.length) throw new ApiError(400, 'Add at least one selfie.');
-  const id = await meId();
-  const profile = unwrap(await supabase.from('profiles').select('verification').eq('id', id).single()) as { verification: string };
-  if (profile.verification === 'verified') throw new ApiError(400, 'You’re already verified.');
-  const paths: string[] = [];
-  for (let i = 0; i < captures.length; i++) {
-    const c = captures[i];
-    const type = c.mimeType || 'image/jpeg';
-    paths.push(await uploadMediaFile('verification', `selfies/${id}/${Date.now()}_${i}.${extensionFor(type, 'jpg')}`, c.uri, type));
-  }
-  unwrap(await supabase.from('verification_requests').update({ status: 'superseded' }).eq('user_id', id).eq('status', 'pending'));
-  const inserted = unwrap(
-    await supabase
-      .from('verification_requests')
-      .insert({
-        user_id: id,
-        selfie_path: paths[0],
-        selfies: paths.slice(1),
-        pose: captures.map((c) => c.pose).join(' + ').slice(0, 80),
-      })
-      .select('id')
-      .single(),
-  ) as { id: number };
-  unwrap(await supabase.from('profiles').update({ verification: 'pending' }).eq('id', id));
-  const result = await runAiVerification(inserted.id);
-  return { me: await getMe(), result };
+export async function startDiditVerification(): Promise<{ url: string; sessionId: string }> {
+  const res = await supabase.functions.invoke('didit-session', { body: {} });
+  if (res.error) throw toApiError(res.error);
+  const d = (res.data ?? {}) as { url?: string; session_id?: string; error?: string };
+  if (!d.url) throw new ApiError(502, d.error || 'Couldn’t start verification — try again.');
+  return { url: d.url, sessionId: String(d.session_id ?? '') };
 }
 
-async function runAiVerification(requestId: number): Promise<AiVerificationResult> {
-  try {
-    const { data, error } = await supabase.functions.invoke('verify-identity', {
-      body: { request_id: requestId },
-    });
-    if (error) {
-      return { status: 'pending', reason: 'AI review is unavailable right now — our team will check your selfie manually.' };
-    }
-    const d = (data ?? {}) as { status?: string; reason?: string };
-    const status = d.status === 'verified' ? 'verified' : d.status === 'rejected' ? 'rejected' : 'pending';
-    return {
-      status,
-      reason: String(d.reason ?? (status === 'verified' ? 'You’re verified.' : '')),
-    };
-  } catch {
-    return { status: 'pending', reason: 'AI review is unavailable right now — our team will check your selfie manually.' };
-  }
+export type DiditStatusResponse = {
+  status: 'none' | 'pending' | 'verified' | 'rejected';
+  diditStatus: string | null;
+  sessionId: string | null;
+};
+
+export async function getDiditStatus(): Promise<DiditStatusResponse> {
+  const res = await supabase.functions.invoke('didit-status', { body: {} });
+  if (res.error) throw toApiError(res.error);
+  const d = (res.data ?? {}) as Partial<DiditStatusResponse> & { error?: string };
+  if (!d.status) throw new ApiError(502, d.error || 'Couldn’t check the status — try again.');
+  return { status: d.status, diditStatus: d.diditStatus ?? null, sessionId: d.sessionId ?? null };
 }
 
 export async function updateAccount(body: {

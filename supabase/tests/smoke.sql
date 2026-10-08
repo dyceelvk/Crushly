@@ -200,6 +200,34 @@ begin
   assert (select ai_verdict ->> 'confidence' from public.verification_requests where id = verif_id) = '0.9',
     'AI verdict is stored and readable by its owner';
 
+  -- ---------------------------------------------------------- didit surface
+  -- Didit requests reuse verification_requests and carry no selfies.
+  insert into public.verification_requests (user_id, didit_session_id, didit_status)
+  values (me, 'ses_smoke_1', 'In Review')
+  returning id into verif_id;
+  assert (select selfie_path from public.verification_requests where id = verif_id) is null,
+    'Didit requests carry no selfie';
+  assert (select didit_status from public.verification_requests where id = verif_id) = 'In Review',
+    'raw Didit status is stored';
+
+  -- Webhook idempotency table is service-role only (RLS hides it from members).
+  assert (select count(*) from public.didit_events) = 0,
+    'didit_events is hidden from members by RLS';
+  begin
+    insert into public.didit_events (event_id) values ('evt_smoke_1');
+    raise exception 'members must not write didit_events';
+  exception when others then
+    if sqlerrm like '%must not write didit_events%' then raise; end if;
+  end;
+
+  update public.verification_requests
+    set status = 'approved', didit_status = 'Approved', decision = '{"id_verifications": []}'::jsonb
+    where id = verif_id;
+  assert (select status from public.verification_requests where id = verif_id) = 'approved',
+    'Didit approval maps to the approved request status';
+  assert (select decision ->> 'id_verifications' from public.verification_requests where id = verif_id) = '[]',
+    'Didit decision payload round-trips';
+
   -- ------------------------------------------------------------ account ops
   begin
     perform public.delete_account('wrong-password');

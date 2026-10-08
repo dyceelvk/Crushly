@@ -51,7 +51,8 @@
     "build:web": "expo export -p web --output-dir dist",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test --config e2e/playwright.config.ts",
-    "test": "node --import tsx --test src/lib/format.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/env.test.ts src/lib/auth.test.ts"
+    "admin": "node scripts/admin.mjs",
+    "test": "node --import tsx --test src/lib/format.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/env.test.ts src/lib/auth.test.ts && node --import tsx --test ../supabase/functions/_shared/didit.test.ts"
   },
   "private": true
 }

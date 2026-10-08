@@ -1,15 +1,20 @@
-// verify-identity — Crushly's AI verification reviewer.
+// verify-identity — Crushly's AI review ASSIST for administrators.
 //
-// Called by the app after a member submits their pose selfies. Compares the
-// live selfie(s) with their profile photos via a vision model and settles the
-// verification request in one shot:
+// ADMIN-ONLY: the caller must present the service role key. The member app
+// never calls this — members verify through Didit (see didit-session /
+// didit-webhook / didit-status). An administrator runs it from the local CLI:
+//   npm run admin -- review-verification   (queue of members waiting on review)
+//   npm run admin -- ai-assist <requestId> (this AI verdict, advisory only)
+//
+// When a request has pose selfies, the vision model compares them with the
+// member's profile photos and settles the request:
 //   approved  -> profiles.verification = 'verified'  (badge)
-//   rejected  -> profiles.verification = 'rejected'  (they can retake)
-//   pending   -> left for human review (no AI key / images missing / AI error)
+//   rejected  -> profiles.verification = 'rejected'
+//   pending   -> left for the human admin (no AI key / images missing / AI error)
 //
-// Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (all
-// automatic for hosted edge functions) + OPENAI_API_KEY (wired from GitHub
-// secrets) + optional AI_MODEL (default gpt-4o-mini).
+// Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (automatic for hosted edge
+// functions) + OPENAI_API_KEY (wired from GitHub secrets) + optional AI_MODEL
+// (default gpt-4o-mini).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -33,16 +38,13 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
-  const authHeader = req.headers.get('Authorization') ?? '';
   const url = Deno.env.get('SUPABASE_URL')!;
-  const anon = Deno.env.get('SUPABASE_ANON_KEY')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  // Who is calling? The app sends the member's access token.
-  const userClient = createClient(url, anon, { global: { headers: { Authorization: authHeader } } });
-  const { data: who, error: whoErr } = await userClient.auth.getUser();
-  const user = who?.user;
-  if (whoErr || !user) return json({ error: 'sign in required' }, 401);
+  // Admin-only: the caller must present the service role key (the admin CLI
+  // does; members cannot — the app no longer calls this function at all).
+  const authHeader = req.headers.get('Authorization') ?? '';
+  if (authHeader !== `Bearer ${serviceKey}`) return json({ error: 'administrators only' }, 403);
 
   const admin = createClient(url, serviceKey);
 

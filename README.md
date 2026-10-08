@@ -93,6 +93,10 @@ zero:
    | `NETLIFY_AUTH_TOKEN` | [Netlify → Personal access tokens](https://app.netlify.com/user/applications) → New access token |
    | `NETLIFY_SITE_ID` | Netlify → Site configuration → General → Site ID |
 
+   Plus the verification secrets (see *Identity verification (Didit)* and *Admin
+   AI assist* below): `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
+   `DIDIT_WEBHOOK_SECRET`, and `OPENAI_API_KEY` (admin AI assist only).
+
    The build reads the Supabase values from secrets, so nothing has to be
    configured in Netlify itself. If the app ever shows "Backend not
    connected", the env secrets are missing — the workflow says exactly which.
@@ -152,20 +156,68 @@ secret, so nothing in the repo changes:
    that name back on the new account, rename the old site (step 3 above) and
    rename `crushlyi` to `mencrushly` — the pipeline follows on the next deploy.
 
-## AI profile verification
+## Identity verification (Didit)
 
-Members follow two illustrated poses (`CrushlyApp/assets/poses/`), the app uploads the
-selfies to the private `verification` bucket, and the `verify-identity` edge function
-compares them with their profile photos using a vision model — verified members get the
-badge instantly, mismatches can retake, and anything the AI can't handle stays queued for
-manual review (`npm run admin -- review-verification`).
+Members verify through **Didit** (https://didit.me) — a hosted flow that checks a
+government ID, runs a liveness check, and face-matches the selfie to the document.
+Crushly never sees the document: only the pass/fail result reaches the profile
+(`verified` / `rejected`), and the badge appears automatically.
 
-- One secret keeps it automatic: **`OPENAI_API_KEY`** at
-  https://github.com/dyceelvk/Crushly/settings/secrets/actions
-  (create one at https://platform.openai.com/api-keys). The deploy wires it into the
-  project and deploys `supabase/functions/verify-identity/index.ts` on every push.
-- Optional `AI_MODEL` repo secret overrides the default `gpt-4o-mini`.
-- Without an AI key, verification still works — requests queue for human review.
+How it's wired:
+
+- `didit-session` (edge function) — the member taps **Verify with Didit**; we create
+  a Didit session (`POST https://verification.didit.me/v3/session/`) and open its
+  hosted URL.
+- `didit-webhook` (edge function, no JWT — the `X-Signature-V2` HMAC is the auth) —
+  Didit's signed webhook settles the member's status. Register this URL in the Didit
+  console under **API & Webhooks**:
+  `https://yzcssyebozfkmojqqdhc.supabase.co/functions/v1/didit-webhook`
+- `didit-status` (edge function) — fallback poll of `GET /v3/session/{id}/decision/`
+  when the member returns via the callback or taps **Check status**.
+
+One-time setup:
+
+1. **Create a Didit account**: https://business.didit.me (sandbox starts on signup;
+   flip the environment toggle to go live). 500 sessions/month are free.
+2. **Create a workflow** in the console (or `POST /v3/workflows/`) with the features
+   you want — recommended for an 18+ app: `OCR` (ID document), `LIVENESS`,
+   `FACE_MATCH`, `IP_ANALYSIS`, plus `AGE_ESTIMATION` and `AML_SCREENING`. Copy the
+   **workflow ID**.
+3. **API & Webhooks** in the console sidebar: copy the **API Key**, add the webhook
+   URL above, and copy the destination's **Webhook Secret Key**.
+4. **Add three secrets** at
+   https://github.com/dyceelvk/Crushly/settings/secrets/actions:
+
+   | Secret | Value |
+   | --- | --- |
+   | `DIDIT_API_KEY` | the API Key from step 3 |
+   | `DIDIT_WORKFLOW_ID` | the workflow ID from step 2 |
+   | `DIDIT_WEBHOOK_SECRET` | the webhook destination's secret |
+
+   The deploy workflow pushes them into the project (plus `APP_URL`, resolved from
+   the live site automatically) and deploys the edge functions on every push.
+   Nothing else to configure.
+
+## Admin AI assist (optional)
+
+The vision-model reviewer (`supabase/functions/verify-identity/`) is
+**admin-only** — the member app never calls it. It assists manual review of
+requests that carry selfies:
+
+```bash
+cd CrushlyApp
+export SUPABASE_URL=https://yzcssyebozfkmojqqdhc.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=…   # service_role key — never commit it
+npm run admin -- review-verification    # members waiting on review
+npm run admin -- ai-assist <requestId>  # AI verdict (advisory — you decide)
+npm run admin -- decide <requestId> <approved|rejected>
+npm run admin -- purge-demo             # remove the fictional demo community
+```
+
+It needs the `OPENAI_API_KEY` secret
+(https://platform.openai.com/api-keys →
+https://github.com/dyceelvk/Crushly/settings/secrets/actions); optional `AI_MODEL`
+overrides the default `gpt-4o-mini`.
 
 ## Gmail confirmation emails
 
@@ -237,7 +289,7 @@ These features need a third-party service or a human in the loop. Rather than pr
 | Feature | Status |
 | --- | --- |
 | **Crushly Plus** | The paywall screen records interest (`profiles.plus_interest`). There's no payment provider yet, so nothing is charged and no Plus features unlock. Incognito returns `402 plus_required`. |
-| **Verification review** | Selfies land in the private `verification` bucket and wait for a human. Approve or reject them with `supabase/scripts/admin.mjs verify-user`. |
+| **Verification review** | Didit settles most sessions automatically. "In Review" cases queue for a human: `npm run admin -- review-verification` (optionally with the admin-only AI assist `ai-assist`). |
 | **Reports** | Stored in `reports`. Triaged with `supabase/scripts/admin.mjs reports` — no moderator dashboard yet. |
 | **Push notifications** | In-app notifications and toasts work. OS push needs Expo push credentials and isn't wired up yet. |
 | **GIFs** | Replaced by a built-in sticker pack, so no GIF API key is needed. |

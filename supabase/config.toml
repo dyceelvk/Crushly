@@ -38,3 +38,9 @@ enabled = true
 [inbucket]
 enabled = true
 port = 54324
+
+# Didit calls this function directly — the X-Signature-V2 HMAC is the auth,
+# so JWT verification must stay off. All other functions keep the default
+# (member JWT required).
+[functions.didit-webhook]
+verify_jwt = false

@@ -15,6 +15,12 @@
 #                                (sb_publishable_…), or Legacy API keys tab → anon public.
 #                                NEVER the sb_secret_/service_role key.
 #
+#   Verification (see README "Identity verification (Didit)" + "Admin AI assist"):
+#   DIDIT_API_KEY                Didit console (business.didit.me) → API & Webhooks → API Key
+#   DIDIT_WORKFLOW_ID            Didit console → your workflow's ID
+#   DIDIT_WEBHOOK_SECRET         Didit console → API & Webhooks → webhook destination secret
+#   OPENAI_API_KEY               Admin-only AI review assist (platform.openai.com/api-keys)
+#
 # Never commit these values or paste them into chat.
 #
 # Pointing the pipeline at a DIFFERENT Netlify site (e.g. another account whose
@@ -187,41 +193,68 @@ jobs:
                   print(f"::warning::Template step crashed: {scrub(repr(e))} | cwd={os.getcwd()} | supabase dir: {os.listdir('supabase') if os.path.isdir('supabase') else 'MISSING'}")
           PY
 
-      # AI profile verification: pushes OPENAI_API_KEY into project secrets and
-      # deploys the verify-identity edge function (idempotent; every deploy).
-      - name: Deploy AI verification (edge function + key)
+      # Identity verification: Didit runs the member flow (hosted sessions +
+      # signed webhooks); the AI reviewer is an ADMIN-ONLY assist for manual
+      # review. Pushes the secrets into the project and deploys the edge
+      # functions (idempotent; runs on every deploy).
+      - name: Deploy verification (Didit + admin AI)
         continue-on-error: true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
+          DIDIT_WORKFLOW_ID: ${{ secrets.DIDIT_WORKFLOW_ID }}
+          DIDIT_WEBHOOK_SECRET: ${{ secrets.DIDIT_WEBHOOK_SECRET }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           set -uo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "::notice::AI verification deploy skipped - add the SUPABASE_ACCESS_TOKEN secret (https://supabase.com/dashboard/account/tokens)."
+            echo "::notice::Verification deploy skipped - add the SUPABASE_ACCESS_TOKEN secret (https://supabase.com/dashboard/account/tokens)."
             exit 0
           fi
-          if [ -n "${OPENAI_API_KEY:-}" ]; then
-            wc=$(curl -s -o /tmp/sec.json -w "%{http_code}" -X POST \
+          site_url=$(curl -s -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN:-}" "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID:-}" | jq -r '.ssl_url // empty' 2>/dev/null || true)
+          [ -n "$site_url" ] || site_url="https://crushlyi.netlify.app"
+
+          push_secret() {
+            name="$1"; value="$2"
+            [ -n "$value" ] || { echo "::notice::$name not set - skipping."; return 0; }
+            code=$(curl -s -o /tmp/sec.json -w "%{http_code}" -X POST \
               "https://api.supabase.com/v1/projects/yzcssyebozfkmojqqdhc/secrets" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
-              -d "{\"OPENAI_API_KEY\": \"$OPENAI_API_KEY\"}")
-            echo "secret push: HTTP $wc"
-            case "$wc" in
-              2*) echo "::notice::OPENAI_API_KEY wired into the project - AI verification reviews selfies automatically." ;;
-              *) echo "::warning::Could not push OPENAI_API_KEY (HTTP $wc). Add it manually: https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/functions/secrets" ;;
-            esac
+              -d "{\"$name\": \"$value\"}")
+            if [ "${code:0:1}" = "2" ]; then
+              echo "::notice::$name wired into the project."
+            else
+              echo "::warning::Could not push $name (HTTP $code). Add it manually: https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/functions/secrets"
+            fi
+          }
+          push_secret OPENAI_API_KEY "$OPENAI_API_KEY"
+          push_secret DIDIT_API_KEY "$DIDIT_API_KEY"
+          push_secret DIDIT_WORKFLOW_ID "$DIDIT_WORKFLOW_ID"
+          push_secret DIDIT_WEBHOOK_SECRET "$DIDIT_WEBHOOK_SECRET"
+          push_secret APP_URL "$site_url"
+
+          if [ -z "${DIDIT_API_KEY:-}" ] || [ -z "${DIDIT_WORKFLOW_ID:-}" ]; then
+            echo "::warning::Didit not fully configured - members cannot start verification yet. Add DIDIT_API_KEY + DIDIT_WORKFLOW_ID at https://github.com/dyceelvk/Crushly/settings/secrets/actions and finish the runbook in README 'Identity verification (Didit)'."
           else
-            echo "::notice::No OPENAI_API_KEY secret yet - verification requests queue for manual review until it is added at https://github.com/dyceelvk/Crushly/settings/secrets/actions"
+            echo "::notice::Didit member verification wired. Webhook for the Didit console: https://yzcssyebozfkmojqqdhc.supabase.co/functions/v1/didit-webhook"
           fi
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::notice::No OPENAI_API_KEY - the admin AI assist (npm run admin -- ai-assist) stays off until it is added."
+          else
+            echo "::notice::OPENAI_API_KEY wired - the AI review assist is available to administrators only (npm run admin -- ai-assist)."
+          fi
+
           echo "--- deploying edge functions ---"
-          if out=$(cd "$GITHUB_WORKSPACE" && npx --yes supabase@latest functions deploy verify-identity --project-ref yzcssyebozfkmojqqdhc 2>&1); then
-            echo "::notice::Edge function verify-identity deployed - AI verification is live."
-            printf '%s\n' "$out" | tail -6
-          else
-            safe=${out//$OPENAI_API_KEY/***}
-            echo "::warning::functions deploy failed: $(printf '%s' "$safe" | tail -c 700 | tr '\n' ' ')"
-            printf '%s\n' "$safe" | tail -12
-          fi
+          for fn in verify-identity didit-session didit-status didit-webhook; do
+            if out=$(cd "$GITHUB_WORKSPACE" && npx --yes supabase@latest functions deploy "$fn" --project-ref yzcssyebozfkmojqqdhc 2>&1); then
+              echo "::notice::Edge function $fn deployed."
+            else
+              safe=$(printf '%s' "$out" | sed -e "s/$OPENAI_API_KEY/***/g" -e "s/$DIDIT_API_KEY/***/g" -e "s/$DIDIT_WEBHOOK_SECRET/***/g")
+              echo "::warning::functions deploy $fn failed: $(printf '%s' "$safe" | tail -c 500 | tr '\n' ' ')"
+            fi
+          done
 
       - name: Install & test
         run: |
