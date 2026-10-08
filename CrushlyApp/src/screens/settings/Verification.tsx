@@ -53,9 +53,9 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
     const img = await pickImage({ camera: true, square: true });
     if (!img) return;
     if ('error' in img) return toast({ kind: 'error', title: 'Camera unavailable', message: img.error });
+    // Stay on this step so the member sees the captured state and chooses
+    // Next pose / Retake from the footer instead of being jumped forward.
     setCaptures((prev) => prev.map((c, i) => (i === index ? img : c)));
-    if (index < STEPS.length - 1) setIndex(index + 1);
-    else setPhase('review');
   };
 
   const submit = async () => {
