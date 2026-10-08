@@ -13,6 +13,7 @@ declare
   n int;
   conv_id bigint;
   msg_id bigint;
+  verif_id bigint;
 begin
   -- IDs resolved as the migration owner (RLS hides others' rows from members).
   select id into daniel from auth.users where email = 'daniel@crushly.app';
@@ -125,6 +126,27 @@ begin
   j := public.react_to_moment(moment_id, 'fire');
   assert (j ->> 'myReaction') = 'fire', 'moment reaction recorded';
 
+  -- photo moments carry a caption (shown on the card and in the viewer)
+  j := public.create_moment('photo', 'Golden hour with Marcus', 'media/moments/demo/1.jpg', 'champagne', 'everyone');
+  assert j ->> 'kind' = 'photo', 'photo moment created';
+  assert j ->> 'body' = 'Golden hour with Marcus', 'photo moment keeps its caption';
+  assert j ->> 'mediaUrl' = 'media/moments/demo/1.jpg', 'photo moment keeps its media path';
+
+  j := public.create_moment('photo', repeat('a', 300), 'media/moments/demo/2.jpg', 'noir', 'everyone');
+  assert length(j ->> 'body') = 200, 'photo captions are capped at 200 characters';
+
+  begin
+    perform public.create_moment('text', '   ', null, 'noir', 'everyone');
+    raise exception 'text moment without words should fail';
+  exception when others then
+    if sqlerrm like '%without words should fail%' then raise; end if;
+  end;
+
+  assert exists (
+    select 1 from public.visible_moments() vm
+    where vm ->> 'body' = 'Golden hour with Marcus' and vm ->> 'kind' = 'photo'
+  ), 'photo moment with caption shows up in the feed';
+
   -- ----------------------------------------------------------- notifications
   select count(*) into n from public.list_notifications();
   assert n > 0, 'demo notifications should exist';
@@ -144,6 +166,39 @@ begin
   assert public.load_profile(tobi_id) is null, 'blocked members disappear';
   perform public.unblock_member(tobi_id);
   assert public.load_profile(tobi_id) is not null, 'unblock brings them back';
+
+  -- ------------------------------------------------- verification request flow
+  insert into public.verification_requests (user_id, selfie_path, pose, selfies)
+  values (me, 'verification/selfies/demo/1.jpg', 'Peace sign & smile + Wink & wave', '["verification/selfies/demo/2.jpg"]'::jsonb)
+  returning id into verif_id;
+  assert (select selfies from public.verification_requests where id = verif_id) = '["verification/selfies/demo/2.jpg"]'::jsonb,
+    'extra pose selfies are stored';
+  assert (select count(*) from public.verification_requests where user_id <> me) = 0,
+    'RLS hides other members'' verification requests';
+
+  begin
+    insert into public.verification_requests (user_id, selfie_path, pose, status)
+    values (me, 'verification/selfies/demo/x.jpg', 'Thumbs up', 'bogus');
+    raise exception 'bogus verification status should fail';
+  exception when others then
+    if sqlerrm like '%bogus verification status should fail%' then raise; end if;
+  end;
+
+  update public.verification_requests set status = 'superseded' where user_id = me and status = 'pending';
+  assert (select count(*) from public.verification_requests where user_id = me and status = 'pending') = 0,
+    'old pending requests can be superseded before a new submission';
+
+  update public.profiles set verification = 'pending' where id = me;
+  assert (select verification from public.profiles where id = me) = 'pending',
+    'profile verification flag moves to pending';
+
+  -- AI verdict columns (verification_ai migration) round-trip for the owner
+  update public.verification_requests
+    set ai_verdict = '{"real_person": true, "pose_ok": true, "same_person": true, "confidence": 0.9, "reason": "ok"}'::jsonb,
+        ai_reviewed_at = public.now_ms()
+    where id = verif_id;
+  assert (select ai_verdict ->> 'confidence' from public.verification_requests where id = verif_id) = '0.9',
+    'AI verdict is stored and readable by its owner';
 
   -- ------------------------------------------------------------ account ops
   begin
