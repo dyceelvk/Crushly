@@ -58,11 +58,14 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [reactOpen, setReactOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [localReaction, setLocalReaction] = useState<Record<number, string | null>>({});
+  const [holding, setHolding] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didHold = useRef(false);
   const progress = useRef(new Animated.Value(0)).current;
 
   const group = groups?.[gi];
   const moment = group?.moments[mi];
-  const paused = focused || reactOpen || confirmDelete;
+  const paused = focused || reactOpen || confirmDelete || holding;
 
   // Start each person's sequence at their first unseen Moment.
   useEffect(() => {
@@ -93,6 +96,34 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       setMi(0);
     } else progress.setValue(0);
   }, [mi, gi, progress]);
+
+  // Hold anywhere to pause the timer — release to keep watching.
+  const pressIn = useCallback(() => {
+    didHold.current = false;
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = setTimeout(() => {
+      didHold.current = true;
+      setHolding(true);
+    }, 350);
+  }, []);
+  const pressOut = useCallback(() => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    setHolding(false);
+  }, []);
+  const tapPrev = () => {
+    if (didHold.current) {
+      didHold.current = false;
+      return;
+    }
+    prev();
+  };
+  const tapNext = () => {
+    if (didHold.current) {
+      didHold.current = false;
+      return;
+    }
+    next();
+  };
 
   // Mark viewed.
   useEffect(() => {
@@ -185,11 +216,35 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
         <MomentPreview key={moment.id} moment={moment} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: space.xl }} textSize={26} />
 
-        {/* Tap zones */}
+        {/* Tap zones — tap to move, hold to pause */}
         <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, flexDirection: 'row' }}>
-          <Pressable style={{ flex: 3 }} onPress={prev} accessibilityRole="button" accessibilityLabel="Previous Moment" />
-          <Pressable style={{ flex: 7 }} onPress={next} accessibilityRole="button" accessibilityLabel="Next Moment" />
+          <Pressable
+            style={{ flex: 3 }}
+            onPress={tapPrev}
+            onPressIn={pressIn}
+            onPressOut={pressOut}
+            accessibilityRole="button"
+            accessibilityLabel="Previous Moment"
+            accessibilityHint="Hold to pause"
+          />
+          <Pressable
+            style={{ flex: 7 }}
+            onPress={tapNext}
+            onPressIn={pressIn}
+            onPressOut={pressOut}
+            accessibilityRole="button"
+            accessibilityLabel="Next Moment"
+            accessibilityHint="Hold to pause"
+          />
         </View>
+
+        {holding ? (
+          <View style={{ position: 'absolute', top: '46%', left: 0, right: 0, alignItems: 'center' }} pointerEvents="none">
+            <Txt variant="smallStrong" style={{ color: '#FFF', backgroundColor: 'rgba(0,0,0,0.55)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7 }}>
+              Paused
+            </Txt>
+          </View>
+        ) : null}
 
         {/* Top: progress + author */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.md, backgroundColor: 'rgba(0,0,0,0.25)' }} pointerEvents="box-none">

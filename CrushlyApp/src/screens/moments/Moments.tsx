@@ -21,7 +21,20 @@ import type { RootStackParamList } from '../../navigation/types';
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
 export function MomentPreview({ moment, style, textSize = 15, lines = 6 }: { moment?: Moment; style?: object; textSize?: number; lines?: number }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
-  if (moment.kind === 'photo') return <Photo uri={moment.mediaUrl} style={style} />;
+  if (moment.kind === 'photo') {
+    return (
+      <View style={[{ overflow: 'hidden' }, style]}>
+        <Photo uri={moment.mediaUrl} style={{ width: '100%', height: '100%' }} />
+        {moment.body ? (
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+            <Txt variant="body" numberOfLines={lines} style={{ fontSize: textSize, color: '#FFF', lineHeight: textSize * 1.35 }}>
+              {moment.body}
+            </Txt>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
   const s = MOMENT_STYLES[moment.style] || MOMENT_STYLES.noir;
   return (
     <LinearGradient colors={s.colors} style={[{ padding: 14, justifyContent: 'center' }, style]}>

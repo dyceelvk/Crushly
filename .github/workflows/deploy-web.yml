@@ -237,6 +237,18 @@ jobs:
           esac
           [ "$code" = "200" ] || exit 1
 
+          # What is the site actually serving vs our latest commit?
+          pub=$(jq -r '.published_deploy.commit_ref // "none"' /tmp/site.json 2>/dev/null)
+          pubt=$(jq -r '.published_deploy.title // "?"' /tmp/site.json 2>/dev/null | cut -c1-40)
+          pubc=$(jq -r '.published_deploy.created_at // "?"' /tmp/site.json 2>/dev/null)
+          head=$(git rev-parse --short=7 HEAD)
+          echo "site serves commit: ${pub:0:7} ("$pubt" at $pubc) - our HEAD: $head"
+          if [ "${pub:0:7}" != "$head" ]; then
+            echo "::notice::LIVE site serves an OLDER deploy (site=${pub:0:7}, HEAD=$head) - if the app looks unchanged: turn ON Netlify auto publishing (Site configuration -> Build & deploy -> Continuous deployment) or give NETLIFY_AUTH_TOKEN the Deploy scope."
+          else
+            echo "::notice::The live site is serving our latest commit."
+          fi
+
           # Which accounts/roles can this token see? (Developer/Owner deploys, Viewer cannot)
           curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/accounts" \
             | jq -r '.[] | "account: \(.name) (id \(.id)) — role: \(.role_slug // .type_name // "?")"' 2>/dev/null \
