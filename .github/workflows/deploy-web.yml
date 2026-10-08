@@ -216,6 +216,7 @@ jobs:
           site_url=$(curl -s -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN:-}" "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID:-}" | jq -r '.ssl_url // empty' 2>/dev/null || true)
           [ -n "$site_url" ] || site_url="https://crushlyi.netlify.app"
 
+          wired=""
           push_secret() {
             name="$1"; value="$2"
             [ -n "$value" ] || { echo "::notice::$name not set - skipping."; return 0; }
@@ -226,10 +227,8 @@ jobs:
               "https://api.supabase.com/v1/projects/yzcssyebozfkmojqqdhc/secrets" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
               -d "$body")
-            if [ "${code:0:1}" = "2" ]; then
-              echo "::notice::$name wired into the project."
-            elif grep -qi "already exist" /tmp/sec.json 2>/dev/null; then
-              echo "::notice::$name already present in the project."
+            if [ "${code:0:1}" = "2" ] || grep -qi "already exist" /tmp/sec.json 2>/dev/null; then
+              wired="$wired $name"
             else
               echo "::warning::Could not push $name (HTTP $code): $(head -c 300 /tmp/sec.json). Add it manually: https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/functions/secrets"
             fi
@@ -239,6 +238,9 @@ jobs:
           push_secret DIDIT_WORKFLOW_ID "$DIDIT_WORKFLOW_ID"
           push_secret DIDIT_WEBHOOK_SECRET "$DIDIT_WEBHOOK_SECRET"
           push_secret APP_URL "$site_url"
+          # One summary notice: GitHub drops step notices past 10, so per-secret
+          # notices would silently vanish on busy runs.
+          [ -n "$wired" ] && echo "::notice::Secrets wired into the project:$wired"
 
           if [ -z "${DIDIT_API_KEY:-}" ] || [ -z "${DIDIT_WORKFLOW_ID:-}" ]; then
             echo "::warning::Didit not fully configured - members cannot start verification yet. Add DIDIT_API_KEY + DIDIT_WORKFLOW_ID at https://github.com/dyceelvk/Crushly/settings/secrets/actions and finish the runbook in README 'Identity verification (Didit)'."
@@ -252,14 +254,16 @@ jobs:
           fi
 
           echo "--- deploying edge functions ---"
+          deployed=""
           for fn in verify-identity didit-session didit-status didit-webhook; do
             if out=$(cd "$GITHUB_WORKSPACE" && npx --yes supabase@latest functions deploy "$fn" --project-ref yzcssyebozfkmojqqdhc 2>&1); then
-              echo "::notice::Edge function $fn deployed."
+              deployed="$deployed $fn"
             else
               safe=$(printf '%s' "$out" | sed -e "s/$OPENAI_API_KEY/***/g" -e "s/$DIDIT_API_KEY/***/g" -e "s/$DIDIT_WEBHOOK_SECRET/***/g")
               echo "::warning::functions deploy $fn failed: $(printf '%s' "$safe" | tail -c 500 | tr '\n' ' ')"
             fi
           done
+          [ -n "$deployed" ] && echo "::notice::Edge functions deployed:$deployed"
 
       - name: Install & test
         run: |
