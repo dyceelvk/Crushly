@@ -21,6 +21,7 @@ import { fonts, radius, space } from '../../theme/tokens';
 import { STICKERS } from '../../lib/catalog';
 import { dayLabel, durationLabel } from '../../lib/format';
 import { pickImage } from '../../lib/media';
+import { useLiveCamera } from '../../components/CameraCapture';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -97,9 +98,11 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     send({ kind: 'text', body });
   };
 
+  const cam = useLiveCamera();
+
   const sendPhoto = async (camera: boolean) => {
     setTray(false);
-    const img = await pickImage({ camera });
+    const img = await (camera ? cam.capture() : pickImage());
     if (!img) return;
     if ('error' in img) return toast({ kind: 'error', title: 'Photo not added', message: img.error });
     send({ kind: 'photo', uri: img.uri, mimeType: img.mimeType });
@@ -293,7 +296,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
                 <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.sm }}>
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
-                  {Platform.OS !== 'web' ? <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} /> : null}
+                  <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   <TrayButton icon="person-circle-outline" label="Share profile" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
                 <Txt variant="label" color="textMuted" style={{ marginBottom: 6 }}>
@@ -373,6 +376,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             </View>
           </View>
         )}
+        {cam.node}
       </KeyboardAvoidingView>
 
       {/* Long-press actions */}

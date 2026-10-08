@@ -14,6 +14,7 @@ import { keys } from '../../api/hooks';
 import type { MomentStyle } from '../../api/types';
 import { MOMENT_STYLES } from '../../lib/catalog';
 import { pickImage, type PickedImage } from '../../lib/media';
+import { useLiveCamera } from '../../components/CameraCapture';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -36,8 +37,10 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const max = mode === 'text' ? 280 : 200;
   const ready = mode === 'text' ? body.trim().length > 0 : !!photo;
 
+  const cam = useLiveCamera();
+
   const choosePhoto = async (camera = false) => {
-    const img = await pickImage({ camera });
+    const img = await (camera ? cam.capture() : pickImage());
     if (!img) return;
     if ('error' in img) return toast({ kind: 'error', title: 'Photo not added', message: img.error });
     setPhoto(img);
@@ -68,6 +71,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   return (
     <Screen keyboard footer={<Button title="Share Moment" onPress={share} disabled={!ready} loading={busy} />}>
       <Header title="New Moment" subtitle="Share a glimpse. Gone in 24 hours." right={<IconButton icon="close" label="Close" onPress={() => navigation.goBack()} />} />
+      {cam.node}
 
       <Segmented<'text' | 'photo'>
         value={mode}
@@ -85,7 +89,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
               <Photo uri={photo.uri} style={{ width: w, height: h }} contentPosition="center" alt="Selected photo" />
               <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 8 }}>
                 <IconButton icon="images-outline" variant="glass" label="Choose another photo" onPress={() => choosePhoto()} />
-                {Platform.OS !== 'web' ? <IconButton icon="camera-outline" variant="glass" label="Take a photo" onPress={() => choosePhoto(true)} /> : null}
+                <IconButton icon="camera-outline" variant="glass" label="Take a photo" onPress={() => choosePhoto(true)} />
               </View>
               <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14, backgroundColor: 'rgba(0,0,0,0.45)' }}>
                 <TextInput

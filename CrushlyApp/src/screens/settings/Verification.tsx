@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, Platform, View } from 'react-native';
+import { Image, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Screen, Header, useLayout } from '../../components/Layout';
@@ -12,6 +12,7 @@ import { keys, useMe } from '../../api/hooks';
 import { submitVerification, type AiVerificationResult } from '../../api/service';
 import { drawPosePair } from '../../lib/auth';
 import { pickImage, type PickedImage } from '../../lib/media';
+import { useLiveCamera } from '../../components/CameraCapture';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -118,13 +119,28 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
   const w = Math.min(contentWidth - gutter * 2, 320);
   const step = steps[index];
 
-  const capture = async () => {
-    const img = await pickImage({ camera: true, square: true });
-    if (!img) return;
-    if ('error' in img) return toast({ kind: 'error', title: 'Camera unavailable', message: img.error });
+  const cam = useLiveCamera({ square: true });
+
+  const keep = (img: PickedImage) => {
     // Stay on this step so the member sees the captured state and chooses
     // Next pose / Retake from the footer instead of being jumped forward.
     setCaptures((prev) => prev.map((c, i) => (i === index ? img : c)));
+  };
+
+  /** Snap a live selfie with the device camera (web: live preview; native: camera app). */
+  const capture = async () => {
+    const img = await cam.capture();
+    if (!img) return;
+    if ('error' in img) return toast({ kind: 'error', title: 'Camera unavailable', message: img.error });
+    keep(img);
+  };
+
+  /** Gallery fallback for devices without a usable camera. */
+  const upload = async () => {
+    const img = await pickImage({ square: true });
+    if (!img) return;
+    if ('error' in img) return toast({ kind: 'error', title: 'Photo not added', message: img.error });
+    keep(img);
   };
 
   const submit = async () => {
@@ -202,6 +218,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
     return (
       <Screen footer={<Button title={ok ? 'Done' : pending ? 'Back' : 'Try again'} onPress={() => (ok || pending ? navigation.goBack() : reset())} />}>
         <Header title="Get verified" back onBack={() => navigation.goBack()} />
+        {cam.node}
         <View style={{ alignItems: 'center', marginTop: space.xl }}>
           <View
             style={{
@@ -255,11 +272,10 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
               <Button title="Retake this one" variant="ghost" onPress={capture} />
             </View>
           ) : (
-            <Button
-              title={Platform.OS === 'web' ? 'Choose your selfie' : 'Take my selfie'}
-              icon="camera-outline"
-              onPress={capture}
-            />
+            <View style={{ gap: space.xs }}>
+              <Button title="Snap a live selfie" icon="camera-outline" onPress={capture} />
+              <Button title="Upload a photo instead" variant="ghost" icon="image-outline" onPress={upload} />
+            </View>
           )
         ) : (
           <View style={{ gap: space.xs }}>

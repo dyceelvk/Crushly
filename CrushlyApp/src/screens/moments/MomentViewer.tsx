@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
@@ -130,22 +130,33 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     if (moment && !mine && !moment.seen) viewMoment(moment.id).catch(() => {});
   }, [moment, mine]);
 
-  // Timer.
-  const elapsed = useRef(0);
+  // Timer — a timestamp-driven rAF loop instead of Animated.timing, so
+  // pause/resume is exact on every platform: the loop only runs while
+  // unpaused, so the elapsed time (and the progress bar) freezes with it.
+  const elapsedMs = useRef(0);
+  const lastTick = useRef(0);
   useEffect(() => {
-    elapsed.current = 0;
+    elapsedMs.current = 0;
     progress.setValue(0);
   }, [moment?.id, progress]);
   useEffect(() => {
     if (!moment || paused) return;
-    const remaining = DURATION * (1 - elapsed.current);
-    const anim = Animated.timing(progress, { toValue: 1, duration: remaining, easing: Easing.linear, useNativeDriver: false });
-    const sub = progress.addListener(({ value }) => (elapsed.current = value));
-    anim.start(({ finished }) => finished && next());
-    return () => {
-      anim.stop();
-      progress.removeListener(sub);
+    lastTick.current = Date.now();
+    let raf = 0;
+    const tick = () => {
+      const now = Date.now();
+      elapsedMs.current = Math.min(DURATION, elapsedMs.current + (now - lastTick.current));
+      lastTick.current = now;
+      const p = elapsedMs.current / DURATION;
+      progress.setValue(p);
+      if (p >= 1) {
+        next();
+        return;
+      }
+      raf = requestAnimationFrame(tick);
     };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [moment, paused, progress, next]);
 
   const myReaction = moment ? (moment.id in localReaction ? localReaction[moment.id] : moment.myReaction) : null;
