@@ -1,21 +1,23 @@
 # Netlify deployment for the Crushly web app (Expo web export).
 #
-# Note on paths: the site's stored build settings have `base: CrushlyApp` with
-# publish relative to base — this file matches that, so both Netlify's own git
-# builds and the GitHub Actions deploy resolve the same, correct paths.
+# !! WARNING: do NOT add [build] base and never make publish/base relative.
+# !! With base set, git builds resolve publish twice and fail instantly.
+# !! Keep every path repo-root relative (proven working config).
 #
-# Site settings you may set in the Netlify UI:
-#   - Environment variables (only needed for Netlify's own git builds; the
-#     GitHub Actions deploy bakes them from GitHub secrets):
+# Site settings to set in the Netlify UI:
+#   - Production branch: arena/927d4af8-crushly
+#     (main only holds the archive zip until the final merge — building main
+#     publishes an empty site and every URL 404s.)
+#   - Environment variables:
 #       EXPO_PUBLIC_SUPABASE_URL       your Supabase project URL
-#       EXPO_PUBLIC_SUPABASE_ANON_KEY  your Supabase publishable/anon key
+#       EXPO_PUBLIC_SUPABASE_ANON_KEY  your Supabase anon (public) key
 #
-# One-time settings: see README "Deploy for real" and the Quick links table.
+# All paths below are relative to the repository root on purpose: there is no
+# [build] base, so Netlify's base/publish resolution can't hide the dist/ folder.
 
 [build]
-  base = "CrushlyApp"
-  command = "npm ci --include=dev && npm run build:web"
-  publish = "dist"
+  command = "cd CrushlyApp && npm ci --include=dev && npm run build:web"
+  publish = "CrushlyApp/dist"
 
 [build.environment]
   NODE_VERSION = "22"
