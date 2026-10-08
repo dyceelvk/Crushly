@@ -42,13 +42,18 @@ Reset the demo data at any time with `supabase db reset` (then re-run `npm run s
 
 ## Deploy the web app on Netlify
 
-1. Connect this repository to [Netlify](https://app.netlify.com). `netlify.toml`
-   already knows how to build it (`base: CrushlyApp`, Expo web export → `dist/`,
-   SPA redirects).
-2. In **Site settings → Environment variables**, add:
+1. Connect this repository to [Netlify](https://app.netlify.com) and set the
+   **Production branch** to `arena/927d4af8-crushly`
+   (Site configuration → Build & deploy → Deploy contexts). `main` only holds
+   the archive zip — building `main` publishes an empty site where every URL
+   returns Netlify's "Page not found".
+2. `netlify.toml` already knows how to build the app (build from the repo root
+   → `CrushlyApp/dist`, SPA redirects) — leave the UI build fields empty so the
+   file wins.
+3. In **Site settings → Environment variables**, add:
    - `EXPO_PUBLIC_SUPABASE_URL` — your Supabase project URL
    - `EXPO_PUBLIC_SUPABASE_ANON_KEY` — your Supabase anon (public) key
-3. Deploy. Native builds (TestFlight / Play Store) use the same env vars — see
+4. Deploy. Native builds (TestFlight / Play Store) use the same env vars — see
    [`CrushlyApp/README.md`](CrushlyApp/README.md).
 
 For the backend, create a project at [supabase.com](https://supabase.com) and run
