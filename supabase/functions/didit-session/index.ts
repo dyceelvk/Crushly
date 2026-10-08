@@ -22,6 +22,17 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/** Base64 for an ArrayBuffer (chunked — large buffers overflow the spread). */
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -55,6 +66,29 @@ Deno.serve(async (req) => {
   if (profErr || !profile) return json({ error: 'profile not found' }, 404);
   if (profile.verification === 'verified') return json({ error: 'You’re already verified.' }, 400);
 
+  // Face-match workflows need a reference face for a brand-new user: send the
+  // member's first profile photo as portrait_image (Didit caps it at 2MB).
+  const { data: photo } = await admin
+    .from('photos')
+    .select('url')
+    .eq('user_id', profile.id)
+    .order('position', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  let portraitImage: string | undefined;
+  if (photo?.url) {
+    try {
+      const imgRes = await fetch(`${url}/storage/v1/object/public/media/${photo.url}`);
+      if (imgRes.ok) {
+        const buf = await imgRes.arrayBuffer();
+        if (buf.byteLength > 0 && buf.byteLength <= 2 * 1024 * 1024) portraitImage = toBase64(buf);
+      }
+    } catch {
+      /* no reference face available — Didit explains if it still needs one */
+    }
+  }
+
   let session: { session_id?: string; url?: string; status?: string };
   try {
     const res = await fetch(`${DIDIT_BASE}/v3/session/`, {
@@ -68,6 +102,7 @@ Deno.serve(async (req) => {
         language: 'en',
         contact_details: { email: profile.email },
         metadata: { profile_id: profile.id },
+        ...(portraitImage ? { portrait_image: portraitImage } : {}),
       }),
     });
     const body = await res.json().catch(() => ({}));

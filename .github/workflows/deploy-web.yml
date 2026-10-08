@@ -31,9 +31,13 @@
 # Runbook: README.md "Switch the live site to another Netlify account".
 #
 # Runs on every push to the main line, or manually from the Actions tab.
-# If Netlify's own git builds are still on, turn them off (Site configuration →
-# Build & deploy → your repository → "Stop auto publishing") so this workflow
-# is the single deployer.
+#
+# Deploys: Netlify's own git integration (auto publishing) is the single
+# deployer — leave it ON (Site configuration → Build & deploy). The workflow's
+# CLI deploy only runs when no git build exists for the pushed commit. Every
+# deploy costs build credits (~15 each on the credit plan; 300 free/month), so
+# the pipeline deliberately keeps to ONE deploy per push — do not re-add build
+# hooks or parallel deploy steps.
 
 name: Deploy web app
 
@@ -266,11 +270,12 @@ jobs:
             fi
 
             # Session-creation probe: the exact call didit-session makes (throwaway
-            # session, deleted right after — sandbox sessions are free).
+            # session, deleted right after — sandbox sessions are free). The 1x1
+            # PNG stands in for the member's profile photo (portrait_image).
             sres=$(curl -s -o /tmp/sess.json -w "%{http_code}" -X POST \
               "https://verification.didit.me/v3/session/" \
               -H "x-api-key: $DIDIT_API_KEY" -H "Content-Type: application/json" \
-              -d "{\"workflow_id\": \"$DIDIT_WORKFLOW_ID\", \"vendor_data\": \"ci-probe\", \"callback\": \"$site_url/?didit=done\", \"callback_method\": \"both\", \"language\": \"en\", \"contact_details\": {\"email\": \"ci-probe@crushly.app\"}, \"metadata\": {\"probe\": true}}")
+              -d "{\"workflow_id\": \"$DIDIT_WORKFLOW_ID\", \"vendor_data\": \"ci-probe\", \"callback\": \"$site_url/?didit=done\", \"callback_method\": \"both\", \"language\": \"en\", \"contact_details\": {\"email\": \"ci-probe@crushly.app\"}, \"metadata\": {\"probe\": true}, \"portrait_image\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\"}")
             if [ "${sres:0:1}" = "2" ]; then
               sid=$(jq -r '.session_id // empty' /tmp/sess.json)
               echo "::notice::Session probe OK: POST /v3/session/ created a throwaway session (HTTP $sres)."
@@ -370,11 +375,12 @@ jobs:
               echo "::warning::Write probe returned HTTP $wc - $(head -c 200 /tmp/wprobe.json)" ;;
           esac
 
-      # Netlify's git integration deploys this repo on every push (primary channel).
-      # This step is the Actions-side deployer; it needs a token with Deploy scope.
-      # If the Actions-side deploy can't run (token scope), fall back to triggering
-      # a Netlify git build via a build hook so the live site always catches up.
-      - name: Trigger Netlify git build (fallback)
+      # Read-only deploy diagnostics. Netlify's git integration (auto publishing)
+      # is the primary deployer — one deploy per push. This step only LISTS
+      # deploys and surfaces errors; it deliberately does NOT trigger builds:
+      # every deploy costs build credits, and triple-deploying per push burned
+      # through a fresh account's 300 free credits in a few hours.
+      - name: Diagnose Netlify deploys
         continue-on-error: true
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -416,32 +422,27 @@ jobs:
           fi
 
           # Node is pinned to 22 in netlify.toml (the git builds honor it).
-          hook=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks" \
-            | jq -r '.[] | select(.title=="ci-trigger") | .url' | head -1)
-          if [ -z "$hook" ]; then
-            resp=$(curl -s -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H "Content-Type: application/json" \
-              -d '{"branch":"arena/927d4af8-crushly","title":"ci-trigger"}' \
-              "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks")
-            hook=$(printf '%s' "$resp" | jq -r '.url // empty')
-          fi
-          if [ -n "$hook" ]; then
-            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$hook")
-            if [ "$code" = "200" ]; then
-              echo "::notice::Triggered a Netlify git build of the latest commit - $site_url updates in a couple of minutes."
-            else
-              echo "::warning::Build hook trigger returned HTTP $code."
-            fi
-          else
-            echo "::warning::Could not create a Netlify build hook (token scope). Turn ON auto publishing: https://app.netlify.com/sites/$site_name/configuration/deploys"
-          fi
+          # The deploy above (auto publishing) is the single deployer — no build
+          # hook here: every extra build costs credits.
 
-      - name: Deploy to Netlify
+      # Actions-side deployer — only when Netlify's own git integration did NOT
+      # already build this commit. Every deploy costs build credits, so with
+      # auto publishing ON this step stays idle (one deploy per push, total).
+      - name: Deploy to Netlify (only if git auto-publish is off)
         continue-on-error: true
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
+          head_short=$(git rev-parse --short=7 HEAD)
+          has_git_build=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=10" \
+            | jq -r --arg h "$head_short" '[.[] | select(((.commit_ref // "")[0:7]) == $h)] | length')
+          if [ "${has_git_build:-0}" -gt 0 ]; then
+            echo "::notice::Git auto-publish already built $head_short - skipping the CLI deploy (one deploy per push saves build credits)."
+            exit 0
+          fi
+          echo "::notice::No git build for $head_short (auto publishing off?) - deploying via CLI."
           # From the repo root: netlify.toml (and build.sh) live there, and the
           # site's configured build command resolves relative to it.
           cd "$GITHUB_WORKSPACE"

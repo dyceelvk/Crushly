@@ -156,6 +156,15 @@ secret, so nothing in the repo changes:
    that name back on the new account, rename the old site (step 3 above) and
    rename `crushlyi` to `mencrushly` — the pipeline follows on the next deploy.
 
+   **Credit math (why deploys suddenly skip):** on Netlify's credit plan every
+   production deploy costs ~15 credits (300 free/month). Earlier the pipeline
+   deployed up to **three times per push** (git auto-publish + a build hook +
+   a CLI deploy), which burned a fresh account's 300 credits in a few hours.
+   The pipeline now keeps to **one deploy per push**: git auto-publish is the
+   deployer, and the workflow's CLI deploy only runs when auto-publish is off.
+   If builds show "Skipped due to account credit usage exceeded", either top up
+   (team → Billing) or wait for the monthly reset — and push less often.
+
 ## Identity verification (Didit)
 
 Members verify through **Didit** (https://didit.me) — a hosted flow that checks a
