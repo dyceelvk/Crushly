@@ -219,14 +219,19 @@ jobs:
           push_secret() {
             name="$1"; value="$2"
             [ -n "$value" ] || { echo "::notice::$name not set - skipping."; return 0; }
+            # The Management API takes an ARRAY of {name, value}; jq builds it
+            # safely even when the value contains quotes or special characters.
+            body=$(jq -n --arg n "$name" --arg v "$value" '[{name: $n, value: $v}]')
             code=$(curl -s -o /tmp/sec.json -w "%{http_code}" -X POST \
               "https://api.supabase.com/v1/projects/yzcssyebozfkmojqqdhc/secrets" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
-              -d "{\"$name\": \"$value\"}")
+              -d "$body")
             if [ "${code:0:1}" = "2" ]; then
               echo "::notice::$name wired into the project."
+            elif grep -qi "already exist" /tmp/sec.json 2>/dev/null; then
+              echo "::notice::$name already present in the project."
             else
-              echo "::warning::Could not push $name (HTTP $code). Add it manually: https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/functions/secrets"
+              echo "::warning::Could not push $name (HTTP $code): $(head -c 300 /tmp/sec.json). Add it manually: https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/functions/secrets"
             fi
           }
           push_secret OPENAI_API_KEY "$OPENAI_API_KEY"
