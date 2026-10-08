@@ -77,6 +77,30 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
         run: npm run build:web
 
+      - name: Diagnose Netlify access
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          code=$(curl -s -o /tmp/site.json -w "%{http_code}" \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")
+          name=$(jq -r '.name // "??"' /tmp/site.json 2>/dev/null || echo "??")
+          echo "Netlify site lookup: HTTP $code (name: $name)"
+          case "$code" in
+            200)
+              echo "::notice::Netlify token can access site '$name'." ;;
+            401)
+              echo "::error::Netlify rejected NETLIFY_AUTH_TOKEN (401 Unauthorized): the token is invalid, mistyped or revoked. Create a fresh Personal access token at https://app.netlify.com/user/applications (logged in as the account that owns the mencrushly site) and update the secret." ;;
+            403)
+              echo "::error::NETLIFY_AUTH_TOKEN is valid but has NO access to this site (403 Forbidden) — it was almost certainly created on a different Netlify account/team than the one that owns mencrushly. Log into THAT account (the one showing the mencrushly site), create the token at https://app.netlify.com/user/applications, and update the secret." ;;
+            404)
+              echo "::error::Site not found (404) — NETLIFY_SITE_ID is wrong. It must be 9524369e-5044-4562-b504-3a62456403e9 (Netlify → Site configuration → General → Site ID)." ;;
+            *)
+              echo "::error::Unexpected Netlify API response: HTTP $code — $(head -c 300 /tmp/site.json)" ;;
+          esac
+          [ "$code" = "200" ] || exit 1
+
       - name: Deploy to Netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
