@@ -13,7 +13,7 @@ import { RangeSlider } from '../../components/Slider';
 import { ListRow, Group } from '../../components/ListRow';
 import { useToast } from '../../components/Toast';
 import { useMe, useUpdatePreferences, useUpdatePrivacy, useUpdateProfile } from '../../api/hooks';
-import { api } from '../../api/client';
+import { completeOnboarding } from '../../api/service';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
@@ -335,7 +335,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
     try {
       await updatePrefs.mutateAsync({ ageMin: ages[0], ageMax: ages[1], maxDistance: distance, intentions, interests, verifiedOnly: false });
       await updatePrivacy.mutateAsync({ showOnline, discoverable });
-      await api.post<Me>('/me/onboarding/complete');
+      await completeOnboarding();
       await refresh(); // flips the navigator to the main app
       toast({ kind: 'success', title: 'Welcome to Crushly', message: 'Your profile is live. Find someone worth knowing.' });
     } catch (e) {

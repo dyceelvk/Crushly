@@ -8,7 +8,7 @@ import { Wordmark, CrushlyMark } from '../../components/Logo';
 import { Glow } from '../../components/Ambient';
 import { useToast } from '../../components/Toast';
 import { useMe } from '../../api/hooks';
-import { api } from '../../api/client';
+import { recordPlusInterest } from '../../api/service';
 import { keys } from '../../api/hooks';
 import type { Me } from '../../api/types';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -31,7 +31,7 @@ export function PlusScreen({ navigation, route }: ScreenProps<'Plus'>) {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const join = useMutation({
-    mutationFn: () => api.post<Me>('/me/plus-interest'),
+    mutationFn: () => recordPlusInterest(),
     onSuccess: (next) => {
       qc.setQueryData(keys.me, next);
       toast({ kind: 'success', title: 'You’re on the list', message: 'We’ll let you know when Crushly Plus opens.' });

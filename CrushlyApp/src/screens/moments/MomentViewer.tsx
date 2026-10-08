@@ -14,7 +14,7 @@ import { CrushIcon } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
 import { keys, useMomentReaction, useMoments } from '../../api/hooks';
-import { api } from '../../api/client';
+import { deleteMoment, replyToMoment, viewMoment } from '../../api/service';
 import type { Moment, MomentAuthor } from '../../api/types';
 import { useCrushFlow } from '../discover/Discover';
 import { MomentPreview } from './Moments';
@@ -96,7 +96,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
 
   // Mark viewed.
   useEffect(() => {
-    if (moment && !mine && !moment.seen) api.post(`/moments/${moment.id}/view`).catch(() => {});
+    if (moment && !mine && !moment.seen) viewMoment(moment.id).catch(() => {});
   }, [moment, mine]);
 
   // Timer.
@@ -139,7 +139,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     setReply('');
     setFocused(false);
     try {
-      const res = await api.post<{ conversationId: number }>(`/moments/${moment.id}/reply`, { body });
+      const res = await replyToMoment(moment.id, body);
       toast({ kind: 'success', title: `Reply sent to ${group.user.name}`, message: 'Tap to open the conversation.', onPress: () => navigation.replace('Chat', { conversationId: res.conversationId }) });
       qc.invalidateQueries({ queryKey: keys.conversations });
     } catch (e) {
@@ -152,7 +152,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     if (!moment) return;
     setConfirmDelete(false);
     try {
-      await api.delete(`/moments/${moment.id}`);
+      await deleteMoment(moment.id);
       const left = group!.moments.filter((m) => m.id !== moment.id);
       if (!left.length) return close();
       setGroups([{ ...group!, moments: left }]);

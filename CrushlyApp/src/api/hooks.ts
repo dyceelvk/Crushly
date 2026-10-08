@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { api, appendFile } from './client';
+import * as service from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
@@ -23,40 +23,40 @@ export const keys = {
 /* ------------------------------------------------------------------ queries */
 
 export const useMe = (enabled = true) =>
-  useQuery({ queryKey: keys.me, queryFn: () => api.get<Me>('/me'), enabled, staleTime: 30_000 });
+  useQuery({ queryKey: keys.me, queryFn: () => service.getMe(), enabled, staleTime: 30_000 });
 
 export const useDiscover = () =>
-  useQuery({ queryKey: keys.discover, queryFn: () => api.get<DiscoverPage>('/discover?limit=30'), staleTime: 60_000 });
+  useQuery({ queryKey: keys.discover, queryFn: () => service.discover(), staleTime: 60_000 });
 
 export const useUser = (id: number) =>
-  useQuery({ queryKey: keys.user(id), queryFn: () => api.get<FullProfile>(`/users/${id}`), staleTime: 30_000 });
+  useQuery({ queryKey: keys.user(id), queryFn: () => service.loadProfile(id), staleTime: 30_000 });
 
 export const useCrushes = () =>
-  useQuery({ queryKey: keys.crushes, queryFn: () => api.get<CrushesResponse>('/crushes'), staleTime: 15_000 });
+  useQuery({ queryKey: keys.crushes, queryFn: () => service.crushes(), staleTime: 15_000 });
 
 export const useConversations = () =>
   useQuery({
     queryKey: keys.conversations,
-    queryFn: () => api.get<{ items: ConversationSummary[] }>('/conversations').then((r) => r.items),
+    queryFn: () => service.conversations(),
     staleTime: 5_000,
     refetchInterval: 12_000,
   });
 
 export const useConversation = (id: number) =>
-  useQuery({ queryKey: keys.conversation(id), queryFn: () => api.get<ConversationDetail>(`/conversations/${id}`) });
+  useQuery({ queryKey: keys.conversation(id), queryFn: () => service.conversation(id) });
 
 export const useMoments = () =>
-  useQuery({ queryKey: keys.moments, queryFn: () => api.get<MomentsFeed>('/moments'), staleTime: 20_000 });
+  useQuery({ queryKey: keys.moments, queryFn: () => service.momentsFeed(), staleTime: 20_000 });
 
 export const useNotifications = () =>
   useQuery({
     queryKey: keys.notifications,
-    queryFn: () => api.get<{ items: AppNotification[] }>('/notifications').then((r) => r.items),
+    queryFn: () => service.notifications(),
     staleTime: 5_000,
   });
 
 export const useBlocks = () =>
-  useQuery({ queryKey: keys.blocks, queryFn: () => api.get<{ items: BlockedMember[] }>('/blocks').then((r) => r.items) });
+  useQuery({ queryKey: keys.blocks, queryFn: () => service.listBlocks() });
 
 /** Polls lightweight counters; pauses while the app is backgrounded. */
 export function useBadges(enabled: boolean) {
@@ -67,7 +67,7 @@ export function useBadges(enabled: boolean) {
   }, []);
   return useQuery({
     queryKey: keys.badges,
-    queryFn: () => api.get<Badges>('/me/badges'),
+    queryFn: () => service.badges(),
     enabled,
     refetchInterval: active ? 10_000 : false,
   });
@@ -80,7 +80,7 @@ const setMe = (qc: QueryClient) => (me: Me) => qc.setQueryData(keys.me, me);
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Record<string, unknown>) => api.patch<Me>('/me/profile', patch),
+    mutationFn: (patch: Record<string, unknown>) => service.updateProfile(patch),
     onSuccess: (me) => {
       setMe(qc)(me);
       qc.invalidateQueries({ queryKey: keys.discover });
@@ -91,7 +91,7 @@ export function useUpdateProfile() {
 export function useUpdatePreferences() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (prefs: Preferences) => api.put<Me>('/me/preferences', prefs),
+    mutationFn: (prefs: Preferences) => service.updatePreferences(prefs),
     onSuccess: (me) => {
       setMe(qc)(me);
       qc.invalidateQueries({ queryKey: keys.discover });
@@ -102,9 +102,9 @@ export function useUpdatePreferences() {
 export function useUpdatePrivacy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<Privacy>) => api.patch<Me>('/me/privacy', patch),
+    mutationFn: (patch: Partial<Privacy>) => service.updatePrivacy(patch),
     onMutate: async (patch) => {
-      // Toggles feel instant; we roll back if the server disagrees.
+      // Toggles feel instant; we roll back if the backend disagrees.
       const prev = qc.getQueryData<Me>(keys.me);
       if (prev) qc.setQueryData<Me>(keys.me, { ...prev, privacy: { ...prev.privacy, ...patch } });
       return { prev };
@@ -117,7 +117,7 @@ export function useUpdatePrivacy() {
 export function useUpdateNotificationSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<NotificationSettings>) => api.patch<Me>('/me/notification-settings', patch),
+    mutationFn: (patch: Partial<NotificationSettings>) => service.updateNotificationSettings(patch),
     onMutate: async (patch) => {
       const prev = qc.getQueryData<Me>(keys.me);
       if (prev) qc.setQueryData<Me>(keys.me, { ...prev, notifications: { ...prev.notifications, ...patch } });
@@ -131,24 +131,19 @@ export function useUpdateNotificationSettings() {
 export function useUploadPhoto() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ uri, mimeType }: { uri: string; mimeType?: string }) => {
-      const form = new FormData();
-      const type = mimeType || 'image/jpeg';
-      await appendFile(form, 'photo', uri, `photo.${type.split('/')[1] || 'jpg'}`, type);
-      return api.upload<Me>('/me/photos', form);
-    },
+    mutationFn: ({ uri, mimeType }: { uri: string; mimeType?: string }) => service.uploadPhoto(uri, mimeType),
     onSuccess: setMe(qc),
   });
 }
 
 export function useDeletePhoto() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: number) => api.delete<Me>(`/me/photos/${id}`), onSuccess: setMe(qc) });
+  return useMutation({ mutationFn: (id: number) => service.deletePhoto(id), onSuccess: setMe(qc) });
 }
 
 export function useReorderPhotos() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (ids: number[]) => api.put<Me>('/me/photos/order', { ids }), onSuccess: setMe(qc) });
+  return useMutation({ mutationFn: (ids: number[]) => service.reorderPhotos(ids), onSuccess: setMe(qc) });
 }
 
 function removeFromDiscover(qc: QueryClient, id: number) {
@@ -161,7 +156,7 @@ export function useCrush() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, deep, note }: { id: number; deep?: boolean; note?: string }) =>
-      api.post<CrushResult>(`/users/${id}/crush`, { deep, note }),
+      service.crush(id, { deep, note }),
     onSuccess: (_res, { id }) => {
       removeFromDiscover(qc, id);
       qc.invalidateQueries({ queryKey: keys.crushes });
@@ -175,7 +170,7 @@ export function useCrush() {
 export function useUndoCrush() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/users/${id}/crush`),
+    mutationFn: (id: number) => service.uncrush(id),
     onSuccess: (_r, id) => {
       qc.invalidateQueries({ queryKey: keys.crushes });
       qc.invalidateQueries({ queryKey: keys.user(id) });
@@ -187,7 +182,7 @@ export function useUndoCrush() {
 export function usePass() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.post(`/users/${id}/pass`),
+    mutationFn: (id: number) => service.pass(id),
     onMutate: (id) => removeFromDiscover(qc, id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.crushes }),
     onError: () => qc.invalidateQueries({ queryKey: keys.discover }),
@@ -204,13 +199,13 @@ function invalidateSocial(qc: QueryClient, id: number) {
 
 export function useBlock() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: number) => api.post(`/users/${id}/block`), onSuccess: (_r, id) => invalidateSocial(qc, id) });
+  return useMutation({ mutationFn: (id: number) => service.block(id), onSuccess: (_r, id) => invalidateSocial(qc, id) });
 }
 
 export function useUnblock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/users/${id}/block`),
+    mutationFn: (id: number) => service.unblock(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.blocks });
       qc.invalidateQueries({ queryKey: keys.discover });
@@ -222,20 +217,20 @@ export function useReport() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number; reason: string; details?: string; context?: string; alsoBlock?: boolean }) =>
-      api.post<{ ok: true; blocked: boolean }>(`/users/${id}/report`, body),
+      service.report(id, body),
     onSuccess: (res, { id }) => res.blocked && invalidateSocial(qc, id),
   });
 }
 
 export function useRemoveConnection() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: number) => api.delete(`/connections/${id}`), onSuccess: (_r, id) => invalidateSocial(qc, id) });
+  return useMutation({ mutationFn: (id: number) => service.removeConnection(id), onSuccess: (_r, id) => invalidateSocial(qc, id) });
 }
 
 export function useOpenConversation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (userId: number) => api.post<{ id: number }>('/conversations', { userId }),
+    mutationFn: (userId: number) => service.openConversation(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.conversations }),
   });
 }
@@ -243,7 +238,7 @@ export function useOpenConversation() {
 export function useMarkNotificationsRead() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { ids?: number[]; kinds?: string[] } = {}) => api.post('/notifications/read', body),
+    mutationFn: (body: { ids?: number[]; kinds?: string[] } = {}) => service.markNotificationsRead(body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.notifications });
       qc.invalidateQueries({ queryKey: keys.badges });
@@ -254,7 +249,7 @@ export function useMarkNotificationsRead() {
 export function useMomentReaction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, kind }: { id: number; kind: string | null }) => api.post<Moment>(`/moments/${id}/react`, { kind }),
+    mutationFn: ({ id, kind }: { id: number; kind: string | null }) => service.reactToMoment(id, kind),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.moments }),
   });
 }
@@ -278,7 +273,7 @@ export function useChat(conversationId: number) {
   const lastReadRef = useRef<number | null>(null);
 
   const markRead = useCallback(() => {
-    api.post(`/conversations/${conversationId}/read`).then(() => {
+    service.markConversationRead(conversationId).then(() => {
       qc.invalidateQueries({ queryKey: keys.badges });
       qc.invalidateQueries({ queryKey: keys.conversations });
     }).catch(() => {});
@@ -294,9 +289,7 @@ export function useChat(conversationId: number) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ items: Message[]; hasMore: boolean; lastReadMine: number | null }>(
-        `/conversations/${conversationId}/messages?limit=40`,
-      );
+      const res = await service.getMessages(conversationId, { limit: 40 });
       setMessages(res.items);
       setHasMore(res.hasMore);
       lastIdRef.current = res.items.length ? res.items[res.items.length - 1].id : 0;
@@ -318,9 +311,7 @@ export function useChat(conversationId: number) {
     const tick = async () => {
       if (AppState.currentState !== 'active') return;
       try {
-        const res = await api.get<{ items: Message[]; lastReadMine: number | null }>(
-          `/conversations/${conversationId}/messages?after=${lastIdRef.current}`,
-        );
+        const res = await service.getMessages(conversationId, { after: lastIdRef.current });
         if (cancelled) return;
         if (res.items.length) {
           lastIdRef.current = res.items[res.items.length - 1].id;
@@ -347,7 +338,7 @@ export function useChat(conversationId: number) {
     setLoadingMore(true);
     try {
       const firstId = messages.find((m) => m.id > 0)?.id;
-      const res = await api.get<{ items: Message[]; hasMore: boolean }>(`/conversations/${conversationId}/messages?before=${firstId}&limit=40`);
+      const res = await service.getMessages(conversationId, { before: firstId, limit: 40 });
       setMessages((prev) => [...res.items, ...prev]);
       setHasMore(res.hasMore);
     } finally {
@@ -382,18 +373,7 @@ export function useChat(conversationId: number) {
       };
       setMessages((prev) => (retryLocalId ? prev.map((m) => (m.localId === localId ? optimistic : m)) : [...prev, optimistic]));
       try {
-        let saved: Message;
-        if (draft.kind === 'photo' || draft.kind === 'voice') {
-          const form = new FormData();
-          form.append('kind', draft.kind);
-          if (draft.kind === 'voice') form.append('duration', String(draft.duration));
-          const type = draft.mimeType || (draft.kind === 'photo' ? 'image/jpeg' : 'audio/m4a');
-          const ext = type.includes('webm') ? 'webm' : type.split('/')[1] || 'bin';
-          await appendFile(form, 'media', draft.uri, `${draft.kind}.${ext}`, type);
-          saved = await api.upload<Message>(`/conversations/${conversationId}/messages`, form);
-        } else {
-          saved = await api.post<Message>(`/conversations/${conversationId}/messages`, draft);
-        }
+        const saved = await service.sendMessage(conversationId, draft);
         lastIdRef.current = Math.max(lastIdRef.current, saved.id);
         setMessages((prev) => {
           const without = prev.filter((m) => m.id !== saved.id);
@@ -412,7 +392,7 @@ export function useChat(conversationId: number) {
   const discard = useCallback((localId: string) => setMessages((prev) => prev.filter((m) => m.localId !== localId)), []);
 
   const react = useCallback(async (messageId: number, kind = 'crush') => {
-    const updated = await api.post<Message>(`/messages/${messageId}/react`, { kind });
+    const updated = await service.reactToMessage(messageId, kind);
     setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
   }, []);
 

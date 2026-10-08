@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../../components/Txt';
+import { Input } from '../../components/Input';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
@@ -56,6 +57,25 @@ export function MessagesScreen() {
   }, [data, crushes]);
   const convs = useMemo(() => (data ?? []).filter((c) => c.lastMessage), [data]);
 
+  // Search box: matches names, previews and message text.
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const filteredConvs = useMemo(() => {
+    if (!q) return convs;
+    return convs.filter((c) => {
+      const preview = messagePreview(c.lastMessage, c.peer.name).toLowerCase();
+      return (
+        c.peer.name.toLowerCase().includes(q) ||
+        preview.includes(q) ||
+        (c.lastMessage?.body ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [convs, q]);
+  const filteredFresh = useMemo(
+    () => (q ? fresh.filter((p) => p.name.toLowerCase().includes(q)) : fresh),
+    [fresh, q],
+  );
+
   const startChat = async (userId: number) => {
     try {
       const conv = await open.mutateAsync(userId);
@@ -74,13 +94,25 @@ export function MessagesScreen() {
         Conversations with your Connections.
       </Txt>
 
-      {fresh.length ? (
+      <Input
+        icon="search"
+        placeholder="Search conversations..."
+        accessibilityLabel="Search conversations"
+        value={query}
+        onChangeText={setQuery}
+        autoCorrect={false}
+        autoCapitalize="none"
+        containerStyle={{ marginTop: space.md }}
+        returnKeyType="search"
+      />
+
+      {filteredFresh.length ? (
         <View style={{ marginTop: space.xl }}>
           <Txt variant="label" color="gold" style={{ marginBottom: space.sm }}>
             New Mutual Crushes
           </Txt>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.md, paddingRight: space.md }}>
-            {fresh.map((p) => (
+            {filteredFresh.map((p) => (
               <Pressable key={p.id} onPress={() => startChat(p.id)} accessibilityRole="button" accessibilityLabel={`Say hello to ${p.name}`} style={{ alignItems: 'center', width: 76 }}>
                 <Avatar uri={p.photos[0]?.url} name={p.name} size={68} ring="crush" online={!!p.online} />
                 <Txt variant="smallStrong" numberOfLines={1} style={{ marginTop: 6 }}>
@@ -92,7 +124,7 @@ export function MessagesScreen() {
         </View>
       ) : null}
 
-      {convs.length ? (
+      {filteredConvs.length ? (
         <Txt variant="label" color="textSecondary" style={{ marginTop: space.xl, marginBottom: space.xs }}>
           Conversations
         </Txt>
@@ -114,7 +146,7 @@ export function MessagesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <FlatList
-        data={convs}
+        data={filteredConvs}
         keyExtractor={(c) => String(c.id)}
         ListHeaderComponent={header}
         contentContainerStyle={{ paddingTop: insets.top, paddingHorizontal: gutter, paddingBottom: space.xxxl, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
@@ -122,7 +154,14 @@ export function MessagesScreen() {
         ListEmptyComponent={
           isLoading ? null : isError ? (
             <ErrorState message={(error as Error)?.message} onRetry={refetch} />
-          ) : fresh.length ? (
+          ) : q && !filteredFresh.length ? (
+            <EmptyState
+              icon="search-outline"
+              title={`No matches for “${query.trim()}”.`}
+              message="Try another name or a word from a conversation."
+              action={{ label: 'Clear search', onPress: () => setQuery('') }}
+            />
+          ) : filteredFresh.length ? (
             <View style={{ marginTop: space.xl, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
               <Txt variant="subheading">Make the first move</Txt>
               <Txt variant="small" color="textSecondary" style={{ marginTop: 4 }}>

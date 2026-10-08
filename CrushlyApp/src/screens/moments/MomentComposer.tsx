@@ -9,7 +9,7 @@ import { Photo } from '../../components/Photo';
 import { IconButton } from '../../components/IconButton';
 import { Segmented } from '../../components/Segmented';
 import { useToast } from '../../components/Toast';
-import { api, appendFile } from '../../api/client';
+import { createMoment } from '../../api/service';
 import { keys } from '../../api/hooks';
 import type { MomentStyle } from '../../api/types';
 import { MOMENT_STYLES } from '../../lib/catalog';
@@ -47,12 +47,14 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const share = async () => {
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append('body', body.trim());
-      form.append('style', style);
-      form.append('audience', audience);
-      if (mode === 'photo' && photo) await appendFile(form, 'photo', photo.uri, 'moment.jpg', photo.mimeType);
-      await api.upload('/moments', form);
+      await createMoment({
+        kind: mode,
+        body: body.trim(),
+        style,
+        audience,
+        photoUri: photo?.uri,
+        photoMime: photo?.mimeType,
+      });
       qc.invalidateQueries({ queryKey: keys.moments });
       toast({ kind: 'success', title: 'Your Moment is live', message: 'It’ll disappear in 24 hours.' });
       navigation.goBack();

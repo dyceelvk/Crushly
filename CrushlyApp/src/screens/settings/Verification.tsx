@@ -9,7 +9,7 @@ import { Photo, Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { useToast } from '../../components/Toast';
 import { keys, useMe } from '../../api/hooks';
-import { api, appendFile } from '../../api/client';
+import { nextVerificationPose, submitVerification } from '../../api/service';
 import type { Me } from '../../api/types';
 import { pickImage, type PickedImage } from '../../lib/media';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -30,7 +30,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
 
   useEffect(() => {
     if (step === 'pose' && !pose) {
-      api.get<{ pose: string }>('/me/verification/pose').then((r) => setPose(r.pose)).catch((e) => toast({ kind: 'error', title: 'Couldn’t start', message: (e as Error).message }));
+      setPose(nextVerificationPose());
     }
   }, [step, pose, toast]);
 
@@ -46,10 +46,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
     if (!selfie || !pose) return;
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append('pose', pose);
-      await appendFile(form, 'selfie', selfie.uri, 'selfie.jpg', selfie.mimeType);
-      const next = await api.upload<Me>('/me/verification', form);
+      const next = await submitVerification({ uri: selfie.uri, pose, mimeType: selfie.mimeType });
       qc.setQueryData(keys.me, next);
       toast({ kind: 'success', title: 'Selfie submitted', message: 'We’ll review it shortly and let you know.' });
       setStep('intro');

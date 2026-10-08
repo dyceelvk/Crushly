@@ -1,11 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, setAuthToken, setUnauthorizedHandler } from '../api/client';
+import { ApiError, supabase } from '../api/client';
 import { keys } from '../api/hooks';
+import { getMe } from '../api/service';
 import type { Me } from '../api/types';
-import { storage } from '../lib/storage';
-
-const TOKEN_KEY = 'crushly.session';
 
 export type AuthStatus = 'restoring' | 'signedOut' | 'onboarding' | 'ready';
 
@@ -23,9 +21,13 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * Session state is Supabase Auth's (persisted in the OS keychain on device,
+ * localStorage on the web); `me` is the member record the rest of the app uses.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
-  const [token, setToken] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
   const [restoring, setRestoring] = useState(true);
   const [me, setMeState] = useState<Me | null>(null);
 
@@ -40,64 +42,87 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [qc]);
 
   const forget = useCallback(async () => {
-    setAuthToken(null);
-    setToken(null);
+    setSignedIn(false);
     setMeState(null);
-    await storage.remove(TOKEN_KEY);
     qc.clear();
   }, [qc]);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => {
-      forget();
-    });
-  }, [forget]);
-
-  useEffect(() => {
     (async () => {
-      const saved = await storage.get(TOKEN_KEY);
-      if (saved) {
-        setAuthToken(saved);
-        try {
-          const current = await api.get<Me>('/me');
-          qc.setQueryData(keys.me, current);
-          setMeState(current);
-          setToken(saved);
-        } catch (e) {
-          // Offline: keep the session and let screens show their own retry states.
-          if (e instanceof ApiError && e.isNetwork) setToken(saved);
-          else {
-            setAuthToken(null);
-            await storage.remove(TOKEN_KEY);
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          setSignedIn(true);
+          try {
+            const current = await getMe();
+            qc.setQueryData(keys.me, current);
+            setMeState(current);
+          } catch (e) {
+            // Offline: keep the session and let screens show their own retry states.
+            if (!(e instanceof ApiError && e.isNetwork)) {
+              setSignedIn(false);
+            }
           }
         }
+      } finally {
+        setRestoring(false);
       }
-      setRestoring(false);
     })();
-  }, [qc]);
 
-  const accept = useCallback(
-    async (res: { token: string; me: Me }) => {
-      setAuthToken(res.token);
-      await storage.set(TOKEN_KEY, res.token);
-      qc.setQueryData(keys.me, res.me);
-      setMeState(res.me);
-      setToken(res.token);
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') void forget();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [qc, forget]);
+
+  const afterAuth = useCallback(
+    async () => {
+      const current = await getMe();
+      qc.setQueryData(keys.me, current);
+      setMeState(current);
+      setSignedIn(true);
     },
     [qc],
   );
 
   const signIn = useCallback(
-    async (email: string, password: string) => accept(await api.post('/auth/login', { email, password })),
-    [accept],
+    async (email: string, password: string) => {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      if (error) {
+        const msg = String(error.message ?? '');
+        if (/invalid login credentials/i.test(msg)) throw new ApiError(401, 'That email and password don’t match.');
+        if (!msg) throw new ApiError(400, 'Enter your email and password.');
+        throw new ApiError(error.status ?? 400, msg);
+      }
+      await afterAuth();
+    },
+    [afterAuth],
   );
+
   const signUp = useCallback(
-    async (email: string, password: string) => accept(await api.post('/auth/signup', { email, password })),
-    [accept],
+    async (email: string, password: string) => {
+      const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
+      if (error) {
+        const msg = String(error.message ?? '');
+        if (/already (registered|exists)/i.test(msg)) {
+          throw new ApiError(409, 'An account with this email already exists. Try signing in.');
+        }
+        throw new ApiError(error.status ?? 400, msg || 'We couldn’t create your account. Please try again.');
+      }
+      if (!data.session) {
+        throw new ApiError(
+          202,
+          'Check your inbox — we sent a link to confirm your email. Then sign in to start meeting people.',
+        );
+      }
+      await afterAuth();
+    },
+    [afterAuth],
   );
+
   const signOut = useCallback(async () => {
     try {
-      await api.post('/auth/logout');
+      await supabase.auth.signOut();
     } catch {
       /* best effort */
     }
@@ -106,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const current = await api.get<Me>('/me');
+      const current = await getMe();
       qc.setQueryData(keys.me, current);
       setMeState(current);
       return current;
@@ -115,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [qc]);
 
-  const status: AuthStatus = restoring ? 'restoring' : !token ? 'signedOut' : me && !me.onboarded ? 'onboarding' : 'ready';
+  const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : me && !me.onboarded ? 'onboarding' : 'ready';
 
   const value = useMemo(
     () => ({ status, me, signIn, signUp, signOut, refresh, forget }),

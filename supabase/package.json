@@ -1,0 +1,12 @@
+{
+  "name": "crushly-supabase",
+  "private": true,
+  "type": "module",
+  "description": "Database scripts for the Crushly Supabase backend.",
+  "scripts": {
+    "seed:photos": "node scripts/seed-storage.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0"
+  }
+}

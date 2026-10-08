@@ -1,0 +1,32 @@
+# Netlify deployment for the Crushly web app (Expo web export).
+#
+# Build-time configuration (Site settings → Environment variables):
+#   EXPO_PUBLIC_SUPABASE_URL       your Supabase project URL
+#   EXPO_PUBLIC_SUPABASE_ANON_KEY  your Supabase anon (public) key
+#
+# Netlify also needs nothing else: the app talks to Supabase directly.
+
+[build]
+  base = "CrushlyApp"
+  command = "npm run build:web"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: let the browser router handle every path.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Hashed build assets can be cached forever; index.html must stay fresh.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

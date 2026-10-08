@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# env (copy CrushlyApp/.env.example)
+.env
+.env.*
+!.env.example
+
+# supabase local dev
+supabase/.temp/
+supabase/.branches/
+
+# OS
+.DS_Store

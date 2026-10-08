@@ -14,7 +14,7 @@ import { EmptyState, LoadingBlock } from '../../components/States';
 import { Wordmark } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
 import { keys, useBlocks, useMe, useUnblock, useUpdateNotificationSettings } from '../../api/hooks';
-import { api } from '../../api/client';
+import * as service from '../../api/service';
 import type { Me } from '../../api/types';
 import { useAuth } from '../../state/auth';
 import { useTheme, type Appearance } from '../../theme/ThemeProvider';
@@ -120,7 +120,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
   };
 
   const account = useMutation({
-    mutationFn: (body: Record<string, string>) => api.patch<Me>('/me/account', body),
+    mutationFn: (body: { currentPassword: string; email?: string; newPassword?: string }) => service.updateAccount(body),
     onSuccess: (m, body) => {
       qc.setQueryData(keys.me, m);
       close();
@@ -129,7 +129,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
     onError: (e) => setError((e as Error).message),
   });
   const status = useMutation({
-    mutationFn: (s: 'active' | 'paused') => api.post<Me>('/me/status', { status: s }),
+    mutationFn: (s: 'active' | 'paused') => service.setStatus(s),
     onSuccess: (m) => {
       qc.setQueryData(keys.me, m);
       qc.invalidateQueries({ queryKey: keys.discover });
@@ -139,7 +139,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
     onError: (e) => toast({ kind: 'error', title: 'Not updated', message: (e as Error).message }),
   });
   const revoke = useMutation({
-    mutationFn: () => api.post('/me/sessions/revoke-others'),
+    mutationFn: () => service.signOutOtherSessions(),
     onSuccess: () => {
       setConfirmRevoke(false);
       toast({ kind: 'success', title: 'Signed out everywhere else' });
@@ -147,7 +147,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
     onError: (e) => toast({ kind: 'error', title: 'Something went wrong', message: (e as Error).message }),
   });
   const remove = useMutation({
-    mutationFn: () => api.delete('/me', { password: current }),
+    mutationFn: () => service.deleteAccount(current),
     onSuccess: async () => {
       close();
       await forget();

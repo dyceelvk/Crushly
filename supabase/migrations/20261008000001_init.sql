@@ -1,0 +1,374 @@
+-- Crushly schema on Supabase (Postgres)
+--
+-- Domain ids are bigint identity values (the app's `number` ids). Supabase
+-- Auth owns identity: `auth.users.id` (uuid) is linked to `profiles.auth_user_id`.
+-- All timestamps are epoch milliseconds (bigint) to match the app's `types.ts`.
+--
+-- Privacy model: RLS keeps every member's raw rows private to themselves.
+-- Cross-member reads happen only through SECURITY DEFINER functions (0002)
+-- which serialize profiles exactly like the old API did — exact coordinates
+-- and birthdates never leave the database.
+
+-- ---------------------------------------------------------------- utilities
+
+create or replace function public.now_ms() returns bigint
+language sql stable as $$
+  select (extract(epoch from now()) * 1000)::bigint
+$$;
+
+-- The signed-in member's domain id, or null when not signed in. (Defined after
+-- the tables: SQL-language function bodies are checked at create time.)
+-- create or replace function public.me_id() ... see below.
+
+-- Error convention understood by the app's api client: status | code | message.
+create or replace function public.crushly_fail(status integer, code text, message text) returns void
+language plpgsql as $$
+begin
+  raise exception using
+    message = format('__CRUSHLY__%s__%s__%s', status, coalesce(code, ''), message),
+    errcode = 'P0001';
+end $$;
+
+-- ------------------------------------------------------------------- tables
+
+create table public.profiles (
+  id                    bigint generated always as identity primary key,
+  auth_user_id          uuid not null unique references auth.users(id) on delete cascade,
+  -- Denormalized from auth for scripts and admin tools; the app reads the auth email.
+  email                 text not null default '',
+  status                text not null default 'active' check (status in ('active', 'paused')),
+  is_demo               boolean not null default false,
+  plus_interest         boolean not null default false,
+  name                  text not null default '',
+  birthdate             text,                                   -- YYYY-MM-DD, never exposed
+  pronouns              text not null default '',
+  bio                   text not null default '',
+  city                  text not null default '',
+  lat                   real,                                   -- snapped to ~1 km, never exposed
+  lng                   real,
+  intentions            jsonb not null default '[]',
+  interests             jsonb not null default '[]',
+  languages             jsonb not null default '[]',
+  relationship_intention text not null default '',
+  lifestyle             jsonb not null default '{}',
+  verification          text not null default 'none'
+                          check (verification in ('none', 'pending', 'verified', 'rejected')),
+  onboarded             boolean not null default false,
+  last_active_at        bigint not null default public.now_ms(),
+  created_at            bigint not null default public.now_ms(),
+  updated_at            bigint not null default public.now_ms()
+);
+
+create table public.photos (
+  id          bigint generated always as identity primary key,
+  user_id     bigint not null references public.profiles(id) on delete cascade,
+  url         text not null,               -- storage path in the `media` bucket
+  position    integer not null default 0,
+  created_at  bigint not null default public.now_ms()
+);
+create index photos_user_position_idx on public.photos (user_id, position, id);
+
+create table public.preferences (
+  user_id        bigint primary key references public.profiles(id) on delete cascade,
+  age_min        integer not null default 18,
+  age_max        integer not null default 45,
+  max_distance   integer not null default 50,                  -- km; 0 = anywhere
+  intentions     jsonb not null default '[]',
+  interests      jsonb not null default '[]',
+  verified_only  boolean not null default false
+);
+
+create table public.privacy (
+  user_id            bigint primary key references public.profiles(id) on delete cascade,
+  show_distance      boolean not null default true,
+  show_online        boolean not null default true,
+  read_receipts      boolean not null default true,
+  discoverable       boolean not null default true,
+  profile_visibility text not null default 'everyone'
+                       check (profile_visibility in ('everyone', 'connections')),
+  who_can_message    text not null default 'mutual'
+                       check (who_can_message in ('everyone', 'crushes', 'mutual')),
+  who_can_crush      text not null default 'everyone'
+                       check (who_can_crush in ('everyone', 'verified')),
+  show_age           boolean not null default true,
+  show_city          boolean not null default true,
+  incognito          boolean not null default false            -- Crushly Plus (not purchasable yet)
+);
+
+create table public.notification_settings (
+  user_id          bigint primary key references public.profiles(id) on delete cascade,
+  messages         boolean not null default true,
+  crushes          boolean not null default true,
+  moments          boolean not null default true,
+  recommendations  boolean not null default false
+);
+
+create table public.crushes (
+  from_id     bigint not null references public.profiles(id) on delete cascade,
+  to_id       bigint not null references public.profiles(id) on delete cascade,
+  deep        boolean not null default false,
+  note        text,
+  created_at  bigint not null default public.now_ms(),
+  primary key (from_id, to_id),
+  check (from_id <> to_id)
+);
+create index crushes_to_idx on public.crushes (to_id, created_at);
+
+create table public.passes (
+  from_id     bigint not null references public.profiles(id) on delete cascade,
+  to_id       bigint not null references public.profiles(id) on delete cascade,
+  created_at  bigint not null default public.now_ms(),
+  primary key (from_id, to_id)
+);
+
+-- user_a is always the lower id (enforced by trigger).
+create table public.connections (
+  user_a      bigint not null references public.profiles(id) on delete cascade,
+  user_b      bigint not null references public.profiles(id) on delete cascade,
+  created_at  bigint not null default public.now_ms(),
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+
+create table public.conversations (
+  id              bigint generated always as identity primary key,
+  user_a          bigint not null references public.profiles(id) on delete cascade,
+  user_b          bigint not null references public.profiles(id) on delete cascade,
+  created_at      bigint not null default public.now_ms(),
+  last_message_at bigint,
+  closed          boolean not null default false,
+  unique (user_a, user_b),
+  check (user_a < user_b)
+);
+
+create table public.messages (
+  id              bigint generated always as identity primary key,
+  conversation_id bigint not null references public.conversations(id) on delete cascade,
+  sender_id       bigint not null references public.profiles(id) on delete cascade,
+  kind            text not null default 'text'
+                    check (kind in ('text', 'photo', 'voice', 'sticker', 'profile', 'moment_reply')),
+  body            text not null default '',
+  media_url       text,
+  meta            jsonb not null default '{}',
+  created_at      bigint not null default public.now_ms(),
+  read_at         bigint
+);
+create index messages_conversation_idx on public.messages (conversation_id, id);
+
+create table public.message_reactions (
+  message_id  bigint not null references public.messages(id) on delete cascade,
+  user_id     bigint not null references public.profiles(id) on delete cascade,
+  kind        text not null default 'crush'
+                check (kind in ('crush', 'laugh', 'fire', 'wow')),
+  created_at  bigint not null default public.now_ms(),
+  primary key (message_id, user_id)
+);
+
+create table public.moments (
+  id          bigint generated always as identity primary key,
+  user_id     bigint not null references public.profiles(id) on delete cascade,
+  kind        text not null check (kind in ('text', 'photo')),
+  body        text not null default '',
+  media_url   text,
+  style       text not null default 'noir'
+                check (style in ('noir', 'champagne', 'crimson', 'midnight', 'emerald')),
+  audience    text not null default 'everyone' check (audience in ('everyone', 'connections')),
+  created_at  bigint not null default public.now_ms(),
+  expires_at  bigint not null
+);
+create index moments_expires_idx on public.moments (expires_at);
+
+create table public.moment_views (
+  moment_id   bigint not null references public.moments(id) on delete cascade,
+  user_id     bigint not null references public.profiles(id) on delete cascade,
+  created_at  bigint not null default public.now_ms(),
+  primary key (moment_id, user_id)
+);
+
+create table public.moment_reactions (
+  moment_id   bigint not null references public.moments(id) on delete cascade,
+  user_id     bigint not null references public.profiles(id) on delete cascade,
+  kind        text not null check (kind in ('crush', 'fire', 'laugh', 'wow', 'clap')),
+  created_at  bigint not null default public.now_ms(),
+  primary key (moment_id, user_id)
+);
+
+create table public.notifications (
+  id          bigint generated always as identity primary key,
+  user_id     bigint not null references public.profiles(id) on delete cascade,
+  kind        text not null
+                check (kind in ('crush', 'deep_crush', 'mutual', 'message', 'moment_reply', 'moment_reaction',
+                                'verified', 'verification_rejected')),
+  actor_id    bigint references public.profiles(id) on delete set null,
+  ref_id      bigint,
+  body        text not null default '',
+  created_at  bigint not null default public.now_ms(),
+  read_at     bigint
+);
+create index notifications_user_idx on public.notifications (user_id, id);
+
+create table public.blocks (
+  blocker_id  bigint not null references public.profiles(id) on delete cascade,
+  blocked_id  bigint not null references public.profiles(id) on delete cascade,
+  created_at  bigint not null default public.now_ms(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
+create table public.reports (
+  id            bigint generated always as identity primary key,
+  reporter_id   bigint not null references public.profiles(id) on delete cascade,
+  reported_id   bigint not null references public.profiles(id) on delete cascade,
+  reason        text not null
+                  check (reason in ('fake_profile', 'harassment', 'inappropriate_content', 'scam',
+                                    'underage', 'hate_speech', 'threats_safety', 'other')),
+  details       text not null default '',
+  context       text not null default '',
+  created_at    bigint not null default public.now_ms(),
+  handled       boolean not null default false
+);
+
+create table public.verification_requests (
+  id            bigint generated always as identity primary key,
+  user_id       bigint not null references public.profiles(id) on delete cascade,
+  selfie_path   text not null,             -- storage path in the private `verification` bucket
+  pose          text not null,
+  status        text not null default 'pending'
+                  check (status in ('pending', 'approved', 'rejected', 'superseded')),
+  created_at    bigint not null default public.now_ms(),
+  reviewed_at   bigint
+);
+
+-- ---------------------------------------------------------------- triggers
+
+create or replace function public.me_id() returns bigint
+language sql stable security definer set search_path = public as $$
+  select id from profiles where auth_user_id = auth.uid()
+$$;
+
+-- Keep connection / conversation pairs sorted (user_a < user_b).
+create or replace function public.pair_normalize() returns trigger
+language plpgsql as $$
+begin
+  if new.user_a > new.user_b then
+    select new.user_b, new.user_a into new.user_a, new.user_b;
+  end if;
+  return new;
+end $$;
+
+create trigger connections_pair_normalize before insert or update on public.connections
+  for each row execute function public.pair_normalize();
+create trigger conversations_pair_normalize before insert or update on public.conversations
+  for each row execute function public.pair_normalize();
+
+-- Every new Supabase Auth user gets a full set of member rows.
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  new_id bigint;
+begin
+  insert into profiles (auth_user_id, email, created_at, updated_at, last_active_at)
+  values (new.id, coalesce(new.email, ''), public.now_ms(), public.now_ms(), public.now_ms())
+  returning id into new_id;
+  insert into preferences (user_id) values (new_id);
+  insert into privacy (user_id) values (new_id);
+  insert into notification_settings (user_id) values (new_id);
+  return new;
+end $$;
+
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- --------------------------------------------------------------- row security
+
+alter table public.profiles enable row level security;
+alter table public.photos enable row level security;
+alter table public.preferences enable row level security;
+alter table public.privacy enable row level security;
+alter table public.notification_settings enable row level security;
+alter table public.crushes enable row level security;
+alter table public.passes enable row level security;
+alter table public.connections enable row level security;
+alter table public.conversations enable row level security;
+alter table public.messages enable row level security;
+alter table public.message_reactions enable row level security;
+alter table public.moments enable row level security;
+alter table public.moment_views enable row level security;
+alter table public.moment_reactions enable row level security;
+alter table public.notifications enable row level security;
+alter table public.blocks enable row level security;
+alter table public.reports enable row level security;
+alter table public.verification_requests enable row level security;
+
+-- Members only ever read their own raw rows. Everything cross-member is served
+-- by the SECURITY DEFINER functions in 0002_functions.sql.
+
+create policy profiles_own on public.profiles
+  for select to authenticated using (auth_user_id = auth.uid());
+create policy profiles_update_own on public.profiles
+  for update to authenticated using (auth_user_id = auth.uid()) with check (auth_user_id = auth.uid());
+
+create policy photos_own on public.photos
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy preferences_own on public.preferences
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy privacy_own on public.privacy
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy notification_settings_own on public.notification_settings
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+-- Relationship rows are readable by their participants; writes go through RPCs.
+create policy crushes_pair on public.crushes
+  for select to authenticated using (from_id = public.me_id() or to_id = public.me_id());
+
+create policy passes_own on public.passes
+  for select to authenticated using (from_id = public.me_id());
+
+create policy connections_pair on public.connections
+  for select to authenticated using (user_a = public.me_id() or user_b = public.me_id());
+
+create policy conversations_pair on public.conversations
+  for select to authenticated using (user_a = public.me_id() or user_b = public.me_id());
+
+create policy messages_pair on public.messages
+  for select to authenticated using (
+    conversation_id in (
+      select id from public.conversations where user_a = public.me_id() or user_b = public.me_id()
+    )
+  );
+
+create policy message_reactions_pair on public.message_reactions
+  for select to authenticated using (
+    message_id in (
+      select m.id from public.messages m
+        join public.conversations c on c.id = m.conversation_id
+       where c.user_a = public.me_id() or c.user_b = public.me_id()
+    )
+  );
+
+-- Moments: the feed itself comes from an RPC; members manage their own moments.
+create policy moments_own on public.moments
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy moment_views_own on public.moment_views
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy moment_reactions_own on public.moment_reactions
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy notifications_own on public.notifications
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());
+
+create policy blocks_own on public.blocks
+  for all to authenticated using (blocker_id = public.me_id()) with check (blocker_id = public.me_id());
+
+create policy reports_insert_own on public.reports
+  for insert to authenticated with check (reporter_id = public.me_id());
+create policy reports_select_own on public.reports
+  for select to authenticated using (reporter_id = public.me_id());
+
+create policy verification_own on public.verification_requests
+  for all to authenticated using (user_id = public.me_id()) with check (user_id = public.me_id());

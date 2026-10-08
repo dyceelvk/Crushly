@@ -1,21 +1,37 @@
+import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import { storage } from '../lib/storage';
 
 /**
- * API base URL.
- *  - Web: same origin (the API serves the web build), so relative URLs work behind any proxy.
- *  - Native: EXPO_PUBLIC_API_URL, or the Metro dev host on port 3000 during development.
+ * Supabase client and shared transport helpers.
+ *
+ * The app talks to Supabase directly — Auth for identity, Postgres RPCs for
+ * everything cross-member (see supabase/migrations/), Storage for media.
+ * Configuration comes from Expo public env vars:
+ *
+ *   EXPO_PUBLIC_SUPABASE_URL       e.g. https://abcd.supabase.co
+ *   EXPO_PUBLIC_SUPABASE_ANON_KEY  the public anon key
  */
-function resolveBaseUrl(): string {
-  const configured = process.env.EXPO_PUBLIC_API_URL;
-  if (configured) return configured.replace(/\/$/, '');
-  if (Platform.OS === 'web') return '';
-  const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.20:8081"
-  const host = hostUri ? hostUri.split(':')[0] : 'localhost';
-  return `http://${host}:3000`;
-}
+const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-export const API_URL = resolveBaseUrl();
+export const isConfigured = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+
+/** Session storage: OS keychain/keystore on device, localStorage on the web. */
+const authStorage = {
+  getItem: (key: string) => storage.get(key),
+  setItem: (key: string, value: string) => storage.set(key, value),
+  removeItem: (key: string) => storage.remove(key),
+};
+
+export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABASE_ANON_KEY || 'anon', {
+  auth: {
+    storage: authStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: Platform.OS === 'web',
+  },
+});
 
 export class ApiError extends Error {
   status: number;
@@ -30,82 +46,98 @@ export class ApiError extends Error {
   }
 }
 
-let authToken: string | null = null;
-let onUnauthorized: (() => void) | null = null;
+export function requireConfig(): void {
+  if (!isConfigured) {
+    throw new ApiError(
+      0,
+      'Crushly isn’t configured yet. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.',
+    );
+  }
+}
 
-export const setAuthToken = (token: string | null) => {
-  authToken = token;
-};
-export const setUnauthorizedHandler = (fn: () => void) => {
-  onUnauthorized = fn;
-};
+/**
+ * RPCs raise `__CRUSHLY__<status>__<code>__<message>`, GoTrue returns its own
+ * shapes, and everything else is an unexpected failure. All of it comes out as
+ * an ApiError so screens keep the error handling they already have.
+ */
+export function toApiError(err: unknown): ApiError {
+  const e = err as { message?: string; code?: string | number; status?: number };
+  const message = String(e?.message ?? 'Something went wrong. Please try again.');
+  const m = /^__CRUSHLY__(\d+?)__([a-z0-9_]*?)__([\s\S]*)$/.exec(message);
+  if (m) return new ApiError(Number(m[1]), m[3] || message, m[2] || undefined);
+  if (message === 'Failed to fetch' || /network|fetch failed|offline/i.test(message)) {
+    return new ApiError(0, 'You seem to be offline. Check your connection and try again.');
+  }
+  const code = e?.code != null ? String(e.code) : undefined;
+  const status = e?.status ?? (code === 'PGRST301' ? 401 : code === '42501' ? 403 : 500);
+  if (status === 409 || /already (registered|exists)/i.test(message)) {
+    return new ApiError(409, 'An account with this email already exists. Try signing in.', 'email_taken');
+  }
+  if (status === 400 && /invalid login credentials/i.test(message)) {
+    return new ApiError(401, 'That email and password don’t match.');
+  }
+  return new ApiError(status, message, code);
+}
 
-/** Resolves server-relative media paths (/uploads/..., /seed/...) to absolute URLs on native. */
+/** Resolves stored media paths (`seed/x.jpg`, `photos/1/2.jpg`) to absolute URLs. */
 export function mediaUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (/^(https?:|file:|blob:|data:)/.test(path)) return path;
-  return `${API_URL}${path}`;
+  const clean = path.replace(/^\//, '');
+  if (!SUPABASE_URL) return `/${clean}`;
+  return supabase.storage.from('media').getPublicUrl(clean).data.publicUrl;
 }
 
-type RequestOptions = { body?: unknown; form?: FormData; signal?: AbortSignal; timeoutMs?: number };
-
-export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (authToken) headers.Authorization = `Bearer ${authToken}`;
-  let body: BodyInit | undefined;
-  if (opts.form) body = opts.form as unknown as BodyInit;
-  else if (opts.body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    body = JSON.stringify(opts.body);
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? (opts.form ? 60000 : 20000));
-  opts.signal?.addEventListener('abort', () => controller.abort());
-
-  let res: Response;
+/** Reads a local file (camera roll / recorder URI) into a Blob on any platform. */
+export async function uriToBlob(uri: string): Promise<Blob> {
   try {
-    res = await fetch(`${API_URL}/api${path}`, { method, headers, body, signal: controller.signal });
-  } catch (err) {
-    const aborted = (err as Error)?.name === 'AbortError';
-    throw new ApiError(
-      0,
-      aborted
-        ? 'This is taking longer than usual. Check your connection and try again.'
-        : 'You seem to be offline. Check your connection and try again.',
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  let json: any = null;
-  try {
-    json = await res.json();
+    const res = await fetch(uri);
+    if (!res.ok) throw new Error('read failed');
+    return await res.blob();
   } catch {
-    /* empty body */
+    return new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => resolve(xhr.response as Blob);
+      xhr.onerror = () => reject(new ApiError(0, 'We couldn’t read that file. Try picking it again.'));
+      xhr.responseType = 'blob';
+      xhr.open('GET', uri, true);
+      xhr.send();
+    });
   }
-  if (!res.ok) {
-    if (res.status === 401 && authToken && !path.startsWith('/auth/')) onUnauthorized?.();
-    throw new ApiError(res.status, json?.error?.message || 'Something went wrong. Please try again.', json?.error?.code);
-  }
-  return json as T;
 }
 
-export const api = {
-  get: <T>(path: string, signal?: AbortSignal) => request<T>('GET', path, { signal }),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, { body }),
-  put: <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
-  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body }),
-  delete: <T>(path: string, body?: unknown) => request<T>('DELETE', path, { body }),
-  upload: <T>(path: string, form: FormData) => request<T>('POST', path, { form }),
-};
+/**
+ * Uploads local media to a storage bucket and returns its path.
+ * User media must live in `<kind>/<profile id>/<file>` (see storage policies).
+ */
+export async function uploadMediaFile(
+  bucket: 'media' | 'verification',
+  path: string,
+  uri: string,
+  contentType: string,
+): Promise<string> {
+  requireConfig();
+  const blob = await uriToBlob(uri);
+  const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType, upsert: true });
+  if (error) throw toApiError(error);
+  return path;
+}
 
-/** Appends a local file (camera roll / recorder URI) to FormData on every platform. */
-export async function appendFile(form: FormData, field: string, uri: string, name: string, type: string) {
-  if (Platform.OS === 'web') {
-    const blob = await (await fetch(uri)).blob();
-    form.append(field, blob, name);
-  } else {
-    form.append(field, { uri, name, type } as unknown as Blob);
-  }
+export async function removeMediaFile(path?: string | null): Promise<void> {
+  if (!path || /^(https?:|file:|blob:|data:)/.test(path)) return;
+  await supabase.storage.from('media').remove([path.replace(/^\//, '')]).then(({ error }) => {
+    if (error) console.warn('media cleanup failed:', error.message);
+  });
+}
+
+/** File extension for a mime type, with sensible fallbacks. */
+export function extensionFor(mimeType: string | undefined, fallback = 'jpg'): string {
+  const type = (mimeType ?? '').toLowerCase();
+  if (type.includes('jpeg')) return 'jpg';
+  if (type.includes('webm')) return 'webm';
+  if (type.includes('mpeg') || type.includes('mp3')) return 'mp3';
+  if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'm4a';
+  if (type.includes('png')) return 'png';
+  const fromType = type.split('/')[1];
+  return fromType && fromType.length <= 5 ? fromType : fallback;
 }

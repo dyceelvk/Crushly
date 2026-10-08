@@ -1,7 +1,7 @@
 import type { Ionicons } from '@expo/vector-icons';
 import type { Intention, MomentStyle } from '../api/types';
 
-/** Mirrors server/src/lib/validate.js — keep in sync. */
+/** Vocabularies shared with the backend validation in api/service.ts — keep in sync. */
 export const INTENTIONS: { value: Intention; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'dating', label: 'Dating', description: 'Going on dates and seeing where it leads', icon: 'wine-outline' },
   { value: 'relationship', label: 'Relationship', description: 'Someone to build something real with', icon: 'infinite-outline' },

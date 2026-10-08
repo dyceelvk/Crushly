@@ -4,9 +4,10 @@ Expo (SDK 57) and React Native 0.86, written in TypeScript. The same codebase ru
 
 ```bash
 npm install
-npm start            # Expo dev server (needs the API running on port 3000)
+cp .env.example .env       # Supabase URL + anon key (see supabase/README.md)
+npm start                  # Expo dev server
 npm run typecheck
-npm run build:web    # static web build in dist/, served by the API
+npm run build:web          # static web build in dist/ — this is what Netlify publishes
 ```
 
 ## Structure
@@ -17,13 +18,22 @@ src/
   components/   design system: Txt, Button, IconButton, Input, Chip, Toggle, Slider, Segmented,
                 ListRow/Group, Sheet, Toast, Photo/Avatar, Badges, CrushButton, ProfileCard,
                 PhotoGrid, MessageBubble, States (loading / empty / error), Logo
-  api/          client.ts (fetch + auth token + ApiError), types.ts, hooks.ts (react-query)
-  state/        auth.tsx (session), memberActions.tsx (shared block / report / share sheet)
+  api/          client.ts (Supabase client, ApiError, media URLs, uploads), service.ts (typed
+                data layer over Auth/Postgres/Storage), types.ts, hooks.ts (react-query)
+  state/        auth.tsx (Supabase Auth session), memberActions.tsx (shared block / report / share sheet)
   navigation/   RootNavigator (auth → onboarding → app), custom TabBar, route types
   screens/      auth, onboarding, discover, crushes, messages, moments, profile,
                 notifications, settings (Settings, Safety, Verification, Plus, Info)
   lib/          storage (SecureStore / localStorage), haptics, media (pick + resize), format, catalog
 ```
+
+## Deploying
+
+- **Web**: Netlify builds this folder via the root `netlify.toml`
+  (`npm run build:web` → `dist/`). Set `EXPO_PUBLIC_SUPABASE_URL` and
+  `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the Netlify environment.
+- **iOS / Android**: set the same two env vars before `eas build` (or bake them
+  into a CI secret). Everything else is standard Expo.
 
 ## Design rules
 
