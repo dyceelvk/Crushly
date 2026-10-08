@@ -17,6 +17,13 @@
 #
 # Never commit these values or paste them into chat.
 #
+# Pointing the pipeline at a DIFFERENT Netlify site (e.g. another account whose
+# deploys are not blocked): create the site, copy the two EXPO_PUBLIC_* env
+# vars onto it (Site configuration -> Environment variables), then update the
+# NETLIFY_SITE_ID secret - nothing else in the repo changes. The site URL,
+# Supabase Site URL and email links are resolved from the API on every run.
+# Runbook: README.md "Switch the live site to another Netlify account".
+#
 # Runs on every push to the main line, or manually from the Actions tab.
 # If Netlify's own git builds are still on, turn them off (Site configuration →
 # Build & deploy → your repository → "Stop auto publishing") so this workflow
@@ -74,12 +81,20 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
           GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           set -uo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${GMAIL_SMTP_USER:-}" ] || [ -z "${GMAIL_SMTP_PASS:-}" ]; then
             echo "::notice::Gmail confirmation not wired yet (optional, takes 2 min): add secrets SUPABASE_ACCESS_TOKEN + GMAIL_SMTP_USER + GMAIL_SMTP_PASS - steps in README 'Gmail confirmation emails'."
             exit 0
           fi
+          # Resolve the deploy target so Supabase Site URL + email links follow
+          # whichever site NETLIFY_SITE_ID points at (works across accounts).
+          site_url=$(curl -s -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN:-}" "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID:-}" | jq -r '.ssl_url // empty' 2>/dev/null || true)
+          [ -n "$site_url" ] || site_url="https://mencrushly.netlify.app"
+          export SITE_URL="$site_url"
+          echo "::notice::Deploy target site: $site_url (Supabase Site URL + email links follow this automatically)"
           python3 - <<'PY'
           import json, os, sys, urllib.request, urllib.error
 
@@ -120,12 +135,13 @@ jobs:
               "smtp_pass": gpas,
               "smtp_sender_name": "Crushly",
           }
+          site_url = os.environ.get("SITE_URL", "https://mencrushly.netlify.app")
           if "site_url" in cfg:
-              payload["site_url"] = "https://mencrushly.netlify.app"
+              payload["site_url"] = site_url
           if "uri_allow_list" in cfg:
-              payload["uri_allow_list"] = "https://mencrushly.netlify.app/**,http://localhost:8081/**"
+              payload["uri_allow_list"] = f"{site_url}/**,http://localhost:8081/**"
           elif "additional_redirect_urls" in cfg:
-              payload["additional_redirect_urls"] = ["https://mencrushly.netlify.app/**", "http://localhost:8081/**"]
+              payload["additional_redirect_urls"] = [f"{site_url}/**", "http://localhost:8081/**"]
 
           status, out = call("PATCH", payload)
           if status >= 300:
@@ -137,7 +153,7 @@ jobs:
           if not ok:
               print("::warning::PATCH succeeded but the config did not stick - check Authentication -> SMTP settings in the Supabase dashboard.")
           else:
-              print("::notice::Gmail confirmation wired: smtp.gmail.com:465 sender " + gmail + ", Confirm email ON, Site URL https://mencrushly.netlify.app. Signup + password-reset emails now go out via Gmail.")
+              print(f"::notice::Gmail confirmation wired: smtp.gmail.com:465 sender {gmail}, Confirm email ON, Site URL {site_url}. Signup + password-reset emails now go out via Gmail.")
               # Brand the confirm-signup email: Crushly logo + OTP code hero (no link).
               try:
                   t_keys = [k for k in cfg2 if k.startswith("mailer_templates") or k.startswith("mailer_subjects")]
@@ -145,6 +161,9 @@ jobs:
                   if "mailer_templates_confirmation_content" in cfg2:
                       html = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/confirm-signup.html"), encoding="utf-8").read()
                       recovery = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/recovery.html"), encoding="utf-8").read()
+                      # Point every link/logo at whichever site we are deploying to.
+                      html = html.replace("https://mencrushly.netlify.app", site_url)
+                      recovery = recovery.replace("https://mencrushly.netlify.app", site_url)
                       t_payload = {
                           "mailer_templates_confirmation_content": html,
                           "mailer_subjects_confirmation": "{{ .Token }} is your Crushly code",
@@ -234,7 +253,7 @@ jobs:
             403)
               echo "::error::NETLIFY_AUTH_TOKEN is valid but has NO access to this site (403 Forbidden) — it was almost certainly created on a different Netlify account/team than the one that owns mencrushly. Log into THAT account (the one showing the mencrushly site), create the token at https://app.netlify.com/user/applications, and update the secret." ;;
             404)
-              echo "::error::Site not found (404) — NETLIFY_SITE_ID is wrong. It must be 9524369e-5044-4562-b504-3a62456403e9 (Netlify → Site configuration → General → Site ID)." ;;
+              echo "::error::Site not found (404) — NETLIFY_SITE_ID is wrong, or the token's account cannot see that site. Use the Site ID from Netlify → Site configuration → General (Site information) of the account that OWNS the site you want to deploy to." ;;
             *)
               echo "::error::Unexpected Netlify API response: HTTP $code — $(head -c 300 /tmp/site.json)" ;;
           esac
@@ -284,6 +303,12 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           set -uo pipefail
+          # Resolve the target site (works whichever account owns it).
+          site_json=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")
+          site_name=$(printf '%s' "$site_json" | jq -r '.name // "mencrushly"')
+          site_url=$(printf '%s' "$site_json" | jq -r '.ssl_url // "https://mencrushly.netlify.app"')
+          echo "::notice::Deploying to Netlify site '$site_name' ($site_url)"
+
           curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=5" \
             | jq -r '.[] | "recent deploy: \(.state) \(.commit_ref[0:7] // "none") \"\(.title // "" | .[0:30])\" \(.created_at)"' 2>/dev/null \
@@ -304,7 +329,7 @@ jobs:
               | cut -c1-320 | sed 's/^/::warning::/' || true
           fi
           if [ "$dep_state" = "error" ]; then
-            echo "::warning::Latest Netlify build FAILED - full log: https://app.netlify.com/sites/mencrushly/deploys/$dep_id"
+            echo "::warning::Latest Netlify build FAILED - full log: https://app.netlify.com/sites/$site_name/deploys/$dep_id"
             if [ -n "$log_url" ]; then
               curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$log_url" \
                 | grep -iE "error|failed|cannot|not found|out of memory|killed|bad option|unsupported|engines" \
@@ -314,11 +339,16 @@ jobs:
 
           # Most common cause of sudden build failures: an old default Node.
           # Try to pin Node 22 via the env API (site-level vars override netlify.toml).
+          # The account slug is resolved from the site so this works on any account.
+          site_acct=$(printf '%s' "$site_json" | jq -r '.account_id // empty')
+          acct_slug=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/accounts" \
+            | jq -r --arg a "$site_acct" '.[] | select(.id == $a) | .slug // empty' | head -1)
+          [ -n "$acct_slug" ] || acct_slug="$site_acct"
           env_code=$(curl -s -o /tmp/envres.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H "Content-Type: application/json" \
             -d '{"context":"production","value":"22","scopes":["builds"]}' \
-            "https://api.netlify.com/api/v1/accounts/6ac6c7195129a1601843b70a/env/NODE_VERSION")
-          echo "::notice::NODE_VERSION pin attempt: HTTP $env_code - $(head -c 120 /tmp/envres.json)"
+            "https://api.netlify.com/api/v1/accounts/$acct_slug/env/NODE_VERSION")
+          echo "::notice::NODE_VERSION pin attempt (account $acct_slug): HTTP $env_code - $(head -c 120 /tmp/envres.json)"
           hook=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/build_hooks" \
             | jq -r '.[] | select(.title=="ci-trigger") | .url' | head -1)
@@ -331,12 +361,12 @@ jobs:
           if [ -n "$hook" ]; then
             code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$hook")
             if [ "$code" = "200" ]; then
-              echo "::notice::Triggered a Netlify git build of the latest commit - mencrushly.netlify.app updates in a couple of minutes."
+              echo "::notice::Triggered a Netlify git build of the latest commit - $site_url updates in a couple of minutes."
             else
               echo "::warning::Build hook trigger returned HTTP $code."
             fi
           else
-            echo "::warning::Could not create a Netlify build hook (token scope). Turn ON auto publishing: https://app.netlify.com/sites/mencrushly/configuration/deploys"
+            echo "::warning::Could not create a Netlify build hook (token scope). Turn ON auto publishing: https://app.netlify.com/sites/$site_name/configuration/deploys"
           fi
 
       - name: Deploy to Netlify

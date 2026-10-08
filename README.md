@@ -104,6 +104,47 @@ zero:
    Then sign up for real. Native builds (TestFlight / Play Store) use the same
    env values — see [`CrushlyApp/README.md`](CrushlyApp/README.md).
 
+### Switch the live site to another Netlify account
+
+When one Netlify account's deploys are blocked — e.g. a stuck *"Skipped due to
+account credit usage exceeded"* flag (a known Netlify issue that top-ups don't
+always clear, and it can block even manual deploys) — the clean move is a
+**new site on another account**. The pipeline follows the `NETLIFY_SITE_ID`
+secret, so nothing in the repo changes:
+
+1. **Create a new site in the other account**:
+   [app.netlify.com → Add new site → Import an existing project](https://app.netlify.com/start)
+   → `dyceelvk/Crushly`, branch `arena/927d4af8-crushly`. (The repo's
+   `netlify.toml` carries the whole build config.)
+2. **Copy the build env vars onto the new site**: Site configuration →
+   Environment variables → add `EXPO_PUBLIC_SUPABASE_URL` and
+   `EXPO_PUBLIC_SUPABASE_ANON_KEY` with the same values as the GitHub secrets.
+   Git builds need them baked in at build time.
+3. **Keep the URL identical (recommended).** Rename the OLD site first
+   (Site configuration → General → Change site name → e.g. `mencrushly-old`),
+   then rename the NEW site to `mencrushly` (same place). `mencrushly.netlify.app`
+   then serves the new site, and the Supabase Site URL, email links and the
+   logo inside the emails all keep working untouched. If you skip this, the
+   new site gets a fresh `*.netlify.app` address — the deploy workflow points
+   Supabase at it automatically on the next run.
+4. **Point the pipeline at the new site**: GitHub →
+   [Settings → Secrets and variables → Actions](https://github.com/dyceelvk/Crushly/settings/secrets/actions)
+   → update:
+   - `NETLIFY_SITE_ID` → the new site's **Site ID** (Site configuration → General)
+   - `NETLIFY_AUTH_TOKEN` → a [Personal access token](https://app.netlify.com/user/applications)
+     from the account that owns the NEW site — only needed if that account is a
+     different Netlify login; one token sees every account the same login
+     belongs to.
+5. **Retire the old site's automation** (optional but tidy): old site → Site
+   configuration → Build & deploy → **Stop auto publishing**, and delete the
+   `ci-trigger` build hook under **Build hooks**.
+6. **Push anything** (or Actions → *Deploy web app* → **Run workflow**). The
+   deploy log's *Diagnose Netlify access* step prints the site it is deploying
+   to — confirm it shows the new site, then watch the URL update.
+
+   The same switch works in reverse later: point `NETLIFY_SITE_ID` back and the
+   pipeline follows.
+
 ## AI profile verification
 
 Members follow two illustrated poses (`CrushlyApp/assets/poses/`), the app uploads the
