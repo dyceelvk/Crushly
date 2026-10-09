@@ -1,5 +1,12 @@
-const { withAndroidManifest, withAppBuildGradle } = require('expo/config-plugins');
+const { withAndroidManifest, withAppBuildGradle, withGradleProperties } = require('expo/config-plugins');
 module.exports = config => {
+  // Android 9 (API 28) is the supported minimum. Set the shared Expo/RN
+  // Gradle property, rather than overriding dependency manifests.
+  config = withGradleProperties(config, config => {
+    config.modResults = config.modResults.filter(p => p.key !== 'android.minSdkVersion');
+    config.modResults.push({ type: 'property', key: 'android.minSdkVersion', value: '28' });
+    return config;
+  });
   config = withAndroidManifest(config, config => {
     const manifest = config.modResults.manifest;
     manifest['uses-permission'] ||= [];

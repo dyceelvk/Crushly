@@ -96,7 +96,7 @@ jobs:
           "$tools/apksigner" verify "$apk"
           "$tools/aapt" dump badging "$apk" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:)" | tee "$RUNNER_TEMP/crushly-apk-compatibility.txt"
           min_sdk=$("$tools/aapt" dump badging "$apk" | sed -n "s/^sdkVersion:'\([0-9]*\)'/\1/p")
-          [ -n "$min_sdk" ] && [ "$min_sdk" -le 28 ] || { echo "::error::APK requires an Android version newer than the Galaxy A10's original Android 9."; exit 1; }
+          [ -n "$min_sdk" ] && [ "$min_sdk" -eq 28 ] || { echo "::error::APK minimum must be Android 9 (API 28)."; exit 1; }
           summary=$(tr '\n' ' ' < "$RUNNER_TEMP/crushly-apk-compatibility.txt")
           echo "::notice::Signed universal ARM test APK: $summary"
       - name: Package test APK
@@ -105,7 +105,7 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk apk/Crushly-android-test.apk
           cp "$RUNNER_TEMP/crushly-apk-compatibility.txt" apk/COMPATIBILITY.txt
           sha256sum apk/Crushly-android-test.apk > apk/SHA256SUMS.txt
-          echo "Standalone 32-bit and 64-bit ARM Android test APK (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
+          echo "Standalone Android 9+ test APK for 32-bit and 64-bit ARM phones (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Crushly-Android-test-APK

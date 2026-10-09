@@ -335,6 +335,7 @@ Android APK (32-bit `armeabi-v7a` and 64-bit `arm64-v8a`) using the existing `EX
 needed. Download **Crushly-Android-test-APK** from the successful
 [build run](https://github.com/dyceelvk/Crushly/actions/workflows/build-android.yml).
 Unzip it, install `Crushly-android-test.apk`, and grant microphone access.
+Android 9 (API 28) is the minimum supported version.
 The build verifies native libraries for both architectures, the APK signature,
 and the minimum Android version; `COMPATIBILITY.txt` records the APK metadata.
 The internal release build embeds the JavaScript and uses Android's generated
