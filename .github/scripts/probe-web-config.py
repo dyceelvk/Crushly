@@ -89,6 +89,8 @@ def main():
         if d.get('commit_ref') != os.environ.get('GITHUB_SHA'):
             print('::warning::Ready preview is not this workflow commit; a fresh preview may still be building.')
         targets.append(('ready deploy preview', base))
+        if d.get('review_id') and site.get('name'):
+            targets.append(('PR preview alias', f'https://deploy-preview-{d["review_id"]}--{site["name"]}.netlify.app'))
     else:
         print('::warning::No ready deploy preview available to check yet.')
     for label, base in targets:
