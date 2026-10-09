@@ -14,7 +14,7 @@ concurrency:
 jobs:
   apk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: CrushlyApp
@@ -45,17 +45,9 @@ jobs:
           test -d "$ANDROID_HOME"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-      - name: Validate public backend configuration
-        run: |
-          node --input-type=module <<'JS'
-          const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-          const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-          if (!url || !/^https:\/\/[^/]+\.supabase\.co\/?$/.test(url) || !key) throw Error('Set the two EXPO_PUBLIC_SUPABASE_* GitHub secrets first.');
-          let role;
-          try { role = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString()).role; } catch {}
-          if (key.startsWith('sb_secret_') || role === 'service_role') throw Error('Never bundle a server key. Use publishable/anon.');
-          JS
       - run: npm ci --include=dev
+      - name: Validate public backend configuration
+        run: node scripts/check-public-build.mjs
       - run: npm run typecheck && npm test
       - run: npx expo prebuild --platform android --no-install
       - name: Compile standalone release APK
@@ -106,6 +98,36 @@ jobs:
           cp "$RUNNER_TEMP/crushly-apk-compatibility.txt" apk/COMPATIBILITY.txt
           sha256sum apk/Crushly-android-test.apk > apk/SHA256SUMS.txt
           echo "Standalone Android 9+ test APK for 32-bit and 64-bit ARM phones (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
+      - name: Build Android 9 emulator release
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || { tail -n 40 "$RUNNER_TEMP/crushly-gradle.log"; exit 1; }
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 9 cold start and relaunch
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          target: default
+          arch: x86_64
+          working-directory: CrushlyApp
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: python3 ../.github/scripts/android-launch-smoke.py android/app/build/outputs/apk/release/app-release.apk
+      - name: Audit known server secrets in packaged APK
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
+          DIDIT_WEBHOOK_SECRET: ${{ secrets.DIDIT_WEBHOOK_SECRET }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 ../.github/scripts/audit-apk-secrets.py apk/Crushly-android-test.apk apk/SECURITY-CHECK.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Crushly-Android-test-APK

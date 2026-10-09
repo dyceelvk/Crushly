@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Platform, View } from 'react-native';
-import { unstable_createElement } from 'react-native-web';
+import { browserElement } from '../lib/browserElement';
 import * as ImagePicker from 'expo-image-picker';
 import { Txt } from './Txt';
 import { Button } from './Button';
@@ -131,7 +131,7 @@ export function VideoNoteRecorder({
             Record a video note
           </Txt>
           <View style={{ width: '100%', aspectRatio: 3 / 4, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: colors.goldLine }}>
-            {unstable_createElement('video', {
+            {browserElement('video', {
               ref: videoRef,
               autoPlay: true,
               playsInline: true,
@@ -140,7 +140,7 @@ export function VideoNoteRecorder({
             })}
             {preview ? (
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000' }}>
-                {unstable_createElement('video', {
+                {browserElement('video', {
                   src: preview,
                   controls: true,
                   playsInline: true,

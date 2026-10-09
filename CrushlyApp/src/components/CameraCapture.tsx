@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Modal, Platform, View } from 'react-native';
-import { unstable_createElement } from 'react-native-web';
+import { browserElement } from '../lib/browserElement';
 import { Txt } from './Txt';
 import { Button } from './Button';
 import { pickImage, type PickedImage } from '../lib/media';
@@ -101,7 +101,7 @@ export function CameraCapture({
           <View style={{ width: '100%', aspectRatio: 1, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: colors.goldLine }}>
             {/* The video stays mounted even while reviewing the snap, so the
                 stream survives a retake without reopening the camera. */}
-            {unstable_createElement('video', {
+            {browserElement('video', {
               ref: videoRef,
               autoPlay: true,
               playsInline: true,

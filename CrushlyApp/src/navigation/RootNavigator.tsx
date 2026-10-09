@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
+import { browserLocation } from '../lib/browser';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
@@ -40,8 +42,9 @@ import { InfoScreen } from '../screens/settings/Info';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<TabParamList>();
 // Capture before navigation/auth restoration can normalize the browser URL.
-const verificationLanding = typeof window !== 'undefined' &&
-  (window.location.pathname === '/verification' || isVerificationReturn(window.location.search));
+const landingLocation = browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window);
+const verificationLanding = !!landingLocation &&
+  (landingLocation.pathname === '/verification' || isVerificationReturn(landingLocation.search ?? ''));
 
 /** Surfaces new notifications as a quiet toast while the app is open (polling-based). */
 function LiveNotifications() {

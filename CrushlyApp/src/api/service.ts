@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+import { browserLocation } from '../lib/browser';
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
 import { callMessageMeta } from '../lib/callChannel';
 import { ageFromBirthdate } from '../lib/format';
@@ -477,7 +479,7 @@ export async function resendConfirmation(email: string): Promise<void> {
 export async function sendPasswordReset(email: string): Promise<void> {
   const next = email.trim().toLowerCase();
   const { error } = await supabase.auth.resetPasswordForEmail(next, {
-    redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+    redirectTo: browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window)?.origin,
   });
   if (error) throw toApiError(error);
 }

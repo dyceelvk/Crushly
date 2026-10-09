@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
+import { browserLocation } from '../lib/browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
 import { keys } from '../api/hooks';
@@ -56,7 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // A recovery email link lands with #...type=recovery — route those members
   // straight to the "choose a new password" screen instead of the app.
   useEffect(() => {
-    if (typeof window !== 'undefined' && /type=recovery/.test(window.location.hash)) {
+    const location = browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window);
+    if (/type=recovery/.test(location?.hash ?? '')) {
       setMustSetPassword(true);
     }
   }, []);

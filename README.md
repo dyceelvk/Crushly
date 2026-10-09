@@ -356,3 +356,25 @@ or [Supabase server secrets](https://supabase.com/dashboard/project/yzcssyebozfk
 The `call-ice` function issues one-hour credentials only to members of a live
 call room. Never put the shared secret in an `EXPO_PUBLIC_*` variable.
 Without a configured relay, call success depends on both networks.
+
+### APK secrets and startup checks
+
+Treat the APK and its JavaScript as public: decompiling must not reveal server
+credentials. Supabase's project URL and publishable/legacy `anon` key are public
+client configuration, not administrator credentials. Each signed-in member gets
+their own auth session; RLS and server RPC authorization enforce access. Native
+sessions are stored with Expo SecureStore. This does not protect a session from
+a fully compromised/rooted device, and obfuscation is not a security boundary.
+
+Didit, database, service-role, SMTP, Netlify, AI and TURN shared-secret credentials
+belong only in GitHub deployment secrets / Supabase server secrets. The Android
+compiler receives only the two public Supabase variables. Its client-key check
+rejects unknown key types and secret/service-role keys before export. A separate,
+post-build check compares APK contents against known server credentials without
+printing values. This is a leakage guard, not a complete penetration test.
+
+APK compilation and architecture checks do not prove launchability. Android
+builds now also compile an x86_64 release for an Android 9 emulator, assert that
+**Welcome to Crushly / Get Started** appears, and test a second cold launch
+before publishing the ARM test APK. This does not replace real Samsung/ARM
+hardware testing.
