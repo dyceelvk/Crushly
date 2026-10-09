@@ -49,6 +49,11 @@ for label in ['old', 'new']:
         bundle = hashlib.sha256(z.read('assets/index.android.bundle')).hexdigest()
     metadata.append((package, version, certs, abis))
     public_metadata = [s for s in badging.splitlines() if s.startswith(('package:', 'sdkVersion:', 'targetSdkVersion:', 'native-code:'))]
+    manifest = subprocess.check_output([str(tools / 'aapt'), 'dump', 'xmltree', str(apk), 'AndroidManifest.xml'], text=True)
+    flag_lines = [s.strip() for s in manifest.splitlines() if any(flag in s for flag in ('android:testOnly(', 'android:debuggable(', 'android:maxSdkVersion('))]
+    flag_summary = '; '.join(flag_lines) if flag_lines else 'testOnly/debuggable/maxSdkVersion not declared'
+    lines.append(label + ' manifest flags: ' + flag_summary)
+    print('::notice::' + label + ' manifest flags: ' + flag_summary)
     lines.extend([label, 'APK bytes: ' + str(apk.stat().st_size), 'APK SHA256: ' + hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'JS bundle SHA256: ' + bundle, 'Signer certificate SHA256: ' + ', '.join(certs), *public_metadata])
     print('::notice::' + label + ' APK: ' + ' '.join(public_metadata))
