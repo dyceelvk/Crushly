@@ -62,7 +62,7 @@ jobs:
             python3 - <<'PYLOG'
           import os
           lines = open(os.environ['RUNNER_TEMP'] + '/crushly-gradle.log').read().splitlines()
-          text = '\n'.join(lines[-120:]).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          text = '\n'.join(lines[-25:]).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
           print('::error::' + text)
           PYLOG
             exit 1
