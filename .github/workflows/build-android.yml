@@ -34,6 +34,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-gradle-${{ runner.os }}-${{ hashFiles('CrushlyApp/package-lock.json') }}
       - name: Use runner Android SDK
         run: |
           test -d "$ANDROID_HOME"
