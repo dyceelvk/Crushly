@@ -49,6 +49,13 @@ jobs:
           arch: x86_64
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: python3 .github/scripts/test-android-update.py
+      - name: Upload update with verified matching signature
+        uses: actions/upload-artifact@v4
+        with:
+          name: Crushly-compatible-update
+          path: apk-check/repaired/*.apk
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:
