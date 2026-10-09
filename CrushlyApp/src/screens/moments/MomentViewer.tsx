@@ -278,13 +278,8 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           accessibilityHint="Tap the left third for the previous Moment, anywhere else for the next one. Hold to pause, release to resume."
         />
 
-        {holding ? (
-          <View style={{ position: 'absolute', top: '46%', left: 0, right: 0, alignItems: 'center' }} pointerEvents="none">
-            <Txt variant="smallStrong" style={{ color: '#FFF', backgroundColor: 'rgba(0,0,0,0.55)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7 }}>
-              Paused
-            </Txt>
-          </View>
-        ) : null}
+        {/* No on-screen badge while held: the progress bar freezing at the top
+            and the haptic on pause are the feedback. */}
 
         {/* Top: progress + author */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.md, backgroundColor: 'rgba(0,0,0,0.25)' }} pointerEvents="box-none">

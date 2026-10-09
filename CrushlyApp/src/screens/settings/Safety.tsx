@@ -86,7 +86,7 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
           <Txt variant="smallStrong" color="danger">
             In danger right now?{' '}
           </Txt>
-          Contact local emergency services first. In Nigeria, dial 112.
+          Contact your local emergency services first — know the number for the area you are in.
         </Txt>
       </Pressable>
     </Screen>

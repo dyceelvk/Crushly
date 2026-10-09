@@ -19,6 +19,24 @@ export const COMPANY_REGISTRATION = '[RC NUMBER]';
 /** Fill in once the registered address is confirmed. */
 export const COMPANY_ADDRESS = '[REGISTERED ADDRESS]';
 
+/**
+ * Governing law and courts for the Terms — LEFT EMPTY ON PURPOSE so the app
+ * never publishes where Riel Inc. is registered. While it is empty the terms
+ * use neutral wording ("the jurisdiction in which Riel Inc. is registered").
+ *
+ * Set it to the place of incorporation to make the jurisdiction clause
+ * specific. This constant is the ONLY place that value is ever rendered, and
+ * the choice is a private legal decision made with counsel — it must not leak
+ * into the app copy, the website or this repository's public documentation.
+ */
+export const COMPANY_JURISDICTION: string = '';
+
+export const jurisdictionLaw = (): string =>
+  (COMPANY_JURISDICTION ? `the laws of ${COMPANY_JURISDICTION}` : 'the laws of the jurisdiction in which Riel Inc. is registered');
+
+export const jurisdictionCourts = (): string =>
+  (COMPANY_JURISDICTION ? `the courts of ${COMPANY_JURISDICTION}` : 'the courts of the jurisdiction in which Riel Inc. is registered');
+
 const COMPANY_SITE: string = ''; // ← set this when the Riel landing page goes live
 
 export const SUPPORT_EMAIL = 'support@crushly.app';

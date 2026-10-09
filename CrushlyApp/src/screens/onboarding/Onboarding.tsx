@@ -206,7 +206,7 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
           <Input value={custom} onChangeText={setCustom} placeholder="Or write your own" maxLength={24} accessibilityLabel="Custom pronouns" />
         </View>
         <View style={{ gap: 8 }}>
-          <Input label="City or neighbourhood" value={city} onChangeText={setCity} placeholder="e.g. Lekki, Lagos" maxLength={60} icon="location-outline" />
+          <Input label="City or neighbourhood" value={city} onChangeText={setCity} placeholder="e.g. City Centre" maxLength={60} icon="location-outline" />
           <Button
             title={location || me?.profile.hasLocation ? 'Approximate location added' : 'Use my approximate location'}
             icon={location || me?.profile.hasLocation ? 'checkmark-circle' : 'navigate-outline'}

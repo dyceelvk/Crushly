@@ -337,25 +337,26 @@ those buttons stay hidden and the in-app copy is the whole document.
 `[…]` placeholders. They are skipped automatically in the app copy until
 filled in, so fill them in `lib/company.ts` before launch.
 
-**Governing law.** The Terms currently submit to the laws of the Federal
-Republic of Nigeria with the **exclusive jurisdiction of the courts sitting in
-Lagos**, and the Privacy Policy is written against the **Nigeria Data
-Protection Act 2023** (access, rectification, erasure, portability, objection,
-withdraw consent, complain to the Nigeria Data Protection Commission).
+**Governing law — deliberately anonymous in the app.** `COMPANY_JURISDICTION`
+in `lib/company.ts` is empty, so the Terms read *“the laws of the jurisdiction
+in which Riel Inc. is registered”* and the app never publishes where the
+company is incorporated. Set that one constant to make the clause specific.
+**Keep the value out of this repository** — the repo is public, so decide the
+jurisdiction privately with counsel and never commit it, name it in the app
+copy, or write it in this README.
 
 **Still needs a lawyer.** The in-app wording is a strong, product-accurate
-draft, not legal advice. Before a public launch have qualified Nigerian
-counsel review it, and check two things in particular:
+draft, not legal advice. Before a public launch have qualified counsel in the
+chosen jurisdiction review it, and check in particular:
 
-- whether Riel Inc. must register with the **Nigeria Data Protection
-  Commission** as a data controller (and, depending on scale, as a data
-  controller of major importance), and
+- whether Riel Inc. must register as a data controller with the data
+  protection authority of the chosen jurisdiction, and
 - that the liability cap, the indemnity, the class-claim restriction and the
-  costs clause are enforceable against consumers in Nigeria as drafted.
+  costs clause are enforceable against consumers there as drafted.
 
 ## Before launch
 
-- The **Terms, Privacy and Community Guidelines** copy in `CrushlyApp/src/screens/settings/Info.tsx` is a strong draft written for the product. Have it reviewed by qualified Nigerian counsel — see *Legal and company details* above.
+- The **Terms, Privacy and Community Guidelines** copy in `CrushlyApp/src/screens/settings/Info.tsx` is a strong draft written for the product. Have it reviewed by qualified counsel — see *Legal and company details* above.
 - The seed uses 16 AI-generated portraits (`supabase/seed/photos/`) for demo members. Don't ship them as real users.
 - Turn on email confirmation in Supabase Auth, and keep the service role key out of the app (it belongs only in server-side scripts).
 
