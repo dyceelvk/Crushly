@@ -63,7 +63,7 @@ jobs:
           cd android
           # Expo's generated debug certificate signs this internal test build,
           # NOT a Play Store release. JS is embedded; no Expo Go/Metro required.
-          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || {
+          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=armeabi-v7a,arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || {
             tail -n 200 "$RUNNER_TEMP/crushly-gradle.log"
             python3 - <<'PYLOG'
           import os
@@ -73,12 +73,37 @@ jobs:
           PYLOG
             exit 1
           }
+      - name: Verify install compatibility
+        run: |
+          set -euo pipefail
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          python3 - "$apk" <<'PYAPK'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              libraries = {abi: {p.split('/')[-1] for p in z.namelist() if p.startswith('lib/' + abi + '/') and p.endswith('.so')} for abi in ('armeabi-v7a', 'arm64-v8a')}
+          for abi, files in libraries.items():
+              required = {'libreactnative.so', 'libhermes.so', 'libjingle_peerconnection_so.so'}
+              missing = required - files
+              if missing:
+                  raise SystemExit(f'{abi}: missing native libraries {sorted(missing)}')
+              print(f'::notice::APK verified: {abi} contains React Native, Hermes and WebRTC ({len(files)} native libraries).')
+          if libraries['armeabi-v7a'] != libraries['arm64-v8a']:
+              raise SystemExit('Native library sets differ between 32-bit and 64-bit ARM.')
+          PYAPK
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$tools/apksigner" verify "$apk"
+          "$tools/aapt" dump badging "$apk" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:)" | tee "$RUNNER_TEMP/crushly-apk-compatibility.txt"
+          min_sdk=$("$tools/aapt" dump badging "$apk" | sed -n "s/^sdkVersion:'\([0-9]*\)'/\1/p")
+          [ -n "$min_sdk" ] && [ "$min_sdk" -le 28 ] || { echo "::error::APK requires an Android version newer than the Galaxy A10's original Android 9."; exit 1; }
+          summary=$(tr '\n' ' ' < "$RUNNER_TEMP/crushly-apk-compatibility.txt")
+          echo "::notice::Signed universal ARM test APK: $summary"
       - name: Package test APK
         run: |
           mkdir -p apk
           cp android/app/build/outputs/apk/release/app-release.apk apk/Crushly-android-test.apk
+          cp "$RUNNER_TEMP/crushly-apk-compatibility.txt" apk/COMPATIBILITY.txt
           sha256sum apk/Crushly-android-test.apk > apk/SHA256SUMS.txt
-          echo "Standalone arm64 Android test APK (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
+          echo "Standalone 32-bit and 64-bit ARM Android test APK (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Crushly-Android-test-APK

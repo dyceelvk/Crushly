@@ -329,12 +329,14 @@ one); `supabase/README.md` explains the layout.
 
 ### Android test APK and foreground voice calls
 
-The **Build Android test APK** Actions workflow compiles a standalone arm64
-Android APK using the existing `EXPO_PUBLIC_SUPABASE_URL` and
+The **Build Android test APK** Actions workflow compiles a standalone universal ARM
+Android APK (32-bit `armeabi-v7a` and 64-bit `arm64-v8a`) using the existing `EXPO_PUBLIC_SUPABASE_URL` and
 `EXPO_PUBLIC_SUPABASE_ANON_KEY` GitHub secrets. No Expo account or Expo Go is
 needed. Download **Crushly-Android-test-APK** from the successful
 [build run](https://github.com/dyceelvk/Crushly/actions/workflows/build-android.yml).
 Unzip it, install `Crushly-android-test.apk`, and grant microphone access.
+The build verifies native libraries for both architectures, the APK signature,
+and the minimum Android version; `COMPATIBILITY.txt` records the APK metadata.
 The internal release build embeds the JavaScript and uses Android's generated
 debug signing certificate; it is **not** a Play Store release/signing setup.
 
