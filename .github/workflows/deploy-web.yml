@@ -346,8 +346,21 @@ jobs:
           pub=$(jq -r '.published_deploy.commit_ref // "none"' /tmp/site.json 2>/dev/null)
           pubt=$(jq -r '.published_deploy.title // "?"' /tmp/site.json 2>/dev/null | cut -c1-40)
           pubc=$(jq -r '.published_deploy.created_at // "?"' /tmp/site.json 2>/dev/null)
+          pubctx=$(jq -r '.published_deploy.context // .published_deploy.deploy_context // "?"' /tmp/site.json 2>/dev/null)
           head=$(git rev-parse --short=7 HEAD)
-          echo "site serves commit: ${pub:0:7} ("$pubt" at $pubc) - our HEAD: $head"
+          echo "site serves commit: ${pub:0:7} ("$pubt" at $pubc, context: $pubctx) - our HEAD: $head"
+          if [ "$pubctx" != "production" ] && [ "$pubctx" != "?" ]; then
+            echo "::warning::The LIVE site is serving a $pubctx deploy, not the production build - if the app shows 'Backend not connected', a preview build (which can miss production-scoped env vars) was promoted. Republish the last production deploy, or fix the env-var contexts and redeploy."
+          fi
+
+          # Env-var deploy contexts: deploy previews only inherit variables that
+          # carry a deploy-preview (or all-context) value. Production-only values
+          # leave preview builds showing "Backend not connected". Values masked.
+          acct_id=$(jq -r '.account_id // empty' /tmp/site.json 2>/dev/null)
+          curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/accounts/$acct_id/env?site_id=$NETLIFY_SITE_ID" \
+            | jq -r '.[] | select(.key | startswith("EXPO_PUBLIC_")) | "env: \(.key) scopes=\(.scopes | join(",")) contexts=\([.values[].context] | join(","))"' 2>/dev/null \
+            | sed 's/^/::notice::/' || true
           if [ "${pub:0:7}" != "$head" ]; then
             echo "::notice::LIVE site serves an OLDER deploy (site=${pub:0:7}, HEAD=$head) - if the app looks unchanged: turn ON Netlify auto publishing (Site configuration -> Build & deploy -> Continuous deployment) or give NETLIFY_AUTH_TOKEN the Deploy scope."
           else
