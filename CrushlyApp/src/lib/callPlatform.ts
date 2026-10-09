@@ -6,3 +6,5 @@ export async function callMedia(): Promise<MediaStream> {
 export function callPeer(iceServers: RTCIceServer[]): RTCPeerConnection { return new RTCPeerConnection({ iceServers }); }
 export function stopCallAudio() {}
 export function callRandomBytes(): Uint8Array { return crypto.getRandomValues(new Uint8Array(16)); }
+
+export function releaseCallMedia(_stream: MediaStream) {}

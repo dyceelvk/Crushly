@@ -97,3 +97,10 @@ test('cancel while microphone permission is pending cleans up the eventual strea
   release({ getTracks: () => [f.track] } as unknown as MediaStream);
   await starting; assert.ok(f.track.stopped); assert.equal(f.manager.state, 'idle');
 });
+
+
+test('native media release is called on hang-up, not just track disable', async () => {
+  const f = fixture(); let released = 0;
+  f.deps.releaseMedia = () => { released++; };
+  await f.manager.call('call-token'); await f.manager.hangup(); assert.equal(released, 1);
+});

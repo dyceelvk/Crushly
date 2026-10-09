@@ -1,6 +1,6 @@
 import { supabase } from '../api/client';
 import { CallManagerCore, type CallEvents, type Signal, type Transport } from './callCore';
-import { callMedia, callPeer, stopCallAudio, callRandomBytes } from './callPlatform';
+import { callMedia, callPeer, stopCallAudio, callRandomBytes, releaseCallMedia } from './callPlatform';
 import { newCallChannel as token } from './callChannel';
 export type { CallState, CallEvents } from './callCore';
 export function newCallChannel() { return token(callRandomBytes()); }
@@ -34,5 +34,5 @@ async function join(name: string, receive: (signal: Signal) => void): Promise<Tr
   };
 }
 export class CallManager extends CallManagerCore {
-  constructor(events: CallEvents) { super(events, { media: callMedia, peer: async name => callPeer(await iceServers(name)), join, stopAudio: stopCallAudio }); }
+  constructor(events: CallEvents) { super(events, { media: callMedia, peer: async name => callPeer(await iceServers(name)), join, stopAudio: stopCallAudio, releaseMedia: releaseCallMedia }); }
 }

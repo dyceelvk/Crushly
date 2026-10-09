@@ -16,6 +16,7 @@ export type CallDependencies = {
   peer: (name: string) => Promise<RTCPeerConnection>;
   join: (name: string, receive: (signal: Signal) => void) => Promise<Transport>;
   stopAudio: () => void;
+  releaseMedia?: (stream: MediaStream) => void;
 };
 const RING_MS = 45_000;
 
@@ -38,7 +39,8 @@ export class CallManagerCore {
   constructor(private events: CallEvents, private deps: CallDependencies) {}
   private setState(state: CallState) { this.state = state; this.events.onState(state); }
   private send(signal: Signal) { return this.transport?.send(signal) ?? Promise.resolve(); }
-  private ringTimeout() { this.timer = setTimeout(() => { void this.end('No answer', 'hangup'); }, RING_MS); }
+  private ringTimeout() { this.timer = setTimeout(() => { void this.end('No answer', 'hangup').catch(() => {}); }, RING_MS); }
+  private release(stream: MediaStream) { stream.getTracks().forEach(t => t.stop()); this.deps.releaseMedia?.(stream); }
   private async join(name: string, generation: number) {
     const transport = await this.deps.join(name, (signal) => {
       this.receiving = this.receiving.then(async () => {
@@ -51,7 +53,7 @@ export class CallManagerCore {
   }
   private async setup(generation: number) {
     const local = await this.deps.media();
-    if (generation !== this.generation) { local.getTracks().forEach(t => t.stop()); this.deps.stopAudio(); return false; }
+    if (generation !== this.generation) { this.release(local); this.deps.stopAudio(); return false; }
     this.local = local;
     const pc = await this.deps.peer(this.channelName);
     if (generation !== this.generation) { pc.close(); return false; }
@@ -153,7 +155,7 @@ export class CallManagerCore {
   private finish(reason: string) {
     ++this.generation; this.clearTimers();
     this.pc?.close(); this.pc = null;
-    this.local?.getTracks().forEach(t => t.stop()); this.local = null;
+    if (this.local) this.release(this.local); this.local = null;
     this.deps.stopAudio(); this.transport?.close(); this.transport = null;
     this.pendingIce = []; this.localIce = []; this.accepted = false; this.offerSent = false; this.muted = false;
     this.events.onRemote(null); this.setState('idle'); this.events.onEnd(reason);

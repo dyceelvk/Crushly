@@ -18,3 +18,7 @@ export function callPeer(iceServers: RTCIceServer[]): globalThis.RTCPeerConnecti
 }
 export function stopCallAudio() { audio?.stop(); }
 export function callRandomBytes(): Uint8Array { return getRandomBytes(16); }
+
+export function releaseCallMedia(stream: MediaStream) {
+  (stream as unknown as { release: () => void }).release();
+}
