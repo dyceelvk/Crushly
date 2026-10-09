@@ -20,6 +20,7 @@ import { useAuth } from '../../state/auth';
 import { useTheme, type Appearance } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
+import { COMPANY_NAME } from '../../lib/company';
 import type { ScreenProps } from '../../navigation/types';
 
 /* ------------------------------------------------------------------ hub */
@@ -76,6 +77,9 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <Wordmark size={18} />
         <Txt variant="caption" color="textMuted">
           Version {version}
+        </Txt>
+        <Txt variant="caption" color="textMuted">
+          A {COMPANY_NAME} product
         </Txt>
       </View>
 

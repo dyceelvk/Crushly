@@ -2,6 +2,8 @@
 
 A premium dating and social app for gay, bi and queer men. *Meet men. Make connections. Follow the feeling.*
 
+**Crushly is a product of Riel Inc.**
+
 | Folder | What it is |
 | --- | --- |
 | [`CrushlyApp/`](CrushlyApp/) | The app. Expo (React Native) for iOS, Android and web, written in TypeScript. |
@@ -309,9 +311,51 @@ These features need a third-party service or a human in the loop. Rather than pr
 | **GIFs** | Replaced by a built-in sticker pack, so no GIF API key is needed. |
 | **Realtime** | Polling through react-query (a few seconds in an open chat). Supabase Realtime channels are an easy swap-in when you scale. |
 
+## Legal and company details
+
+Everything about the company and the legal pages lives in two places:
+
+| What | Where |
+| --- | --- |
+| Company name, emails, website base URL, RC number, registered address | [`CrushlyApp/src/lib/company.ts`](CrushlyApp/src/lib/company.ts) |
+| Terms, Privacy Policy, Community Guidelines, Help, Safety tips copy | [`CrushlyApp/src/screens/settings/Info.tsx`](CrushlyApp/src/screens/settings/Info.tsx) |
+
+**Turning on the website links.** `COMPANY_SITE` in `lib/company.ts` is
+**empty on purpose** — the app must never link to a domain Riel Inc. doesn't
+own. Set it once the Riel landing page is live:
+
+```ts
+const COMPANY_SITE = 'https://riel.inc';   // ← the only line to change
+```
+
+Every legal page then grows a **“Read this on the Riel Inc. website”** button
+pointing at `legal/terms`, `legal/privacy`, `legal/guidelines` and
+`legal/safety` on that domain. Nothing else needs editing. While it's empty
+those buttons stay hidden and the in-app copy is the whole document.
+
+`COMPANY_REGISTRATION` (RC number) and `COMPANY_ADDRESS` are marked
+`[…]` placeholders. They are skipped automatically in the app copy until
+filled in, so fill them in `lib/company.ts` before launch.
+
+**Governing law.** The Terms currently submit to the laws of the Federal
+Republic of Nigeria with the **exclusive jurisdiction of the courts sitting in
+Lagos**, and the Privacy Policy is written against the **Nigeria Data
+Protection Act 2023** (access, rectification, erasure, portability, objection,
+withdraw consent, complain to the Nigeria Data Protection Commission).
+
+**Still needs a lawyer.** The in-app wording is a strong, product-accurate
+draft, not legal advice. Before a public launch have qualified Nigerian
+counsel review it, and check two things in particular:
+
+- whether Riel Inc. must register with the **Nigeria Data Protection
+  Commission** as a data controller (and, depending on scale, as a data
+  controller of major importance), and
+- that the liability cap, the indemnity, the class-claim restriction and the
+  costs clause are enforceable against consumers in Nigeria as drafted.
+
 ## Before launch
 
-- The **Terms, Privacy and Community Guidelines** copy in `CrushlyApp/src/screens/settings/Info.tsx` is placeholder text written for the product. Have it reviewed by a lawyer.
+- The **Terms, Privacy and Community Guidelines** copy in `CrushlyApp/src/screens/settings/Info.tsx` is a strong draft written for the product. Have it reviewed by qualified Nigerian counsel — see *Legal and company details* above.
 - The seed uses 16 AI-generated portraits (`supabase/seed/photos/`) for demo members. Don't ship them as real users.
 - Turn on email confirmation in Supabase Auth, and keep the service role key out of the app (it belongs only in server-side scripts).
 
