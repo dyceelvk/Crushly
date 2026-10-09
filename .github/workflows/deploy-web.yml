@@ -358,10 +358,14 @@ jobs:
           # leave preview builds showing "Backend not connected". Values masked.
           echo "::notice::Site env vars (values masked): $(jq -r '[.build_settings.env // {} | to_entries[] | "\(.key)=\(if (.value | type) == "object" then (.value | keys | join("/")) else "value" end)"] | join("  ")' /tmp/site.json 2>/dev/null)"
           acct_id=$(jq -r '.account_id // empty' /tmp/site.json 2>/dev/null)
-          curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/accounts/$acct_id/env?site_id=$NETLIFY_SITE_ID" \
-            | jq -r '.[] | select(.key | startswith("EXPO_PUBLIC_")) | "env: \(.key) scopes=\(.scopes | join(",")) contexts=\([.values[].context] | join(","))"' 2>/dev/null \
-            | sed 's/^/::notice::/' || true
+          # Shared (team-level) env vars — the EXPO_PUBLIC_* pair lives here, not
+          # on the site. Values are stripped; only keys/scopes/contexts print.
+          for scope in "site_id=$NETLIFY_SITE_ID" ""; do
+            curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              "https://api.netlify.com/api/v1/accounts/$acct_id/env${scope:+?$scope}" \
+              | jq -r 'if type == "array" then .[] | select(.key | startswith("EXPO_PUBLIC_")) | "env: \(.key) scopes=\(.scopes | join(",")) contexts=\([.values[]?.context] | join(","))" else empty end' 2>/dev/null \
+              | sed 's/^/::notice::/' || true
+          done
           if [ "${pub:0:7}" != "$head" ]; then
             echo "::notice::LIVE site serves an OLDER deploy (site=${pub:0:7}, HEAD=$head) - if the app looks unchanged: turn ON Netlify auto publishing (Site configuration -> Build & deploy -> Continuous deployment) or give NETLIFY_AUTH_TOKEN the Deploy scope."
           else
