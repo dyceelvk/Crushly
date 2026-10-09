@@ -66,6 +66,32 @@ Deno.serve(async (req) => {
   if (profErr || !profile) return json({ error: 'profile not found' }, 404);
   if (profile.verification === 'verified') return json({ error: 'You’re already verified.' }, 400);
 
+  let newSession = false;
+  try {
+    const body = await req.json();
+    newSession = body?.newSession === true;
+  } catch {
+    // Older clients send an empty body: default to resuming, not restarting.
+  }
+
+  if (!newSession) {
+    const { data: existing, error: existingErr } = await admin
+      .from('verification_requests')
+      .select('didit_session_id, didit_session_url, status, didit_status')
+      .eq('user_id', profile.id)
+      .not('didit_session_id', 'is', null)
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) return json({ error: 'Couldn’t look up your verification session. Please try again.' }, 500);
+    if (existing?.status === 'pending' && existing.didit_session_url &&
+        !['Expired', 'Abandoned'].includes(existing.didit_status ?? '')) {
+      return json({ url: existing.didit_session_url, session_id: existing.didit_session_id });
+    }
+    // Legacy sessions have no saved URL. Create a replacement once; subsequent
+    // Continue taps reuse the saved link instead of spending another session.
+  }
+
   // Face-match workflows need a reference face for a brand-new user: send the
   // member's first profile photo as portrait_image (Didit caps it at 2MB).
   const { data: photo } = await admin
@@ -97,7 +123,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         workflow_id: workflowId,
         vendor_data: String(profile.id),
-        callback: `${appUrl}/?didit=done`,
+        callback: `${appUrl}/verification?didit=done`,
         callback_method: 'both',
         language: 'en',
         contact_details: { email: profile.email },
@@ -107,7 +133,7 @@ Deno.serve(async (req) => {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return json({ error: `Didit session failed (HTTP ${res.status})`, detail: body?.detail ?? body?.message }, 502);
+      return json({ error: String(body?.detail ?? body?.message ?? `Verification provider rejected the request (HTTP ${res.status}).`) }, 502);
     }
     session = body;
   } catch {
@@ -117,18 +143,11 @@ Deno.serve(async (req) => {
     return json({ error: 'Didit returned an unexpected response.' }, 502);
   }
 
-  // One live session per member: retire older pending requests, record this one.
-  await admin.from('verification_requests').update({ status: 'superseded' }).eq('user_id', profile.id).eq('status', 'pending');
-  const { error: insErr } = await admin.from('verification_requests').insert({
-    user_id: profile.id,
-    selfie_path: null,
-    pose: null,
-    status: 'pending',
-    didit_session_id: session.session_id,
-    didit_status: session.status ?? 'Not Started',
+  // Save/supersede atomically. Creating a link is NOT a review submission.
+  const { error: recordErr } = await admin.rpc('record_didit_session', {
+    p_user_id: profile.id, p_session_id: session.session_id, p_url: session.url,
   });
-  if (insErr) return json({ error: 'Couldn’t record the session.' }, 500);
-  await admin.from('profiles').update({ verification: 'pending' }).eq('id', profile.id);
+  if (recordErr) return json({ error: 'Couldn’t record the session. Please try again.' }, 500);
 
   return json({ url: session.url, session_id: session.session_id });
 });

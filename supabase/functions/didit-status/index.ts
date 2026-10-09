@@ -6,7 +6,7 @@
 // Secrets: SUPABASE_* (automatic) + DIDIT_API_KEY.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { DIDIT_BASE, diditToAppStatus, appToProfileVerification } from '../_shared/didit.ts';
+import { DIDIT_BASE } from '../_shared/didit.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -43,46 +43,51 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (profErr || !profile) return json({ error: 'profile not found' }, 404);
 
-  const { data: row } = await admin
+  const { data: row, error: rowErr } = await admin
     .from('verification_requests')
     .select('id, didit_session_id, status, didit_status')
     .eq('user_id', profile.id)
     .not('didit_session_id', 'is', null)
-    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  let diditStatus: string | null = row?.didit_status ?? null;
+  if (rowErr) return json({ error: 'Couldn’t look up your verification status. Please try again.' }, 500);
 
-  // Poll Didit while a session is still open.
+  let providerStatus = row?.didit_status ?? null;
+  let decision: unknown = null;
   const apiKey = Deno.env.get('DIDIT_API_KEY') ?? '';
   if (row?.didit_session_id && row.status === 'pending' && apiKey) {
     try {
       const res = await fetch(`${DIDIT_BASE}/v3/session/${row.didit_session_id}/decision/`, {
         headers: { 'x-api-key': apiKey },
+        signal: AbortSignal.timeout(10_000),
       });
       if (res.ok) {
-        const body = await res.json().catch(() => null);
-        if (body) {
-          // The GET returns the decision at the response root (no .decision wrapper).
-          diditStatus = String(body.status ?? body.decision?.status ?? diditStatus);
-          const appStatus = diditToAppStatus(diditStatus);
-          await admin
-            .from('verification_requests')
-            .update({ status: appStatus, didit_status: diditStatus, decision: body.decision ?? body })
-            .eq('id', row.id);
-          await admin.from('profiles').update({ verification: appToProfileVerification(appStatus) }).eq('id', profile.id);
-        }
+        const body = await res.json();
+        providerStatus = body.status ?? body.decision?.status ?? providerStatus;
+        decision = body.decision ?? body;
       }
     } catch {
-      /* Didit unreachable — fall through with the stored status */
+      // A temporarily unavailable provider does not change a stored decision.
     }
   }
+  if (row?.didit_session_id && providerStatus) {
+    const { error } = await admin.rpc('apply_didit_status', {
+      p_session_id: row.didit_session_id, p_status: providerStatus, p_decision: decision,
+    });
+    if (error) return json({ error: 'Couldn’t save your verification status. Please try again.' }, 500);
+  }
 
-  const { data: fresh } = await admin.from('profiles').select('verification').eq('id', profile.id).maybeSingle();
+  // Return database truth, not a stale poll or a callback URL's claimed result.
+  const { data: fresh, error: freshErr } = await admin.from('profiles').select('verification').eq('id', profile.id).single();
+  const { data: latest, error: latestErr } = await admin.from('verification_requests')
+    .select('didit_status, didit_session_id').eq('user_id', profile.id)
+    .not('didit_session_id', 'is', null).order('id', { ascending: false }).limit(1).maybeSingle();
+  if (freshErr || latestErr) return json({ error: 'Couldn’t load your verification status.' }, 500);
   return json({
-    status: fresh?.verification ?? 'none',
-    diditStatus,
-    sessionId: row?.didit_session_id ?? null,
+    status: fresh.verification,
+    diditStatus: latest?.didit_status ?? null,
+    sessionId: latest?.didit_session_id ?? null,
   });
 });

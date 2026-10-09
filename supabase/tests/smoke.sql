@@ -189,66 +189,87 @@ begin
   perform public.unblock_member(tobi_id);
   assert public.load_profile(tobi_id) is not null, 'unblock brings them back';
 
-  -- ------------------------------------------------- verification request flow
-  insert into public.verification_requests (user_id, selfie_path, pose, selfies)
-  values (me, 'verification/selfies/demo/1.jpg', 'Peace sign & smile + Wink & wave', '["verification/selfies/demo/2.jpg"]'::jsonb)
-  returning id into verif_id;
-  assert (select selfies from public.verification_requests where id = verif_id) = '["verification/selfies/demo/2.jpg"]'::jsonb,
-    'extra pose selfies are stored';
-  assert (select count(*) from public.verification_requests where user_id <> me) = 0,
-    'RLS hides other members'' verification requests';
-
+  -- ------------------------------------------------- verification transitions
+  reset role;
+  update public.profiles set verification = 'none' where id = me;
+  set role authenticated;
   begin
-    insert into public.verification_requests (user_id, selfie_path, pose, status)
-    values (me, 'verification/selfies/demo/x.jpg', 'Thumbs up', 'bogus');
-    raise exception 'bogus verification status should fail';
-  exception when others then
-    if sqlerrm like '%bogus verification status should fail%' then raise; end if;
+    insert into public.verification_requests (user_id, didit_session_id) values (me, 'forged');
+    raise exception 'members must not create verification requests';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.profiles set verification = 'pending' where id = me;
+    raise exception 'a member click must not set pending';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.profiles set verification = 'verified' where id = me;
+    raise exception 'members must not forge badges';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.record_didit_session(me, 'forged', 'https://example.com');
+    raise exception 'members must not invoke service-only session creation';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.apply_didit_status('forged', 'Approved');
+    raise exception 'members must not invoke service-only settlement';
+  exception when insufficient_privilege then null;
   end;
 
-  update public.verification_requests set status = 'superseded' where user_id = me and status = 'pending';
-  assert (select count(*) from public.verification_requests where user_id = me and status = 'pending') = 0,
-    'old pending requests can be superseded before a new submission';
-
-  update public.profiles set verification = 'pending' where id = me;
-  assert (select verification from public.profiles where id = me) = 'pending',
-    'profile verification flag moves to pending';
-
-  -- AI verdict columns (verification_ai migration) round-trip for the owner
-  update public.verification_requests
-    set ai_verdict = '{"real_person": true, "pose_ok": true, "same_person": true, "confidence": 0.9, "reason": "ok"}'::jsonb,
-        ai_reviewed_at = public.now_ms()
-    where id = verif_id;
-  assert (select ai_verdict ->> 'confidence' from public.verification_requests where id = verif_id) = '0.9',
-    'AI verdict is stored and readable by its owner';
-
-  -- ---------------------------------------------------------- didit surface
-  -- Didit requests reuse verification_requests and carry no selfies.
-  insert into public.verification_requests (user_id, didit_session_id, didit_status)
-  values (me, 'ses_smoke_1', 'In Review')
-  returning id into verif_id;
-  assert (select selfie_path from public.verification_requests where id = verif_id) is null,
-    'Didit requests carry no selfie';
-  assert (select didit_status from public.verification_requests where id = verif_id) = 'In Review',
-    'raw Didit status is stored';
-
-  -- Webhook idempotency table is service-role only (RLS hides it from members).
-  assert (select count(*) from public.didit_events) = 0,
-    'didit_events is hidden from members by RLS';
+  reset role;
+  update public.profiles set verification = 'none' where id = me;
+  perform public.record_didit_session(me, 'ses_old', 'https://example.com/old');
+  perform public.record_didit_session(me, 'ses_current', 'https://example.com/current');
+  assert (select verification from public.profiles where id = me) = 'none',
+    'creating a session must NOT mean in review';
+  assert (select status from public.verification_requests where didit_session_id = 'ses_old') = 'superseded';
+  perform public.apply_didit_status('ses_old', 'Approved', null, 'evt_old');
+  assert (select verification from public.profiles where id = me) = 'none', 'old session must not settle the badge';
+  perform public.apply_didit_status('ses_current', 'Not Started', null, 'evt_not_started');
+  assert (select verification from public.profiles where id = me) = 'none', 'Not Started must stay unsubmitted';
+  perform public.apply_didit_status('ses_current', 'In Progress', null, 'evt_progress');
+  assert (select verification from public.profiles where id = me) = 'pending';
+  perform public.apply_didit_status('ses_current', 'In Review', null, 'evt_review');
+  perform public.apply_didit_status('ses_current', 'Not Started', null, 'evt_late');
+  assert (select didit_status from public.verification_requests where didit_session_id = 'ses_current') = 'In Review',
+    'late Not Started cannot undo submitted checks';
+  perform public.apply_didit_status('ses_current', 'Approved', '{"id_verifications": []}', 'evt_approved');
+  perform public.apply_didit_status('ses_current', 'Approved', null, 'evt_approved');
+  perform public.apply_didit_status('ses_current', 'In Progress', null, 'evt_late_progress');
+  assert (select verification from public.profiles where id = me) = 'verified', 'late progress cannot revoke a badge';
+  assert (select count(*) from public.didit_events where event_id = 'evt_approved') = 1, 'webhooks dedupe';
   begin
-    insert into public.didit_events (event_id) values ('evt_smoke_1');
-    raise exception 'members must not write didit_events';
-  exception when others then
-    if sqlerrm like '%must not write didit_events%' then raise; end if;
+    perform public.apply_didit_status('missing_session', 'In Review', null, 'evt_retry');
+    raise exception 'unknown session must retry';
+  exception when no_data_found then null;
   end;
+  assert not exists (select 1 from public.didit_events where event_id = 'evt_retry'), 'failed writes leave events retryable';
+  update public.profiles set verification = 'none' where id = me;
+  perform public.record_didit_session(me, 'ses_expired', 'https://example.com/expired');
+  perform public.apply_didit_status('ses_expired', 'In Progress');
+  perform public.apply_didit_status('ses_expired', 'Expired');
+  assert (select verification from public.profiles where id = me) = 'none', 'expiry is not review';
 
-  update public.verification_requests
-    set status = 'approved', didit_status = 'Approved', decision = '{"id_verifications": []}'::jsonb
-    where id = verif_id;
-  assert (select status from public.verification_requests where id = verif_id) = 'approved',
-    'Didit approval maps to the approved request status';
-  assert (select decision ->> 'id_verifications' from public.verification_requests where id = verif_id) = '[]',
-    'Didit decision payload round-trips';
+  perform public.record_didit_session(me, 'ses_retry', 'https://example.com/retry');
+  assert (select verification from public.profiles where id = me) = 'none';
+
+  set role authenticated;
+  begin
+    insert into public.profiles (auth_user_id, email, verification) values (daniel, 'forged@example.com', 'verified');
+    raise exception 'members must not insert profiles with a forged badge';
+  exception when insufficient_privilege then null;
+  end;
+  assert (select count(*) from public.verification_requests where user_id <> me) = 0, 'other members cannot read session links';
+  assert (select didit_session_url from public.verification_requests where didit_session_id = 'ses_current') = 'https://example.com/current', 'own session link is saved';
+  begin
+    update public.verification_requests set status = 'approved' where user_id = me;
+    raise exception 'members must not approve verification';
+  exception when insufficient_privilege then null;
+  end;
+  assert (select count(*) from public.didit_events) = 0, 'dedupe events hidden from members';
 
   -- ------------------------------------------------------------ account ops
   begin

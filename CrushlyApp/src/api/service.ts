@@ -385,8 +385,8 @@ export async function recordPlusInterest(): Promise<Me> {
  */
 
 /** Invoke an edge function, surfacing the function's own JSON error message. */
-async function invokeFunction<T>(name: string): Promise<T> {
-  const res = await supabase.functions.invoke(name, { body: {} });
+async function invokeFunction<T>(name: string, body: Record<string, unknown> = {}): Promise<T> {
+  const res = await supabase.functions.invoke(name, { body });
   if (res.error) {
     // FunctionsHttpError carries the raw Response in .context — read the
     // function's { error, detail } JSON so members see the real message.
@@ -408,8 +408,8 @@ async function invokeFunction<T>(name: string): Promise<T> {
   return res.data as T;
 }
 
-export async function startDiditVerification(): Promise<{ url: string; sessionId: string }> {
-  const d = await invokeFunction<{ url?: string; session_id?: string; error?: string }>('didit-session');
+export async function startDiditVerification(newSession = false): Promise<{ url: string; sessionId: string }> {
+  const d = await invokeFunction<{ url?: string; session_id?: string; error?: string }>('didit-session', { newSession });
   if (!d?.url) throw new ApiError(502, d?.error || 'Couldn’t start verification — try again.');
   return { url: d.url, sessionId: String(d.session_id ?? '') };
 }

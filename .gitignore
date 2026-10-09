@@ -12,3 +12,7 @@ supabase/.branches/
 
 # OS
 .DS_Store
+
+# browser test artifacts
+CrushlyApp/test-results/
+CrushlyApp/playwright-report/

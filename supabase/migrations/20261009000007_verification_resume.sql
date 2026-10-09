@@ -1,0 +1,101 @@
+-- Save the private hosted link so an interrupted redirect can resume without
+-- creating another provider session. Existing request RLS limits owner reads.
+alter table public.verification_requests add column if not exists didit_session_url text;
+comment on column public.verification_requests.didit_session_url is 'Private hosted verification link used to resume an unfinished session.';
+
+-- Repair the old false-pending state without touching submitted/approved checks.
+update public.profiles p set verification = 'none'
+where p.verification = 'pending' and exists (
+  select 1 from public.verification_requests r
+  where r.user_id = p.id and r.didit_session_id is not null
+    and r.status = 'pending' and r.didit_status = 'Not Started'
+    and not exists (
+      select 1 from public.verification_requests newer
+      where newer.user_id = p.id
+        and (newer.created_at, newer.id) > (r.created_at, r.id)
+    )
+);
+
+-- Members can read their request, but only the backend may create links or
+-- change decisions. A button click must never constitute a review submission.
+drop policy if exists verification_own on public.verification_requests;
+drop policy if exists verification_read_own on public.verification_requests;
+create policy verification_read_own on public.verification_requests
+  for select using (user_id = public.me_id());
+revoke insert, update, delete on public.verification_requests from anon, authenticated;
+
+create or replace function public.guard_verification_badge() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_user in ('anon', 'authenticated') and new.verification is distinct from old.verification then
+    raise exception 'Verification status is managed by the verification service' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists guard_verification_badge on public.profiles;
+create trigger guard_verification_badge before update on public.profiles
+for each row execute function public.guard_verification_badge();
+
+-- All writers lock the profile first; latest request id is the active session.
+create or replace function public.record_didit_session(p_user_id bigint, p_session_id text, p_url text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare v_verification text;
+begin
+  select verification into strict v_verification from public.profiles where id = p_user_id for update;
+  if v_verification = 'verified' then raise exception 'Already verified'; end if;
+  update public.verification_requests set status = 'superseded'
+    where user_id = p_user_id and status = 'pending';
+  insert into public.verification_requests (user_id, didit_session_id, didit_session_url, didit_status, status)
+    values (p_user_id, p_session_id, p_url, 'Not Started', 'pending');
+  update public.profiles set verification = 'none' where id = p_user_id;
+end;
+$$;
+revoke all on function public.record_didit_session(bigint, text, text) from public, anon, authenticated;
+grant execute on function public.record_didit_session(bigint, text, text) to service_role;
+
+-- Polls and webhooks share the same atomic transition. Dedupe rolls back on any
+-- failure, unknown sessions retry, late events cannot regress submitted checks.
+create or replace function public.apply_didit_status(
+  p_session_id text, p_status text, p_decision jsonb default null, p_event_id text default null
+) returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_user_id bigint;
+  v_row public.verification_requests%rowtype;
+  v_latest bigint;
+  v_rank int;
+  v_old_rank int;
+begin
+  select user_id into strict v_user_id from public.verification_requests
+    where didit_session_id = p_session_id order by id desc limit 1;
+  perform 1 from public.profiles where id = v_user_id for update;
+  select * into strict v_row from public.verification_requests
+    where didit_session_id = p_session_id order by id desc limit 1 for update;
+  if p_event_id is not null then
+    insert into public.didit_events (event_id, session_id) values (p_event_id, p_session_id)
+      on conflict do nothing;
+    if not found then return; end if;
+  end if;
+  select max(id) into v_latest from public.verification_requests where user_id = v_user_id;
+  if v_row.id <> v_latest or v_row.status = 'superseded' then return; end if;
+  -- Terminal decisions are not undone by delayed progress/other terminal events.
+  if v_row.status in ('approved', 'rejected') then return; end if;
+  v_rank := case p_status when 'Not Started' then 0 when 'In Progress' then 1
+    when 'In Review' then 2 when 'Approved' then 3 when 'Declined' then 3
+    when 'Expired' then 3 when 'Abandoned' then 3 else -1 end;
+  v_old_rank := case v_row.didit_status when 'In Progress' then 1 when 'In Review' then 2 else 0 end;
+  if v_rank < v_old_rank then return; end if;
+  update public.verification_requests set
+    status = case p_status when 'Approved' then 'approved' when 'Declined' then 'rejected'
+      when 'Expired' then 'superseded' when 'Abandoned' then 'superseded' else 'pending' end,
+    didit_status = p_status, decision = coalesce(p_decision, decision),
+    didit_event_id = coalesce(p_event_id, didit_event_id)
+    where id = v_row.id;
+  update public.profiles set verification = case p_status
+    when 'Approved' then 'verified' when 'Declined' then 'rejected'
+    when 'In Progress' then 'pending' when 'In Review' then 'pending' else 'none' end
+    where id = v_user_id and verification <> 'verified';
+end;
+$$;
+revoke all on function public.apply_didit_status(text, text, jsonb, text) from public, anon, authenticated;
+grant execute on function public.apply_didit_status(text, text, jsonb, text) to service_role;

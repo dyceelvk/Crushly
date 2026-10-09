@@ -11,7 +11,7 @@
 #
 # Never commit this value or paste it into chat.
 #
-# Runs when migrations change on the main line, or manually from the Actions
+# Runs before function deployment through deploy-web.yml, or manually from the Actions
 # tab ("Run workflow"). seed.sql is deliberately NOT pushed — demo data stays
 # out of the live project.
 
@@ -19,11 +19,7 @@ name: Deploy database migrations
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, arena/**]
-    paths:
-      - 'supabase/migrations/**'
-      - '.github/workflows/db-migrations.yml'
+  workflow_call:
 
 concurrency:
   group: db-migrations-${{ github.ref }}

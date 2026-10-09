@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { isVerificationReturn } from '../lib/verification';
 import { useAuth } from '../state/auth';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBadges } from '../api/hooks';
@@ -38,6 +39,9 @@ import { InfoScreen } from '../screens/settings/Info';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<TabParamList>();
+// Capture before navigation/auth restoration can normalize the browser URL.
+const verificationLanding = typeof window !== 'undefined' &&
+  (window.location.pathname === '/verification' || isVerificationReturn(window.location.search));
 
 /** Surfaces new notifications as a quiet toast while the app is open (polling-based). */
 function LiveNotifications() {
@@ -90,6 +94,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
 
   return (
     <Stack.Navigator
+      initialRouteName={status === 'ready' && verificationLanding ? 'Verification' : undefined}
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.bg },

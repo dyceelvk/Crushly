@@ -8,7 +8,7 @@
 // Secrets: SUPABASE_* (automatic) + DIDIT_WEBHOOK_SECRET.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { verifyDiditWebhook, diditToAppStatus, appToProfileVerification } from '../_shared/didit.ts';
+import { verifyDiditWebhook } from '../_shared/didit.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -52,44 +52,15 @@ Deno.serve(async (req) => {
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-  // Idempotency: the same event_id is reused on retries and fan-out.
-  if (payload.event_id) {
-    const { error: insErr } = await admin
-      .from('didit_events')
-      .insert({ event_id: payload.event_id, session_id: payload.session_id ?? null });
-    if (insErr) return json({ received: true, duplicate: true });
-  }
-
-  const sessionId = payload.session_id ?? '';
-  const diditStatus = String(payload.status ?? '');
-  const appStatus = diditToAppStatus(diditStatus);
-
-  const { data: row } = await admin
-    .from('verification_requests')
-    .select('id, user_id')
-    .eq('didit_session_id', sessionId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  // vendor_data is our profile id — the fallback correlation key.
-  const userId = row?.user_id ?? (payload.vendor_data ? Number(payload.vendor_data) : null);
-  if (!row && !userId) return json({ received: true });
-
-  if (row) {
-    await admin
-      .from('verification_requests')
-      .update({
-        status: appStatus,
-        didit_status: diditStatus,
-        decision: payload.decision ?? null,
-        didit_event_id: payload.event_id ?? null,
-      })
-      .eq('id', row.id);
-  }
-  if (userId && appStatus !== 'pending') {
-    await admin.from('profiles').update({ verification: appToProfileVerification(appStatus) }).eq('id', userId);
-  }
-
+  if (!payload.session_id || !payload.status) return json({ error: 'session_id and status required' }, 400);
+  const { error } = await admin.rpc('apply_didit_status', {
+    p_session_id: payload.session_id,
+    p_status: payload.status,
+    p_decision: payload.decision ?? null,
+    p_event_id: payload.event_id ?? null,
+  });
+  // A failing transaction leaves the event retryable (including a webhook that
+  // arrives before the create-session response has been recorded).
+  if (error) return json({ error: 'Couldn’t save the verification update. Please retry.' }, 503);
   return json({ received: true });
 });

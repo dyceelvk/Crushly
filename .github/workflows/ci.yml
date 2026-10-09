@@ -35,3 +35,26 @@ jobs:
           python-version: '3.12'
       - run: pip install pgserver psycopg2-binary
       - run: python supabase/tests/run.py
+
+  verification-browser:
+    name: Verification browser regression (offline)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CrushlyApp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: CrushlyApp/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx expo export -p web --output-dir dist --clear
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://verification-test.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: offline-public-key
+      - run: npx playwright test --config e2e/verification.config.ts
+        env:
+          E2E_START_SERVER: '1'

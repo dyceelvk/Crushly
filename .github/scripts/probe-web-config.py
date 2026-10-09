@@ -46,13 +46,15 @@ def check(label, base, project_url, public_key):
     if not parser.sources:
         print(f'::warning::{label}: no JavaScript bundle found; config check inconclusive.')
         return False
-    url_found = key_found = False
+    url_found = key_found = redirect_found = False
     for src in parser.sources:
         url = urljoin(base.rstrip('/') + '/', src)
         # Do not fetch arbitrary external script hosts from the served HTML.
         if urlparse(url).netloc != urlparse(base).netloc:
             continue
-        a, b = presence(fetch(url), project_url, public_key)
+        bundle = fetch(url)
+        a, b = presence(bundle, project_url, public_key)
+        redirect_found |= 'Ready to verify' in bundle and 'Creating a session does not submit your verification' in bundle
         url_found |= a
         key_found |= b
     ok = url_found and key_found
@@ -60,6 +62,7 @@ def check(label, base, project_url, public_key):
     print(f'::{kind}::{label}: public Supabase URL={"present" if url_found else "missing"}, '
           f'public key={"present" if key_found else "missing"}; '
           f'{"build config confirmed" if ok else "build config incomplete"} — {base}')
+    print(f'::{"notice" if redirect_found else "warning"}::{label}: verification redirect/status fix={"present" if redirect_found else "not present"}.')
     return ok
 
 
@@ -81,7 +84,7 @@ def main():
     if previews:
         d = previews[0]
         # Use the immutable deploy URL so config matches the reported commit.
-        base = d.get('deploy_ssl_url') or d.get('ssl_url')
+        base = d.get('deploy_ssl_url') or (f'https://{d["id"]}--{site["name"]}.netlify.app' if d.get('id') and site.get('name') else None)
         print(f'::notice::Ready preview: commit={str(d.get("commit_ref") or "unknown")[:7]}.')
         if d.get('commit_ref') != os.environ.get('GITHUB_SHA'):
             print('::warning::Ready preview is not this workflow commit; a fresh preview may still be building.')

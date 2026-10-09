@@ -49,3 +49,25 @@ npm run e2e
   pickup all work end to end.
 - The password-reset journey works: request → code → new password → signed in.
 - New members land on onboarding with a bootstrapped profile.
+
+## Offline verification redirect regression
+
+No real accounts or Didit sessions are created. Browser routes mock Supabase and
+hosted verification; popup blocking stays enabled. This suite is separate from
+live signup tests and runs in CI.
+
+```sh
+cd CrushlyApp
+npm ci
+npx playwright install chromium
+EXPO_PUBLIC_SUPABASE_URL=https://verification-test.supabase.co \
+EXPO_PUBLIC_SUPABASE_ANON_KEY=offline-public-key \
+  npx expo export -p web --output-dir dist --clear
+E2E_START_SERVER=1 npx playwright test --config e2e/verification.config.ts
+```
+
+Do not publish this test build. Normal deployment rebuilds with the real public
+configuration. The tests cover delayed same-tab redirects, pending-but-unopened
+sessions, provider-reported review, retryable errors, explicit restart and both
+current/legacy callback URLs. These tests do not prove a real identity check has
+completed or that provider credits/workflow configuration are valid.

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Platform, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
@@ -9,14 +9,15 @@ import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { useToast } from '../../components/Toast';
 import { keys, useMe } from '../../api/hooks';
-import { startDiditVerification, getDiditStatus } from '../../api/service';
+import { startDiditVerification, getDiditStatus, type DiditStatusResponse } from '../../api/service';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
+import { isVerificationReturn, redirectToVerification, verificationPhase } from '../../lib/verification';
 import type { ScreenProps } from '../../navigation/types';
 
 /** What Didit checks for the member — the hosted flow runs these for us. */
 const DIDIT_STEPS = [
-  { icon: 'card-outline' as const, title: 'Scan your ID', body: 'Your document is read by our identity partner — Crushly never sees it.' },
+  { icon: 'card-outline' as const, title: 'Scan your ID', body: 'Your document is checked securely by our identity partner.' },
   { icon: 'happy-outline' as const, title: 'Liveness check', body: 'A quick face scan proves you’re really there.' },
   { icon: 'git-compare-outline' as const, title: 'Face match', body: 'Your selfie is matched to your document photo.' },
 ];
@@ -29,49 +30,49 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<DiditStatusResponse | null>(null);
 
-  const status = me?.verification.status ?? 'none';
+  const status = result?.status ?? me?.verification.status ?? 'none';
   const verified = status === 'verified';
   const rejected = status === 'rejected';
-  const pending = status === 'pending';
+  const hasSession = !!result?.sessionId || status === 'pending';
+  const phase = verificationPhase(result?.diditStatus ?? null);
   const w = Math.min(contentWidth - gutter * 2, 340);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setChecking(true);
     try {
-      await getDiditStatus();
+      setResult(await getDiditStatus());
       await qc.invalidateQueries({ queryKey: keys.me });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t check the status', message: (e as Error).message });
     } finally {
       setChecking(false);
     }
-  };
+  }, [qc, toast]);
 
-  // Didit sends the member back to /?didit=done&status=… — pick that up here.
+  // Load the real provider state, including legacy links that were never opened.
+  // A return URL is only a cue to poll — never trust its claimed result.
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('didit') === 'done') {
-      window.history.replaceState({}, '', window.location.pathname);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && isVerificationReturn(window.location.search)) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('didit');
+      params.delete('status');
+      const query = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
       toast({ kind: 'info', title: 'Back from verification', message: 'Checking your result…' });
-      void refresh();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void refresh();
+  }, [refresh, toast]);
 
-  const start = async () => {
+  const start = async (newSession = false) => {
+    if (busy) return;
     setBusy(true);
     try {
-      const { url } = await startDiditVerification();
-      await qc.invalidateQueries({ queryKey: keys.me });
-      if (Platform.OS === 'web') window.open(url, '_blank', 'noopener');
+      const { url } = await startDiditVerification(newSession);
+      if (Platform.OS === 'web') redirectToVerification(url, window.location);
       else await Linking.openURL(url);
-      toast({
-        kind: 'success',
-        title: 'Verification opened',
-        message: 'Finish the steps, and you’ll be redirected back to Crushly. Then tap “Check status”.',
-      });
+      void qc.invalidateQueries({ queryKey: keys.me });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t start verification', message: (e as Error).message });
     } finally {
@@ -84,25 +85,24 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
       footer={
         verified ? undefined : (
           <View style={{ gap: space.xs }}>
-            {!pending ? (
-              <Button
-                title={rejected ? 'Try verification again' : 'Start verification'}
-                icon="shield-checkmark-outline"
-                onPress={start}
-                loading={busy}
-              />
-            ) : null}
-            {pending ? (
+            <Button
+              title={rejected ? 'Try verification again' : hasSession ? 'Continue verification' : 'Start verification'}
+              icon="shield-checkmark-outline"
+              onPress={() => void start(rejected)}
+              loading={busy}
+              disabled={checking}
+            />
+            {hasSession ? (
               <>
-                <Button title="Check status" variant="secondary" icon="refresh" onPress={refresh} loading={checking} />
-                <Button title="Start a new session" variant="ghost" onPress={start} loading={busy} />
+                <Button title="Check status" variant="secondary" icon="refresh" onPress={refresh} loading={checking} disabled={busy} />
+                <Button title="Start a new session" variant="ghost" onPress={() => void start(true)} disabled={busy || checking} />
               </>
             ) : null}
           </View>
         )
       }
     >
-      <Header title="Get verified" back onBack={() => navigation.goBack()} />
+      <Header title="Get verified" back onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Profile' })} />
 
       <View style={{ alignItems: 'center', marginTop: space.lg }}>
         <View>
@@ -133,13 +133,15 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             That happens — a blurry document or a bad angle is usually all it is. You can try again with a fresh session.
           </Txt>
         </View>
-      ) : pending ? (
+      ) : hasSession ? (
         <View style={{ alignItems: 'center', marginTop: space.lg, gap: space.sm }}>
           <Txt variant="heading" align="center">
-            Verification in progress
+            {phase === 'review' ? 'Verification under review' : phase === 'progress' ? 'Finish your verification' : 'Ready to verify'}
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Crushly redirects you to our identity partner for the checks. When you finish, you’ll be redirected back to Crushly — results usually land within a minute.
+            {phase === 'review'
+              ? 'Your submitted checks are being reviewed. Tap “Check status” for the latest result.'
+              : 'Tap “Continue verification” to open the checks. Creating a session does not submit your verification or put it under review. Crushly will redirect you to Didit, then back here when you finish.'}
           </Txt>
         </View>
       ) : (
@@ -148,7 +150,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             Prove it’s really you
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Verification runs through our certified identity partner. Crushly will redirect you there — and back — in about two minutes.
+            Verification runs through our certified identity partner. Crushly will redirect you to Didit, then back here when you finish.
           </Txt>
           <View style={{ width: w, gap: space.sm, marginTop: space.xs }}>
             {DIDIT_STEPS.map((s) => (
@@ -178,7 +180,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
           </View>
           <View style={{ width: w, padding: space.md, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
             <Txt variant="small" color="textSecondary">
-              Your ID document is checked by our certified identity partner and never shown to Crushly or other members. Only the pass/fail result reaches your profile.
+              Your ID is checked securely by our identity partner and is never shown to other members. Your verification result controls the badge on your profile.
             </Txt>
           </View>
         </View>

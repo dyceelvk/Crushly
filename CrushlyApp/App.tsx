@@ -11,9 +11,10 @@ import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-
 import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
 import { AppState } from 'react-native';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
-import { AuthProvider } from './src/state/auth';
+import { AuthProvider, useAuth } from './src/state/auth';
 import { ToastProvider } from './src/components/Toast';
 import { MemberActionsProvider } from './src/state/memberActions';
+import { SplashScreen } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import type { RootStackParamList } from './src/navigation/types';
 import { ApiError } from './src/api/client';
@@ -51,6 +52,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       Chat: 'chat/:conversationId',
       Notifications: 'notifications',
       Settings: 'settings',
+      Verification: 'verification',
       Safety: 'safety',
       Privacy: 'privacy',
       Info: 'info/:page',
@@ -59,6 +61,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function Shell() {
+  const { status } = useAuth();
   const { colors } = useTheme();
   const [fontsLoaded, fontError] = useFonts({
     Fraunces_600SemiBold, Fraunces_500Medium_Italic,
@@ -86,6 +89,8 @@ function Shell() {
       background: colors.bg, card: colors.bg, text: colors.text, border: colors.border, primary: colors.gold, notification: colors.crush,
     },
   };
+
+  if (status === 'restoring' || !fontsReady) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
 
   return (
     <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Crushly' }}>
