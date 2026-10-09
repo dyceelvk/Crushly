@@ -35,7 +35,7 @@ function NotConfiguredNotice() {
             ? 'EXPO_PUBLIC_SUPABASE_ANON_KEY holds the SECRET key (sb_secret_… or service_role) — that one bypasses all security and must never ship in the app. Supabase → Settings → API Keys → copy the Publishable key (or the legacy anon public key) instead.'
             : badUrl
               ? 'EXPO_PUBLIC_SUPABASE_URL should be the bare Project URL — https://<ref>.supabase.co — with nothing after it (not /rest/v1, not a connection string). Fix it in Netlify: Site settings → Environment variables, then clear-cache redeploy.'
-              : 'This build has no Supabase project behind it yet. In Netlify: Site settings → Environment variables → add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then redeploy. The README walks through the whole setup.'}
+              : 'This build has no Supabase project behind it yet. In Netlify: Site settings → Environment variables → add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then redeploy. On a deploy-preview URL, also make sure both variables apply to Deploy Previews (Netlify scopes env vars per deploy context — a Production-only value leaves previews disconnected). The README walks through the whole setup.'}
         </Txt>
       </View>
     </View>
