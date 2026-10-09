@@ -1,4 +1,5 @@
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { callMessageMeta } from '../lib/callChannel';
 import { ageFromBirthdate } from '../lib/format';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import {
@@ -615,6 +616,13 @@ export async function sendMessage(conversationId: number, draft: SendDraft): Pro
     mediaPath = await uploadToMessages(draft.uri, type);
   } else if (draft.kind === 'voice') {
     const type = draft.mimeType || 'audio/m4a';
+    mediaPath = await uploadToMessages(draft.uri, type);
+    meta = { duration: draft.duration };
+  } else if (draft.kind === 'call') {
+    meta = callMessageMeta(draft.channel);
+    body = 'Voice call';
+  } else if (draft.kind === 'video') {
+    const type = draft.mimeType || 'video/mp4';
     mediaPath = await uploadToMessages(draft.uri, type);
     meta = { duration: draft.duration };
   }

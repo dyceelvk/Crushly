@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
@@ -24,7 +24,8 @@ import { pickImage } from '../../lib/media';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { useVideoNote } from '../../components/VideoNote';
 import { CallSheet } from '../../components/CallSheet';
-import { CallManager, newCallChannel, type CallState } from '../../lib/call';
+import { CallManager, type CallState } from '../../lib/call';
+import { supabase, toApiError } from '../../api/client';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -61,6 +62,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   /* ------------------------------------------------------------ video notes */
   const videoNote = useVideoNote();
   const sendVideoNote = async () => {
+    if (callRef.current?.state && callRef.current.state !== 'idle') return;
     setTray(false);
     try {
       const note = await videoNote.record();
@@ -82,7 +84,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const getCall = useCallback(() => {
     if (!callRef.current) {
       callRef.current = new CallManager({
-        onState: (s) => setCallState(s),
+        onState: (s) => { setCallState(s); if (s === 'idle') setCallMuted(false); },
         onRemote: (stream) => {
           const el = remoteAudioRef.current;
           if (el) el.srcObject = stream;
@@ -98,29 +100,53 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const startCall = async () => {
     setTray(false);
-    if (Platform.OS !== 'web') {
-      toast({ kind: 'info', title: 'Calls are on the web app for now', message: 'Send a voice or video note instead.' });
-      return;
-    }
-    if (callState !== 'idle') return;
-    const channel = newCallChannel();
+    if (!canSend || recording || callState !== 'idle') return;
+    let channel: string;
+    try {
+      const { data, error } = await supabase.rpc('register_call_room', { p_conversation_id: conversationId });
+      if (error) throw toApiError(error);
+      if (typeof data !== 'string') throw new Error('Couldn’t create the call.');
+      channel = data;
+    } catch (error) { toast({ kind: 'error', title: 'Couldn’t start call', message: (error as Error).message }); return; }
     setCallChannel(channel);
-    send({ kind: 'call', channel });
-    await getCall().call(channel);
+    const manager = getCall();
+    await manager.call(channel);
+    if (manager.state !== 'outgoing') return;
+    const invitation = await chat.send({ kind: 'call', channel });
+    if (!invitation.ok) {
+      void manager.hangup().catch(() => {});
+      toast({ kind: 'error', title: 'Couldn’t invite them to the call', message: invitation.error });
+    }
   };
 
   // Incoming call requests arrive as 'call' messages; prompt once per request.
   useEffect(() => {
-    if (callState !== 'idle') return;
+    if (!conv?.canSend || conv.closed || callState !== 'idle') return;
     const incoming = chat.messages.find(
       (m) => m.kind === 'call' && !m.mine && m.meta?.channel && !seenCalls.current.has(m.id) && Date.now() - m.createdAt < 45_000,
     );
     if (incoming?.meta?.channel) {
       seenCalls.current.add(incoming.id);
       setCallChannel(String(incoming.meta.channel));
-      getCall().incoming(String(incoming.meta.channel));
+      void getCall().incoming(String(incoming.meta.channel));
     }
-  }, [chat.messages, callState, getCall]);
+  }, [chat.messages, callState, getCall, conv?.canSend, conv?.closed]);
+
+  useEffect(() => () => {
+    void callRef.current?.hangup().catch(() => {});
+    callRef.current = null;
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (conv && (!conv.canSend || conv.closed)) void callRef.current?.hangup().catch(() => {});
+  }, [conv?.canSend, conv?.closed]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') void callRef.current?.hangup().catch(() => {});
+    });
+    return () => subscription.remove();
+  }, []);
 
   const peer = conv?.peer;
   const canSend = conv ? conv.canSend && !conv.closed : false;
@@ -176,6 +202,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   };
 
   const startRecording = async () => {
+    if (callRef.current?.state && callRef.current.state !== 'idle') return;
     try {
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) return toast({ kind: 'error', title: 'Microphone is off', message: 'Allow microphone access to send voice messages.' });
@@ -250,7 +277,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             onPress={() => peer && openProfile(peer.id)}
             accessibilityRole="button"
             accessibilityLabel={peer ? `View ${peer.name}'s profile` : 'Loading'}
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+            style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 }}
           >
             <Avatar uri={peer?.photo} name={peer?.name} size={40} online={!!peer?.online} />
             <View style={{ flex: 1 }}>
@@ -265,6 +292,13 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               </Txt>
             </View>
           </Pressable>
+          <IconButton
+            icon="call-outline"
+            variant="gold"
+            label="Start voice call"
+            onPress={startCall}
+            disabled={!canSend || recording || callState !== 'idle'}
+          />
           <IconButton
             icon="ellipsis-horizontal"
             variant="plain"
@@ -361,7 +395,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <View style={{ borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg, paddingBottom: Math.max(insets.bottom, 8) }}>
             {tray ? (
               <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
-                <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.sm }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.sm }}>
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
@@ -465,8 +499,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           peerPhoto={peer?.photo}
           muted={callMuted}
           onAccept={() => getCall().accept(callChannel)}
-          onDecline={() => getCall().decline()}
-          onHangup={() => getCall().hangup()}
+          onDecline={() => { void getCall().decline().catch(() => {}); }}
+          onHangup={() => { void getCall().hangup().catch(() => {}); }}
           onToggleMute={() => setCallMuted(getCall().toggleMute())}
         />
       </KeyboardAvoidingView>
@@ -553,7 +587,8 @@ function TrayButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyp
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      style={({ pressed }) => ({ flex: 1, alignItems: 'center', gap: 6, paddingVertical: 12, borderRadius: radius.md, backgroundColor: pressed ? colors.elevated : colors.card, borderWidth: 1, borderColor: colors.border })}
+      accessibilityLabel={label}
+      style={({ pressed }) => ({ flexGrow: 1, flexBasis: 88, alignItems: 'center', gap: 6, paddingVertical: 12, borderRadius: radius.md, backgroundColor: pressed ? colors.elevated : colors.card, borderWidth: 1, borderColor: colors.border })}
     >
       <Ionicons name={icon} size={22} color={colors.gold} />
       <Txt variant="caption" color="textSecondary">

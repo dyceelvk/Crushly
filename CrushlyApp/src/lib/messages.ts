@@ -10,6 +10,10 @@ export function messagePreview(m: Message | null, peerName: string): string {
       return prefix + m.body;
     case 'photo':
       return `${prefix}Sent a photo`;
+    case 'call':
+      return `${prefix}Voice call`;
+    case 'video':
+      return `${prefix}Video note`;
     case 'voice':
       return `${prefix}Voice message`;
     case 'sticker':

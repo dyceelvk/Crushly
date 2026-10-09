@@ -3,20 +3,20 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#070708",
     "primaryColor": "#D8B46A",
-    "description": "Crushly — a private, modern social space for men looking for men.",
+    "description": "Crushly \u2014 a private, modern social space for men looking for men.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
       "infoPlist": {
         "NSCameraUsageDescription": "Crushly uses your camera for profile photos, Moments and verification selfies.",
         "NSPhotoLibraryUsageDescription": "Crushly lets you choose photos for your profile, Moments and messages.",
-        "NSMicrophoneUsageDescription": "Crushly uses your microphone to record voice messages.",
+        "NSMicrophoneUsageDescription": "Crushly uses your microphone for voice calls and voice messages.",
         "NSLocationWhenInUseUsageDescription": "Crushly uses your approximate location to show distance. Your exact location is never shared."
       }
     },
@@ -37,7 +37,8 @@
       "blockedPermissions": [
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -54,7 +55,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Crushly uses your microphone to record voice messages."
+          "microphonePermission": "Crushly uses your microphone for voice calls and voice messages."
         }
       ],
       "expo-font",
@@ -78,7 +79,8 @@
         {
           "locationWhenInUsePermission": "Crushly uses your approximate location to show distance. Your exact location is never shared."
         }
-      ]
+      ],
+      "./plugins/withCall"
     ]
   }
 }

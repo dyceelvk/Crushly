@@ -300,6 +300,28 @@ jobs:
           done
           [ -n "$deployed" ] && echo "::notice::Edge functions deployed:$deployed"
 
+      - name: Deploy call relay endpoint
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          TURN_URLS: ${{ secrets.TURN_URLS }}
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::SUPABASE_ACCESS_TOKEN is needed to deploy calling."; exit 1; }
+          if [ -n "$TURN_SHARED_SECRET" ] && [ -n "$TURN_URLS" ]; then
+            jq -n '[{name:"TURN_SHARED_SECRET",value:env.TURN_SHARED_SECRET},{name:"TURN_URLS",value:env.TURN_URLS}]' > "$RUNNER_TEMP/turn-secrets.json"
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              "https://api.supabase.com/v1/projects/yzcssyebozfkmojqqdhc/secrets" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+              --data-binary @"$RUNNER_TEMP/turn-secrets.json")
+            rm -f "$RUNNER_TEMP/turn-secrets.json"
+            [[ "$code" == 2* ]] || { echo "::error::TURN configuration failed HTTP $code"; exit 1; }
+          else
+            echo "::warning::No TURN configuration in GitHub; calls fall back to direct/STUN connectivity unless TURN is configured in Supabase. Some mobile networks need a relay."
+          fi
+          cd "$GITHUB_WORKSPACE"
+          npx --yes supabase@latest functions deploy call-ice --project-ref yzcssyebozfkmojqqdhc
+
       - name: Install & test
         run: |
           npm ci --include=dev

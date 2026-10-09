@@ -20,3 +20,6 @@ CrushlyApp/playwright-report/
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Generated Android test artifacts
+CrushlyApp/apk/

@@ -9,11 +9,7 @@ import { space } from '../theme/tokens';
 import type { CallState } from '../lib/call';
 import { durationLabel } from '../lib/format';
 
-/**
- * Voice-call UI: outgoing ring, incoming accept/decline, in-call controls.
- * Web only — the Chat screen gates the call button with an honest message on
- * native (React Native has no WebRTC without a native module).
- */
+/** Foreground voice-call controls for Android and web. */
 export function CallSheet({
   visible,
   state,
@@ -52,10 +48,10 @@ export function CallSheet({
   const title =
     state === 'incoming' ? `${peerName} is calling` : state === 'outgoing' ? `Calling ${peerName}…` : peerName;
   const subtitle =
-    state === 'incoming' ? 'Voice call' : state === 'outgoing' ? 'Ringing…' : durationLabel(elapsed);
+    state === 'incoming' ? 'Voice call' : state === 'outgoing' ? 'Waiting for an answer…' : state === 'connecting' ? 'Connecting audio…' : durationLabel(elapsed);
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent>
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={state === 'incoming' ? onDecline : onHangup}>
       <View style={{ flex: 1, backgroundColor: 'rgba(10,8,6,0.94)', alignItems: 'center', justifyContent: 'center', padding: space.xl }}>
         <View style={{ alignItems: 'center', gap: space.md, width: '100%', maxWidth: 340 }}>
           <Avatar uri={peerPhoto} name={peerName} size={96} ring="gold" />
@@ -98,7 +94,7 @@ export function CallSheet({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm }}>
             <Ionicons name="lock-closed" size={12} color="rgba(255,255,255,0.5)" />
             <Txt variant="caption" color="rgba(255,255,255,0.5)">
-              End-to-end encrypted, peer-to-peer
+              Encrypted call audio · keep this chat open
             </Txt>
           </View>
         </View>

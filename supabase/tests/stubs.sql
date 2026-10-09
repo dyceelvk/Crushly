@@ -44,3 +44,13 @@ grant all on all tables in schema public to anon, authenticated, service_role;
 grant all on all tables in schema storage to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
+create schema realtime;
+create table realtime.messages (id bigint generated always as identity, extension text, payload jsonb);
+alter table realtime.messages enable row level security;
+grant usage on schema realtime to authenticated, anon;
+grant select, insert on realtime.messages to authenticated;
+grant usage on all sequences in schema realtime to authenticated;
+create function realtime.topic() returns text language sql stable as $$
+  select current_setting('realtime.topic', true)
+$$;

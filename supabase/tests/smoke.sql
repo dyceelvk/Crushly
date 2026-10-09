@@ -14,6 +14,7 @@ declare
   conv_id bigint;
   msg_id bigint;
   verif_id bigint;
+  call_channel text;
 begin
   -- IDs resolved as the migration owner (RLS hides others' rows from members).
   select id into daniel from auth.users where email = 'daniel@crushly.app';
@@ -102,9 +103,29 @@ begin
     if sqlerrm like '%without media should fail%' then raise; end if;
   end;
 
-  j := public.send_message(conv_id, 'call'::text, ''::text, null::text, '{"channel":"call-test-123"}'::jsonb);
-  assert j ->> 'kind' = 'call' and j ->> 'body' = 'Voice call' and (j -> 'meta' ->> 'channel') = 'call-test-123',
+  call_channel := public.register_call_room(conv_id);
+  assert call_channel ~ '^call-[a-f0-9]{32}$', 'server-generated call token';
+  assert public.can_join_call(call_channel), 'caller can join';
+  perform set_config('realtime.topic', call_channel, false);
+  insert into realtime.messages(extension, payload) values ('broadcast', '{}');
+  assert (select count(*) from realtime.messages) = 1, 'caller broadcast RLS';
+  perform set_config('request.jwt.claim.sub', marcus::text, false);
+  assert public.can_join_call(call_channel), 'callee can join';
+  assert (select count(*) from realtime.messages) = 1, 'callee broadcast RLS';
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000000', false);
+  assert not public.can_join_call(call_channel), 'outsider cannot join even knowing token';
+  assert (select count(*) from realtime.messages) = 0, 'outsider broadcast read denied';
+  begin
+    insert into realtime.messages(extension, payload) values ('broadcast', '{}');
+    raise exception 'outsider broadcast should fail';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('request.jwt.claim.sub', daniel::text, false);
+  j := public.send_message(conv_id, 'call'::text, ''::text, null::text, jsonb_build_object('channel', call_channel));
+  assert j ->> 'kind' = 'call' and j ->> 'body' = 'Voice call' and (j -> 'meta' ->> 'channel') = call_channel,
     'call request message carries its channel';
+  perform public.end_call_room(call_channel);
+  assert not public.can_join_call(call_channel), 'ended calls cannot be joined again';
 
   begin
     perform public.send_message(conv_id, 'call'::text, ''::text, null::text, '{}'::jsonb);

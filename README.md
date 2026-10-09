@@ -326,3 +326,30 @@ python -m venv /tmp/pgvenv && /tmp/pgvenv/bin/pip install pgserver psycopg2-bina
 Both run on every push in `.github/workflows/ci.yml`. The database logic lives
 in `supabase/migrations/` (SQL functions mirror the old Express routes one for
 one); `supabase/README.md` explains the layout.
+
+### Android test APK and foreground voice calls
+
+The **Build Android test APK** Actions workflow compiles a standalone arm64
+Android APK using the existing `EXPO_PUBLIC_SUPABASE_URL` and
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` GitHub secrets. No Expo account or Expo Go is
+needed. Download **Crushly-Android-test-APK** from the successful
+[build run](https://github.com/dyceelvk/Crushly/actions/workflows/build-android.yml).
+Unzip it, install `Crushly-android-test.apk`, and grant microphone access.
+The internal release build embeds the JavaScript and uses Android's generated
+debug signing certificate; it is **not** a Play Store release/signing setup.
+
+Both members must open the same permitted conversation. Tap the phone icon in
+the chat header, Accept on the other phone, then test audio, mute, decline,
+cancel and hang-up. Leaving Crushly ends the call. Background/closed-app ringing,
+Bluetooth route selection and system call integration are not implemented.
+Signaling uses authenticated private Realtime rooms scoped to the two members;
+SDP exchange is not treated as a successful connection.
+
+Direct connectivity uses STUN. Cellular/restrictive NATs often need a TURN relay.
+For a coturn server with REST authentication, add `TURN_SHARED_SECRET` and
+`TURN_URLS` (comma-separated `turn:` / `turns:` URLs) in
+[GitHub Actions secrets](https://github.com/dyceelvk/Crushly/settings/secrets/actions),
+or [Supabase server secrets](https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/functions/secrets).
+The `call-ice` function issues one-hour credentials only to members of a live
+call room. Never put the shared secret in an `EXPO_PUBLIC_*` variable.
+Without a configured relay, call success depends on both networks.
