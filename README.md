@@ -149,12 +149,14 @@ secret, so nothing in the repo changes:
    The same switch works in reverse later: point `NETLIFY_SITE_ID` back and the
    pipeline follows.
 
-   **Current state (2026-10-08):** the pipeline targets site `crushlyi` on a
-   second Netlify account, and **https://crushlyi.netlify.app serves the latest
-   commit** — the old account's "credit usage exceeded" block no longer matters.
-   The old `mencrushly.netlify.app` still serves the frozen build; if you want
-   that name back on the new account, rename the old site (step 3 above) and
-   rename `crushlyi` to `mencrushly` — the pipeline follows on the next deploy.
+   **Current state (verified 2026-10-09 by requesting the pages):** the live
+   site is **https://crushly-app.netlify.app**, and it serves the latest commit
+   (`/` and `/download/` both return 200; `/download/` is byte-identical to
+   `CrushlyApp/public/download/index.html`). `crushlyi.netlify.app` and
+   `mencrushly.netlify.app` both return **404** — treat any doc or config still
+   naming them as stale. The pipeline follows `NETLIFY_SITE_ID`, so renaming a
+   site is safe; the email templates now rewrite *any* `*.netlify.app` logo/link
+   host to the resolved live site on every deploy.
 
    **Credit math (why deploys suddenly skip):** on Netlify's credit plan every
    production deploy costs ~15 credits (300 free/month). Earlier the pipeline
@@ -263,9 +265,10 @@ https://supabase.com/dashboard/project/yzcssyebozfkmojqqdhc/auth/url-configurati
 | GitHub secrets (all five go here) | https://github.com/dyceelvk/Crushly/settings/secrets/actions |
 | GitHub Actions (run/see workflows) | https://github.com/dyceelvk/Crushly/actions |
 | Netlify personal access tokens | https://app.netlify.com/user/applications |
-| Live site | https://crushlyi.netlify.app (follows the `NETLIFY_SITE_ID` secret) |
-| Netlify site (deploys) | https://app.netlify.com/sites/crushlyi/deploys |
-| Netlify site configuration (Site ID, git builds) | https://app.netlify.com/sites/crushlyi/configuration |
+| Live site | https://crushly-app.netlify.app (follows the `NETLIFY_SITE_ID` secret) |
+| Netlify site (deploys) | https://app.netlify.com/sites/crushly-app/deploys |
+| Netlify site configuration (Site ID, git builds) | https://app.netlify.com/sites/crushly-app/configuration |
+| Android download page | https://crushly-app.netlify.app/download/ |
 | E2E auth-journey checks (manual run) | https://github.com/dyceelvk/Crushly/actions/workflows/e2e.yml |
 | Supabase SQL editor (fallback setup) | https://supabase.com/dashboard/project/_/sql/new |
 | Supabase API keys (URL + anon) | https://supabase.com/dashboard/project/_/settings/api |
@@ -332,9 +335,15 @@ one); `supabase/README.md` explains the layout.
 The **Build Android test APK** Actions workflow compiles a standalone universal ARM
 Android APK (32-bit `armeabi-v7a` and 64-bit `arm64-v8a`) using the existing `EXPO_PUBLIC_SUPABASE_URL` and
 `EXPO_PUBLIC_SUPABASE_ANON_KEY` GitHub secrets. No Expo account or Expo Go is
-needed. Download **Crushly-Android-test-APK** from the successful
-[build run](https://github.com/dyceelvk/Crushly/actions/workflows/build-android.yml).
-Unzip it, install `Crushly-android-test.apk`, and grant microphone access.
+needed.
+
+**For members:** the **Publish Android download** workflow publishes a single
+`.apk` to the `android-test-*` release, and the site serves it at
+https://crushly-app.netlify.app/download/ — one tap, no ZIP, no GitHub account.
+**For developers:** the same APK is also the **Crushly-Android-test-APK**
+artifact of the [Build Android test APK run](https://github.com/dyceelvk/Crushly/actions/workflows/build-android.yml)
+(that one is zipped — unzip it, install `Crushly-android-test.apk`, and grant
+microphone access).
 Android 9 (API 28) is the minimum supported version.
 The build verifies native libraries for both architectures, the APK signature,
 and the minimum Android version; `COMPATIBILITY.txt` records the APK metadata.

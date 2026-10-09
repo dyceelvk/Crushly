@@ -18,7 +18,7 @@ import type { ScreenProps } from '../../navigation/types';
 /** What Didit checks for the member — the hosted flow runs these for us. */
 const DIDIT_STEPS = [
   { icon: 'card-outline' as const, title: 'Scan your ID', body: 'Your document is checked securely by our identity partner.' },
-  { icon: 'happy-outline' as const, title: 'Liveness check', body: 'A quick face scan proves you’re really there.' },
+  { icon: 'happy-outline' as const, title: 'Liveness check', body: 'Live capture only — Didit’s camera takes a fresh selfie. Photos from your gallery can’t be used.' },
   { icon: 'git-compare-outline' as const, title: 'Face match', body: 'Your selfie is matched to your document photo.' },
 ];
 
@@ -150,7 +150,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             Prove it’s really you
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Verification runs through our certified identity partner. Crushly will redirect you to Didit, then back here when you finish.
+            Verification runs through our certified identity partner. Crushly will redirect you to Didit, then bring you back here when you finish. Tapping the button only opens those checks — it doesn’t submit anything or put you in review; the result arrives when you complete them with Didit.
           </Txt>
           <View style={{ width: w, gap: space.sm, marginTop: space.xs }}>
             {DIDIT_STEPS.map((s) => (

@@ -8,7 +8,7 @@
 #                                → Applications → Personal access tokens →
 #                                New access token (any name, e.g. "github-actions").
 #   NETLIFY_SITE_ID              Netlify → Site configuration → General →
-#                                Site ID  (mencrushly: 9524369e-5044-4562-b504-3a62456403e9)
+#                                Site ID  (Netlify → Site configuration → General)
 #   EXPO_PUBLIC_SUPABASE_URL     Supabase → Project Settings → API → Project URL
 #                                (the bare https://<ref>.supabase.co)
 #   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Settings → API Keys → Publishable key
@@ -107,11 +107,11 @@ jobs:
           # Resolve the deploy target so Supabase Site URL + email links follow
           # whichever site NETLIFY_SITE_ID points at (works across accounts).
           site_url=$(curl -s -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN:-}" "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID:-}" | jq -r '.ssl_url // empty' 2>/dev/null || true)
-          [ -n "$site_url" ] || site_url="https://mencrushly.netlify.app"
+          [ -n "$site_url" ] || site_url="https://crushly-app.netlify.app"
           export SITE_URL="$site_url"
           echo "::notice::Deploy target site: $site_url (Supabase Site URL + email links follow this automatically)"
           python3 - <<'PY'
-          import json, os, sys, urllib.request, urllib.error
+          import json, os, re, sys, urllib.request, urllib.error
 
           PROJECT = "yzcssyebozfkmojqqdhc"
           URL = f"https://api.supabase.com/v1/projects/{PROJECT}/config/auth"
@@ -150,7 +150,7 @@ jobs:
               "smtp_pass": gpas,
               "smtp_sender_name": "Crushly",
           }
-          site_url = os.environ.get("SITE_URL", "https://mencrushly.netlify.app")
+          site_url = os.environ.get("SITE_URL", "https://crushly-app.netlify.app")
           if "site_url" in cfg:
               payload["site_url"] = site_url
           if "uri_allow_list" in cfg:
@@ -169,16 +169,21 @@ jobs:
               print("::warning::PATCH succeeded but the config did not stick - check Authentication -> SMTP settings in the Supabase dashboard.")
           else:
               print(f"::notice::Gmail confirmation wired: smtp.gmail.com:465 sender {gmail}, Confirm email ON, Site URL {site_url}. Signup + password-reset emails now go out via Gmail.")
-              # Brand the confirm-signup email: Crushly logo + OTP code hero (no link).
+              # Brand the signup + recovery emails: Crushly logo, 6-digit code
+              # as the primary path and a one-tap link underneath it.
               try:
                   t_keys = [k for k in cfg2 if k.startswith("mailer_templates") or k.startswith("mailer_subjects")]
                   print(f"::notice::Template API keys seen: {sorted(t_keys)}")
                   if "mailer_templates_confirmation_content" in cfg2:
                       html = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/confirm-signup.html"), encoding="utf-8").read()
                       recovery = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "supabase/email-templates/recovery.html"), encoding="utf-8").read()
-                      # Point every link/logo at whichever site we are deploying to.
-                      html = html.replace("https://mencrushly.netlify.app", site_url)
-                      recovery = recovery.replace("https://mencrushly.netlify.app", site_url)
+                      # Point every link/logo at whichever site we are deploying
+                      # to. Match ANY *.netlify.app host, not one hardcoded name,
+                      # so renaming or moving the site can never leave a dead
+                      # logo behind in already-delivered templates.
+                      target = site_url.rstrip("/")
+                      html = re.sub(r"https://[A-Za-z0-9-]+\.netlify\.app", target, html)
+                      recovery = re.sub(r"https://[A-Za-z0-9-]+\.netlify\.app", target, recovery)
                       t_payload = {
                           "mailer_templates_confirmation_content": html,
                           "mailer_subjects_confirmation": "{{ .Token }} is your Crushly code",
@@ -224,7 +229,7 @@ jobs:
             exit 0
           fi
           site_url=$(curl -s -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN:-}" "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID:-}" | jq -r '.ssl_url // empty' 2>/dev/null || true)
-          [ -n "$site_url" ] || site_url="https://crushlyi.netlify.app"
+          [ -n "$site_url" ] || site_url="https://crushly-app.netlify.app"
 
           wired=""
           push_secret() {
@@ -350,9 +355,9 @@ jobs:
             200)
               echo "::notice::Netlify token can access site '$name'." ;;
             401)
-              echo "::error::Netlify rejected NETLIFY_AUTH_TOKEN (401 Unauthorized): the token is invalid, mistyped or revoked. Create a fresh Personal access token at https://app.netlify.com/user/applications (logged in as the account that owns the mencrushly site) and update the secret." ;;
+              echo "::error::Netlify rejected NETLIFY_AUTH_TOKEN (401 Unauthorized): the token is invalid, mistyped or revoked. Create a fresh Personal access token at https://app.netlify.com/user/applications (logged in as the account that owns the target site) and update the secret." ;;
             403)
-              echo "::error::NETLIFY_AUTH_TOKEN is valid but has NO access to this site (403 Forbidden) — it was almost certainly created on a different Netlify account/team than the one that owns mencrushly. Log into THAT account (the one showing the mencrushly site), create the token at https://app.netlify.com/user/applications, and update the secret." ;;
+              echo "::error::NETLIFY_AUTH_TOKEN is valid but has NO access to this site (403 Forbidden) — it was almost certainly created on a different Netlify account/team than the one that owns the target site. Log into THAT account (the one showing the site NETLIFY_SITE_ID points at), create the token at https://app.netlify.com/user/applications, and update the secret." ;;
             404)
               echo "::error::Site not found (404) — NETLIFY_SITE_ID is wrong, or the token's account cannot see that site. Use the Site ID from Netlify → Site configuration → General (Site information) of the account that OWNS the site you want to deploy to." ;;
             *)
@@ -435,8 +440,8 @@ jobs:
           set -uo pipefail
           # Resolve the target site (works whichever account owns it).
           site_json=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")
-          site_name=$(printf '%s' "$site_json" | jq -r '.name // "mencrushly"')
-          site_url=$(printf '%s' "$site_json" | jq -r '.ssl_url // "https://mencrushly.netlify.app"')
+          site_name=$(printf '%s' "$site_json" | jq -r '.name // "crushly-app"')
+          site_url=$(printf '%s' "$site_json" | jq -r '.ssl_url // "https://crushly-app.netlify.app"')
           echo "::notice::Deploying to Netlify site '$site_name' ($site_url)"
 
           curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
@@ -521,7 +526,8 @@ jobs:
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys/$ready/restore")
           if [[ "$code" != 2* ]]; then
-            echo "::warning::Netlify publication denied HTTP $code. Publish the ready build at https://app.netlify.com/projects/crushlyi/deploys/$ready"
+            site_slug=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.name // empty')
+            echo "::warning::Netlify publication denied HTTP $code. Publish the ready build at https://app.netlify.com/projects/${site_slug:-$NETLIFY_SITE_ID}/deploys/$ready"
             exit 0
           fi
           python3 "$GITHUB_WORKSPACE/.github/scripts/probe-web-config.py"

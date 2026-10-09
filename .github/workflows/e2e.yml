@@ -10,7 +10,7 @@ on:
       base_url:
         description: 'Fallback site under test (the live site URL is resolved from NETLIFY_SITE_ID automatically)'
         required: false
-        default: 'https://crushlyi.netlify.app'
+        default: 'https://crushly-app.netlify.app'
 
 permissions:
   contents: read

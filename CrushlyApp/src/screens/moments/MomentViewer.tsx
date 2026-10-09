@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View, type GestureResponderEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,6 +26,8 @@ import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
 const DURATION = 6000;
+/** How long a finger must stay down before the Moment freezes. */
+const HOLD_TO_PAUSE_MS = 300;
 type Group = { user: MomentAuthor; moments: Moment[] };
 
 export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentViewer'>) {
@@ -60,7 +62,12 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [localReaction, setLocalReaction] = useState<Record<number, string | null>>({});
   const [holding, setHolding] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didHold = useRef(false);
+  // The freeze is driven by a ref, not by state: the timer loop reads it on the
+  // very next frame, so pausing never waits for a render to catch up.
+  const pausedRef = useRef(false);
+  const heldRef = useRef(false);
+  const zoneRef = useRef<'prev' | 'next'>('next');
+  const [zoneWidth, setZoneWidth] = useState(0);
   const progress = useRef(new Animated.Value(0)).current;
 
   const group = groups?.[gi];
@@ -98,32 +105,48 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   }, [mi, gi, progress]);
 
   // Hold anywhere to pause the timer — release to keep watching.
-  const pressIn = useCallback(() => {
-    didHold.current = false;
+  //
+  // This used to hang off <Pressable onPressIn/onPressOut>. React Native can
+  // cancel that press while the finger is still down (any re-render during the
+  // touch, or a competing gesture, fires onPressOut), so "Paused" flashed for a
+  // frame and the Moment then played on to the end. The responder system lets
+  // us claim the touch, refuse to hand it back mid-hold, and only release when
+  // the finger actually lifts.
+  const beginHold = useCallback((e: GestureResponderEvent) => {
+    const rawX = e.nativeEvent.locationX;
+    const x = typeof rawX === 'number' ? rawX : -1; // no coordinate → treat as "next"
+    // Left third rewinds, the rest advances — the split the old Pressables used.
+    zoneRef.current = x >= 0 && zoneWidth > 0 && x < zoneWidth * 0.3 ? 'prev' : 'next';
+    heldRef.current = false;
     if (holdTimer.current) clearTimeout(holdTimer.current);
     holdTimer.current = setTimeout(() => {
-      didHold.current = true;
+      heldRef.current = true;
+      pausedRef.current = true;
       setHolding(true);
-    }, 350);
+      haptic.tap();
+    }, HOLD_TO_PAUSE_MS);
+  }, [zoneWidth]);
+
+  const clearHoldTimer = useCallback(() => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
   }, []);
-  const pressOut = useCallback(() => {
-    if (holdTimer.current) clearTimeout(holdTimer.current);
+
+  /** Finger up (navigate = a plain tap) or the system took the touch away. */
+  const endHold = useCallback((navigate: boolean) => {
+    clearHoldTimer();
+    const wasHeld = heldRef.current;
+    heldRef.current = false;
+    pausedRef.current = false;
     setHolding(false);
-  }, []);
-  const tapPrev = () => {
-    if (didHold.current) {
-      didHold.current = false;
-      return;
-    }
-    prev();
-  };
-  const tapNext = () => {
-    if (didHold.current) {
-      didHold.current = false;
-      return;
-    }
-    next();
-  };
+    // A hold resumes and never also navigates on the same touch.
+    if (navigate && !wasHeld) (zoneRef.current === 'prev' ? prev : next)();
+  }, [clearHoldTimer, prev, next]);
+
+  // Clear a pending hold timer if the screen unmounts mid-touch.
+  useEffect(() => clearHoldTimer, [clearHoldTimer]);
 
   // Mark viewed.
   useEffect(() => {
@@ -139,25 +162,35 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     elapsedMs.current = 0;
     progress.setValue(0);
   }, [moment?.id, progress]);
+  // Mirror the React pause state into the ref the loop reads, so pausing from
+  // the reply box, the reaction sheet or the delete sheet freezes just as hard.
   useEffect(() => {
-    if (!moment || paused) return;
+    pausedRef.current = paused;
+  }, [paused]);
+
+  useEffect(() => {
+    if (!moment) return;
     lastTick.current = Date.now();
     let raf = 0;
     const tick = () => {
       const now = Date.now();
-      elapsedMs.current = Math.min(DURATION, elapsedMs.current + (now - lastTick.current));
-      lastTick.current = now;
-      const p = elapsedMs.current / DURATION;
-      progress.setValue(p);
-      if (p >= 1) {
-        next();
-        return;
+      if (!pausedRef.current) {
+        elapsedMs.current = Math.min(DURATION, elapsedMs.current + (now - lastTick.current));
+        const p = elapsedMs.current / DURATION;
+        progress.setValue(p);
+        if (p >= 1) {
+          next();
+          return;
+        }
       }
+      // Advance the timestamp even while paused: otherwise every paused frame
+      // would be credited as elapsed time the moment the finger lifts.
+      lastTick.current = now;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [moment, paused, progress, next]);
+  }, [moment, progress, next]);
 
   const myReaction = moment ? (moment.id in localReaction ? localReaction[moment.id] : moment.myReaction) : null;
 
@@ -227,27 +260,23 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
         <MomentPreview key={moment.id} moment={moment} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: space.xl }} textSize={26} />
 
-        {/* Tap zones — tap to move, hold to pause */}
-        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, flexDirection: 'row' }}>
-          <Pressable
-            style={{ flex: 3 }}
-            onPress={tapPrev}
-            onPressIn={pressIn}
-            onPressOut={pressOut}
-            accessibilityRole="button"
-            accessibilityLabel="Previous Moment"
-            accessibilityHint="Hold to pause"
-          />
-          <Pressable
-            style={{ flex: 7 }}
-            onPress={tapNext}
-            onPressIn={pressIn}
-            onPressOut={pressOut}
-            accessibilityRole="button"
-            accessibilityLabel="Next Moment"
-            accessibilityHint="Hold to pause"
-          />
-        </View>
+        {/* Tap to move, hold to pause. One responder surface that claims the
+            touch and keeps it until the finger lifts — a pause can no longer be
+            cancelled out from under the member. */}
+        <View
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
+          onLayout={(e) => setZoneWidth(e.nativeEvent.layout.width)}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={(e) => beginHold(e)}
+          onResponderRelease={() => endHold(true)}
+          onResponderTerminate={() => endHold(false)}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel="Moments player"
+          accessibilityHint="Tap the left third for the previous Moment, anywhere else for the next one. Hold to pause, release to resume."
+        />
 
         {holding ? (
           <View style={{ position: 'absolute', top: '46%', left: 0, right: 0, alignItems: 'center' }} pointerEvents="none">
