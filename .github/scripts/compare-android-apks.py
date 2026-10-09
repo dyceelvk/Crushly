@@ -47,6 +47,9 @@ for label in ['old', 'new']:
         assert z.testzip() is None, 'ZIP corruption'
         abis = sorted({s.split('/')[1] for s in z.namelist() if s.startswith('lib/') and s.endswith('.so')})
         bundle = hashlib.sha256(z.read('assets/index.android.bundle')).hexdigest()
+    size = apk.stat().st_size
+    print(f'::notice::{label} exact APK size: {size} bytes; {size / 1_000_000:.2f} MB; {size / (1024 * 1024):.2f} MiB.')
+    print('::notice::' + label + ' APK SHA256: ' + hashlib.sha256(apk.read_bytes()).hexdigest())
     metadata.append((package, version, certs, abis))
     public_metadata = [s for s in badging.splitlines() if s.startswith(('package:', 'sdkVersion:', 'targetSdkVersion:', 'native-code:'))]
     manifest = subprocess.check_output([str(tools / 'aapt'), 'dump', 'xmltree', str(apk), 'AndroidManifest.xml'], text=True)
