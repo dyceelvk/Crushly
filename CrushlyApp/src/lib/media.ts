@@ -5,7 +5,16 @@ import * as Location from 'expo-location';
 
 export type PickedImage = { uri: string; mimeType: string };
 
-const MAX_EDGE = 1440;
+/**
+ * Longest edge of a stored photo. 1080 px still fills a phone screen edge to
+ * edge, but roughly halves the file compared with the raw camera image — the
+ * cheapest storage saving there is, because it costs nothing and applies to
+ * every photo the app will ever keep.
+ */
+const MAX_EDGE = 1080;
+
+/** JPEG quality after resizing — visually indistinguishable at phone size. */
+const PHOTO_QUALITY = 0.7;
 
 /**
  * Picks (or captures) a photo and downsizes it before upload: faster uploads on
@@ -35,7 +44,7 @@ export async function pickImage({ camera = false, square = false }: { camera?: b
     const longest = Math.max(asset.width || 0, asset.height || 0);
     if (longest > MAX_EDGE || Platform.OS !== 'web') {
       const resize = (asset.width || 0) >= (asset.height || 0) ? { width: Math.min(asset.width || MAX_EDGE, MAX_EDGE) } : { height: Math.min(asset.height || MAX_EDGE, MAX_EDGE) };
-      const out = await manipulateAsync(asset.uri, longest > MAX_EDGE ? [{ resize }] : [], { compress: 0.82, format: SaveFormat.JPEG });
+      const out = await manipulateAsync(asset.uri, longest > MAX_EDGE ? [{ resize }] : [], { compress: PHOTO_QUALITY, format: SaveFormat.JPEG });
       return { uri: out.uri, mimeType: 'image/jpeg' };
     }
     return { uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg' };

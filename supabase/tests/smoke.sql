@@ -300,6 +300,40 @@ begin
     if sqlerrm like '%accepted a wrong password%' then raise; end if;
   end;
 
+  -- ---------------------------------------------------------- moment expiry
+  -- "Gone after 24 hours" has to mean the row AND the photo, not just a filter.
+  reset role;
+
+  insert into storage.objects (bucket_id, name) values ('media', 'moments/999/old.jpg');
+  insert into public.moments (user_id, kind, body, media_url, style, audience, created_at, expires_at)
+    values (me, 'photo', 'yesterday', 'moments/999/old.jpg', 'noir', 'everyone',
+            public.now_ms() - 48 * 3600 * 1000, public.now_ms() - 24 * 3600 * 1000)
+    returning id into moment_id;
+  -- A Moment that has not expired must survive the sweep untouched.
+  insert into public.moments (user_id, kind, body, style, audience, created_at, expires_at)
+    values (me, 'text', 'still here', 'noir', 'everyone', public.now_ms(), public.now_ms() + 3600 * 1000);
+
+  assert public.cleanup_expired_moments(500) >= 1, 'expired moments are swept';
+  assert not exists (select 1 from public.moments where id = moment_id), 'expired moment row is deleted';
+  assert not exists (
+    select 1 from storage.objects where bucket_id = 'media' and name = 'moments/999/old.jpg'
+  ), 'the photo behind an expired moment is deleted too';
+  assert exists (
+    select 1 from public.media_cleanup_log where media_path = 'moments/999/old.jpg' and ok
+  ), 'file deletions are logged';
+  assert exists (select 1 from public.moments where body = 'still here'), 'live moments are never swept';
+
+  -- Files in the external object store are deleted by the bucket's own
+  -- lifecycle rule — the sweep removes the row and leaves the file to it.
+  insert into public.moments (user_id, kind, body, media_url, style, audience, created_at, expires_at)
+    values (me, 'photo', 'external', 'https://media.example.com/moments/999/x.jpg', 'noir', 'everyone',
+            public.now_ms() - 48 * 3600 * 1000, public.now_ms() - 24 * 3600 * 1000);
+  perform public.cleanup_expired_moments(500);
+  assert not exists (select 1 from public.moments where body = 'external'), 'external media rows still expire';
+  assert not exists (
+    select 1 from public.media_cleanup_log where media_path like 'https://%'
+  ), 'external files are left to the bucket lifecycle rule';
+
   reset role;
   raise notice 'smoke tests passed';
 end $$;
