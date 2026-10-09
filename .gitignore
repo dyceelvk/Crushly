@@ -16,3 +16,7 @@ supabase/.branches/
 # browser test artifacts
 CrushlyApp/test-results/
 CrushlyApp/playwright-report/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
