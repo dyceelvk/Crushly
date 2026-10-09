@@ -54,26 +54,47 @@ jobs:
       # occasionally arrives corrupted ("Archive is not a ZIP archive"), which
       # fails the whole build for no reason related to the app. Install it here
       # first, with retries, so a bad download can't waste a 40-minute build.
-      - name: Pre-install the Android NDK (retry on corrupt download)
+      # Best effort only: if this can't find the SDK manager it reports the
+      # layout and steps aside, because Gradle installs the NDK itself. A
+      # helper step must never be the reason a build fails.
+      - name: Pre-install the Android NDK (best effort, retries on corrupt download)
         run: |
           set -uo pipefail
           ndk="ndk;27.1.12297006"
-          if sdkmanager --list_installed 2>/dev/null | grep -qF "$ndk"; then
+          sdk=""
+          for cand in \
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/tools/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager"; do
+            if [ -x "$cand" ]; then sdk="$cand"; break; fi
+          done
+          if [ -z "$sdk" ]; then
+            sdk=$(find /usr/local/lib/android /opt/android "${ANDROID_HOME:-}" -maxdepth 4 -name sdkmanager -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$sdk" ]; then
+            echo "::warning::sdkmanager not found (ANDROID_HOME=${ANDROID_HOME:-unset}). Gradle will install the NDK itself."
+            ls -1 "${ANDROID_HOME:-/usr/local/lib/android/sdk}" 2>/dev/null | head -20 || true
+            exit 0
+          fi
+          echo "::notice::Using sdkmanager at $sdk"
+          if "$sdk" --list_installed 2>/dev/null | grep -qF "$ndk"; then
             echo "::notice::$ndk is already installed."
             exit 0
           fi
-          yes 2>/dev/null | sdkmanager --licenses >/dev/null 2>&1
+          yes 2>/dev/null | "$sdk" --licenses >/dev/null 2>&1 || true
           for attempt in 1 2 3; do
-            if yes 2>/dev/null | sdkmanager --install "$ndk" > "$RUNNER_TEMP/ndk-install.log" 2>&1; then
+            if yes 2>/dev/null | "$sdk" --install "$ndk" > "$RUNNER_TEMP/ndk-install.log" 2>&1; then
               echo "::notice::Installed $ndk on attempt $attempt."
               exit 0
             fi
             echo "::warning::NDK install attempt $attempt failed (corrupt download is the usual cause) — retrying in 20s."
+            tail -n 5 "$RUNNER_TEMP/ndk-install.log" 2>/dev/null || true
             sleep 20
           done
-          echo "::error::Could not install $ndk after 3 attempts. Last output:"
-          tail -n 20 "$RUNNER_TEMP/ndk-install.log"
-          exit 1
+          echo "::warning::Could not pre-install $ndk after 3 attempts — continuing; Gradle will try itself."
+          tail -n 20 "$RUNNER_TEMP/ndk-install.log" 2>/dev/null || true
+          exit 0
       - name: Compile standalone release APK
         run: |
           cd android
