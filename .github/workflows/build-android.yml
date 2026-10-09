@@ -82,8 +82,10 @@ jobs:
           with zipfile.ZipFile(sys.argv[1]) as z:
               libraries = {abi: {p.split('/')[-1] for p in z.namelist() if p.startswith('lib/' + abi + '/') and p.endswith('.so')} for abi in ('armeabi-v7a', 'arm64-v8a')}
           for abi, files in libraries.items():
-              required = {'libreactnative.so', 'libhermes.so', 'libjingle_peerconnection_so.so'}
+              required = {'libreactnative.so', 'libjingle_peerconnection_so.so'}
               missing = required - files
+              if not files.intersection({'libhermesvm.so', 'libhermes.so'}):
+                  missing.add('Hermes engine (libhermesvm.so / libhermes.so)')
               if missing:
                   raise SystemExit(f'{abi}: missing native libraries {sorted(missing)}')
               print(f'::notice::APK verified: {abi} contains React Native, Hermes and WebRTC ({len(files)} native libraries).')
