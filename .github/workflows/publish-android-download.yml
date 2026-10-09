@@ -48,3 +48,4 @@ jobs:
             gh release upload "$tag" android-download/Crushly-1.0.2-Android9plus.apk android-download/SHA256SUMS.txt android-download/SECURITY-CHECK.txt android-download/COMPATIBILITY.txt
           fi
           echo "::notice::Direct test APK: https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"
+
