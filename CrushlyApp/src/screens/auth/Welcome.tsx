@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, View } from 'react-native';
+import { Animated, Easing, Linking, Platform, View } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -77,6 +77,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
         </Animated.View>
         <View style={{ gap: space.xs, marginTop: compact ? space.lg : space.xxl }}>
           <Button title="Get Started" onPress={() => navigation.navigate('SignUp')} />
+          {Platform.OS === 'web' ? <Button title="Get the Android app" variant="ghost" icon="download-outline" onPress={() => Linking.openURL('/download/')} /> : null}
           <Button title="I already have an account" variant="ghost" onPress={() => navigation.navigate('SignIn')} />
         </View>
         <Txt variant="small" color="textMuted" align="center" style={{ marginTop: space.xs }}>

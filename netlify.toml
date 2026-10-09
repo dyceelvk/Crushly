@@ -22,6 +22,17 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# Serve the download page before the app's single-page fallback.
+[[redirects]]
+  from = "/download"
+  to = "/download/"
+  status = 301
+
+[[redirects]]
+  from = "/download/"
+  to = "/download/index.html"
+  status = 200
+
 # Single-page app: let the browser router handle every path.
 [[redirects]]
   from = "/*"

@@ -1,0 +1,50 @@
+name: Publish tested Android download
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/**]
+    paths:
+      - '.github/workflows/publish-android-download.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crushly-Android-test-APK
+          run-id: 37960482296
+          github-token: ${{ github.token }}
+          path: android-download
+      - name: Verify immutable previously tested APK
+        run: |
+          python3 - <<'PY'
+          import hashlib, pathlib, zipfile
+          p = pathlib.Path('android-download/Crushly-android-test.apk')
+          assert p.stat().st_size == 94427302, 'APK size changed'
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == '6fe5888068311e11dc3c64a04514f54070b23d925e761f29e4e4325669e3c10c', 'APK differs from tested artifact'
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+          p.rename('android-download/Crushly-1.0.2-Android9plus.apk')
+          pathlib.Path('android-download/SHA256SUMS.txt').write_text('6fe5888068311e11dc3c64a04514f54070b23d925e761f29e4e4325669e3c10c  Crushly-1.0.2-Android9plus.apk\n')
+          PY
+      - name: Publish direct APK asset (no ZIP extraction or login)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=android-test-1.0.2
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --prerelease --target 05b1aa0abb110f116c4020c525c5a29e6d284c95 \
+              --title "Crushly 1.0.2 — Android 9+ testing" \
+              --notes "Internal testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM. Android 9 emulator welcome/relaunch and Android 11 ARM installation tests passed; Samsung hardware coverage remains limited. Currently debug-signed with Expo's public test certificate: a private signing key and private chat media are required before public launch. Foreground calls only; TURN relay not configured."
+          fi
+          # Never silently replace a published APK at an existing version URL.
+          if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx 'Crushly-1.0.2-Android9plus.apk'; then
+            gh release upload "$tag" android-download/Crushly-1.0.2-Android9plus.apk android-download/SHA256SUMS.txt android-download/SECURITY-CHECK.txt android-download/COMPATIBILITY.txt
+          fi
+          echo "::notice::Direct test APK: https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"

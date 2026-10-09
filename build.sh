@@ -25,6 +25,7 @@ echo "building app at $app"
 cd "$app"
 
 npm ci --include=dev
+node scripts/check-public-build.mjs
 npm run build:web
 
 # Repo root = where .git lives (or the directory above the app).
