@@ -3,6 +3,7 @@ import { View, type StyleProp, type ImageStyle, type ViewStyle } from 'react-nat
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { mediaUrl } from '../api/client';
+import { mediaSource } from '../lib/mediaHost';
 import { useTheme } from '../theme/ThemeProvider';
 import { Txt } from './Txt';
 
@@ -32,7 +33,7 @@ export function Photo({ uri, style, alt, priority = 'normal', contentPosition = 
   }
   return (
     <Image
-      source={{ uri: src }}
+      source={mediaSource(src)}
       style={[{ backgroundColor: colors.skeleton }, style]}
       contentFit={fit}
       contentPosition={contentPosition}

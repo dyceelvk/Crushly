@@ -1,0 +1,69 @@
+# Deploys the media Worker: the private bucket's only door.
+#
+# Until every secret below exists, this job prints a warning and stops — it
+# never fails the branch, so nothing blocks while the accounts are being set up.
+#
+# One-time setup (GitHub → Settings → Secrets and variables → Actions):
+#
+#   Secrets:
+#     CLOUDFLARE_API_TOKEN           Cloudflare → My Profile → API Tokens →
+#                                    Create Custom Token → Permissions:
+#                                    Account → Workers Scripts → Edit.
+#     B2_KEY_ID                      Backblaze → App Keys → Add a New Application Key
+#     B2_APPLICATION_KEY             (shown once, at creation)
+#     B2_BUCKET                      the private bucket name, e.g. crushly-media
+#
+#   Variables:
+#     CLOUDFLARE_ACCOUNT_ID          Cloudflare → any domain (or Workers & Pages)
+#                                    → Account ID, right-hand column
+#
+# SUPABASE_URL and SUPABASE_ANON_KEY are reused from the existing
+# EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY secrets.
+#
+# Never commit these values or paste them into chat.
+
+name: Deploy media Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, arena/**]
+    paths:
+      - 'cloudflare/**'
+      - '.github/workflows/deploy-worker.yml'
+
+concurrency:
+  group: deploy-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      B2_BUCKET: ${{ secrets.B2_BUCKET }}
+    steps:
+      - name: Report missing credentials
+        if: env.CF_TOKEN == '' || env.CF_ACCOUNT == '' || env.B2_BUCKET == ''
+        run: |
+          echo "::warning::Media Worker not deployed yet — credentials missing. Add CLOUDFLARE_API_TOKEN (secret), CLOUDFLARE_ACCOUNT_ID (variable), and B2_KEY_ID / B2_APPLICATION_KEY / B2_BUCKET (secrets) under Settings → Secrets and variables → Actions. Steps are in cloudflare/media-worker/README.md. Nothing else is broken by this."
+
+      - uses: actions/checkout@v4
+        if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
+
+      - uses: cloudflare/wrangler-action@v3
+        if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare/media-worker
+          command: deploy
+          secrets: |
+            SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+            SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+            B2_KEY_ID=${{ secrets.B2_KEY_ID }}
+            B2_APPLICATION_KEY=${{ secrets.B2_APPLICATION_KEY }}
+            B2_BUCKET=${{ secrets.B2_BUCKET }}

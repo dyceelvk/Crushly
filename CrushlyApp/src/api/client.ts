@@ -1,6 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { cleanEnvValue, looksLikeSecretKey, normalizeProjectUrl } from '../lib/env';
+import {
+  MEDIA_BASE_URL,
+  isMediaStoreUrl,
+  mediaKind,
+  mediaStoreEnabled,
+  mediaStorePath,
+  mediaStoreUrl,
+  setMediaToken,
+} from '../lib/mediaHost';
 import { storage } from '../lib/storage';
 
 /**
@@ -125,8 +134,68 @@ export function mediaUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (/^(https?:|file:|blob:|data:)/.test(path)) return path;
   const clean = path.replace(/^\//, '');
+  // The object store mints its own paths, so rows store the URL it handed back.
+  if (mediaStoreEnabled) return mediaStoreUrl(clean);
   if (!SUPABASE_URL) return `/${clean}`;
   return supabase.storage.from('media').getPublicUrl(clean).data.publicUrl;
+}
+
+/**
+ * The media Worker serves private files, so requests carry the member's access
+ * token. Keep the cached copy in step with the session.
+ */
+void supabase.auth.getSession().then(({ data }) => setMediaToken(data.session?.access_token ?? null));
+supabase.auth.onAuthStateChange((_event, session) => setMediaToken(session?.access_token ?? null));
+
+/** Current access token, or a clear "sign in again" if the session is gone. */
+async function mediaAccessToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const access = data.session?.access_token;
+  if (!access) throw new ApiError(401, 'Your session has expired — sign in again.');
+  setMediaToken(access);
+  return access;
+}
+
+async function mediaErrorMessage(res: Response): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
+  return body?.error || `We couldn’t save that file (${res.status}). Try again.`;
+}
+
+/**
+ * Uploads to the object store. The server mints the path (see
+ * `media_upload_ticket`), so a member can never write into somebody else's
+ * folder — `path` only says which kind of media this is. Returns the absolute
+ * URL, which is what the row stores.
+ */
+async function uploadToMediaStore(path: string, blob: Blob, contentType: string): Promise<string> {
+  const kind = mediaKind(path);
+  if (!kind) throw new ApiError(400, 'That kind of media isn’t supported.');
+  const token = await mediaAccessToken();
+  const res = await fetch(`${MEDIA_BASE_URL}/m`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType, 'X-Media-Kind': kind },
+    body: blob,
+  }).catch(() => null);
+  if (!res) throw new ApiError(0, 'You seem to be offline. Check your connection and try again.');
+  if (!res.ok) throw new ApiError(res.status, await mediaErrorMessage(res));
+  const data = (await res.json().catch(() => null)) as { url?: string } | null;
+  if (!data?.url) throw new ApiError(500, 'We couldn’t save that file. Try again.');
+  return data.url;
+}
+
+async function deleteFromMediaStore(url: string): Promise<void> {
+  const path = mediaStorePath(url);
+  if (!path) return;
+  try {
+    const token = await mediaAccessToken();
+    const res = await fetch(mediaStoreUrl(path), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) console.warn('media cleanup failed:', res.status);
+  } catch (e) {
+    console.warn('media cleanup failed:', (e as Error).message);
+  }
 }
 
 /** Reads a local file (camera roll / recorder URI) into a Blob on any platform. */
@@ -159,13 +228,19 @@ export async function uploadMediaFile(
 ): Promise<string> {
   requireConfig();
   const blob = await uriToBlob(uri);
+  if (mediaStoreEnabled && bucket === 'media') return uploadToMediaStore(path, blob, contentType);
   const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType, upsert: true });
   if (error) throw toApiError(error);
   return path;
 }
 
 export async function removeMediaFile(path?: string | null): Promise<void> {
-  if (!path || /^(https?:|file:|blob:|data:)/.test(path)) return;
+  if (!path) return;
+  if (isMediaStoreUrl(path)) {
+    await deleteFromMediaStore(path);
+    return;
+  }
+  if (/^(https?:|file:|blob:|data:)/.test(path)) return; // not ours to delete
   await supabase.storage.from('media').remove([path.replace(/^\//, '')]).then(({ error }) => {
     if (error) console.warn('media cleanup failed:', error.message);
   });

@@ -1,0 +1,20 @@
+# Crushly media Worker — the only door to the private media bucket.
+#
+# Deployed by .github/workflows/deploy-worker.yml on every push that touches
+# this directory. All configuration arrives as Worker secrets at deploy time,
+# from GitHub Actions secrets — nothing sensitive is ever committed here.
+
+name = "crushly-media"
+main = "src/index.ts"
+compatibility_date = "2026-10-09"
+
+# Secrets injected at deploy time:
+#   SUPABASE_URL          https://<ref>.supabase.co        (same project as the app)
+#   SUPABASE_ANON_KEY     the app's publishable/anon key   (never the service key)
+#   B2_KEY_ID             Backblaze application key ID
+#   B2_APPLICATION_KEY    Backblaze application key
+#   B2_BUCKET             the private bucket name, e.g. crushly-media
+#
+# Served from the Worker's own *.workers.dev address today. Adding a custom
+# domain later needs no code change and no stored URL changes: the old address
+# keeps working alongside the new one.

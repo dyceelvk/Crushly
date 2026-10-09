@@ -25,6 +25,22 @@ jobs:
       - run: npm test
       - run: npm run build:web
 
+  media-worker:
+    name: Media Worker bundles & config is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # `deploy --dry-run` needs no Cloudflare credentials: it type-free bundles
+      # the Worker and validates wrangler.toml, so a broken config is caught on
+      # every push rather than on the first deploy that has secrets set.
+      # Warning-only — it is a check, not a gate on anyone's branch.
+      - run: npx --yes wrangler deploy --dry-run --outdir worker-out
+        working-directory: cloudflare/media-worker
+        continue-on-error: true
+
   backend:
     name: Database migrations & RLS smoke
     runs-on: ubuntu-latest

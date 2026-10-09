@@ -1,0 +1,220 @@
+-- Media permissions for the external object store (Backblaze B2 behind a
+-- Cloudflare Worker).
+--
+-- Until now every photo lived in a PUBLIC Supabase bucket: anyone holding a
+-- link could fetch any chat photo, forever, even after the message was gone.
+-- Files now live in a private bucket that only a Worker can read — and the
+-- Worker never decides anything itself, it asks these functions using the
+-- member's own access token. So blocks, connections, profile visibility and
+-- Moment expiry all keep their existing meaning, and there is exactly one
+-- place where "who may see this file" is defined.
+--
+-- `p_path` is the stored path (`moments/12/abc.jpg`); `p_url` is the same file's
+-- absolute URL. New rows store the URL and older rows store the path, so both
+-- are matched — one equality test each, both index-friendly.
+
+/** File extension for an upload's content type, or null if unsupported. */
+create or replace function public.media_extension(p_content_type text) returns text
+language sql immutable as $$
+  select case lower(split_part(coalesce(p_content_type, ''), ';', 1))
+    when 'image/jpeg' then 'jpg'
+    when 'image/png' then 'png'
+    when 'image/webp' then 'webp'
+    when 'audio/mpeg' then 'mp3'
+    when 'audio/mp4' then 'm4a'
+    when 'audio/aac' then 'm4a'
+    when 'audio/x-m4a' then 'm4a'
+    when 'video/mp4' then 'mp4'
+    when 'video/webm' then 'webm'
+    else null
+  end
+$$;
+
+-- Issues the path a member is allowed to upload to. The client never chooses
+-- its own path, so it cannot write into someone else's folder, and the caps
+-- here are what stand between us and a metered storage bill.
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind not in ('photos', 'moments', 'messages') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind in ('photos', 'moments') and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+
+  v_limit := case when p_kind = 'messages' then 25 * 1024 * 1024 else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  -- Runaway-upload guard: storage above the free allowance is billed, so the
+  -- ceiling lives here rather than in the client. 40 an hour is far more than a
+  -- person needs and nowhere near enough to fill a bucket.
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+-- What the caller may see: `allowed` to read it, and `cacheable` only when
+-- every signed-in member would get the same bytes. Private files must never be
+-- cached under a shared key.
+create or replace function public.can_view_media(p_path text, p_url text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+begin
+  if me is null then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  -- Profile photos are visible to any signed-in member, as they always were —
+  -- but no longer to the open internet.
+  if v_kind = 'photos' then
+    return jsonb_build_object('allowed', true, 'cacheable', true);
+  end if;
+
+  if v_kind = 'moments' then
+    -- Path first, URL second: two separate index lookups, and the row we find
+    -- is unambiguously the one whose rules apply.
+    select * into m from moments mo where mo.media_url = p_path limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    -- Expired means gone, including for the author: the file itself is already
+    -- scheduled for deletion, so a saved link must not keep working.
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', m.audience = 'everyone');
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where ms.media_url = p_path and (c.user_a = me or c.user_b = me)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $$;
+
+-- Deletion: the owner of the row the file belongs to. Once nothing references a
+-- file, the member who owns that folder may still clear it out.
+create or replace function public.can_manage_media(p_path text, p_url text default null)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and split_part(ltrim(regexp_replace(p_url, '^https?://[^/]+/', ''), '/'), '/', 2) <> me::text then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where url = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (url = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $$;
+
+revoke all on function public.media_extension(text) from public, anon, authenticated;
+revoke all on function public.media_upload_ticket(text, text, int) from public, anon, authenticated;
+grant execute on function public.media_upload_ticket(text, text, int) to authenticated, service_role;
+revoke all on function public.can_view_media(text, text) from public, anon, authenticated;
+grant execute on function public.can_view_media(text, text) to authenticated, service_role;
+revoke all on function public.can_manage_media(text, text) from public, anon, authenticated;
+grant execute on function public.can_manage_media(text, text) to authenticated, service_role;

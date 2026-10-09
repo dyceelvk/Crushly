@@ -12,6 +12,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { radius } from '../theme/tokens';
 import type { Message } from '../api/types';
 import { mediaUrl } from '../api/client';
+import { mediaSource } from '../lib/mediaHost';
 import { MOMENT_STYLES, STICKERS } from '../lib/catalog';
 import { clockTime, durationLabel } from '../lib/format';
 
@@ -195,7 +196,7 @@ function MomentQuote({ m }: { m: Message }) {
 
 function VideoNoteBubble({ m }: { m: Message }) {
   const { colors } = useTheme();
-  const player = useVideoPlayer(m.mediaUrl ? mediaUrl(m.mediaUrl) ?? null : null, (p) => {
+  const player = useVideoPlayer(m.mediaUrl ? mediaSource(mediaUrl(m.mediaUrl)) : null, (p) => {
     p.loop = false;
   });
   return (
@@ -232,7 +233,7 @@ function CallRequest({ m, ink }: { m: Message; ink: string }) {
 
 function VoiceNote({ m, ink }: { m: Message; ink: string }) {
   const { colors } = useTheme();
-  const player = useAudioPlayer(mediaUrl(m.mediaUrl) ?? null);
+  const player = useAudioPlayer(mediaSource(mediaUrl(m.mediaUrl) ?? null));
   const status = useAudioPlayerStatus(player);
   const total = Number(m.meta.duration) || Math.round(status.duration || 0);
   const progress = total ? Math.min(1, (status.currentTime || 0) / total) : 0;

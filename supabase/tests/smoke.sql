@@ -334,6 +334,87 @@ begin
     select 1 from public.media_cleanup_log where media_path like 'https://%'
   ), 'external files are left to the bucket lifecycle rule';
 
+  -- ------------------------------------------------------------ media access
+  -- Files live in a private bucket now; the Worker asks the database who may
+  -- see what, so these functions are the only place that decides.
+  j := public.media_upload_ticket('moments', 'image/jpeg', 100000);
+  assert j ->> 'path' like 'moments/' || me || '/%', 'upload path is server-chosen, inside the caller’s own folder';
+  assert (j ->> 'maxBytes')::int = 8 * 1024 * 1024, 'photos are capped at 8MB';
+  begin
+    perform public.media_upload_ticket('secrets', 'image/jpeg', 100);
+    raise exception 'unknown kinds must be refused';
+  exception when others then
+    if sqlerrm like '%unknown kinds must be refused%' then raise; end if;
+  end;
+  begin
+    perform public.media_upload_ticket('moments', 'application/pdf', 100);
+    raise exception 'unsupported file types must be refused';
+  exception when others then
+    if sqlerrm like '%unsupported file types must be refused%' then raise; end if;
+  end;
+  begin
+    perform public.media_upload_ticket('moments', 'image/jpeg', 9 * 1024 * 1024);
+    raise exception 'oversized files must be refused';
+  exception when others then
+    if sqlerrm like '%oversized files must be refused%' then raise; end if;
+  end;
+
+  j := public.can_view_media('photos/1/a.jpg');
+  assert (j ->> 'allowed')::bool and (j ->> 'cacheable')::bool, 'profile photos are readable by members and cacheable';
+
+  insert into public.messages (conversation_id, sender_id, kind, media_url)
+    values (conv_id, me, 'photo', 'messages/999/note.jpg');
+  j := public.can_view_media('messages/999/note.jpg');
+  assert (j ->> 'allowed')::bool, 'you can read your own chat media';
+  assert not (j ->> 'cacheable')::bool, 'chat media is never cached under a shared key';
+  perform set_config('request.jwt.claim.sub', marcus::text, false);
+  assert (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000000', false);
+  assert not (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
+  assert not (public.can_view_media('photos/1/a.jpg') ->> 'allowed')::bool, 'signed-out callers get nothing at all';
+  perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+  insert into public.moments (user_id, kind, body, media_url, style, audience, created_at, expires_at)
+    values (me, 'photo', 'connections only', 'moments/' || me || '/live.jpg', 'noir', 'connections',
+            public.now_ms(), public.now_ms() + 3600 * 1000),
+           (me, 'photo', 'gone', 'moments/' || me || '/expired.jpg', 'noir', 'everyone',
+            public.now_ms() - 48 * 3600 * 1000, public.now_ms() - 24 * 3600 * 1000);
+  assert (public.can_view_media('moments/' || me || '/live.jpg') ->> 'allowed')::bool, 'a live moment is readable';
+  assert not (public.can_view_media('moments/' || me || '/live.jpg') ->> 'cacheable')::bool,
+    'connections-only moments are not cacheable';
+  assert not (public.can_view_media('moments/' || me || '/expired.jpg') ->> 'allowed')::bool,
+    'an expired moment is not readable, not even by its author';
+  assert not (public.can_view_media('moments/' || me || '/nothing.jpg') ->> 'allowed')::bool, 'unknown files are not readable';
+
+  assert public.can_manage_media('moments/' || me || '/live.jpg'), 'authors can delete their own media';
+  assert not public.can_manage_media('moments/777/live.jpg'), 'nobody else can delete it';
+  assert public.can_manage_media('moments/' || me || '/orphan.jpg'), 'orphans in your own folder can be cleared';
+  -- Your own folder plus somebody else's file URL must not open their file.
+  perform set_config('request.jwt.claim.sub', marcus::text, false);
+  assert not public.can_manage_media(
+    'moments/' || marcus_id || '/x.jpg', 'https://media.example.com/moments/' || me || '/live.jpg'
+  ), 'your own folder plus someone else’s file URL grants nothing';
+  perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+  -- Runaway-upload guard: storage beyond the free allowance is billed, so the
+  -- ceiling is enforced here rather than in the app.
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  insert into public.moments (user_id, kind, body, style, audience, created_at, expires_at)
+    select me, 'text', 'flood', 'noir', 'everyone', public.now_ms(), public.now_ms() + 3600 * 1000
+      from generate_series(1, greatest(40 - n, 1));
+  begin
+    perform public.media_upload_ticket('moments', 'image/jpeg', 1000);
+    raise exception 'the hourly upload ceiling must hold';
+  exception when others then
+    if sqlerrm like '%hourly upload ceiling must hold%' then raise; end if;
+  end;
+
+  delete from public.moments where body in ('connections only', 'gone', 'flood');
+  delete from public.messages where media_url = 'messages/999/note.jpg';
+
   reset role;
   raise notice 'smoke tests passed';
 end $$;

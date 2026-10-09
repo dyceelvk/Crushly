@@ -169,6 +169,39 @@ secret, so nothing in the repo changes:
    If builds show "Skipped due to account credit usage exceeded", either top up
    (team → Billing) or wait for the monthly reset — and push less often.
 
+## Media storage (Backblaze B2 + Cloudflare Worker)
+
+Member photos, Moments and chat media live in a **private Backblaze B2 bucket**
+(10 GB free, no card) served by a **Cloudflare Worker** (free, no card). The
+database stays on Supabase — this split is deliberate: Supabase is accounts,
+data and realtime; Cloudflare is files.
+
+They were previously in a **public** Supabase bucket, which meant anyone with a
+link could fetch any chat photo, forever. Now nothing can read the bucket except
+the Worker, and the Worker decides nothing itself: it takes the member's access
+token and asks the database (`can_view_media`, `can_manage_media`,
+`media_upload_ticket`) whether that member may see, upload or remove the file.
+Blocks, connections, profile visibility and Moment expiry therefore keep exactly
+the meaning they have everywhere else.
+
+Switching it on is one build-time value:
+
+```
+EXPO_PUBLIC_MEDIA_BASE_URL=https://crushly-media.<subdomain>.workers.dev
+```
+
+Empty means "keep using Supabase Storage" — the default, and the rollback.
+Uploaded files store the URL the Worker returned, so old paths and new URLs both
+resolve and nothing has to be rewritten when it flips.
+
+Two things make the 24-hour Moment promise real: a **B2 lifecycle rule** that
+deletes everything under `moments/` after a day, and
+`.github/workflows/cleanup.yml`, which deletes expired rows (and any older files
+still in Supabase Storage) hourly.
+
+Full setup steps, including which GitHub secrets to add:
+[`cloudflare/media-worker/README.md`](cloudflare/media-worker/README.md).
+
 ## Identity verification (Didit)
 
 Members verify through **Didit** (https://didit.me) — a hosted flow that checks a
