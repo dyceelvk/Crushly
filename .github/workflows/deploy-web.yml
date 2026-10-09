@@ -498,3 +498,28 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$out"
+
+      - name: Publish ready build for this commit
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          # Publishing the tested preview is NOT merging this branch into main.
+          ready=$(curl --fail -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=25" \
+            | jq -r --arg sha "$GITHUB_SHA" '[.[]|select(.commit_ref == $sha and .state == "ready")][0].id // empty')
+          if [ -z "$ready" ]; then
+            echo "::warning::No ready Netlify build for this commit yet; publication not confirmed."
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys/$ready/restore")
+          if [[ "$code" != 2* ]]; then
+            echo "::warning::Netlify publication denied HTTP $code. Publish the ready build at https://app.netlify.com/projects/crushlyi/deploys/$ready"
+            exit 0
+          fi
+          python3 "$GITHUB_WORKSPACE/.github/scripts/probe-web-config.py"
