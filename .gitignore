@@ -23,3 +23,6 @@ __pycache__/
 
 # Generated Android test artifacts
 CrushlyApp/apk/
+
+# Local Python test environment
+.venv/
