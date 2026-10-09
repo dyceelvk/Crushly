@@ -32,7 +32,13 @@ for label in ['old', 'new']:
     apk = root / label / 'Crushly-android-test.apk'
     sign = subprocess.check_output([str(tools / 'apksigner'), 'verify', '--verbose', '--print-certs', str(apk)], text=True)
     badging = subprocess.check_output([str(tools / 'aapt'), 'dump', 'badging', str(apk)], text=True)
-    certs = re.findall(r'Signer #\d+ certificate SHA-256 digest: (\S+)', sign)
+    # Build-tools versions use different signer prefixes. Match the digest label,
+    # not a particular prefix; an unparsed certificate is not a mismatch.
+    certs = re.findall(r'certificate SHA-256 digest:\s*([a-fA-F0-9]{64})', sign)
+    if not certs:
+        for line in sign.splitlines():
+            if 'certificate' in line.lower() or 'signer' in line.lower(): print('::notice::Certificate parser diagnostic: ' + line)
+        raise SystemExit('Certificate digest could not be parsed; comparison inconclusive.')
     certs = [c.lower() for c in certs]
     print('::notice::' + label + ' signer certificate SHA256: ' + ', '.join(certs))
     version = int(re.search(r"versionCode='(\d+)'", badging)[1])
@@ -72,7 +78,7 @@ if not all(checks.values()):
         subprocess.run([str(tools / 'apksigner'), 'sign', '--ks', str(key_path), '--ks-pass', 'pass:android', '--key-pass', 'pass:android', '--ks-key-alias', 'androiddebugkey', '--out', str(output), str(root / 'new' / 'Crushly-android-test.apk')], check=True)
     subprocess.run([str(tools / 'apksigner'), 'verify', str(output)], check=True)
     repaired_cert = subprocess.check_output([str(tools / 'apksigner'), 'verify', '--print-certs', str(output)], text=True)
-    assert re.findall(r'Signer #\d+ certificate SHA-256 digest: (\S+)', repaired_cert) == old[2]
+    assert re.findall(r'certificate SHA-256 digest:\s*([a-fA-F0-9]{64})', repaired_cert) == old[2]
     # Compare installed update next using the repaired artifact, never original.
     (root / 'new' / 'Crushly-android-test.apk').write_bytes(output.read_bytes())
     print('::notice::Restored the earlier verified signing identity on the startup-fix APK. Android 11 update test still required.')
