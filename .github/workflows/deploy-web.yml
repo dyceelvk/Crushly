@@ -269,20 +269,9 @@ jobs:
               echo "::warning::Didit probe FAILED (HTTP $probe): $(head -c 300 /tmp/probe.json) - use the PRIMARY key from the SAME application as the workflow, and make sure the workflow is published."
             fi
 
-            # Session-creation probe: the exact call didit-session makes (throwaway
-            # session, deleted right after — sandbox sessions are free). The 1x1
-            # PNG stands in for the member's profile photo (portrait_image).
-            sres=$(curl -s -o /tmp/sess.json -w "%{http_code}" -X POST \
-              "https://verification.didit.me/v3/session/" \
-              -H "x-api-key: $DIDIT_API_KEY" -H "Content-Type: application/json" \
-              -d "{\"workflow_id\": \"$DIDIT_WORKFLOW_ID\", \"vendor_data\": \"ci-probe\", \"callback\": \"$site_url/?didit=done\", \"callback_method\": \"both\", \"language\": \"en\", \"contact_details\": {\"email\": \"ci-probe@crushly.app\"}, \"metadata\": {\"probe\": true}, \"portrait_image\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\"}")
-            if [ "${sres:0:1}" = "2" ]; then
-              sid=$(jq -r '.session_id // empty' /tmp/sess.json)
-              echo "::notice::Session probe OK: POST /v3/session/ created a throwaway session (HTTP $sres)."
-              [ -n "$sid" ] && curl -s -o /dev/null -X DELETE -H "x-api-key: $DIDIT_API_KEY" "https://verification.didit.me/v3/session/$sid/delete/"
-            else
-              echo "::warning::Session probe FAILED (HTTP $sres): $(head -c 400 /tmp/sess.json) - this is the exact call didit-session makes; if the key/workflow probes passed, the workflow is likely NOT PUBLISHED in the Didit console."
-            fi
+            # Read-only check above: never create verification sessions from a
+            # deployment. Session creation can consume the owner's Didit credits.
+
           fi
           schema=$(curl -s -o /tmp/schema.json -w "%{http_code}" \
             -H "apikey: ${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" \
@@ -392,6 +381,16 @@ jobs:
             *)
               echo "::warning::Write probe returned HTTP $wc - $(head -c 200 /tmp/wprobe.json)" ;;
           esac
+
+      # Check served bundles without creating users or verification sessions.
+      # Public backend config must be baked into BOTH production and previews.
+      - name: Probe app connectivity (baked env check)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/probe-web-config.py"
 
       # Read-only deploy diagnostics. Netlify's git integration (auto publishing)
       # is the primary deployer — one deploy per push. This step only LISTS
