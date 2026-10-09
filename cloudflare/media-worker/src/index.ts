@@ -116,7 +116,17 @@ async function rpc<T>(env: Env, token: string, fn: string, body: unknown): Promi
 
 /* ------------------------------------------------------------------ Backblaze */
 
-type B2Auth = { token: string; apiUrl: string; downloadUrl: string; bucketId: string; exp: number };
+type Lifecycle = { hideAfterDays: number | null; deleteAfterDays: number | null };
+
+type B2Auth = {
+  token: string;
+  apiUrl: string;
+  downloadUrl: string;
+  bucketId: string;
+  bucketType: string;
+  lifecycle: Lifecycle | null;
+  exp: number;
+};
 
 let b2: Promise<B2Auth> | null = null;
 
@@ -134,18 +144,37 @@ async function authorize(env: Env): Promise<B2Auth> {
   const buckets = await fetch(`${data.apiUrl}/b2api/v2/b2_list_buckets`, {
     method: 'POST',
     headers: { Authorization: data.authorizationToken },
-    body: JSON.stringify({ bucketName: env.B2_BUCKET, accountId: undefined }),
+    body: JSON.stringify({ bucketName: env.B2_BUCKET }),
   });
   if (!buckets.ok) throw new Error(`B2 list buckets failed (${buckets.status})`);
-  const list = (await buckets.json()) as { buckets: { bucketId: string; bucketName: string }[] };
+  const list = (await buckets.json()) as {
+    buckets: {
+      bucketId: string;
+      bucketName: string;
+      bucketType?: string;
+      lifecycleRules?: { fileNamePrefix?: string; daysFromUploadingToHiding?: number | null; daysFromHidingToDeleting?: number | null }[];
+    }[];
+  };
   const bucket = list.buckets.find((b) => b.bucketName === env.B2_BUCKET);
   if (!bucket) throw new Error(`Bucket "${env.B2_BUCKET}" not found on this account.`);
+
+  // The rule that makes "Moments disappear after 24 hours" true at the storage
+  // layer, whether or not our own jobs run. Reported by /health.
+  const rule = (bucket.lifecycleRules ?? []).find((r) => (r.fileNamePrefix ?? '') === 'moments/');
+  const lifecycle: Lifecycle | null = rule
+    ? {
+        hideAfterDays: rule.daysFromUploadingToHiding ?? null,
+        deleteAfterDays: rule.daysFromHidingToDeleting ?? null,
+      }
+    : null;
 
   return {
     token: data.authorizationToken,
     apiUrl: data.apiUrl,
     downloadUrl: data.downloadUrl,
     bucketId: bucket.bucketId,
+    bucketType: bucket.bucketType ?? 'unknown',
+    lifecycle,
     exp: Date.now() + AUTH_TTL_MS,
   };
 }
@@ -216,6 +245,39 @@ async function b2Delete(env: Env, path: string): Promise<boolean> {
 
 /* -------------------------------------------------------------------- routes */
 
+/**
+ * Setup check. Reports whether each piece is wired up correctly — Supabase
+ * reachable, the B2 key accepted, the bucket private, and the Moments lifecycle
+ * rule in place — without ever exposing a credential. A `false` anywhere means
+ * the matching setup step needs another look.
+ */
+async function health(env: Env, origin: string | null): Promise<Response> {
+  const supabase = await fetch(`${env.SUPABASE_URL}/auth/v1/settings`, {
+    headers: { apikey: env.SUPABASE_ANON_KEY },
+  })
+    .then((r) => r.ok)
+    .catch(() => false);
+
+  let storage = { b2: false, bucketPrivate: false, momentsLifecycle: null as Lifecycle | null };
+  try {
+    const auth = await b2Auth(env);
+    storage = {
+      b2: true,
+      bucketPrivate: auth.bucketType === 'allPrivate',
+      momentsLifecycle: auth.lifecycle,
+    };
+  } catch {
+    // Key rejected, or the bucket name is not on this account.
+  }
+
+  const ok =
+    supabase &&
+    storage.b2 &&
+    storage.bucketPrivate &&
+    (storage.momentsLifecycle?.deleteAfterDays ?? 0) >= 1;
+  return json({ ok, supabase, ...storage }, ok ? 200 : 503, origin);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -223,7 +285,7 @@ export default {
     const head = cors(origin);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head });
-    if (url.pathname === '/health') return json({ ok: true }, 200, origin);
+    if (url.pathname === '/health') return health(env, origin);
 
     const { path, queryToken } = splitPath(url);
     const token = bearerToken(request, queryToken);
