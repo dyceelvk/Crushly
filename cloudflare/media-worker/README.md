@@ -64,7 +64,10 @@ chat, a commit, or an issue.
 | Secret | `CLOUDFLARE_API_TOKEN` | the token from step 2 |
 | Secret | `B2_KEY_ID` | Backblaze application keyID |
 | Secret | `B2_APPLICATION_KEY` | Backblaze applicationKey |
-| Secret | `B2_BUCKET` | `crushly-media` |
+| Secret | `B2_BUCKET` | `crushly-media` — the **name**, not the ID |
+
+No bucket ID, region or endpoint is needed anywhere: the Worker signs in with
+the key and looks the ID up from the bucket name itself. Five values, no more.
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` are reused from the existing
