@@ -5,11 +5,13 @@ import {
   MEDIA_BASE_URL,
   isMediaStoreUrl,
   mediaKind,
-  mediaStoreEnabled,
   mediaStorePath,
   mediaStoreUrl,
+  moved,
   setMediaToken,
+  setMediaTokenTransport,
 } from '../lib/mediaHost';
+import type { MediaKind } from '../lib/mediaHost';
 import { storage } from '../lib/storage';
 
 /**
@@ -135,7 +137,8 @@ export function mediaUrl(path?: string | null): string | undefined {
   if (/^(https?:|file:|blob:|data:)/.test(path)) return path;
   const clean = path.replace(/^\//, '');
   // The object store mints its own paths, so rows store the URL it handed back.
-  if (mediaStoreEnabled) return mediaStoreUrl(clean);
+  const kind = mediaKind(clean);
+  if (kind && moved(kind)) return mediaStoreUrl(clean);
   if (!SUPABASE_URL) return `/${clean}`;
   return supabase.storage.from('media').getPublicUrl(clean).data.publicUrl;
 }
@@ -144,6 +147,10 @@ export function mediaUrl(path?: string | null): string | undefined {
  * The media Worker serves private files, so requests carry the member's access
  * token. Keep the cached copy in step with the session.
  */
+// Browsers cannot attach an Authorization header to an <img>, so on the web the
+// token rides in the query string instead. The Worker accepts either.
+setMediaTokenTransport(Platform.OS === 'web');
+
 void supabase.auth.getSession().then(({ data }) => setMediaToken(data.session?.access_token ?? null));
 supabase.auth.onAuthStateChange((_event, session) => setMediaToken(session?.access_token ?? null));
 
@@ -167,9 +174,7 @@ async function mediaErrorMessage(res: Response): Promise<string> {
  * folder — `path` only says which kind of media this is. Returns the absolute
  * URL, which is what the row stores.
  */
-async function uploadToMediaStore(path: string, blob: Blob, contentType: string): Promise<string> {
-  const kind = mediaKind(path);
-  if (!kind) throw new ApiError(400, 'That kind of media isn’t supported.');
+async function uploadToMediaStore(kind: MediaKind, blob: Blob, contentType: string): Promise<string> {
   const token = await mediaAccessToken();
   const res = await fetch(`${MEDIA_BASE_URL}/m`, {
     method: 'POST',
@@ -228,7 +233,16 @@ export async function uploadMediaFile(
 ): Promise<string> {
   requireConfig();
   const blob = await uriToBlob(uri);
-  if (mediaStoreEnabled && bucket === 'media') return uploadToMediaStore(path, blob, contentType);
+  const kind = bucket === 'media' ? mediaKind(path) : null;
+  if (kind && moved(kind)) {
+    try {
+      return await uploadToMediaStore(kind, blob, contentType);
+    } catch (e) {
+      // A member must never lose a photo because the object store hiccuped —
+      // fall back to Supabase Storage for this upload and carry on.
+      console.warn('object store upload failed, using Supabase Storage:', (e as Error).message);
+    }
+  }
   const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType, upsert: true });
   if (error) throw toApiError(error);
   return path;

@@ -18,10 +18,48 @@
  */
 import { cleanEnvValue } from './env';
 
-/** Base URL of the media Worker, '' when the object store isn't configured. */
-export const MEDIA_BASE_URL = cleanEnvValue(process.env.EXPO_PUBLIC_MEDIA_BASE_URL).replace(/\/+$/, '');
+/**
+ * The deployed Worker. Not a secret — it is the public address files are served
+ * from — so it works with no configuration at all. Set the env var to point
+ * somewhere else, or to '' to switch the object store off.
+ */
+const DEFAULT_MEDIA_BASE_URL = 'https://crushly-media.dyceelvk.workers.dev';
+
+/** Base URL of the media Worker, '' when the object store is switched off. */
+export const MEDIA_BASE_URL = (() => {
+  const configured = process.env.EXPO_PUBLIC_MEDIA_BASE_URL;
+  if (configured === undefined) return DEFAULT_MEDIA_BASE_URL;
+  return cleanEnvValue(configured).replace(/\/+$/, '');
+})();
 
 export const mediaStoreEnabled = MEDIA_BASE_URL.length > 0;
+
+/**
+ * Which kinds of media have moved over, comma-separated. Moments go first:
+ * they are the churn, and the bucket already deletes them after a day.
+ */
+export const MEDIA_KINDS: MediaKind[] = (() => {
+  const raw = cleanEnvValue(process.env.EXPO_PUBLIC_MEDIA_KINDS) || 'moments';
+  return raw.split(',').map((k) => k.trim()).filter((k): k is MediaKind =>
+    k === 'photos' || k === 'moments' || k === 'messages',
+  );
+})();
+
+/** True when `kind` has moved to the object store. */
+export function moved(kind: MediaKind): boolean {
+  return mediaStoreEnabled && MEDIA_KINDS.includes(kind);
+}
+
+/**
+ * How the access token travels. Native apps send it as a header; browsers
+ * cannot put headers on an <img>, so the web sends it in the query string
+ * instead (the Worker accepts both, and never caches those responses).
+ */
+let tokenInQuery = false;
+
+export function setMediaTokenTransport(web: boolean): void {
+  tokenInQuery = web;
+}
 
 export type MediaKind = 'photos' | 'moments' | 'messages';
 
@@ -31,13 +69,14 @@ export function mediaKind(path: string): MediaKind | null {
   return kind === 'photos' || kind === 'moments' || kind === 'messages' ? kind : null;
 }
 
-/** Stored path → the URL the app renders. */
-export function mediaStoreUrl(path: string): string {
-  return `${MEDIA_BASE_URL}/m/${path
+/** Stored path → the URL the app renders, with the token when browsers need it. */
+export function mediaStoreUrl(path: string, withToken = tokenInQuery): string {
+  const url = `${MEDIA_BASE_URL}/m/${path
     .replace(/^\/+/, '')
     .split('/')
     .map(encodeURIComponent)
     .join('/')}`;
+  return withToken && token ? `${url}?token=${encodeURIComponent(token)}` : url;
 }
 
 /** Absolute media-Worker URL → its stored path, or null if it isn't ours. */
@@ -70,8 +109,17 @@ export function mediaAuthHeaders(url?: string | null): Record<string, string> | 
   return { Authorization: `Bearer ${token}` };
 }
 
-/** A player/image source: plain URL normally, authenticated for our own files. */
+/**
+ * A ready-to-use image/player source. On native this is the URL plus an
+ * Authorization header; on the web the token is already in the URL, because a
+ * browser will not send headers for an <img>.
+ */
 export function mediaSource(url?: string | null): string | { uri: string; headers?: Record<string, string> } {
+  if (!isMediaStoreUrl(url)) return (url ?? '') as string;
+  if (tokenInQuery) {
+    const base = (url as string).split('?')[0];
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  }
   const headers = mediaAuthHeaders(url);
   return headers ? { uri: url as string, headers } : (url as string);
 }
