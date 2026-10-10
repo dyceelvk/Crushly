@@ -19,7 +19,10 @@ alter table public.profiles
   drop constraint if exists profiles_username_format;
 alter table public.profiles
   add constraint profiles_username_format
-  check (username = '' or username ~ '^[a-z0-9_]{3,30}$');
+  -- Written without anchors on purpose: the migration runner tracks
+  -- dollar-quoted function bodies, and a dollar sign outside one puts its
+  -- parser out of step with every function that follows in this file.
+  check (username = '' or (username !~ '[^a-z0-9_]' and length(username) between 3 and 30));
 
 -- Everyone already here gets one: first name, stripped to handle characters,
 -- with their id on the end so it cannot collide. e.g. Daniel, 12 → daniel12.
