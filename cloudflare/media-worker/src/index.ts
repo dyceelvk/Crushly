@@ -132,7 +132,11 @@ let b2: Promise<B2Auth> | null = null;
 
 /** Which setup value is wrong. Only the category is ever reported. */
 class B2Error extends Error {
-  constructor(readonly kind: 'auth' | 'bucket', readonly buckets?: number) {
+  constructor(
+    readonly kind: 'auth' | 'bucket',
+    readonly buckets?: number,
+    readonly caseMismatch?: boolean,
+  ) {
     super(kind);
   }
 }
@@ -167,10 +171,13 @@ async function authorize(env: Env): Promise<B2Auth> {
     }[];
   };
   const wanted = (env.B2_BUCKET ?? '').trim();
-  const bucket = list.buckets.find((b) => b.bucketName === wanted);
-  // The key is fine but cannot see that bucket: a different name (bucket names
-  // are case-sensitive), or the key was scoped to another one.
-  if (!bucket) throw new B2Error('bucket', list.buckets.length);
+  let bucket = list.buckets.find((b) => b.bucketName === wanted);
+  if (!bucket) {
+    // Bucket names are case-sensitive, and a capital letter is easy to copy
+    // wrong. Look without case before giving up.
+    const loose = list.buckets.find((b) => b.bucketName.toLowerCase() === wanted.toLowerCase());
+    throw new B2Error('bucket', list.buckets.length, !!loose);
+  }
 
   // The rule that makes "Moments disappear after 24 hours" true at the storage
   // layer, whether or not our own jobs run. Reported by /health.
@@ -287,6 +294,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     lengths?: { keyId: number; applicationKey: number };
     bucketsVisible?: number;
     bucketNameLength?: number;
+    caseMismatch?: boolean;
   } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
     const auth = await b2Auth(env);
@@ -309,6 +317,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
         // Counts and lengths only, never names or values.
         storage.bucketsVisible = e.buckets ?? 0;
         storage.bucketNameLength = (env.B2_BUCKET ?? '').trim().length;
+        storage.caseMismatch = e.caseMismatch ?? false;
       }
     }
   }
