@@ -116,7 +116,7 @@ async function rpc<T>(env: Env, token: string, fn: string, body: unknown): Promi
 
 /* ------------------------------------------------------------------ Backblaze */
 
-type Lifecycle = { hideAfterDays: number | null; deleteAfterDays: number | null };
+type Lifecycle = { prefix: string; hideAfterDays: number | null; deleteAfterDays: number | null };
 
 type B2Auth = {
   token: string;
@@ -125,6 +125,7 @@ type B2Auth = {
   bucketId: string;
   bucketType: string;
   lifecycle: Lifecycle | null;
+  rules: Lifecycle[];
   exp: number;
 };
 
@@ -191,13 +192,16 @@ async function authorize(env: Env): Promise<B2Auth> {
 
   // The rule that makes "Moments disappear after 24 hours" true at the storage
   // layer, whether or not our own jobs run. Reported by /health.
-  const rule = (bucket.lifecycleRules ?? []).find((r) => (r.fileNamePrefix ?? '') === 'moments/');
-  const lifecycle: Lifecycle | null = rule
-    ? {
-        hideAfterDays: rule.daysFromUploadingToHiding ?? null,
-        deleteAfterDays: rule.daysFromHidingToDeleting ?? null,
-      }
-    : null;
+  //
+  // Prefixes are compared ignoring a trailing slash, because the dashboard's
+  // prefix box is just as happy with `moments` as `moments/`, and a rule with
+  // no prefix at all would quietly delete profile photos too.
+  const rules: Lifecycle[] = (bucket.lifecycleRules ?? []).map((r) => ({
+    prefix: r.fileNamePrefix ?? '',
+    hideAfterDays: r.daysFromUploadingToHiding ?? null,
+    deleteAfterDays: r.daysFromHidingToDeleting ?? null,
+  }));
+  const lifecycle = rules.find((r) => r.prefix.replace(/\/+$/, '') === 'moments') ?? null;
 
   return {
     token: data.authorizationToken,
@@ -206,6 +210,7 @@ async function authorize(env: Env): Promise<B2Auth> {
     bucketId: bucket.bucketId,
     bucketType: bucket.bucketType ?? 'unknown',
     lifecycle,
+    rules,
     exp: Date.now() + AUTH_TTL_MS,
   };
 }
@@ -300,6 +305,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     b2: boolean;
     bucketPrivate: boolean;
     momentsLifecycle: Lifecycle | null;
+    lifecycleRules?: Lifecycle[];
     problem?: 'auth' | 'bucket';
     lengths?: { keyId: number; applicationKey: number };
     bucketsVisible?: number;
@@ -314,6 +320,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
       b2: true,
       bucketPrivate: auth.bucketType === 'allPrivate',
       momentsLifecycle: auth.lifecycle,
+      lifecycleRules: auth.rules,
     };
   } catch (e) {
     if (e instanceof B2Error) {
