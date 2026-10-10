@@ -41,7 +41,7 @@ jobs:
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --prerelease --target 05b1aa0abb110f116c4020c525c5a29e6d284c95 \
               --title "Crushly 1.0.2 — Android 9+ testing" \
-              --notes "Internal testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM. Android 9 emulator welcome/relaunch and Android 11 ARM installation tests passed; Samsung hardware coverage remains limited. Currently debug-signed with Expo's public test certificate: a private signing key and private chat media are required before public launch. Foreground calls only; TURN relay not configured."
+              --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM. Android 9 emulator welcome/relaunch and Android 11 ARM installation tests passed; Samsung hardware coverage remains limited."
           fi
           # Never silently replace a published APK at an existing version URL.
           if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx 'Crushly-1.0.2-Android9plus.apk'; then
