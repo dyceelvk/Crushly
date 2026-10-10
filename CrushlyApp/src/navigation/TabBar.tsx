@@ -12,6 +12,7 @@ import { useBadges } from '../api/hooks';
 import { haptic } from '../lib/haptics';
 
 const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap] | 'crush'> = {
+  Flow: ['home', 'home-outline'],
   Discover: ['compass', 'compass-outline'],
   Crushes: 'crush',
   Messages: ['chatbubble-ellipses', 'chatbubble-ellipses-outline'],

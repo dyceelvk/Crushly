@@ -45,6 +45,21 @@ export type Profile = {
   at?: number;
 };
 
+/** A post in the Flow: does not expire, unlike a Moment. */
+export type Post = {
+  id: number;
+  body: string;
+  mediaUrl: string | null;
+  audience: 'connections' | 'everyone';
+  createdAt: number;
+  author: Profile;
+  mine: boolean;
+};
+
+export type FlowPage = {
+  items: Post[];
+};
+
 /** A stored quote of the message a Whisper is answering — built server-side. */
 export type ReplyQuote = {
   id: number;

@@ -44,9 +44,9 @@ export const MEDIA_KINDS: MediaKind[] = (() => {
   // Same shape as the base URL: unset means "use the default", set to ''
   // means "none of them", so a kind can be pulled back without editing code.
   const configured = process.env.EXPO_PUBLIC_MEDIA_KINDS;
-  const raw = configured === undefined ? 'photos,moments,messages' : cleanEnvValue(configured);
+  const raw = configured === undefined ? 'photos,moments,messages,posts' : cleanEnvValue(configured);
   return raw.split(',').map((k) => k.trim()).filter((k): k is MediaKind =>
-    k === 'photos' || k === 'moments' || k === 'messages',
+    k === 'photos' || k === 'moments' || k === 'messages' || k === 'posts',
   );
 })();
 
@@ -66,12 +66,12 @@ export function setMediaTokenTransport(web: boolean): void {
   tokenInQuery = web;
 }
 
-export type MediaKind = 'photos' | 'moments' | 'messages';
+export type MediaKind = 'photos' | 'moments' | 'messages' | 'posts';
 
 /** The kind of a stored path (`moments/12/a.jpg` → `moments`). */
 export function mediaKind(path: string): MediaKind | null {
   const kind = path.replace(/^\/+/, '').split('/')[0];
-  return kind === 'photos' || kind === 'moments' || kind === 'messages' ? kind : null;
+  return kind === 'photos' || kind === 'moments' || kind === 'messages' || kind === 'posts' ? kind : null;
 }
 
 /** Stored path → the URL the app renders, with the token when browsers need it. */

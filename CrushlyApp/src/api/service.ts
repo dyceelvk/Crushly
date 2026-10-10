@@ -12,7 +12,7 @@ import {
 } from '../lib/catalog';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
-  DiscoverPage, FullProfile, Me, Message, Moment, MomentAuthor, MomentsFeed, Preferences, Privacy,
+  DiscoverPage, FlowPage, FullProfile, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, Preferences, Privacy,
   ReplyQuote,
   NotificationSettings, Profile, MomentStyle,
 } from './types';
@@ -351,6 +351,38 @@ const PRIVACY_FIELDS: Record<string, [string, 'bool' | readonly string[]]> = {
  * Usernames are the one identity rule the database owns, so the check and the
  * change both go through it — the client never decides what a valid handle is.
  */
+/* ------------------------------------------------------------------- flow */
+
+export async function flowFeed(limit = 20, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('flow_feed', { p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
+/** Shares a post. Photos go to the object store like any other media. */
+export async function createPost(input: {
+  body: string;
+  audience: 'connections' | 'everyone';
+  photoUri?: string | null;
+  photoMime?: string | null;
+}): Promise<Post> {
+  const body = str(input.body, 'Post', { max: 500 });
+  let media: string | null = null;
+  if (input.photoUri) {
+    const id = await meId();
+    const type = input.photoMime || 'image/jpeg';
+    media = await uploadMediaFile('media', `posts/${id}/${Date.now()}.${extensionFor(type)}`, input.photoUri, type);
+  }
+  return rpc<Post>('create_post', {
+    p_body: body,
+    p_media_url: media,
+    p_audience: input.audience === 'everyone' ? 'everyone' : 'connections',
+  });
+}
+
+export async function deletePost(postId: number): Promise<void> {
+  await rpc<boolean>('delete_post', { p_post_id: postId });
+}
+
 export async function usernameAvailable(candidate: string): Promise<boolean> {
   const clean = String(candidate ?? '').trim().toLowerCase();
   if (!clean) return false;

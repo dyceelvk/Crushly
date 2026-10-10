@@ -21,6 +21,7 @@ import {
   OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
 } from '../screens/onboarding/Onboarding';
 import { DiscoverScreen } from '../screens/discover/Discover';
+import { FlowScreen } from '../screens/flow/Flow';
 import { FiltersScreen } from '../screens/discover/Filters';
 import { CrushesScreen } from '../screens/crushes/Crushes';
 import { MutualCrushScreen, celebrated } from '../screens/crushes/MutualCrush';
@@ -79,6 +80,7 @@ function MainTabs() {
     <>
       <LiveNotifications />
       <Tabs.Navigator tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false, lazy: true }}>
+        <Tabs.Screen name="Flow" component={FlowScreen} />
         <Tabs.Screen name="Discover" component={DiscoverScreen} />
         <Tabs.Screen name="Crushes" component={CrushesScreen} />
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />

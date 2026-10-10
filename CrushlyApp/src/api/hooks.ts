@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
@@ -15,6 +15,7 @@ export const keys = {
   conversations: ['conversations'] as const,
   conversation: (id: number) => ['conversation', id] as const,
   moments: ['moments'] as const,
+  flow: ['flow'] as const,
   notifications: ['notifications'] as const,
   badges: ['badges'] as const,
   blocks: ['blocks'] as const,
@@ -103,6 +104,50 @@ export function useUpdatePreferences() {
  * Changing a handle is server-side: the database owns the format and the
  * "once a day" rule, so the app just reports what came back.
  */
+/**
+ * The Flow. Posts do not expire, so this is a normal paginated list rather
+ * than a countdown — and it is invalidated whenever anything is posted.
+ */
+export function useFlow(limit = 20) {
+  const [after, setAfter] = useState<number | null>(null);
+  const query = useQuery({
+    queryKey: [...keys.flow, limit, after],
+    queryFn: () => service.flowFeed(limit, after),
+  });
+  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      const oldest = posts[posts.length - 1];
+      if (oldest && !query.isFetching) setAfter(oldest.id);
+    },
+    refresh: () => {
+      setAfter(null);
+      void query.refetch();
+    },
+  };
+}
+
+export function useCreatePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof service.createPost>[0]) => service.createPost(input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+}
+
+export function useDeletePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (postId: number) => service.deletePost(postId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+  });
+}
+
 export function useSetUsername() {
   const qc = useQueryClient();
   return useMutation({
