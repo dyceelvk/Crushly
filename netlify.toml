@@ -27,6 +27,12 @@
 # — no repository, no storage bucket, no third-party host in the address bar.
 # Kept above the catch-all rules below so it wins.
 [[redirects]]
+  from = "/download/android"
+  to = "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/download/Crushly-1.0.2-Android9plus.apk"
   to = "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"
   status = 200
