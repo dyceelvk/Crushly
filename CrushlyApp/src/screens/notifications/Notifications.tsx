@@ -34,7 +34,7 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
     case 'deep_crush':
       return { title: `${name} sent you a Big Crush.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'mutual':
-      return { title: `You Clicked with ${name}.`, detail: 'Say hello while the feeling’s fresh.' };
+      return { title: `You and ${name} have a Mutual Crush.`, detail: 'Say hello while the feeling’s fresh.' };
     case 'message':
       return { title: `${name} sent you a Whisper.`, detail: n.body || undefined };
     case 'moment_reply':
@@ -150,7 +150,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
               <EmptyState
                 icon="notifications-outline"
                 title="All quiet for now"
-                message="Crushes, Clicks and Whispers will show up here."
+                message="Crushes, Mutual Crushes and Whispers will show up here."
                 action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
               />
             )

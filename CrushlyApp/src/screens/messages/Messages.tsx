@@ -75,8 +75,8 @@ export function MessagesScreen() {
 
       <Input
         icon="search"
-        placeholder="Find Whispers..."
-        accessibilityLabel="Find Whispers"
+        placeholder="Search conversations..."
+        accessibilityLabel="Search conversations"
         value={query}
         onChangeText={setQuery}
         autoCorrect={false}
@@ -144,7 +144,7 @@ export function MessagesScreen() {
             <View style={{ marginTop: space.xl, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
               <Txt variant="subheading">Make the first move</Txt>
               <Txt variant="small" color="textSecondary" style={{ marginTop: 4 }}>
-                Tap a Click above to say hello. A question about their Space beats “hey” every time.
+                Tap a Mutual Crush above to say hello. A question about their Space beats “hey” every time.
               </Txt>
             </View>
           ) : (

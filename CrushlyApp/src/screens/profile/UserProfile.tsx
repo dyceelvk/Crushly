@@ -146,7 +146,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           <View style={{ position: 'absolute', left: gutter, right: gutter, bottom: space.xl }}>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: space.sm, flexWrap: 'wrap' }}>
               {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
-              {p.crush.mutual ? <Pill tone="glass" label="Click" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
+              {p.crush.mutual ? <Pill tone="glass" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Txt variant="hero" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1 }}>
@@ -273,7 +273,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             )}
           </View>
           {!p.crush.mutual ? (
-            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Whispering ${p.name} needs a Click`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
+            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs a Mutual Crush`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
           ) : null}
           <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />
         </View>

@@ -267,7 +267,7 @@ export function NotificationSettingsScreen() {
       <Header title="Crush Alerts" back />
       <Group footer="These control your in-app notification center. Push notifications arrive in a future update.">
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
-        <ListRow title="Crushes" subtitle="Crushes, Big Crushes and Clicks" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
+        <ListRow title="Crushes" subtitle="Crushes, Big Crushes and Mutual Crushes" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
         <ListRow title="Moments" subtitle="Replies and reactions to your Moments" icon="aperture-outline" toggle={{ value: n.moments, onChange: set('moments') }} />
         <ListRow title="Discoveries" subtitle="Occasional suggestions of people worth knowing" icon="compass-outline" toggle={{ value: n.recommendations, onChange: set('recommendations') }} last />
       </Group>

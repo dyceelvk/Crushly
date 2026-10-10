@@ -94,7 +94,7 @@ export function CrushesScreen() {
   const caption = (p: Profile) => {
     if (tab === 'incoming') return p.crush.receivedDeep ? `Big Crush · ${p.at ? timeAgoLong(p.at) : ''}` : `Sent you a Crush · ${p.at ? timeAgoLong(p.at) : ''}`;
     if (tab === 'outgoing') return p.at ? `You sent a Crush · ${timeAgoLong(p.at)}` : 'You sent a Crush';
-    return p.at ? `Click · ${timeAgoLong(p.at)}` : 'Click';
+    return p.at ? `Mutual · ${timeAgoLong(p.at)}` : 'Mutual Crush';
   };
 
   const empty = {

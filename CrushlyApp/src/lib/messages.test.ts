@@ -14,8 +14,8 @@ const base = {
 
 const msg = (over: Record<string, unknown>): Message => ({ ...base, ...over }) as unknown as Message;
 
-test('no Whispers yet prompts a hello', () => {
-  assert.equal(messagePreview(null, 'Ada'), 'You and Ada Clicked. Say hello.');
+test('no messages yet prompts a hello', () => {
+  assert.equal(messagePreview(null, 'Ada'), 'You and Ada have a Mutual Crush. Say hello.');
 });
 
 test('text messages show sender prefix', () => {

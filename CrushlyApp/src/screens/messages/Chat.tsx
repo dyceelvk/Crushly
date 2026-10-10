@@ -388,7 +388,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <View style={{ padding: space.md, paddingBottom: Math.max(insets.bottom, space.md), borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
-              {conv.closed ? 'This Click has ended. You can’t send new Whispers.' : conv.blockReason || 'You can’t send a Whisper here right now.'}
+              {conv.closed ? 'This connection has ended. You can’t send new Whispers.' : conv.blockReason || 'You can’t send a Whisper here right now.'}
             </Txt>
           </View>
         ) : (
@@ -495,7 +495,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         <CallSheet
           visible={callState !== 'idle'}
           state={callState}
-          peerName={peer?.name ?? 'Your Click'}
+          peerName={peer?.name ?? 'Your match'}
           peerPhoto={peer?.photo}
           muted={callMuted}
           onAccept={() => getCall().accept(callChannel)}

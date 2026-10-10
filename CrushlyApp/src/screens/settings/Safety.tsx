@@ -26,7 +26,7 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
   const tools: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
     { icon: 'ban-outline', title: 'Cut Off', body: 'Open any Space or Whisper, tap ··· and choose Cut Off. They’re never told.' },
     { icon: 'flag-outline', title: 'Flag', body: 'Same menu. Flags are confidential and reviewed by a person.' },
-    { icon: 'heart-dislike-outline', title: 'Unclick', body: 'Ends your Click and closes your Whisper.' },
+    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends the Mutual Crush and closes your Whisper.' },
   ];
 
   return (
@@ -63,7 +63,7 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
       <Group title="Quick controls">
         <ListRow
           title="Show me in Discover"
-          subtitle={discoverable ? 'People Around can find you' : 'Hidden. Crushes you send still arrive.'}
+          subtitle={discoverable ? 'People nearby can find you' : 'Hidden. Crushes you send still arrive.'}
           icon="eye-outline"
           toggle={{
             value: discoverable,

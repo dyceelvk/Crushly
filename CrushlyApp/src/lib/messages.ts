@@ -3,7 +3,7 @@ import { STICKERS } from './catalog';
 
 /** One-line conversation preview — shared by the Messages list and search. */
 export function messagePreview(m: Message | null, peerName: string): string {
-  if (!m) return `You and ${peerName} Clicked. Say hello.`;
+  if (!m) return `You and ${peerName} have a Mutual Crush. Say hello.`;
   const prefix = m.mine ? 'You: ' : '';
   switch (m.kind) {
     case 'text':

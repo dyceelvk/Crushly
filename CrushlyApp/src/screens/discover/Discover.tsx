@@ -150,7 +150,7 @@ export function DiscoverScreen() {
         >
           <Ionicons name="navigate-outline" size={18} color={colors.gold} />
           <Txt variant="small" style={{ flex: 1 }}>
-            Add your approximate location to see who’s Around. Your exact spot is never shared.
+            Add your approximate location to see who’s nearby. Your exact spot is never shared.
           </Txt>
           <Ionicons name="chevron-forward" size={16} color={colors.gold} />
         </PressableScale>
@@ -225,7 +225,7 @@ export function DiscoverScreen() {
           ) : !feature ? (
             <EmptyState
               icon="compass-outline"
-              title="You’ve seen everyone Around"
+              title="You’ve seen everyone nearby"
               message={
                 filtersActive || (prefs && prefs.maxDistance > 0 && prefs.maxDistance < 100)
                   ? 'Widen your distance or relax a filter to meet more people.'
