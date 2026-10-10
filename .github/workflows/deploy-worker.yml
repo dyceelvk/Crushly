@@ -26,11 +26,11 @@ name: Deploy media Worker
 
 on:
   workflow_dispatch:
+  # Every push, not just ones touching cloudflare/: a Worker secret only takes
+  # effect on a deploy, so this is what re-syncs corrected credentials. The job
+  # is ~30s, idempotent, and skips itself when credentials aren't set.
   push:
     branches: [main, arena/**]
-    paths:
-      - 'cloudflare/**'
-      - '.github/workflows/deploy-worker.yml'
 
 concurrency:
   group: deploy-worker-${{ github.ref }}
