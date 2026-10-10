@@ -136,6 +136,8 @@ class B2Error extends Error {
     readonly kind: 'auth' | 'bucket',
     readonly buckets?: number,
     readonly caseMismatch?: boolean,
+    readonly status?: number,
+    readonly detail?: string | null,
   ) {
     super(kind);
   }
@@ -154,16 +156,22 @@ async function authorize(env: Env): Promise<B2Auth> {
     authorizationToken: string;
     apiUrl: string;
     downloadUrl: string;
+    accountId: string;
   };
 
   const buckets = await fetch(`${data.apiUrl}/b2api/v2/b2_list_buckets`, {
     method: 'POST',
     headers: { Authorization: data.authorizationToken },
-    // Unfiltered on purpose: filtering by name here would make a wrong name
-    // look like "no buckets at all", which are very different problems.
-    body: JSON.stringify({}),
+    // accountId is required and comes from the authorize response above —
+    // without it Backblaze rejects the call, which looks exactly like a
+    // missing bucket. Unfiltered on purpose: filtering by name here would
+    // make a wrong name look like "no buckets at all".
+    body: JSON.stringify({ accountId: data.accountId }),
   });
-  if (!buckets.ok) throw new B2Error('bucket');
+  if (!buckets.ok) {
+    const detail = (await buckets.json().catch(() => null)) as { status?: number; message?: string } | null;
+    throw new B2Error('bucket', undefined, false, buckets.status, detail?.message ?? null);
+  }
   const list = (await buckets.json()) as {
     buckets: {
       bucketId: string;
@@ -297,6 +305,8 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     bucketsVisible?: number;
     bucketNameLength?: number;
     caseMismatch?: boolean;
+    listStatus?: number;
+    listMessage?: string | null;
   } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
     const auth = await b2Auth(env);
@@ -320,6 +330,10 @@ async function health(env: Env, origin: string | null): Promise<Response> {
         storage.bucketsVisible = e.buckets ?? 0;
         storage.bucketNameLength = (env.B2_BUCKET ?? '').trim().length;
         storage.caseMismatch = e.caseMismatch ?? false;
+        // Backblaze's own message and status, so the next failure explains
+        // itself instead of being guessed at.
+        if (e.status !== undefined) storage.listStatus = e.status;
+        if (e.detail) storage.listMessage = e.detail;
       }
     }
   }
