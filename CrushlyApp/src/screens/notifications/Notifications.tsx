@@ -79,7 +79,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       case 'moment_reply':
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
       case 'moment_reaction':
-        return navigation.navigate('Main', { screen: 'Moments' });
+        return navigation.navigate('Moments');
       case 'verified':
       case 'verification_rejected':
         return navigation.navigate('Verification');

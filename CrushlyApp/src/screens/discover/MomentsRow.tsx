@@ -57,9 +57,16 @@ export function MomentsRow() {
         <Txt variant="title" accessibilityRole="header">
           Moments
         </Txt>
-        <Txt variant="small" color="textMuted">
-          Gone in 24 hours
-        </Txt>
+        <Pressable
+          onPress={() => navigation.navigate('Moments')}
+          accessibilityRole="link"
+          accessibilityLabel="See all Moments"
+          hitSlop={8}
+        >
+          <Txt variant="smallStrong" color="gold">
+            See all ›
+          </Txt>
+        </Pressable>
       </View>
       <ScrollView
         horizontal

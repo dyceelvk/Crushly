@@ -5,7 +5,6 @@ export type TabParamList = {
   Flows: undefined;
   Crushes: { tab?: 'incoming' | 'outgoing' | 'mutual' } | undefined;
   Messages: undefined;
-  Moments: undefined;
   Profile: undefined;
 };
 
@@ -39,6 +38,7 @@ export type RootStackParamList = {
   Circles: undefined;
   Circle: { circleId: number };
   CloseOnes: undefined;
+  Moments: undefined;
   MomentComposer: undefined;
   Safety: undefined;
   Privacy: undefined;

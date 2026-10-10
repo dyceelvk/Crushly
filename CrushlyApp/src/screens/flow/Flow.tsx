@@ -100,7 +100,7 @@ export function FlowScreen() {
         <Pressable
           onPress={() => navigation.navigate('Discover')}
           accessibilityRole="button"
-          accessibilityLabel="Discover. People nearby, Moments and Vibes"
+          accessibilityLabel="Discover. Vibes, Moments and public posts"
           style={{
             marginTop: space.lg,
             flexDirection: 'row',
@@ -119,7 +119,7 @@ export function FlowScreen() {
             Discover
           </Txt>
           <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
-            People nearby, Moments and Vibes
+            Vibes, Moments and public posts
           </Txt>
           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
         </Pressable>

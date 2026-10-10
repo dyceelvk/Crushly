@@ -999,3 +999,9 @@ export async function searchAll(query: string): Promise<SearchResults> {
   if (q.length < 2) return { members: [], posts: [], vibes: [], moments: [] };
   return rpc<SearchResults>('search_all', { p_query: q, p_limit: 8 });
 }
+
+/** Posts people chose to share with Everyone — the public side of Flows. */
+export async function publicFlow(): Promise<Post[]> {
+  const res = await rpc<{ items: Post[] }>('public_flow_feed', { p_limit: 20 });
+  return res?.items ?? [];
+}

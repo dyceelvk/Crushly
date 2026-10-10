@@ -25,6 +25,7 @@ export const keys = {
   circleMessages: (id: number) => ['circle-messages', id] as const,
   closeOnes: ['close-ones'] as const,
   vibes: ['vibes'] as const,
+  publicFlow: ['public-flow'] as const,
   search: (q: string) => ['search', q] as const,
   keep: (id: number) => ['keep', id] as const,
 };
@@ -68,6 +69,9 @@ export const useSearch = (query: string) =>
     enabled: query.trim().length >= 2,
     staleTime: 15_000,
   });
+
+export const usePublicFlow = () =>
+  useQuery({ queryKey: keys.publicFlow, queryFn: () => service.publicFlow(), staleTime: 30_000 });
 
 export const useNotifications = () =>
   useQuery({

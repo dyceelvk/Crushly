@@ -15,7 +15,6 @@ const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionico
   Flows: ['home', 'home-outline'],
   Crushes: 'crush',
   Messages: ['chatbubble-ellipses', 'chatbubble-ellipses-outline'],
-  Moments: ['aperture', 'aperture-outline'],
   Profile: ['person-circle', 'person-circle-outline'],
 };
 
