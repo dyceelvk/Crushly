@@ -35,11 +35,16 @@ export const MEDIA_BASE_URL = (() => {
 export const mediaStoreEnabled = MEDIA_BASE_URL.length > 0;
 
 /**
- * Which kinds of media have moved over, comma-separated. Moments go first:
- * they are the churn, and the bucket already deletes them after a day.
+ * Which kinds of media have moved over, comma-separated. Everything a member
+ * uploads — profile photos, Moments, and chat media including photos and video
+ * notes — lives on the object store; Supabase keeps the rows, not the files.
+ * Listing fewer kinds here moves one back without touching this file.
  */
 export const MEDIA_KINDS: MediaKind[] = (() => {
-  const raw = cleanEnvValue(process.env.EXPO_PUBLIC_MEDIA_KINDS) || 'moments';
+  // Same shape as the base URL: unset means "use the default", set to ''
+  // means "none of them", so a kind can be pulled back without editing code.
+  const configured = process.env.EXPO_PUBLIC_MEDIA_KINDS;
+  const raw = configured === undefined ? 'photos,moments,messages' : cleanEnvValue(configured);
   return raw.split(',').map((k) => k.trim()).filter((k): k is MediaKind =>
     k === 'photos' || k === 'moments' || k === 'messages',
   );

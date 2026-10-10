@@ -27,6 +27,18 @@ const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account
 const AUTH_TTL_MS = 23 * 60 * 60 * 1000; // B2 tokens last 24h; refresh early
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // matches media_upload_ticket's ceiling
 
+/**
+ * Backblaze wants a SHA-1 with every upload, and hashing is the only real work
+ * this Worker does — on the free plan the whole request gets 10 ms of CPU,
+ * which is about 4 MB of hashing. Photos and Moments are small, so they are
+ * checked properly. A minute-long video note would blow the budget on its own
+ * and being over the limit fails the upload outright, and those go up
+ * unverified: the connection is TLS in both directions, so the bytes cannot
+ * change in flight, and Backblaze still stores a checksum of what it received,
+ * marked `unverified:`. Being unverifiable is not being unprotected.
+ */
+const VERIFIED_SHA1_MAX_BYTES = 4 * 1024 * 1024;
+
 /* ------------------------------------------------------------------- helpers */
 
 const cors = (origin: string | null) => ({
@@ -251,7 +263,10 @@ async function b2Upload(env: Env, path: string, contentType: string, bytes: Arra
       Authorization: authorizationToken,
       'X-Bz-File-Name': encodeURIComponent(path),
       'Content-Type': contentType,
-      'X-Bz-Content-Sha1': hex(await crypto.subtle.digest('SHA-1', bytes)),
+      'X-Bz-Content-Sha1':
+        bytes.byteLength <= VERIFIED_SHA1_MAX_BYTES
+          ? hex(await crypto.subtle.digest('SHA-1', bytes))
+          : 'do_not_verify',
     },
     body: bytes,
   });

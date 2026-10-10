@@ -47,21 +47,27 @@ test('setting the base URL to empty switches the object store off', () => {
   assert.equal(mod.moved('moments'), false);
 });
 
-test('Moments move first; photos and chat media stay put until they are listed', () => {
+test('every kind moves by default; the list can pull one back', () => {
   let mod = loadWith(BASE, undefined);
-  assert.deepEqual(mod.MEDIA_KINDS, ['moments']);
+  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages']);
+  assert.equal(mod.moved('photos'), true);
+  assert.equal(mod.moved('moments'), true);
+  assert.equal(mod.moved('messages'), true);
+
+  // Moving one kind back to Supabase is a config change, never a code change.
+  mod = loadWith(BASE, 'moments');
   assert.equal(mod.moved('moments'), true);
   assert.equal(mod.moved('photos'), false);
-  assert.equal(mod.moved('messages'), false);
-
-  mod = loadWith(BASE, 'moments,photos');
-  assert.equal(mod.moved('moments'), true);
-  assert.equal(mod.moved('photos'), true);
   assert.equal(mod.moved('messages'), false);
 
   // Junk in the list is dropped rather than trusted.
   mod = loadWith(BASE, 'moments, secrets ');
   assert.deepEqual(mod.MEDIA_KINDS, ['moments']);
+
+  // An empty list means nothing has moved, but the store itself stays on.
+  mod = loadWith(BASE, '');
+  assert.deepEqual(mod.MEDIA_KINDS, []);
+  assert.equal(mod.moved('moments'), false);
 });
 
 test('stored paths become URLs and back again', () => {
