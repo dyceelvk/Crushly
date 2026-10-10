@@ -33,9 +33,18 @@ in `supabase/migrations/`.
 
    That is what makes "Moments disappear after 24 hours" true at the storage
    level — the photo is gone even if every job failed.
-4. **App Keys → Add a New Application Key**: allow access to `crushly-media`
-   only, with read **and** write. Copy the **keyID** and the **applicationKey**
-   — the key is shown once.
+4. **App Keys → Add a New Application Key**:
+   - *Allow Access to Bucket(s)*: `crushly-media` (not *All*)
+   - *Type of Access*: **Read and Write**
+   - *File name prefix* and *Duration*: leave empty
+   - Then copy the **applicationKey** from the box shown straight after
+     creating — it is never shown again.
+
+   ⚠️ **The name you type is not the keyID.** `B2_KEY_ID` wants the long random
+   code in the **keyID** column of the App Keys table (something like
+   `0021f5a8b3c4d…`), not the label you just invented. Putting the name there
+   is the one mistake that makes Backblaze refuse the login, and the Worker's
+   `/health` will report `problem: "auth"`.
 
 ### 2. Cloudflare (serves the files — free plan, no card)
 
