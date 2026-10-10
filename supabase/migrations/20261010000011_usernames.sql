@@ -32,9 +32,13 @@ update public.profiles p
          1, 16) || p.id::text
  where p.username = '';
 
-create unique index if not exists profiles_username_key on public.profiles (username);
-create index if not exists profiles_username_lookup_idx on public.profiles (username)
-  where username <> '';
+-- Unique among members who have chosen one. Members who haven't picked yet
+-- all sit on the empty string, and only a partial index lets them do that
+-- without colliding with each other — a plain unique index would break the
+-- second person to sign up after this migration.
+drop index if exists profiles_username_key;
+drop index if exists profiles_username_lookup_idx;
+create unique index profiles_username_key on public.profiles (username) where username <> '';
 
 -- Is this handle free? Deliberately says nothing about *who* holds a taken
 -- one, so it cannot be used to fish for accounts.
@@ -161,7 +165,7 @@ begin
 
   select coalesce(jsonb_agg(i), '[]'::jsonb) into shared_interests
     from jsonb_array_elements_text(interests) i
-   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb));
+   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb)));
 
   result := jsonb_build_object(
     'id', r.id,
