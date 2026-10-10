@@ -34,7 +34,14 @@ in `supabase/migrations/`.
    That is what makes "Moments disappear after 24 hours" true at the storage
    level — the photo is gone even if every job failed.
 4. **App Keys → Add a New Application Key**:
-   - *Allow Access to Bucket(s)*: `crushly-media` (not *All*)
+   - *Allow Access to Bucket(s)*: **All**
+
+     Use *All*, not a single bucket. A key scoped to one bucket can only ever
+     list that bucket, so if it was scoped to a name that no longer exists the
+     bucket lookup fails and `/health` reports `problem: "bucket"` with
+     `bucketsVisible: 0` — which looks like "no bucket exists" when the bucket
+     is sitting right there. The listed bucket name still decides where files
+     go.
    - *Type of Access*: **Read and Write**
    - *File name prefix* and *Duration*: leave empty
    - Then copy the **applicationKey** from the box shown straight after
