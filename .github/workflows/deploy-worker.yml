@@ -61,9 +61,17 @@ jobs:
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare/media-worker
           command: deploy
+          # Names only: the action reads each value from `env` below. Writing
+          # `NAME=value` here makes it look for an env var called "NAME=value".
           secrets: |
-            SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-            SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-            B2_KEY_ID=${{ secrets.B2_KEY_ID }}
-            B2_APPLICATION_KEY=${{ secrets.B2_APPLICATION_KEY }}
-            B2_BUCKET=${{ secrets.B2_BUCKET }}
+            SUPABASE_URL
+            SUPABASE_ANON_KEY
+            B2_KEY_ID
+            B2_APPLICATION_KEY
+            B2_BUCKET
+        env:
+          SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
