@@ -14,7 +14,7 @@ import { ProgressBar, LoadingBlock } from '../../components/States';
 import { ListRow, Group } from '../../components/ListRow';
 import { useLayout } from '../../components/Layout';
 import { CrushlyMark } from '../../components/Logo';
-import { useMe } from '../../api/hooks';
+import { useCloseOnes, useMe, useMyCircles } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel } from '../../lib/catalog';
@@ -26,6 +26,8 @@ export function ProfileTabScreen() {
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { data: me, refetch, isRefetching } = useMe();
+  const closeOnes = useCloseOnes();
+  const circles = useMyCircles();
 
   if (!me) return <LoadingBlock label="Loading your Space" />;
   const p = me.profile;
@@ -132,6 +134,23 @@ export function ProfileTabScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.gold} />
         </LinearGradient>
       </Pressable>
+
+      <Group title="Your people" style={{ marginTop: space.xl }}>
+        <ListRow
+          title="Close Ones"
+          subtitle={closeOnes.data?.items.length ? `${closeOnes.data.items.length} you keep close` : 'People you’ve chosen to keep near'}
+          icon="bookmark-outline"
+          iconTone="gold"
+          onPress={() => navigation.navigate('CloseOnes')}
+        />
+        <ListRow
+          title="Circles"
+          subtitle={circles.data?.items.length ? `${circles.data.items.length} ${circles.data.items.length === 1 ? 'room' : 'rooms'}` : 'Small rooms of up to twelve people'}
+          icon="chatbubble-ellipses-outline"
+          onPress={() => navigation.navigate('Circles')}
+          last
+        />
+      </Group>
 
       <Group title="Your space" style={{ marginTop: space.xl }}>
         <ListRow title="Discover preferences" icon="options-outline" onPress={() => navigation.navigate('Filters')} />

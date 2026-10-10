@@ -34,6 +34,9 @@ export type RootStackParamList = {
   Verification: undefined;
   Plus: { feature?: string } | undefined;
   MomentViewer: { userId: number; mine?: boolean };
+  Circles: undefined;
+  Circle: { circleId: number };
+  CloseOnes: undefined;
   MomentComposer: undefined;
   Safety: undefined;
   Privacy: undefined;

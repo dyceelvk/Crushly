@@ -49,11 +49,12 @@ test('setting the base URL to empty switches the object store off', () => {
 
 test('every kind moves by default; the list can pull one back', () => {
   let mod = loadWith(BASE, undefined);
-  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages', 'posts']);
+  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages', 'posts', 'circles']);
   assert.equal(mod.moved('photos'), true);
   assert.equal(mod.moved('moments'), true);
   assert.equal(mod.moved('messages'), true);
   assert.equal(mod.moved('posts'), true);
+  assert.equal(mod.moved('circles'), true);
 
   // Moving one kind back to Supabase is a config change, never a code change.
   mod = loadWith(BASE, 'moments');

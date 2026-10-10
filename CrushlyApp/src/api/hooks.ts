@@ -19,6 +19,12 @@ export const keys = {
   notifications: ['notifications'] as const,
   badges: ['badges'] as const,
   blocks: ['blocks'] as const,
+  circles: ['circles'] as const,
+  circle: (id: number) => ['circle', id] as const,
+  circleFeed: (id: number) => ['circle-feed', id] as const,
+  circleMessages: (id: number) => ['circle-messages', id] as const,
+  closeOnes: ['close-ones'] as const,
+  keep: (id: number) => ['keep', id] as const,
 };
 
 /* ------------------------------------------------------------------ queries */
@@ -58,6 +64,68 @@ export const useNotifications = () =>
 
 export const useBlocks = () =>
   useQuery({ queryKey: keys.blocks, queryFn: () => service.listBlocks() });
+
+export const useMyCircles = () =>
+  useQuery({
+    queryKey: keys.circles,
+    queryFn: () => service.myCircles(),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+
+export const useCircle = (circleId: number) =>
+  useQuery({
+    queryKey: keys.circle(circleId),
+    queryFn: () => service.circleSpace(circleId),
+    staleTime: 15_000,
+  });
+
+/** What a Circle has posted. Paginated like the Flow: older posts load on ask. */
+export function useCircleFeed(circleId: number, limit = 20) {
+  const [after, setAfter] = useState<number | null>(null);
+  const query = useQuery({
+    queryKey: [...keys.circleFeed(circleId), limit, after],
+    queryFn: () => service.circleFeed(circleId, limit, after),
+  });
+  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      const oldest = posts[posts.length - 1];
+      if (oldest && !query.isFetching) setAfter(oldest.id);
+    },
+    refresh: () => {
+      setAfter(null);
+      void query.refetch();
+    },
+  };
+}
+
+/**
+ * A room's conversation. Polls rather than subscribes — the same reason Whispers
+ * do: it is simple, it survives a dropped socket, and a Circle is a small room
+ * where a few seconds' delay costs nothing.
+ */
+export const useCircleMessages = (circleId: number) =>
+  useQuery({
+    queryKey: keys.circleMessages(circleId),
+    queryFn: () => service.circleMessages(circleId),
+    staleTime: 3_000,
+    refetchInterval: 8_000,
+  });
+
+export const useCloseOnes = () =>
+  useQuery({ queryKey: keys.closeOnes, queryFn: () => service.closeOnes(), staleTime: 30_000 });
+
+/** Whether you keep this member close, whether they keep you, and the counts. */
+export const useKeepState = (memberId: number, enabled = true) =>
+  useQuery({
+    queryKey: keys.keep(memberId),
+    queryFn: () => service.keepState(memberId),
+    enabled: enabled && Number.isFinite(memberId),
+    staleTime: 30_000,
+  });
 
 /** Polls lightweight counters; pauses while the app is backgrounded. */
 export function useBadges(enabled: boolean) {
@@ -145,6 +213,121 @@ export function useDeletePost() {
   return useMutation({
     mutationFn: (postId: number) => service.deletePost(postId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+  });
+}
+
+/* ------------------------------------------------------ keep close, circles */
+
+export function useKeepClose() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: number) => service.keepClose(memberId),
+    onSuccess: (state, memberId) => {
+      qc.setQueryData(keys.keep(memberId), state);
+      void qc.invalidateQueries({ queryKey: keys.closeOnes });
+    },
+  });
+}
+
+export function useLetGo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: number) => service.letGo(memberId),
+    onSuccess: (_r, memberId) => {
+      void qc.invalidateQueries({ queryKey: keys.keep(memberId) });
+      void qc.invalidateQueries({ queryKey: keys.closeOnes });
+    },
+  });
+}
+
+export function useCreateCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof service.createCircle>[0]) => service.createCircle(input),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.circles }),
+  });
+}
+
+export function useRenameCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ circleId, name }: { circleId: number; name: string }) => service.renameCircle(circleId, name),
+    onSuccess: (_r, { circleId }) => {
+      void qc.invalidateQueries({ queryKey: keys.circles });
+      void qc.invalidateQueries({ queryKey: keys.circle(circleId) });
+    },
+  });
+}
+
+export function useDeleteCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (circleId: number) => service.deleteCircle(circleId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.circles }),
+  });
+}
+
+export function useAddCircleMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ circleId, memberId }: { circleId: number; memberId: number }) =>
+      service.addCircleMember(circleId, memberId),
+    onSuccess: (_r, { circleId }) => void qc.invalidateQueries({ queryKey: keys.circle(circleId) }),
+  });
+}
+
+export function useRemoveCircleMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ circleId, memberId }: { circleId: number; memberId: number }) =>
+      service.removeCircleMember(circleId, memberId),
+    onSuccess: (_r, { circleId }) => {
+      void qc.invalidateQueries({ queryKey: keys.circle(circleId) });
+      void qc.invalidateQueries({ queryKey: keys.circles });
+    },
+  });
+}
+
+export function useLeaveCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (circleId: number) => service.leaveCircle(circleId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.circles });
+      void qc.invalidateQueries({ queryKey: ['circle-feed'] });
+    },
+  });
+}
+
+export function useCreateCirclePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof service.createPost>[0]) => service.createPost(input),
+    onSuccess: (_r, input) => {
+      if (input.circleId) void qc.invalidateQueries({ queryKey: keys.circleFeed(input.circleId) });
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+}
+
+export function useSendCircleMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof service.sendCircleMessage>[0]) => service.sendCircleMessage(input),
+    onSuccess: (_r, input) => {
+      void qc.invalidateQueries({ queryKey: keys.circleMessages(input.circleId) });
+      void qc.invalidateQueries({ queryKey: keys.circles });
+    },
+  });
+}
+
+/** Marks the room read as you look at it. */
+export function useReadCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (circleId: number) => service.readCircle(circleId),
+    onSuccess: (_r, circleId) => void qc.invalidateQueries({ queryKey: keys.circle(circleId) }),
   });
 }
 

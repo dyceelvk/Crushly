@@ -4,6 +4,7 @@ do $$
 declare
   daniel uuid;
   marcus uuid;
+  jayden uuid;
   me bigint;
   marcus_id bigint;
   jayden_id bigint;
@@ -19,6 +20,7 @@ begin
   -- IDs resolved as the migration owner (RLS hides others' rows from members).
   select id into daniel from auth.users where email = 'daniel@crushly.app';
   select id into marcus from auth.users where email = 'marcus@crushly.app';
+  select id into jayden from auth.users where email = 'jayden@crushly.app';
   select id into marcus_id from profiles where name = 'Marcus';
   select id into jayden_id from profiles where name = 'Jayden';
   select id into tobi_id from profiles where name = 'Tobi';
@@ -410,6 +412,83 @@ begin
     raise exception 'the hourly upload ceiling must hold';
   exception when others then
     if sqlerrm like '%hourly upload ceiling must hold%' then raise; end if;
+  end;
+
+  -- ------------------------------------------------- Keep Close and Circles
+  -- An earlier section resets the role to run as the migration owner; the
+  -- rules below are member-visible ones, so they are asserted as a member.
+  set role authenticated;
+  perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+  -- Keep Close is one-way and private: Marcus cannot read Daniel's list, and
+  -- cutting somebody off severs the keeping in both directions.
+  begin
+    perform public.let_go(marcus_id);
+    perform public.let_go(jayden_id);
+    j := public.keep_close(marcus_id);
+    assert (j ->> 'keeps')::boolean, 'keeping somebody close is recorded';
+
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert (public.keep_state(me) ->> 'keepsYou')::boolean, 'the kept member is told only that';
+    assert (select count(*) from public.keeps) = 0, 'nobody may read another member’s Close Ones';
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    assert (select count(*) from public.keeps where keeper_id = me) = 1, 'but your own list is yours';
+
+    -- Cut off: the keeping goes both ways, immediately.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    perform public.keep_close(me);
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    insert into public.blocks (blocker_id, blocked_id) values (me, marcus_id);
+    assert not exists (
+      select 1 from public.keeps where (keeper_id = me and kept_id = marcus_id)
+         or (keeper_id = marcus_id and kept_id = me)
+    ), 'cutting someone off severs the keeping in both directions';
+    delete from public.blocks where blocker_id = me and blocked_id = marcus_id;
+  end;
+
+  -- A Circle is a room: membership is the whole permission.
+  declare
+    room bigint;
+    post_id bigint;
+  begin
+    j := public.create_circle('Smoke Room', 'a room for the smoke tests', array[]::bigint[]);
+    room := (j -> 'circle' ->> 'id')::bigint;
+
+    -- Only members may read the room, even by direct query.
+    perform set_config('request.jwt.claim.sub', jayden::text, false);
+    assert (select count(*) from public.circles where id = room) = 0, 'a Circle is invisible to non-members';
+    begin
+      perform public.circle_feed(room);
+      raise exception 'a non-member must not read a Circle’s posts';
+    exception when others then
+      if sqlerrm like '%a non-member must not read a Circle’s posts%' then raise; end if;
+    end;
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+    -- A post written into the room stays out of the Flow.
+    j := public.create_post('in the room', null, 'connections', room);
+    post_id := (j ->> 'id')::bigint;
+    assert j ->> 'audience' = 'circle', 'a Circle post is addressed to the Circle';
+    assert not exists (
+      select 1 from jsonb_array_elements(public.flow_feed(50) -> 'items') i where (i ->> 'id')::bigint = post_id
+    ), 'a Circle post must not appear in the Flow';
+    assert exists (
+      select 1 from jsonb_array_elements(public.circle_feed(room, 50) -> 'items') i where (i ->> 'id')::bigint = post_id
+    ), 'but it is in the room’s own feed';
+
+    -- The room holds twelve people, and only members you have Clicked with.
+    begin
+      perform public.add_circle_member(room, jayden_id);
+      raise exception 'a stranger must not be brought into a Circle';
+    exception when others then
+      if sqlerrm like '%a stranger must not be brought into a Circle%' then raise; end if;
+    end;
+
+    -- Leaving hands the room on; closing it takes the posts with it.
+    perform public.leave_circle(room);
+    assert (select count(*) from public.circles where id = room) = 0, 'the last member leaving closes an empty room';
+    assert not exists (select 1 from public.posts where id = post_id), 'and its posts go with it';
+    assert not exists (select 1 from public.circle_messages where circle_id = room), 'and its messages too';
   end;
 
   delete from public.moments where body in ('connections only', 'gone', 'flood');

@@ -46,15 +46,81 @@ export type Profile = {
 };
 
 /** A post in the Flow: does not expire, unlike a Moment. */
+export type PostAudience = 'connections' | 'everyone' | 'circle';
+
 export type Post = {
   id: number;
   body: string;
   mediaUrl: string | null;
-  audience: 'connections' | 'everyone';
+  audience: PostAudience;
+  /** Set when the post was written into a Circle; null everywhere else. */
+  circleId: number | null;
   createdAt: number;
   author: Profile;
   mine: boolean;
 };
+
+/** What Keep Close looks like from one member's Space. */
+export type KeepState = {
+  keeps: boolean;
+  keepsYou: boolean;
+  keepsCount: number;
+  keptByCount: number;
+  self: boolean;
+};
+
+export type CloseOne = {
+  member: Profile;
+  keepsYou: boolean;
+  keptAt: number;
+};
+
+export type CircleRole = 'owner' | 'member';
+
+export type Circle = {
+  id: number;
+  name: string;
+  about: string;
+  coverUrl: string | null;
+  createdAt: number;
+  ownerId: number;
+  myRole: CircleRole;
+  muted: boolean;
+  memberCount: number;
+};
+
+/** A Circle as it appears in your list: the room plus what is new in it. */
+export type CircleSummary = Circle & {
+  lastMessageAt: number | null;
+  unreadCount: number;
+};
+
+export type CircleMember = {
+  member: Profile;
+  role: CircleRole;
+  joinedAt: number;
+};
+
+export type CircleSpace = {
+  circle: Circle;
+  members: CircleMember[];
+};
+
+export type CircleMessageKind = 'text' | 'photo' | 'voice';
+
+export type CircleMessage = {
+  id: number;
+  circleId: number;
+  senderId: number;
+  mine: boolean;
+  kind: CircleMessageKind;
+  body: string;
+  mediaUrl: string | null;
+  createdAt: number;
+};
+
+export type CircleListPage = { items: CircleSummary[] };
+export type CircleMessagesPage = { items: CircleMessage[] };
 
 export type FlowPage = {
   items: Post[];

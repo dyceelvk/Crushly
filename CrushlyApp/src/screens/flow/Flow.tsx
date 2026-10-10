@@ -15,7 +15,7 @@ import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/Toast';
-import { useCreatePost, useDeletePost, useFlow, useMe, useOpenConversation } from '../../api/hooks';
+import { useCreatePost, useDeletePost, useFlow, useMe, useMyCircles, useOpenConversation } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -72,6 +72,7 @@ export function FlowScreen() {
               What people are sharing. Posts stay until they’re removed.
             </Txt>
           </View>
+          <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
         </View>
 
         <Pressable
@@ -119,7 +120,8 @@ export function FlowScreen() {
   );
 }
 
-function PostCard({ post: p }: { post: Post }) {
+/** One post. Also used inside a Circle, where the audience is the room. */
+export function PostCard({ post: p }: { post: Post }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
@@ -225,8 +227,10 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
   const { colors } = useTheme();
   const toast = useToast();
   const create = useCreatePost();
+  const { data: circles } = useMyCircles();
   const [body, setBody] = useState('');
-  const [audience, setAudience] = useState<'connections' | 'everyone'>('connections');
+  const [audience, setAudience] = useState<'connections' | 'everyone' | 'circle'>('connections');
+  const [circleId, setCircleId] = useState<number | null>(null);
   const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
   const [picking, setPicking] = useState(false);
 
@@ -241,10 +245,17 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
 
   const submit = async () => {
     try {
-      await create.mutateAsync({ body: body.trim(), audience, photoUri: photo?.uri ?? null, photoMime: photo?.mimeType ?? null });
+      await create.mutateAsync({
+        body: body.trim(),
+        audience: audience === 'circle' ? 'connections' : audience,
+        circleId: audience === 'circle' ? circleId : null,
+        photoUri: photo?.uri ?? null,
+        photoMime: photo?.mimeType ?? null,
+      });
       setBody('');
       setPhoto(null);
       setAudience('connections');
+      setCircleId(null);
       onClose();
       onPosted();
     } catch (e) {
@@ -282,15 +293,39 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
           <ChipGroup>
             <Chip label="Connections" selected={audience === 'connections'} onPress={() => setAudience('connections')} />
             <Chip label="Everyone" selected={audience === 'everyone'} onPress={() => setAudience('everyone')} />
+            {circles?.items.length ? (
+              <Chip label="A Circle" selected={audience === 'circle'} onPress={() => setAudience('circle')} />
+            ) : null}
           </ChipGroup>
+          {audience === 'circle' ? (
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <Txt variant="small" color="textSecondary">
+                Which Circle?
+              </Txt>
+              <ChipGroup>
+                {(circles?.items ?? []).map((c) => (
+                  <Chip key={c.id} label={c.name} size="sm" selected={circleId === c.id} onPress={() => setCircleId(c.id)} />
+                ))}
+              </ChipGroup>
+            </View>
+          ) : null}
           <Txt variant="small" color="textMuted">
-            {audience === 'everyone'
-              ? 'Any signed-in member can read this — including people you haven’t met. Nobody outside Crushly can.'
-              : 'Only the people you’ve Clicked with, and anyone you Click with later.'}
+            {audience === 'circle'
+              ? 'Only the people in that Circle — up to twelve of them. It stays out of your Flow.'
+              : audience === 'everyone'
+                ? 'Any signed-in member can read this — including people you haven’t met. Nobody outside Crushly can.'
+                : 'Only the people you’ve Clicked with, and anyone you Click with later.'}
           </Txt>
         </View>
 
-        <Button title="Share post" variant="primary" size="md" onPress={submit} loading={create.isPending} disabled={!body.trim() && !photo} />
+        <Button
+          title="Share post"
+          variant="primary"
+          size="md"
+          onPress={submit}
+          loading={create.isPending}
+          disabled={(!body.trim() && !photo) || (audience === 'circle' && !circleId)}
+        />
       </View>
     </BottomSheet>
   );

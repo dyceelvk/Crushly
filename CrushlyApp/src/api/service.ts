@@ -11,9 +11,10 @@ import {
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
 import type {
-  AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
-  DiscoverPage, FlowPage, FullProfile, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, Preferences, Privacy,
-  ReplyQuote,
+  AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind,
+  CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse,
+  CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post,
+  Preferences, Privacy, ReplyQuote,
   NotificationSettings, Profile, MomentStyle,
 } from './types';
 
@@ -364,6 +365,8 @@ export async function createPost(input: {
   audience: 'connections' | 'everyone';
   photoUri?: string | null;
   photoMime?: string | null;
+  /** When set, the post belongs to that Circle and its audience is the Circle. */
+  circleId?: number | null;
 }): Promise<Post> {
   const body = str(input.body, 'Post', { max: 500 });
   let media: string | null = null;
@@ -376,11 +379,119 @@ export async function createPost(input: {
     p_body: body,
     p_media_url: media,
     p_audience: input.audience === 'everyone' ? 'everyone' : 'connections',
+    p_circle_id: input.circleId ?? null,
   });
 }
 
 export async function deletePost(postId: number): Promise<void> {
   await rpc<boolean>('delete_post', { p_post_id: postId });
+}
+
+/* ------------------------------------------------------- keep close, circles */
+
+export async function keepState(memberId: number): Promise<KeepState> {
+  return rpc<KeepState>('keep_state', { p_member_id: memberId });
+}
+
+/** Keep Close is one-way and silent: they are never told you let go either. */
+export async function keepClose(memberId: number): Promise<KeepState> {
+  return rpc<KeepState>('keep_close', { p_member_id: memberId });
+}
+
+export async function letGo(memberId: number): Promise<void> {
+  await rpc<boolean>('let_go', { p_member_id: memberId });
+}
+
+export async function closeOnes(limit = 50): Promise<{ items: CloseOne[] }> {
+  const page = await rpc<{ items: CloseOne[] }>('close_ones', { p_limit: limit });
+  return { items: page?.items ?? [] };
+}
+
+export async function myCircles(): Promise<CircleListPage> {
+  const page = await rpc<CircleListPage>('my_circles');
+  return { items: page?.items ?? [] };
+}
+
+export async function circleSpace(circleId: number): Promise<CircleSpace> {
+  return rpc<CircleSpace>('circle_space', { p_circle_id: circleId });
+}
+
+export async function createCircle(input: {
+  name: string;
+  about?: string;
+  memberIds?: number[];
+}): Promise<CircleSpace> {
+  return rpc<CircleSpace>('create_circle', {
+    p_name: String(input.name ?? '').trim(),
+    p_about: String(input.about ?? '').trim(),
+    p_member_ids: input.memberIds ?? [],
+  });
+}
+
+export async function renameCircle(circleId: number, name: string): Promise<void> {
+  await rpc<boolean>('rename_circle', { p_circle_id: circleId, p_name: String(name ?? '').trim() });
+}
+
+export async function deleteCircle(circleId: number): Promise<void> {
+  await rpc<boolean>('delete_circle', { p_circle_id: circleId });
+}
+
+export async function addCircleMember(circleId: number, memberId: number): Promise<void> {
+  await rpc<boolean>('add_circle_member', { p_circle_id: circleId, p_member_id: memberId });
+}
+
+export async function removeCircleMember(circleId: number, memberId: number): Promise<void> {
+  await rpc<boolean>('remove_circle_member', { p_circle_id: circleId, p_member_id: memberId });
+}
+
+export async function leaveCircle(circleId: number): Promise<void> {
+  await rpc<boolean>('leave_circle', { p_circle_id: circleId });
+}
+
+export async function circleFeed(circleId: number, limit = 20, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('circle_feed', { p_circle_id: circleId, p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
+export async function circleMessages(
+  circleId: number, limit = 30, before?: number | null,
+): Promise<CircleMessagesPage> {
+  const page = await rpc<CircleMessagesPage>('circle_messages', {
+    p_circle_id: circleId, p_limit: limit, p_before: before ?? null,
+  });
+  return { items: page?.items ?? [] };
+}
+
+/** Sends into a Circle. Photos and voice notes ride the object store. */
+export async function sendCircleMessage(input: {
+  circleId: number;
+  body?: string;
+  kind?: CircleMessageKind;
+  mediaUri?: string | null;
+  mediaMime?: string | null;
+}): Promise<CircleMessage> {
+  const kind = input.kind ?? 'text';
+  let media: string | null = null;
+  if (input.mediaUri) {
+    const id = await meId();
+    const type = input.mediaMime || 'image/jpeg';
+    media = await uploadMediaFile(
+      'media',
+      `circles/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extensionFor(type)}`,
+      input.mediaUri,
+      type,
+    );
+  }
+  return rpc<CircleMessage>('send_circle_message', {
+    p_circle_id: input.circleId,
+    p_body: input.body ?? '',
+    p_media_url: media,
+    p_kind: kind,
+  });
+}
+
+export async function readCircle(circleId: number): Promise<void> {
+  await rpc<boolean>('read_circle', { p_circle_id: circleId });
 }
 
 export async function usernameAvailable(candidate: string): Promise<boolean> {

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { Photo, OnlineDot } from '../../components/Photo';
+import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
@@ -15,11 +16,13 @@ import { useToast } from '../../components/Toast';
 import { useOpenConversation, useUndoCrush, useUser } from '../../api/hooks';
 import type { FullProfile } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
+import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
 import { timeAgo } from '../../lib/format';
+import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -59,6 +62,9 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   const undo = useUndoCrush();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
+  const keep = useKeepState(id);
+  const keepClose = useKeepClose();
+  const letGo = useLetGo();
   const [index, setIndex] = useState(0);
 
   const heroW = Math.min(width, contentWidth);
@@ -147,6 +153,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: space.sm, flexWrap: 'wrap' }}>
               {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
               {p.crush.mutual ? <Pill tone="glass" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
+              {keep.data?.keepsYou ? <Pill tone="glass" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} /> : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Txt variant="hero" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1 }}>
@@ -162,6 +169,48 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
         </View>
 
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
+          <View
+            style={{
+              marginTop: space.lg, flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: keep.data?.keeps ? colors.goldSoft : colors.card,
+              borderWidth: 1, borderColor: keep.data?.keeps ? colors.goldLine : colors.border,
+              borderRadius: radius.lg, padding: space.md,
+            }}
+          >
+            <View style={{ flex: 1, flexShrink: 1, gap: 2 }}>
+              <Txt variant="bodyStrong">
+                {keep.data?.keeps ? 'Kept close' : 'Keep Close'}
+              </Txt>
+              <Txt variant="small" color="textSecondary">
+                {keep.data?.keeps
+                  ? 'You’ll see what they share. They aren’t told when you let go.'
+                  : 'Keep them near without asking anything back. Only you see your list.'}
+              </Txt>
+              {keep.data && !keep.data.self ? (
+                <Txt variant="caption" color="textMuted" style={{ marginTop: 2 }}>
+                  {keep.data.keptByCount === 0
+                    ? 'Nobody keeps them close yet'
+                    : `${keep.data.keptByCount} ${keep.data.keptByCount === 1 ? 'member keeps' : 'members keep'} them close`}
+                </Txt>
+              ) : null}
+            </View>
+            <Button
+              title={keep.data?.keeps ? 'Let go' : 'Keep Close'}
+              size="sm"
+              variant={keep.data?.keeps ? 'secondary' : 'primary'}
+              icon={keep.data?.keeps ? undefined : 'bookmark-outline'}
+              loading={keepClose.isPending || letGo.isPending}
+              onPress={() => {
+                haptic.tap();
+                if (keep.data?.keeps) {
+                  letGo.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not let go', message: (e as Error).message }) });
+                } else {
+                  keepClose.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not kept close', message: (e as Error).message }) });
+                }
+              }}
+            />
+          </View>
+
           {p.crush.note ? (
             <View style={{ marginTop: space.lg, backgroundColor: colors.goldSoft, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: colors.goldLine }}>
               <Txt variant="label" color="gold">

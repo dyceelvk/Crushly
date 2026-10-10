@@ -31,6 +31,9 @@ import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
+import { CirclesScreen } from '../screens/circles/Circles';
+import { CircleScreen } from '../screens/circles/Circle';
+import { CloseOnesScreen } from '../screens/circles/CloseOnes';
 import { UserProfileScreen } from '../screens/profile/UserProfile';
 import { EditProfileScreen } from '../screens/profile/EditProfile';
 import { NotificationsScreen } from '../screens/notifications/Notifications';
@@ -132,6 +135,9 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
         <>
           <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+          <Stack.Screen name="Circles" component={CirclesScreen} />
+          <Stack.Screen name="Circle" component={CircleScreen} />
+          <Stack.Screen name="CloseOnes" component={CloseOnesScreen} />
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
