@@ -138,8 +138,12 @@ class B2Error extends Error {
 }
 
 async function authorize(env: Env): Promise<B2Auth> {
+  // Trimmed: a stray space or newline picked up while copying is enough for
+  // Backblaze to reject the key, and it is invisible in the GitHub UI.
+  const keyId = (env.B2_KEY_ID ?? '').trim();
+  const applicationKey = (env.B2_APPLICATION_KEY ?? '').trim();
   const res = await fetch(AUTHORIZE_URL, {
-    headers: { Authorization: `Basic ${btoa(`${env.B2_KEY_ID}:${env.B2_APPLICATION_KEY}`)}` },
+    headers: { Authorization: `Basic ${btoa(`${keyId}:${applicationKey}`)}` },
   }).catch(() => null);
   if (!res?.ok) throw new B2Error('auth'); // keyID or applicationKey refused
   const data = (await res.json()) as {
@@ -279,6 +283,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     bucketPrivate: boolean;
     momentsLifecycle: Lifecycle | null;
     problem?: 'auth' | 'bucket';
+    lengths?: { keyId: number; applicationKey: number };
   } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
     const auth = await b2Auth(env);
@@ -288,7 +293,17 @@ async function health(env: Env, origin: string | null): Promise<Response> {
       momentsLifecycle: auth.lifecycle,
     };
   } catch (e) {
-    if (e instanceof B2Error) storage.problem = e.kind;
+    if (e instanceof B2Error) {
+      storage.problem = e.kind;
+      // Lengths only, never the values: a real keyID is ~24 characters, so a
+      // short one means the key's *name* was pasted by mistake.
+      if (e.kind === 'auth') {
+        storage.lengths = {
+          keyId: (env.B2_KEY_ID ?? '').trim().length,
+          applicationKey: (env.B2_APPLICATION_KEY ?? '').trim().length,
+        };
+      }
+    }
   }
 
   const ok =
