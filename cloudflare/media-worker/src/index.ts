@@ -301,6 +301,9 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     .then((r) => r.ok)
     .catch(() => false);
 
+  // A fresh lookup, not the cached one: this endpoint is how a corrected
+  // bucket setting gets confirmed, and a 23-hour cache would keep reporting
+  // the old value long after it was fixed.
   let storage: {
     b2: boolean;
     bucketPrivate: boolean;
@@ -315,7 +318,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     listMessage?: string | null;
   } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
-    const auth = await b2Auth(env);
+    const auth = await authorize(env);
     storage = {
       b2: true,
       bucketPrivate: auth.bucketType === 'allPrivate',
