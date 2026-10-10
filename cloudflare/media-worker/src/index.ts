@@ -130,11 +130,18 @@ type B2Auth = {
 
 let b2: Promise<B2Auth> | null = null;
 
+/** Which setup value is wrong. Only the category is ever reported. */
+class B2Error extends Error {
+  constructor(readonly kind: 'auth' | 'bucket') {
+    super(kind);
+  }
+}
+
 async function authorize(env: Env): Promise<B2Auth> {
   const res = await fetch(AUTHORIZE_URL, {
     headers: { Authorization: `Basic ${btoa(`${env.B2_KEY_ID}:${env.B2_APPLICATION_KEY}`)}` },
-  });
-  if (!res.ok) throw new Error(`B2 authorize failed (${res.status})`);
+  }).catch(() => null);
+  if (!res?.ok) throw new B2Error('auth'); // keyID or applicationKey refused
   const data = (await res.json()) as {
     authorizationToken: string;
     apiUrl: string;
@@ -146,7 +153,7 @@ async function authorize(env: Env): Promise<B2Auth> {
     headers: { Authorization: data.authorizationToken },
     body: JSON.stringify({ bucketName: env.B2_BUCKET }),
   });
-  if (!buckets.ok) throw new Error(`B2 list buckets failed (${buckets.status})`);
+  if (!buckets.ok) throw new B2Error('bucket');
   const list = (await buckets.json()) as {
     buckets: {
       bucketId: string;
@@ -156,7 +163,9 @@ async function authorize(env: Env): Promise<B2Auth> {
     }[];
   };
   const bucket = list.buckets.find((b) => b.bucketName === env.B2_BUCKET);
-  if (!bucket) throw new Error(`Bucket "${env.B2_BUCKET}" not found on this account.`);
+  // The key is fine but cannot see that bucket: wrong name, or the key was
+  // scoped to a different one.
+  if (!bucket) throw new B2Error('bucket');
 
   // The rule that makes "Moments disappear after 24 hours" true at the storage
   // layer, whether or not our own jobs run. Reported by /health.
@@ -182,11 +191,18 @@ async function authorize(env: Env): Promise<B2Auth> {
 /** Cached per isolate; re-authorises automatically when the token goes stale. */
 function b2Auth(env: Env): Promise<B2Auth> {
   if (!b2) b2 = authorize(env);
-  return b2.then(async (auth) => {
-    if (auth.exp > Date.now()) return auth;
-    b2 = authorize(env);
-    return b2;
-  });
+  return b2
+    .then(async (auth) => {
+      if (auth.exp > Date.now()) return auth;
+      b2 = authorize(env);
+      return b2;
+    })
+    .catch((e: unknown) => {
+      // Never cache a failure: once the key or bucket name is corrected it has
+      // to take effect on the next request, not on the next deploy.
+      b2 = null;
+      throw e;
+    });
 }
 
 async function b2Upload(env: Env, path: string, contentType: string, bytes: ArrayBuffer) {
@@ -258,7 +274,12 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     .then((r) => r.ok)
     .catch(() => false);
 
-  let storage = { b2: false, bucketPrivate: false, momentsLifecycle: null as Lifecycle | null };
+  let storage: {
+    b2: boolean;
+    bucketPrivate: boolean;
+    momentsLifecycle: Lifecycle | null;
+    problem?: 'auth' | 'bucket';
+  } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
     const auth = await b2Auth(env);
     storage = {
@@ -266,8 +287,8 @@ async function health(env: Env, origin: string | null): Promise<Response> {
       bucketPrivate: auth.bucketType === 'allPrivate',
       momentsLifecycle: auth.lifecycle,
     };
-  } catch {
-    // Key rejected, or the bucket name is not on this account.
+  } catch (e) {
+    if (e instanceof B2Error) storage.problem = e.kind;
   }
 
   const ok =
