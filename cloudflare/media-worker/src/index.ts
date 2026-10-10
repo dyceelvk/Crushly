@@ -132,7 +132,7 @@ let b2: Promise<B2Auth> | null = null;
 
 /** Which setup value is wrong. Only the category is ever reported. */
 class B2Error extends Error {
-  constructor(readonly kind: 'auth' | 'bucket') {
+  constructor(readonly kind: 'auth' | 'bucket', readonly buckets?: number) {
     super(kind);
   }
 }
@@ -155,7 +155,7 @@ async function authorize(env: Env): Promise<B2Auth> {
   const buckets = await fetch(`${data.apiUrl}/b2api/v2/b2_list_buckets`, {
     method: 'POST',
     headers: { Authorization: data.authorizationToken },
-    body: JSON.stringify({ bucketName: env.B2_BUCKET }),
+    body: JSON.stringify({ bucketName: (env.B2_BUCKET ?? '').trim() }),
   });
   if (!buckets.ok) throw new B2Error('bucket');
   const list = (await buckets.json()) as {
@@ -166,10 +166,11 @@ async function authorize(env: Env): Promise<B2Auth> {
       lifecycleRules?: { fileNamePrefix?: string; daysFromUploadingToHiding?: number | null; daysFromHidingToDeleting?: number | null }[];
     }[];
   };
-  const bucket = list.buckets.find((b) => b.bucketName === env.B2_BUCKET);
-  // The key is fine but cannot see that bucket: wrong name, or the key was
-  // scoped to a different one.
-  if (!bucket) throw new B2Error('bucket');
+  const wanted = (env.B2_BUCKET ?? '').trim();
+  const bucket = list.buckets.find((b) => b.bucketName === wanted);
+  // The key is fine but cannot see that bucket: a different name (bucket names
+  // are case-sensitive), or the key was scoped to another one.
+  if (!bucket) throw new B2Error('bucket', list.buckets.length);
 
   // The rule that makes "Moments disappear after 24 hours" true at the storage
   // layer, whether or not our own jobs run. Reported by /health.
@@ -284,6 +285,8 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     momentsLifecycle: Lifecycle | null;
     problem?: 'auth' | 'bucket';
     lengths?: { keyId: number; applicationKey: number };
+    bucketsVisible?: number;
+    bucketNameLength?: number;
   } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
     const auth = await b2Auth(env);
@@ -302,6 +305,10 @@ async function health(env: Env, origin: string | null): Promise<Response> {
           keyId: (env.B2_KEY_ID ?? '').trim().length,
           applicationKey: (env.B2_APPLICATION_KEY ?? '').trim().length,
         };
+      } else {
+        // Counts and lengths only, never names or values.
+        storage.bucketsVisible = e.buckets ?? 0;
+        storage.bucketNameLength = (env.B2_BUCKET ?? '').trim().length;
       }
     }
   }
