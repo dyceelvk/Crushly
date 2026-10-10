@@ -88,7 +88,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
     return sub;
   }, [navigation, dirty, update.isPending]);
 
-  if (!me || !form) return <LoadingBlock label="Loading your profile" />;
+  if (!me || !form) return <LoadingBlock label="Loading your Space" />;
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
   const toggle = <T,>(list: T[], v: T, max = 99) => (list.includes(v) ? list.filter((x) => x !== v) : list.length >= max ? list : [...list, v]);
@@ -112,7 +112,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
         lifestyle: { ...form.lifestyle, height, work: form.lifestyle.work?.trim() || undefined, education: form.lifestyle.education?.trim() || undefined },
       });
       setForm(fromMe(next));
-      toast({ kind: 'success', title: 'Profile saved' });
+      toast({ kind: 'success', title: 'Space saved' });
     } catch (e) {
       toast({ kind: 'error', title: 'Changes not saved', message: (e as Error).message });
     }
@@ -135,7 +135,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
 
   return (
     <Screen keyboard footer={dirty ? <Button title="Save changes" onPress={save} loading={update.isPending} /> : undefined}>
-      <Header title="Edit profile" back />
+      <Header title="Edit Space" back />
       <View style={{ gap: 6 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Txt variant="smallStrong">Profile {pct}% complete</Txt>
@@ -145,7 +145,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
             </Txt>
           ) : null}
         </View>
-        <ProgressBar value={pct / 100} label={`Profile ${pct}% complete`} />
+        <ProgressBar value={pct / 100} label={`Space ${pct}% complete`} />
       </View>
 
       <Section title="Photos" subtitle="Show your world. Your first photo is the one people see first.">
@@ -254,7 +254,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
 
       <Section title="Privacy">
         <Group>
-          <ListRow title="Privacy & visibility" subtitle="Distance, online status, who can message you" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />
+          <ListRow title="Privacy & visibility" subtitle="Distance, online status, who can Whisper you" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />
           <ListRow
             title="Verification"
             value={{ verified: 'Verified', pending: 'In review', rejected: 'Try again', none: 'Not verified' }[me.verification.status]}

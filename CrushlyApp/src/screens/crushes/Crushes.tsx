@@ -57,7 +57,7 @@ export function CrushesScreen() {
       const conv = await open.mutateAsync(p.id);
       navigation.navigate('Chat', { conversationId: conv.id });
     } catch (e) {
-      toast({ kind: 'error', title: 'Couldn’t open chat', message: (e as Error).message });
+      toast({ kind: 'error', title: 'Couldn’t open your Whisper', message: (e as Error).message });
     }
   };
 
@@ -84,7 +84,7 @@ export function CrushesScreen() {
     if (tab === 'mutual') {
       return (
         <View style={{ marginTop: 8 }}>
-          <Button title="Message" size="sm" variant="secondary" icon="chatbubble-outline" onPress={() => message(p)} />
+          <Button title="Whisper" size="sm" variant="secondary" icon="chatbubble-outline" onPress={() => message(p)} />
         </View>
       );
     }
@@ -92,15 +92,15 @@ export function CrushesScreen() {
   };
 
   const caption = (p: Profile) => {
-    if (tab === 'incoming') return p.crush.receivedDeep ? `Deep Crush · ${p.at ? timeAgoLong(p.at) : ''}` : `Crushed on you · ${p.at ? timeAgoLong(p.at) : ''}`;
-    if (tab === 'outgoing') return p.at ? `You crushed · ${timeAgoLong(p.at)}` : 'You crushed';
-    return p.at ? `Mutual · ${timeAgoLong(p.at)}` : 'Mutual Crush';
+    if (tab === 'incoming') return p.crush.receivedDeep ? `Big Crush · ${p.at ? timeAgoLong(p.at) : ''}` : `Sent you a Crush · ${p.at ? timeAgoLong(p.at) : ''}`;
+    if (tab === 'outgoing') return p.at ? `You sent a Crush · ${timeAgoLong(p.at)}` : 'You sent a Crush';
+    return p.at ? `Click · ${timeAgoLong(p.at)}` : 'Click';
   };
 
   const empty = {
     incoming: {
       title: 'No crushes yet.',
-      message: 'Your next Crush could be around the corner. A complete profile and a fresh Moment help you get noticed.',
+      message: 'Your next Crush could be around the corner. A complete Space and a fresh Moment help you get noticed.',
       action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
     outgoing: {

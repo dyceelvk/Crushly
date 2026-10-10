@@ -40,7 +40,7 @@ export function useCrushFlow() {
         } else {
           toast({
             kind: 'crush',
-            title: opts.deep ? `Deep Crush sent to ${p.name}` : `You crushed on ${p.name}`,
+            title: opts.deep ? `Big Crush sent to ${p.name}` : `You crushed on ${p.name}`,
             message: opts.deep ? 'You’ll stand out at the top of their Crushes.' : 'If it’s mutual, you’ll be the first to know.',
             avatar: p.photos[0]?.url ?? null,
           });
@@ -102,7 +102,7 @@ export function DiscoverScreen() {
 
   const openDeep = (p: Profile) => {
     if (me && me.plus.deepCrushesLeft <= 0) {
-      toast({ kind: 'info', title: 'No Deep Crushes left today', message: 'They refresh tomorrow. A regular Crush still says plenty.' });
+      toast({ kind: 'info', title: 'No Big Crushes left today', message: 'They refresh tomorrow. A regular Crush still says plenty.' });
       return;
     }
     setNote('');
@@ -121,7 +121,7 @@ export function DiscoverScreen() {
           </Txt>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <IconButton icon="notifications-outline" label={`Notifications${badges?.notifications ? `, ${badges.notifications} unread` : ''}`} badge={!!badges?.notifications} onPress={() => navigation.navigate('Notifications')} />
+          <IconButton icon="notifications-outline" label={`Crush Alerts${badges?.notifications ? `, ${badges.notifications} unread` : ''}`} badge={!!badges?.notifications} onPress={() => navigation.navigate('Notifications')} />
           <IconButton icon="options-outline" label={`Filters${filtersActive ? ', active' : ''}`} badge={filtersActive} onPress={() => navigation.navigate('Filters')} />
         </View>
       </View>
@@ -150,7 +150,7 @@ export function DiscoverScreen() {
         >
           <Ionicons name="navigate-outline" size={18} color={colors.gold} />
           <Txt variant="small" style={{ flex: 1 }}>
-            Add your approximate location to see who’s nearby. Your exact spot is never shared.
+            Add your approximate location to see who’s Around. Your exact spot is never shared.
           </Txt>
           <Ionicons name="chevron-forward" size={16} color={colors.gold} />
         </PressableScale>
@@ -165,7 +165,7 @@ export function DiscoverScreen() {
             onPass={() => onPass(feature)}
             onDeepCrush={() => openDeep(feature)}
             onMore={() => openActions({ id: feature.id, name: feature.name, age: feature.age, context: 'discover' }, [
-              { label: 'View full profile', icon: <Ionicons name="person-outline" size={20} color={colors.textSecondary} />, onPress: () => navigation.navigate('UserProfile', { id: feature.id }) },
+              { label: 'View full Space', icon: <Ionicons name="person-outline" size={20} color={colors.textSecondary} />, onPress: () => navigation.navigate('UserProfile', { id: feature.id }) },
             ])}
             crushing={pendingId === feature.id}
             deepLeft={me?.plus.deepCrushesLeft}
@@ -225,7 +225,7 @@ export function DiscoverScreen() {
           ) : !feature ? (
             <EmptyState
               icon="compass-outline"
-              title="You’ve seen everyone nearby"
+              title="You’ve seen everyone Around"
               message={
                 filtersActive || (prefs && prefs.maxDistance > 0 && prefs.maxDistance < 100)
                   ? 'Widen your distance or relax a filter to meet more people.'
@@ -254,11 +254,11 @@ export function DiscoverScreen() {
       <BottomSheet
         visible={!!deepFor}
         onClose={() => setDeepFor(null)}
-        title={`Deep Crush ${deepFor?.name ?? ''}`}
-        subtitle="Stand out with a note. Deep Crushes appear at the top of their Crushes."
+        title={`Big Crush ${deepFor?.name ?? ''}`}
+        subtitle="Stand out with a note. Big Crushes appear at the top of their Crushes."
         footer={
           <Button
-            title="Send Deep Crush"
+            title="Send Big Crush"
             icon="sparkles"
             variant="primary"
             onPress={async () => {
@@ -270,9 +270,9 @@ export function DiscoverScreen() {
           />
         }
       >
-        <Input value={note} onChangeText={setNote} placeholder={`Say why ${deepFor?.name ?? 'they'} caught your eye…`} multiline maxLength={140} showCount accessibilityLabel="Deep Crush note" />
+        <Input value={note} onChangeText={setNote} placeholder={`Say why ${deepFor?.name ?? 'they'} caught your eye…`} multiline maxLength={140} showCount accessibilityLabel="Big Crush note" />
         <Txt variant="small" color="textMuted" style={{ marginTop: space.sm }}>
-          {me ? `${me.plus.deepCrushesLeft} of ${me.plus.deepCrushesPerDay} Deep Crushes left today.` : ''}
+          {me ? `${me.plus.deepCrushesLeft} of ${me.plus.deepCrushesPerDay} Big Crushes left today.` : ''}
         </Txt>
       </BottomSheet>
     </View>

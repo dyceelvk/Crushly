@@ -14,8 +14,8 @@ const base = {
 
 const msg = (over: Record<string, unknown>): Message => ({ ...base, ...over }) as unknown as Message;
 
-test('no messages yet prompts a hello', () => {
-  assert.equal(messagePreview(null, 'Ada'), 'You and Ada have a Mutual Crush. Say hello.');
+test('no Whispers yet prompts a hello', () => {
+  assert.equal(messagePreview(null, 'Ada'), 'You and Ada Clicked. Say hello.');
 });
 
 test('text messages show sender prefix', () => {
@@ -26,7 +26,7 @@ test('text messages show sender prefix', () => {
 test('media kinds render friendly labels', () => {
   assert.equal(messagePreview(msg({ kind: 'photo' }), 'Ada'), 'Sent a photo');
   assert.equal(messagePreview(msg({ kind: 'photo', mine: true }), 'Ada'), 'You: Sent a photo');
-  assert.equal(messagePreview(msg({ kind: 'voice' }), 'Ada'), 'Voice message');
+  assert.equal(messagePreview(msg({ kind: 'voice' }), 'Ada'), 'Voice note');
 });
 
 test('stickers show their emoji', () => {
@@ -35,10 +35,10 @@ test('stickers show their emoji', () => {
   assert.equal(messagePreview(msg({ kind: 'sticker', meta: { sticker: 'nope' } }), 'Ada'), ' Sticker');
 });
 
-test('profile shares name the person', () => {
-  assert.equal(messagePreview(msg({ kind: 'profile', meta: { name: 'Ben' } }), 'Ada'), 'Shared Ben profile');
-  assert.equal(messagePreview(msg({ kind: 'profile', meta: {} }), 'Ada'), 'Shared a profile');
-  assert.equal(messagePreview(msg({ kind: 'profile', meta: { name: 'Ben' }, mine: true }), 'Ada'), 'You: Shared Ben profile');
+test('a shared Space names the person', () => {
+  assert.equal(messagePreview(msg({ kind: 'profile', meta: { name: 'Ben' } }), 'Ada'), 'Shared Ben Space');
+  assert.equal(messagePreview(msg({ kind: 'profile', meta: {} }), 'Ada'), 'Shared a Space');
+  assert.equal(messagePreview(msg({ kind: 'profile', meta: { name: 'Ben' }, mine: true }), 'Ada'), 'You: Shared Ben Space');
 });
 
 test('moment replies name whose moment', () => {
@@ -47,6 +47,6 @@ test('moment replies name whose moment', () => {
 });
 
 test('unknown kinds fall back to the body', () => {
-  assert.equal(messagePreview(msg({ kind: 'system' }), 'Ada'), 'New message');
+  assert.equal(messagePreview(msg({ kind: 'system' }), 'Ada'), 'New Whisper');
   assert.equal(messagePreview(msg({ kind: 'system', body: 'ok' }), 'Ada'), 'ok');
 });

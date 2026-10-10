@@ -336,7 +336,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
         Create your account
       </Txt>
       <Txt variant="body" color="textSecondary" style={{ marginTop: 4, marginBottom: space.xl }}>
-        Your email stays private. It’s never shown on your profile.
+        Your email stays private. It’s never shown on your Space.
       </Txt>
       {!isConfigured ? <NotConfiguredNotice /> : null}
       {errors.form ? <Banner message={errors.form} /> : null}

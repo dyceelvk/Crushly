@@ -299,7 +299,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             <Pressable
               onPress={() => !mine && navigation.navigate('UserProfile', { id: group.user.id })}
               accessibilityRole="button"
-              accessibilityLabel={mine ? 'Your Moment' : `${group.user.name}, view profile`}
+              accessibilityLabel={mine ? 'Your Moment' : `${group.user.name}, view Space`}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
             >
               <Avatar uri={group.user.photo} name={group.user.name} size={36} />
@@ -341,7 +341,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
                 </Txt>
               </View>
               <Txt variant="small" color="rgba(255,255,255,0.75)">
-                {reactionsLine ?? 'No reactions yet. Replies arrive in your Messages.'}
+                {reactionsLine ?? 'No reactions yet. Replies arrive in your Whispers.'}
               </Txt>
             </View>
           ) : (

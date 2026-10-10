@@ -5,20 +5,20 @@ import type { Intention, MomentStyle } from '../api/types';
 export const INTENTIONS: { value: Intention; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'dating', label: 'Dating', description: 'Going on dates and seeing where it leads', icon: 'wine-outline' },
   { value: 'relationship', label: 'Relationship', description: 'Someone to build something real with', icon: 'infinite-outline' },
-  { value: 'friends', label: 'Friends', description: 'Good people, good company', icon: 'people-outline' },
+  { value: 'friends', label: 'Friendship', description: 'Good people, good company', icon: 'people-outline' },
   { value: 'casual', label: 'Something casual', description: 'Easygoing, no pressure', icon: 'flame-outline' },
   { value: 'new_connections', label: 'New connections', description: 'Expanding your circle', icon: 'git-network-outline' },
   { value: 'not_sure', label: 'Not sure yet', description: 'Open to whatever feels right', icon: 'compass-outline' },
 ];
 
 export const intentionLabel = (v: string) =>
-  ({ dating: 'Dating', relationship: 'Relationship', friends: 'Friends', casual: 'Casual', new_connections: 'New connections', not_sure: 'Open to anything' } as Record<string, string>)[v] || v;
+  ({ dating: 'Dating', relationship: 'Relationship', friends: 'Friendship', casual: 'Casual', new_connections: 'New connections', not_sure: 'Open to anything' } as Record<string, string>)[v] || v;
 
 /** Filter chips per the Discover preferences spec. "Open to anything" = no intention filter. */
 export const FILTER_INTENTIONS: { value: Intention; label: string }[] = [
   { value: 'dating', label: 'Dating' },
   { value: 'relationship', label: 'Relationship' },
-  { value: 'friends', label: 'Friends' },
+  { value: 'friends', label: 'Friendship' },
   { value: 'casual', label: 'Casual' },
   { value: 'new_connections', label: 'New connections' },
 ];
@@ -38,7 +38,7 @@ export const LANGUAGES = [
 
 export const RELATIONSHIP_INTENTIONS = [
   'Long-term partner', 'Long-term, open to short', 'Short-term, open to long',
-  'Something casual', 'New friends', 'Still figuring it out',
+  'Something casual', 'New people', 'Still figuring it out',
 ];
 
 export const PRONOUNS = ['he/him', 'he/they', 'they/them'];
@@ -78,9 +78,9 @@ export const MOMENT_REACTIONS: { key: string; emoji: string; label: string }[] =
 ];
 
 export const REPORT_REASONS: { value: string; label: string; description: string }[] = [
-  { value: 'fake_profile', label: 'Fake profile or catfishing', description: 'Photos or details that aren’t theirs' },
+  { value: 'fake_profile', label: 'Fake Space or catfishing', description: 'Photos or details that aren’t theirs' },
   { value: 'harassment', label: 'Harassment or bullying', description: 'Unwanted, hostile or abusive behaviour' },
-  { value: 'inappropriate_content', label: 'Inappropriate content', description: 'Explicit or offensive photos or messages' },
+  { value: 'inappropriate_content', label: 'Inappropriate content', description: 'Explicit or offensive photos or Whispers' },
   { value: 'scam', label: 'Scam or spam', description: 'Asking for money, links, or selling something' },
   { value: 'threats_safety', label: 'Threats or outing', description: 'Threats, blackmail or exposing someone' },
   { value: 'hate_speech', label: 'Hate speech', description: 'Attacks based on identity' },

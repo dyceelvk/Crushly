@@ -155,7 +155,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
           value={audience}
           onChange={setAudience}
           options={[
-            { value: 'everyone', label: 'Everyone nearby' },
+            { value: 'everyone', label: 'Everyone Around' },
             { value: 'connections', label: 'Connections' },
           ]}
         />

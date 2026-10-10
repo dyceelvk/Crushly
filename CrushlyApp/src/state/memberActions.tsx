@@ -85,7 +85,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
     ? [
         ...extra,
         {
-          label: 'Share profile',
+          label: 'Share Space',
           icon: icon('share-outline'),
           hint: 'Only their first name and age are shared',
           onPress: () => {
@@ -93,10 +93,10 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
           },
         },
         ...(member.connected
-          ? [{ label: 'Remove connection', icon: icon('heart-dislike-outline'), hint: 'Ends your Mutual Crush and closes the chat', onPress: () => confirmRemove(member) }]
+          ? [{ label: 'Unclick', icon: icon('heart-dislike-outline'), hint: 'Ends your Click and closes your Whisper', onPress: () => confirmRemove(member) }]
           : []),
-        { label: `Report ${member.name}`, icon: icon('flag-outline', colors.danger), destructive: true, hint: 'Confidential — they won’t know', onPress: () => openReport(member) },
-        { label: `Block ${member.name}`, icon: icon('ban-outline', colors.danger), destructive: true, hint: 'You’ll disappear from each other', onPress: () => confirmBlock(member) },
+        { label: `Flag ${member.name}`, icon: icon('flag-outline', colors.danger), destructive: true, hint: 'Confidential — they won’t know', onPress: () => openReport(member) },
+        { label: `Cut Off ${member.name}`, icon: icon('ban-outline', colors.danger), destructive: true, hint: 'You’ll disappear from each other', onPress: () => confirmBlock(member) },
       ]
     : [];
 
@@ -108,11 +108,11 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
       toast({
         kind: 'success',
         title: 'Thanks for telling us',
-        message: `Our safety team reviews every report.${alsoBlock ? ` ${member.name} is blocked.` : ''} He won’t know it was you.`,
+        message: `Our safety team reviews every flag.${alsoBlock ? ` ${member.name} is cut off.` : ''} He won’t know it was you.`,
       });
       if (alsoBlock) member.onGone?.();
     } catch (e) {
-      toast({ kind: 'error', title: 'Report not sent', message: (e as Error).message });
+      toast({ kind: 'error', title: 'Flag not sent', message: (e as Error).message });
     }
   };
 
@@ -123,9 +123,9 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
 
       <ConfirmSheet
         visible={sheet === 'block'}
-        title={`Block ${member?.name}?`}
-        message="You won’t see each other anywhere on Crushly, and your conversation will close. He won’t be notified. You can unblock later in Settings."
-        confirmLabel="Block"
+        title={`Cut off ${member?.name}?`}
+        message="You won’t see each other anywhere on Crushly, and your Whisper will close. He won’t be notified. You can let him back in later in Settings."
+        confirmLabel="Cut Off"
         destructive
         loading={block.isPending}
         onCancel={close}
@@ -134,19 +134,19 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
           try {
             await block.mutateAsync(member.id);
             close();
-            toast({ kind: 'success', title: `${member.name} is blocked`, message: 'You won’t see each other again.' });
+            toast({ kind: 'success', title: `${member.name} is cut off`, message: 'You won’t see each other again.' });
             member.onGone?.();
           } catch (e) {
-            toast({ kind: 'error', title: 'Couldn’t block', message: (e as Error).message });
+            toast({ kind: 'error', title: 'Couldn’t cut off', message: (e as Error).message });
           }
         }}
       />
 
       <ConfirmSheet
         visible={sheet === 'remove'}
-        title="Remove this connection?"
-        message={`This ends your Mutual Crush with ${member?.name} and closes your conversation for both of you. This can’t be undone.`}
-        confirmLabel="Remove connection"
+        title={`Unclick ${member?.name}?`}
+        message={`This ends your Click with ${member?.name} and closes your Whisper for both of you. This can’t be undone.`}
+        confirmLabel="Unclick"
         destructive
         loading={remove.isPending}
         onCancel={close}
@@ -155,10 +155,10 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
           try {
             await remove.mutateAsync(member.id);
             close();
-            toast({ kind: 'success', title: 'Connection removed' });
+            toast({ kind: 'success', title: 'Click removed' });
             member.onGone?.();
           } catch (e) {
-            toast({ kind: 'error', title: 'Couldn’t remove connection', message: (e as Error).message });
+            toast({ kind: 'error', title: 'Couldn’t unclick', message: (e as Error).message });
           }
         }}
       />
@@ -166,9 +166,9 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
       <BottomSheet
         visible={sheet === 'report'}
         onClose={close}
-        title={`Report ${member?.name ?? ''}`}
-        subtitle="Reports are confidential. Tell us what happened and our team will look into it."
-        footer={<Button title="Send report" onPress={submitReport} disabled={!reason} loading={report.isPending} variant="primary" />}
+        title={`Flag ${member?.name ?? ''}`}
+        subtitle="Flags are confidential. Tell us what happened and our team will look into it."
+        footer={<Button title="Send flag" onPress={submitReport} disabled={!reason} loading={report.isPending} variant="primary" />}
       >
         <View style={{ gap: 8 }} accessibilityRole="radiogroup">
           {REPORT_REASONS.map((r) => {
@@ -207,12 +207,12 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
         />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: space.lg }}>
           <View style={{ flex: 1 }}>
-            <Txt variant="bodyStrong">Also block {member?.name}</Txt>
+            <Txt variant="bodyStrong">Cut off {member?.name} too</Txt>
             <Txt variant="small" color="textSecondary">
               Recommended. You’ll disappear from each other right away.
             </Txt>
           </View>
-          <Toggle value={alsoBlock} onChange={setAlsoBlock} label={`Also block ${member?.name}`} />
+          <Toggle value={alsoBlock} onChange={setAlsoBlock} label={`Cut off ${member?.name} too`} />
         </View>
         <Txt variant="small" color="textMuted" style={{ marginTop: space.lg }}>
           If you’re in immediate danger, contact local emergency services or a trusted person first.

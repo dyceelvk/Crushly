@@ -121,7 +121,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             You’re verified
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Your badge shows on your profile. Thanks for keeping Crushly real.
+            Your badge shows on your Space. Thanks for keeping Crushly real.
           </Txt>
         </View>
       ) : rejected ? (

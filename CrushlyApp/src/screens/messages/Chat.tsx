@@ -178,7 +178,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const send = useCallback(
     async (draft: Parameters<typeof chat.send>[0]) => {
       const res = await chat.send(draft);
-      if (!res.ok) toast({ kind: 'error', title: 'Message not sent', message: res.error });
+      if (!res.ok) toast({ kind: 'error', title: 'Whisper not sent', message: res.error });
     },
     [chat, toast],
   );
@@ -205,7 +205,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     if (callRef.current?.state && callRef.current.state !== 'idle') return;
     try {
       const perm = await requestRecordingPermissionsAsync();
-      if (!perm.granted) return toast({ kind: 'error', title: 'Microphone is off', message: 'Allow microphone access to send voice messages.' });
+      if (!perm.granted) return toast({ kind: 'error', title: 'Microphone is off', message: 'Allow microphone access to send voice notes.' });
       await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
@@ -226,7 +226,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     }
     setRecording(false);
     if (!keep) return;
-    if (duration < 1 || !recorder.uri) return toast({ kind: 'info', title: 'Too short', message: 'Hold on a little longer to record a voice message.' });
+    if (duration < 1 || !recorder.uri) return toast({ kind: 'info', title: 'Too short', message: 'Hold on a little longer to record a voice note.' });
     send({ kind: 'voice', uri: recorder.uri, duration, mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a' });
   };
 
@@ -263,7 +263,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   }
 
   const shareCandidates = [
-    ...(me ? [{ id: me.id, name: 'Your profile', photo: me.profile.photos[0]?.url ?? null }] : []),
+    ...(me ? [{ id: me.id, name: 'Your Space', photo: me.profile.photos[0]?.url ?? null }] : []),
     ...(crushes?.mutual ?? []).filter((p) => p.id !== peer?.id).map((p) => ({ id: p.id, name: p.name, photo: p.photos[0]?.url ?? null })),
   ];
 
@@ -272,11 +272,11 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       {/* Header */}
       <View style={{ paddingTop: insets.top, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bg }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.sm, paddingVertical: 8, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
-          <IconButton icon="chevron-back" variant="plain" label="Back to messages" onPress={() => navigation.goBack()} />
+          <IconButton icon="chevron-back" variant="plain" label="Back to Whispers" onPress={() => navigation.goBack()} />
           <Pressable
             onPress={() => peer && openProfile(peer.id)}
             accessibilityRole="button"
-            accessibilityLabel={peer ? `View ${peer.name}'s profile` : 'Loading'}
+            accessibilityLabel={peer ? `View ${peer.name}'s Space` : 'Loading'}
             style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 }}
           >
             <Avatar uri={peer?.photo} name={peer?.name} size={40} online={!!peer?.online} />
@@ -302,7 +302,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <IconButton
             icon="ellipsis-horizontal"
             variant="plain"
-            label="Conversation options"
+            label="Whisper options"
             onPress={() => peer && openActions({ id: peer.id, name: peer.name, connected: true, context: `chat:${conversationId}`, onGone: () => navigation.goBack() })}
           />
         </View>
@@ -388,7 +388,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <View style={{ padding: space.md, paddingBottom: Math.max(insets.bottom, space.md), borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
-              {conv.closed ? 'This connection has ended. You can’t send new messages.' : conv.blockReason || 'You can’t message in this conversation right now.'}
+              {conv.closed ? 'This Click has ended. You can’t send new Whispers.' : conv.blockReason || 'You can’t send a Whisper here right now.'}
             </Txt>
           </View>
         ) : (
@@ -400,7 +400,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
                   <TrayButton icon="call-outline" label="Call" onPress={startCall} />
-                  <TrayButton icon="person-circle-outline" label="Share profile" onPress={() => { setTray(false); setShareOpen(true); }} />
+                  <TrayButton icon="person-circle-outline" label="Share Space" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
                 <Txt variant="label" color="textMuted" style={{ marginBottom: 6 }}>
                   Stickers
@@ -432,7 +432,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       Recording…
                     </Txt>
                   </View>
-                  <IconButton icon="arrow-up" variant="crush" label="Send voice message" onPress={() => stopRecording(true)} color={colors.crush} />
+                  <IconButton icon="arrow-up" variant="crush" label="Send voice note" onPress={() => stopRecording(true)} color={colors.crush} />
                 </>
               ) : (
                 <>
@@ -440,7 +440,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                     <Pressable
                       onPress={() => setTray((t) => !t)}
                       accessibilityRole="button"
-                      accessibilityLabel={tray ? 'Close attachments' : 'Add photo, sticker or profile'}
+                      accessibilityLabel={tray ? 'Close attachments' : 'Add photo, sticker or Space'}
                       hitSlop={4}
                       style={{ width: 40, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2 }}
                     >
@@ -454,7 +454,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       placeholderTextColor={colors.textMuted}
                       multiline
                       maxLength={2000}
-                      accessibilityLabel="Message"
+                      accessibilityLabel="Whisper"
                       onFocus={() => setTray(false)}
                       onKeyPress={(e) => {
                         const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean };
@@ -470,9 +470,9 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                     />
                   </View>
                   {text.trim() ? (
-                    <IconButton icon="arrow-up" variant="crush" label="Send message" onPress={sendText} color={colors.crush} />
+                    <IconButton icon="arrow-up" variant="crush" label="Send Whisper" onPress={sendText} color={colors.crush} />
                   ) : (
-                    <IconButton icon="mic-outline" label="Record a voice message" onPress={startRecording} />
+                    <IconButton icon="mic-outline" label="Record a voice note" onPress={startRecording} />
                   )}
                 </>
               )}
@@ -495,7 +495,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         <CallSheet
           visible={callState !== 'idle'}
           state={callState}
-          peerName={peer?.name ?? 'Your match'}
+          peerName={peer?.name ?? 'Your Click'}
           peerPhoto={peer?.photo}
           muted={callMuted}
           onAccept={() => getCall().accept(callChannel)}
@@ -552,7 +552,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           >
             <Ionicons name="flag-outline" size={20} color={colors.danger} />
             <Txt variant="bodyStrong" color="danger">
-              Report this message
+              Flag this Whisper
             </Txt>
           </Pressable>
         ) : null}
@@ -562,7 +562,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       <ActionSheet
         visible={shareOpen}
         onClose={() => setShareOpen(false)}
-        title="Share a profile"
+        title="Share a Space"
         actions={shareCandidates.map((c) => ({
           label: c.name,
           icon: <Avatar uri={c.photo} name={c.name} size={32} />,

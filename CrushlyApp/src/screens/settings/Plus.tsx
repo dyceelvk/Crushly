@@ -17,13 +17,13 @@ import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
 const PLUS = [
-  { icon: 'sparkles-outline' as const, title: 'More Deep Crushes', body: 'More every day, for when someone really stands out.' },
+  { icon: 'sparkles-outline' as const, title: 'More Big Crushes', body: 'More every day, for when someone really stands out.' },
   { icon: 'eye-off-outline' as const, title: 'Incognito', body: 'Only people you Crush on can see you in Discover.' },
   { icon: 'airplane-outline' as const, title: 'Travel mode', body: 'Discover a city before you land.' },
   { icon: 'arrow-undo-outline' as const, title: 'Second look', body: 'Bring back someone you passed on by accident.' },
 ];
 
-const FREE = ['Unlimited Crushes', 'See who’s crushing on you', 'Unlimited messages', 'Moments', 'Verification', 'Every safety tool'];
+const FREE = ['Unlimited Crushes', 'See who’s crushing on you', 'Unlimited Whispers', 'Moments', 'Verification', 'Every safety tool'];
 
 export function PlusScreen({ navigation, route }: ScreenProps<'Plus'>) {
   const { colors } = useTheme();

@@ -178,7 +178,7 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
   };
 
   return (
-    <Shell step={2} title="Who are you?" subtitle="The basics. Only your first name and age show on your profile." onBack={() => navigation.goBack()} onNext={next} loading={saving}>
+    <Shell step={2} title="Who are you?" subtitle="The basics. Only your first name and age show on your Space." onBack={() => navigation.goBack()} onNext={next} loading={saving}>
       <View style={{ gap: space.lg }}>
         <Input label="First name" value={name} onChangeText={setName} placeholder="Your first name" autoComplete="given-name" textContentType="givenName" maxLength={30} error={errors.name} />
         <View style={{ gap: 8 }}>
@@ -337,7 +337,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
       await updatePrivacy.mutateAsync({ showOnline, discoverable });
       await completeOnboarding();
       await refresh(); // flips the navigator to the main app
-      toast({ kind: 'success', title: 'Welcome to Crushly', message: 'Your profile is live. Find someone worth knowing.' });
+      toast({ kind: 'success', title: 'Welcome to Crushly', message: 'Your Space is live. Find someone worth knowing.' });
     } catch (e) {
       setFinishing(false);
       toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });

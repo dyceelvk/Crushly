@@ -38,7 +38,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       <Header title="Settings" back />
       <Group title="Account">
         <ListRow title="Account & security" subtitle={me?.email} icon="person-circle-outline" onPress={() => navigation.navigate('Account')} />
-        <ListRow title="Edit profile" icon="create-outline" onPress={() => navigation.navigate('EditProfile')} />
+        <ListRow title="Edit Space" icon="create-outline" onPress={() => navigation.navigate('EditProfile')} />
         <ListRow
           title="Verification"
           value={{ verified: 'Verified', pending: 'In review', rejected: 'Try again', none: 'Not verified' }[me?.verification.status ?? 'none']}
@@ -55,12 +55,12 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       </Group>
 
       <Group title="Safety">
-        <ListRow title="Safety center" subtitle="Block, report, and stay in control" icon="shield-outline" iconTone="success" onPress={() => navigation.navigate('Safety')} />
-        <ListRow title="Blocked members" icon="ban-outline" onPress={() => navigation.navigate('BlockedUsers')} last />
+        <ListRow title="Safety center" subtitle="Cut off, flag, and stay in control" icon="shield-outline" iconTone="success" onPress={() => navigation.navigate('Safety')} />
+        <ListRow title="People you’ve cut off" icon="ban-outline" onPress={() => navigation.navigate('BlockedUsers')} last />
       </Group>
 
       <Group title="App">
-        <ListRow title="Notifications" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
+        <ListRow title="Crush Alerts" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} last />
       </Group>
 
@@ -86,7 +86,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       <ConfirmSheet
         visible={confirmOut}
         title="Sign out of Crushly?"
-        message="Your profile stays exactly as it is. Sign back in anytime."
+        message="Your Space stays exactly as it is. Sign back in anytime."
         confirmLabel="Sign out"
         loading={busy}
         onConfirm={async () => {
@@ -146,7 +146,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
       qc.setQueryData(keys.me, m);
       qc.invalidateQueries({ queryKey: keys.discover });
       setConfirmPause(false);
-      toast({ kind: 'success', title: m.status === 'paused' ? 'Profile hidden' : 'You’re visible again', message: m.status === 'paused' ? 'You won’t appear in Discover. Your chats stay open.' : undefined });
+      toast({ kind: 'success', title: m.status === 'paused' ? 'Space hidden' : 'You’re visible again', message: m.status === 'paused' ? 'You won’t appear in Discover. Your Whispers stay open.' : undefined });
     },
     onError: (e) => toast({ kind: 'error', title: 'Not updated', message: (e as Error).message }),
   });
@@ -178,16 +178,16 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
         <ListRow title="Change password" icon="key-outline" onPress={() => setSheet('password')} />
         <ListRow title="Sign out of other devices" icon="phone-portrait-outline" onPress={() => setConfirmRevoke(true)} last />
       </Group>
-      <Group title="Visibility" footer="Hiding your profile takes you out of Discover. Your Connections and conversations stay.">
+      <Group title="Visibility" footer="Hiding your Space takes you out of Discover. Your Connections and Whispers stay.">
         <ListRow
-          title="Hide my profile"
+          title="Hide my Space"
           icon="moon-outline"
           toggle={{ value: paused, onChange: (v) => (v ? setConfirmPause(true) : status.mutate('active')) }}
           last
         />
       </Group>
       <Group title="Danger zone">
-        <ListRow title="Delete account" subtitle="Permanently removes your profile, photos and messages" icon="trash-outline" destructive onPress={() => setSheet('delete')} last />
+        <ListRow title="Delete account" subtitle="Permanently removes your Space, photos and Whispers" icon="trash-outline" destructive onPress={() => setSheet('delete')} last />
       </Group>
       <Txt variant="caption" color="textMuted">
         Member since {new Date(me.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
@@ -219,12 +219,12 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
         visible={sheet === 'delete'}
         onClose={close}
         title="Delete your account?"
-        subtitle="This can’t be undone. Your profile, photos, Moments, Crushes and messages will be permanently deleted."
+        subtitle="This can’t be undone. Your Space, photos, Moments, Crushes and Whispers will be permanently deleted."
         footer={<Button title="Delete permanently" variant="danger" loading={remove.isPending} disabled={!current} onPress={() => remove.mutate()} />}
       >
         <View style={{ gap: space.md }}>
           <View style={{ padding: space.md, borderRadius: radius.md, backgroundColor: colors.goldSoft }}>
-            <Txt variant="small">Just need a break? You can hide your profile instead and come back anytime.</Txt>
+            <Txt variant="small">Just need a break? You can hide your Space instead and come back anytime.</Txt>
           </View>
           <Input label="Enter your password to confirm" value={current} onChangeText={setCurrent} secureTextEntry error={error} />
         </View>
@@ -232,9 +232,9 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
 
       <ConfirmSheet
         visible={confirmPause}
-        title="Hide your profile?"
+        title="Hide your Space?"
         message="You won’t appear in Discover and people can’t Crush on you. Your existing conversations stay open."
-        confirmLabel="Hide profile"
+        confirmLabel="Hide Space"
         loading={status.isPending}
         onConfirm={() => status.mutate('paused')}
         onCancel={() => setConfirmPause(false)}
@@ -264,10 +264,10 @@ export function NotificationSettingsScreen() {
     update.mutate({ [k]: v }, { onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
   return (
     <Screen>
-      <Header title="Notifications" back />
+      <Header title="Crush Alerts" back />
       <Group footer="These control your in-app notification center. Push notifications arrive in a future update.">
-        <ListRow title="Messages" subtitle="New messages from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
-        <ListRow title="Crushes" subtitle="Crushes, Deep Crushes and Mutual Crushes" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
+        <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
+        <ListRow title="Crushes" subtitle="Crushes, Big Crushes and Clicks" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
         <ListRow title="Moments" subtitle="Replies and reactions to your Moments" icon="aperture-outline" toggle={{ value: n.moments, onChange: set('moments') }} />
         <ListRow title="Discoveries" subtitle="Occasional suggestions of people worth knowing" icon="compass-outline" toggle={{ value: n.recommendations, onChange: set('recommendations') }} last />
       </Group>
@@ -323,19 +323,19 @@ export function BlockedUsersScreen() {
   const [target, setTarget] = useState<{ id: number; name: string } | null>(null);
   return (
     <Screen>
-      <Header title="Blocked members" subtitle="They can’t see you, Crush on you or message you." back />
+      <Header title="People you’ve cut off" subtitle="They can’t see you, Crush on you or Whisper you." back />
       {isLoading ? (
         <LoadingBlock />
       ) : !data?.length ? (
-        <EmptyState icon="ban-outline" title="No one blocked" message="If someone makes you uncomfortable, you can block them from their profile or your chat." />
+        <EmptyState icon="ban-outline" title="You haven’t cut anyone off" message="If someone makes you uncomfortable, you can cut them off from their Space or your Whisper." />
       ) : (
         <Group>
           {data.map((b, i) => (
             <ListRow
               key={b.id}
               title={b.name}
-              subtitle={`Blocked ${timeAgoLong(b.blockedAt)}`}
-              trailing={<Button title="Unblock" size="sm" variant="secondary" onPress={() => setTarget(b)} />}
+              subtitle={`Cut off ${timeAgoLong(b.blockedAt)}`}
+              trailing={<Button title="Let back in" size="sm" variant="secondary" onPress={() => setTarget(b)} />}
               leading={<Avatar uri={b.photo} name={b.name} size={40} />}
               last={i === data.length - 1}
             />
@@ -344,18 +344,18 @@ export function BlockedUsersScreen() {
       )}
       <ConfirmSheet
         visible={!!target}
-        title={`Unblock ${target?.name}?`}
+        title={`Let ${target?.name} back in?`}
         message="They may see you in Discover again. Your previous Crushes and conversation won’t come back."
-        confirmLabel="Unblock"
+        confirmLabel="Let back in"
         loading={unblock.isPending}
         onConfirm={() =>
           target &&
           unblock.mutate(target.id, {
             onSuccess: () => {
-              toast({ kind: 'success', title: `${target.name} unblocked` });
+              toast({ kind: 'success', title: `${target.name} is back in` });
               setTarget(null);
             },
-            onError: (e) => toast({ kind: 'error', title: 'Couldn’t unblock', message: (e as Error).message }),
+            onError: (e) => toast({ kind: 'error', title: 'Couldn’t let them back in', message: (e as Error).message }),
           })
         }
         onCancel={() => setTarget(null)}

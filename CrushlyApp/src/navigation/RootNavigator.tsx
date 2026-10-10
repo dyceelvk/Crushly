@@ -81,9 +81,9 @@ function MainTabs() {
       <Tabs.Navigator tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false, lazy: true }}>
         <Tabs.Screen name="Discover" component={DiscoverScreen} />
         <Tabs.Screen name="Crushes" component={CrushesScreen} />
-        <Tabs.Screen name="Messages" component={MessagesScreen} />
+        <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Moments" component={MomentsScreen} />
-        <Tabs.Screen name="Profile" component={ProfileTabScreen} />
+        <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>
     </>
   );

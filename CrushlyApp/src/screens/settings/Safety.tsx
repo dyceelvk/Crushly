@@ -24,9 +24,9 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
   const discoverable = me?.privacy.discoverable ?? true;
 
   const tools: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
-    { icon: 'ban-outline', title: 'Block', body: 'Open any profile or chat, tap ··· and choose Block. They’re never told.' },
-    { icon: 'flag-outline', title: 'Report', body: 'Same menu. Reports are confidential and reviewed by a person.' },
-    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends the Mutual Crush and closes your conversation.' },
+    { icon: 'ban-outline', title: 'Cut Off', body: 'Open any Space or Whisper, tap ··· and choose Cut Off. They’re never told.' },
+    { icon: 'flag-outline', title: 'Flag', body: 'Same menu. Flags are confidential and reviewed by a person.' },
+    { icon: 'heart-dislike-outline', title: 'Unclick', body: 'Ends your Click and closes your Whisper.' },
   ];
 
   return (
@@ -63,14 +63,14 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
       <Group title="Quick controls">
         <ListRow
           title="Show me in Discover"
-          subtitle={discoverable ? 'People nearby can find you' : 'Hidden. Crushes you send still arrive.'}
+          subtitle={discoverable ? 'People Around can find you' : 'Hidden. Crushes you send still arrive.'}
           icon="eye-outline"
           toggle={{
             value: discoverable,
             onChange: (v) => update.mutate({ discoverable: v }, { onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) }),
           }}
         />
-        <ListRow title="Blocked members" icon="ban-outline" onPress={() => navigation.navigate('BlockedUsers')} />
+        <ListRow title="People you’ve cut off" icon="ban-outline" onPress={() => navigation.navigate('BlockedUsers')} />
         <ListRow title="Privacy & visibility" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />
         <ListRow title="Account security" subtitle="Password, other devices" icon="key-outline" onPress={() => navigation.navigate('Account')} last />
       </Group>
@@ -115,7 +115,7 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
     <Screen>
       <Header title="Privacy & visibility" back />
 
-      <Group title="Discovery" footer="When hidden, you won’t appear in Discover, but people you’ve crushed on can still see your profile.">
+      <Group title="Discovery" footer="When hidden, you won’t appear in Discover, but people you’ve crushed on can still see your Space.">
         <ListRow title="Show me in Discover" icon="compass-outline" toggle={{ value: p.discoverable, onChange: (v) => set({ discoverable: v }) }} />
         <ListRow title="Incognito" subtitle="Only people you Crush on can see you" icon="glasses-outline" iconTone="gold" value="Plus" toggle={{ value: p.incognito, onChange: (v) => set({ incognito: v }) }} last />
       </Group>
@@ -129,7 +129,7 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
       </Group>
 
       <Choice
-        title="Who can see my full profile"
+        title="Who can see my full Space"
         value={p.profileVisibility}
         onChange={(v) => set({ profileVisibility: v })}
         options={[
@@ -139,7 +139,7 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         footer={p.profileVisibility === 'connections' ? 'Others see your main photo and name only until you’re connected.' : undefined}
       />
       <Choice
-        title="Who can message me"
+        title="Who can Whisper me"
         value={p.whoCanMessage}
         onChange={(v) => set({ whoCanMessage: v })}
         options={[
@@ -147,7 +147,7 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
           { value: 'crushes', label: 'My crushes' },
           { value: 'everyone', label: 'Everyone' },
         ]}
-        footer={{ mutual: 'Only people you both crushed on.', crushes: 'People you’ve crushed on can message you first.', everyone: 'Anyone who can see your profile can start a chat.' }[p.whoCanMessage]}
+        footer={{ mutual: 'Only people you both crushed on.', crushes: 'People you’ve crushed on can Whisper you first.', everyone: 'Anyone who can see your Space can start a Whisper.' }[p.whoCanMessage]}
       />
       <Choice
         title="Who can Crush on me"

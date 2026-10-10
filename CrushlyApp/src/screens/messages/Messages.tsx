@@ -70,13 +70,13 @@ export function MessagesScreen() {
         Messages
       </Txt>
       <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-        Conversations with your Connections.
+        Whispers with your Connections.
       </Txt>
 
       <Input
         icon="search"
-        placeholder="Search conversations..."
-        accessibilityLabel="Search conversations"
+        placeholder="Find Whispers..."
+        accessibilityLabel="Find Whispers"
         value={query}
         onChangeText={setQuery}
         autoCorrect={false}
@@ -105,7 +105,7 @@ export function MessagesScreen() {
 
       {filteredConvs.length ? (
         <Txt variant="label" color="textSecondary" style={{ marginTop: space.xl, marginBottom: space.xs }}>
-          Conversations
+          Whispers
         </Txt>
       ) : null}
       {isLoading
@@ -144,13 +144,13 @@ export function MessagesScreen() {
             <View style={{ marginTop: space.xl, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
               <Txt variant="subheading">Make the first move</Txt>
               <Txt variant="small" color="textSecondary" style={{ marginTop: 4 }}>
-                Tap a Mutual Crush above to say hello. A question about their profile beats “hey” every time.
+                Tap a Click above to say hello. A question about their Space beats “hey” every time.
               </Txt>
             </View>
           ) : (
             <EmptyState
               icon="chatbubbles-outline"
-              title="No conversations yet."
+              title="No Whispers yet."
               message="Someone interesting is waiting to hear from you."
               action={{ label: 'Start discovering', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
             />

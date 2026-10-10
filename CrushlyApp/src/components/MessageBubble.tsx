@@ -154,13 +154,13 @@ function BareContent({ m }: { m: Message }) {
             {m.meta.verified ? <VerifiedBadge size={14} /> : null}
           </View>
           <Txt variant="caption" color="textMuted">
-            Shared profile
+            Shared Space
           </Txt>
         </View>
       </View>
       <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: 10, alignItems: 'center' }}>
         <Txt variant="smallStrong" color="gold">
-          View profile
+          View Space
         </Txt>
       </View>
     </View>
@@ -257,7 +257,7 @@ function VoiceNote({ m, ink }: { m: Message; ink: string }) {
         onPress={toggle}
         disabled={m.pending}
         accessibilityRole="button"
-        accessibilityLabel={status.playing ? 'Pause voice message' : `Play voice message, ${durationLabel(total)}`}
+        accessibilityLabel={status.playing ? 'Pause voice note' : `Play voice note, ${durationLabel(total)}`}
         hitSlop={8}
         style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: m.mine ? 'rgba(255,255,255,0.18)' : colors.goldSoft, alignItems: 'center', justifyContent: 'center' }}
       >
@@ -286,7 +286,7 @@ function describe(m: Message): string {
     case 'photo':
       return `Photo${m.body ? `, ${m.body}` : ''}`;
     case 'voice':
-      return `Voice message, ${durationLabel(Number(m.meta.duration) || 0)}`;
+      return `Voice note, ${durationLabel(Number(m.meta.duration) || 0)}`;
     case 'video':
       return `Video note, ${durationLabel(Number(m.meta.duration) || 0)}`;
     case 'call':
@@ -294,7 +294,7 @@ function describe(m: Message): string {
     case 'sticker':
       return `${STICKERS.find((s) => s.key === m.meta.sticker)?.label ?? ''} sticker`;
     case 'profile':
-      return `Shared ${m.meta.name}'s profile`;
+      return `Shared ${m.meta.name}'s Space`;
     case 'moment_reply':
       return `Reply to Moment: ${m.body}`;
     default:

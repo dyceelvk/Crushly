@@ -47,7 +47,7 @@ export function MutualCrushScreen({ navigation, route }: ScreenProps<'MutualCrus
       navigation.replace('Chat', { conversationId: conv.id });
     } catch (e) {
       setBusy(false);
-      toast({ kind: 'error', title: 'Couldn’t open chat', message: (e as Error).message });
+      toast({ kind: 'error', title: 'Couldn’t open your Whisper', message: (e as Error).message });
     }
   };
 

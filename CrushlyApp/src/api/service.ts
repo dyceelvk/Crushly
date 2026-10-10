@@ -290,7 +290,7 @@ export async function deletePhoto(photoId: number): Promise<Me> {
   ) as { id: number; url: string };
   const profile = unwrap(await supabase.from('profiles').select('onboarded').eq('id', id).single()) as { onboarded: boolean };
   const { count } = await supabase.from('photos').select('id', { count: 'exact', head: true }).eq('user_id', id);
-  if (profile.onboarded && (count ?? 0) <= 1) throw new ApiError(400, 'Keep at least one photo on your profile.');
+  if (profile.onboarded && (count ?? 0) <= 1) throw new ApiError(400, 'Keep at least one photo on your Space.');
   unwrap(await supabase.from('photos').delete().eq('id', photo.id));
   await removeMediaFile(photo.url);
   return getMe();
@@ -341,7 +341,7 @@ export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
   if (patch.incognito) {
     throw new ApiError(
       402,
-      'Incognito is part of Crushly Plus, which isn’t available yet. Hide your profile from Discover instead — it’s free.',
+      'Incognito is part of Crushly Plus, which isn’t available yet. Hide your Space from Discover instead — it’s free.',
       'plus_required',
     );
   }
@@ -516,7 +516,7 @@ export async function discover(): Promise<DiscoverPage> {
 
 export async function loadProfile(id: number): Promise<FullProfile> {
   const profile = await rpc<FullProfile | null>('load_profile', { p_target_id: id });
-  if (!profile) throw new ApiError(404, 'This profile isn’t available.');
+  if (!profile) throw new ApiError(404, 'This Space isn’t available.');
   return profile;
 }
 
@@ -607,7 +607,7 @@ export async function sendMessage(conversationId: number, draft: SendDraft): Pro
   let meta: Record<string, unknown> = {};
   let body = '';
   if (draft.kind === 'text') {
-    body = str(draft.body, 'Message', { required: true, max: 2000 });
+    body = str(draft.body, 'Whisper', { required: true, max: 2000 });
   } else if (draft.kind === 'sticker') {
     meta = { sticker: draft.sticker };
   } else if (draft.kind === 'profile') {

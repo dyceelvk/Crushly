@@ -80,7 +80,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top, paddingHorizontal: gutter }}>
         <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} style={{ marginTop: space.sm }} />
-        <ErrorState message={(error as Error)?.message || 'This profile isn’t available.'} onRetry={refetch} />
+        <ErrorState message={(error as Error)?.message || 'This Space isn’t available.'} onRetry={refetch} />
       </View>
     );
   }
@@ -115,7 +115,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
       return;
     }
     if (!p.acceptsCrushes) {
-      toast({ kind: 'info', title: 'Verified members only', message: `${p.name} accepts Crushes from verified members. Verify your profile in a minute.` , onPress: () => navigation.navigate('Verification') });
+      toast({ kind: 'info', title: 'Verified members only', message: `${p.name} accepts Crushes from verified members. Verify your Space in a minute.` , onPress: () => navigation.navigate('Verification') });
       return;
     }
     crushOn(p);
@@ -146,7 +146,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           <View style={{ position: 'absolute', left: gutter, right: gutter, bottom: space.xl }}>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: space.sm, flexWrap: 'wrap' }}>
               {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
-              {p.crush.mutual ? <Pill tone="glass" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Deep Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
+              {p.crush.mutual ? <Pill tone="glass" label="Click" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Txt variant="hero" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1 }}>
@@ -165,7 +165,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           {p.crush.note ? (
             <View style={{ marginTop: space.lg, backgroundColor: colors.goldSoft, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: colors.goldLine }}>
               <Txt variant="label" color="gold">
-                Deep Crush note
+                Big Crush note
               </Txt>
               <Txt variant="accent" style={{ marginTop: 6 }}>
                 “{p.crush.note}”
@@ -267,15 +267,15 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
         <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', maxWidth: contentWidth - gutter * 2, width: '100%', alignSelf: 'center' }}>
           <View style={{ flex: 1 }}>
             {p.crush.mutual ? (
-              <CrushButton onPress={message} label="Message" crushed name={p.name} size={54} />
+              <CrushButton onPress={message} label="Whisper" crushed name={p.name} size={54} />
             ) : (
               <CrushButton onPress={onCrush} crushed={p.crush.sent} loading={pendingId === p.id} name={p.name} size={54} label={p.crush.sent ? 'Crushed' : p.crush.received ? 'Crush back' : 'Crush'} />
             )}
           </View>
           {!p.crush.mutual ? (
-            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Message ${p.name}` : `Messaging ${p.name} needs a Mutual Crush`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
+            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Whispering ${p.name} needs a Click`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
           ) : null}
-          <IconButton icon="share-outline" label={`Share ${p.name}'s profile`} size={54} onPress={() => openActions(member)} />
+          <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />
         </View>
       </View>
     </View>

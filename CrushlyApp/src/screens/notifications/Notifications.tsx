@@ -30,13 +30,13 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
   const name = n.actor?.name ?? 'Someone';
   switch (n.kind) {
     case 'crush':
-      return { title: `${name} crushed on you.` };
+      return { title: `${name} sent you a Crush.` };
     case 'deep_crush':
-      return { title: `${name} sent you a Deep Crush.`, detail: n.body ? `“${n.body}”` : undefined };
+      return { title: `${name} sent you a Big Crush.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'mutual':
-      return { title: `You and ${name} have a Mutual Crush.`, detail: 'Say hello while the feeling’s fresh.' };
+      return { title: `You Clicked with ${name}.`, detail: 'Say hello while the feeling’s fresh.' };
     case 'message':
-      return { title: `${name} sent you a message.`, detail: n.body || undefined };
+      return { title: `${name} sent you a Whisper.`, detail: n.body || undefined };
     case 'moment_reply':
       return { title: `${name} replied to your Moment.`, detail: n.body || undefined };
     case 'moment_reaction': {
@@ -44,7 +44,7 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
       return { title: `${name} reacted to your Moment${emoji ? ` ${emoji}` : ''}.` };
     }
     case 'verified':
-      return { title: 'Your profile is verified.', detail: 'Your check badge is now visible to others.' };
+      return { title: 'Your Space is verified.', detail: 'Your check badge is now visible on your Space.' };
     case 'verification_rejected':
       return { title: 'Your verification needs another try.', detail: n.body || 'Make sure your face is clearly visible and matches the pose.' };
     default:
@@ -92,9 +92,9 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm }}>
           <IconButton icon="chevron-back" variant="plain" label="Go back" onPress={() => navigation.goBack()} />
           <Txt variant="heading" style={{ flex: 1 }} accessibilityRole="header">
-            Notifications
+            Crush Alerts
           </Txt>
-          <IconButton icon="settings-outline" variant="plain" label="Notification settings" onPress={() => navigation.navigate('NotificationSettings')} />
+          <IconButton icon="settings-outline" variant="plain" label="Crush Alert settings" onPress={() => navigation.navigate('NotificationSettings')} />
         </View>
       </View>
       {isLoading ? (
@@ -150,7 +150,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
               <EmptyState
                 icon="notifications-outline"
                 title="All quiet for now"
-                message="Crushes, Mutual Crushes and messages will show up here."
+                message="Crushes, Clicks and Whispers will show up here."
                 action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
               />
             )

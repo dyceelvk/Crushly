@@ -27,7 +27,7 @@ export function ProfileTabScreen() {
   const { contentWidth, gutter } = useLayout();
   const { data: me, refetch, isRefetching } = useMe();
 
-  if (!me) return <LoadingBlock label="Loading your profile" />;
+  if (!me) return <LoadingBlock label="Loading your Space" />;
   const p = me.profile;
   const v = me.verification.status;
   const pct = me.completion.percent;
@@ -41,7 +41,7 @@ export function ProfileTabScreen() {
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Txt variant="display" accessibilityRole="header">
-          Profile
+          Space
         </Txt>
         <IconButton icon="settings-outline" label="Settings" onPress={() => navigation.navigate('Settings')} />
       </View>
@@ -61,13 +61,13 @@ export function ProfileTabScreen() {
         {me.status === 'paused' ? (
           <View style={{ marginTop: space.sm, backgroundColor: colors.goldSoft, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
             <Txt variant="smallStrong" color="gold">
-              Profile hidden from Discover
+              Space hidden from Discover
             </Txt>
           </View>
         ) : null}
         <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg, width: '100%', maxWidth: 380 }}>
           <View style={{ flex: 1 }}>
-            <Button title="Edit profile" size="md" variant="secondary" onPress={() => navigation.navigate('EditProfile')} />
+            <Button title="Edit Space" size="md" variant="secondary" onPress={() => navigation.navigate('EditProfile')} />
           </View>
           <View style={{ flex: 1 }}>
             <Button title="New Moment" size="md" variant="outline" onPress={() => navigation.navigate('MomentComposer')} />
@@ -78,12 +78,12 @@ export function ProfileTabScreen() {
       {pct < 100 ? (
         <View style={{ marginTop: space.xl, backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <Txt variant="subheading">Profile {pct}% complete</Txt>
+            <Txt variant="subheading">Space {pct}% complete</Txt>
             <Txt variant="smallStrong" color="gold" onPress={() => navigation.navigate('EditProfile')} accessibilityRole="link">
               Finish
             </Txt>
           </View>
-          <ProgressBar value={pct / 100} style={{ marginTop: space.sm }} label={`Profile ${pct}% complete`} />
+          <ProgressBar value={pct / 100} style={{ marginTop: space.sm }} label={`Space ${pct}% complete`} />
           <View style={{ marginTop: space.md, gap: 6 }}>
             {me.completion.missing.slice(0, 3).map((k) => (
               <View key={k} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -101,7 +101,7 @@ export function ProfileTabScreen() {
         <Group style={{ marginTop: space.lg }}>
           <ListRow
             title={v === 'pending' ? 'Verification in review' : v === 'rejected' ? 'Verification needs another try' : 'Get verified'}
-            subtitle={v === 'pending' ? 'We’ll let you know as soon as it’s done.' : 'Make your profile more trustworthy.'}
+            subtitle={v === 'pending' ? 'We’ll let you know as soon as it’s done.' : 'Make your Space more trustworthy.'}
             icon="shield-checkmark-outline"
             iconTone={v === 'pending' ? 'neutral' : 'gold'}
             onPress={() => navigation.navigate('Verification')}
@@ -121,7 +121,7 @@ export function ProfileTabScreen() {
           <View style={{ flex: 1 }}>
             <Txt variant="subheading">Crushly Plus</Txt>
             <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-              {me.plus.interested ? 'You’re on the early access list.' : 'More Deep Crushes, Incognito, and travel mode.'}
+              {me.plus.interested ? 'You’re on the early access list.' : 'More Big Crushes, Incognito, and travel mode.'}
             </Txt>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.gold} />
@@ -132,7 +132,7 @@ export function ProfileTabScreen() {
         <ListRow title="Discover preferences" icon="options-outline" onPress={() => navigation.navigate('Filters')} />
         <ListRow title="Privacy" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />
         <ListRow title="Safety center" icon="shield-outline" iconTone="success" onPress={() => navigation.navigate('Safety')} />
-        <ListRow title="Notifications" icon="notifications-outline" onPress={() => navigation.navigate('Notifications')} />
+        <ListRow title="Crush Alerts" icon="notifications-outline" onPress={() => navigation.navigate('Notifications')} />
         <ListRow title="Settings" icon="settings-outline" onPress={() => navigation.navigate('Settings')} last />
       </Group>
     </ScrollView>

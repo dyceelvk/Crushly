@@ -54,13 +54,13 @@ export const FeatureCard = memo(function FeatureCard({ profile, onOpen, onCrush,
 
   return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
-      <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Open ${p.name}'s profile`} accessibilityHint="Shows photos, interests and more">
+      <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Open ${p.name}'s Space`} accessibilityHint="Shows photos, interests and more">
         <View style={{ height: photoHeight }}>
           <Photo uri={p.photos[0]?.url} style={{ width: '100%', height: '100%' }} alt={`Photo of ${p.name}`} priority="high" />
           <LinearGradient colors={colors.photoScrim} locations={[0.45, 0.72, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '62%' }} />
           <View style={{ position: 'absolute', top: space.md, left: space.md, right: space.md, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
-            {p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Deep Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
+            {p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
             <View style={{ flex: 1 }} />
             <IconButton icon="ellipsis-horizontal" variant="glass" size={40} label={`More options for ${p.name}`} onPress={onMore} />
           </View>
@@ -116,7 +116,7 @@ export const FeatureCard = memo(function FeatureCard({ profile, onOpen, onCrush,
           </View>
           <IconButton
             icon="sparkles"
-            label={`Send ${p.name} a Deep Crush${deepLeft != null ? `. ${deepLeft} left today` : ''}`}
+            label={`Send ${p.name} a Big Crush${deepLeft != null ? `. ${deepLeft} left today` : ''}`}
             size={56}
             iconSize={22}
             variant="gold"
@@ -143,14 +143,14 @@ export const ProfileTile = memo(function ProfileTile({ profile: p, width, onOpen
   const h = width * 1.3;
   return (
     <View style={{ width }}>
-      <PressableScale onPress={onOpen} accessibilityLabel={`${p.name}${p.age ? `, ${p.age}` : ''}${p.verified ? ', verified' : ''}${p.distance ? `, ${p.distance}` : ''}`} accessibilityHint="Opens profile" pressedScale={0.98}>
+      <PressableScale onPress={onOpen} accessibilityLabel={`${p.name}${p.age ? `, ${p.age}` : ''}${p.verified ? ', verified' : ''}${p.distance ? `, ${p.distance}` : ''}`} accessibilityHint="Opens Space" pressedScale={0.98}>
         <View style={{ height: h, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
           <Photo uri={p.photos[0]?.url} style={{ width: '100%', height: '100%' }} />
           <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.7, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '55%' }} />
           {p.online ? <OnlineDot size={11} style={{ position: 'absolute', top: 12, left: 12, borderColor: 'rgba(0,0,0,0.4)' }} /> : null}
           {p.crush.receivedDeep ? (
             <View style={{ position: 'absolute', top: 10, right: 10 }}>
-              <Pill tone="glass" label="Deep" icon={<Ionicons name="sparkles" size={10} color={colors.goldBright} />} />
+              <Pill tone="glass" label="Big" icon={<Ionicons name="sparkles" size={10} color={colors.goldBright} />} />
             </View>
           ) : null}
           <View style={{ position: 'absolute', left: 12, right: onCrush ? 56 : 12, bottom: 12 }}>

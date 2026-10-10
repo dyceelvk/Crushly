@@ -117,7 +117,7 @@ export function MomentsScreen() {
         <EmptyState
           icon="aperture-outline"
           title="It’s quiet right now"
-          message="No Moments nearby at the moment. Be the first — a Moment is a great way to get noticed."
+          message="No Moments Around right now. Be the first — a Moment is a great way to get noticed."
           action={{ label: 'Share a Moment', onPress: () => navigation.navigate('MomentComposer') }}
         />
       ) : (
