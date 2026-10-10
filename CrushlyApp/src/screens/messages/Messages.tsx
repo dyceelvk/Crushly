@@ -152,7 +152,7 @@ export function MessagesScreen() {
               icon="chatbubbles-outline"
               title="No Whispers yet."
               message="Someone interesting is waiting to hear from you."
-              action={{ label: 'Start discovering', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
+              action={{ label: 'Start discovering', onPress: () => navigation.navigate('Discover') }}
             />
           )
         }

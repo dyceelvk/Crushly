@@ -2,8 +2,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 export type TabParamList = {
-  Flow: undefined;
-  Discover: undefined;
+  Flows: undefined;
   Crushes: { tab?: 'incoming' | 'outgoing' | 'mutual' } | undefined;
   Messages: undefined;
   Moments: undefined;
@@ -27,6 +26,8 @@ export type RootStackParamList = {
   UserProfile: { id: number };
   Chat: { conversationId: number };
   MutualCrush: { userId: number; name: string; photo?: string | null };
+  Discover: undefined;
+  Search: undefined;
   Filters: undefined;
   Notifications: undefined;
   Settings: undefined;
@@ -34,6 +35,7 @@ export type RootStackParamList = {
   Verification: undefined;
   Plus: { feature?: string } | undefined;
   MomentViewer: { userId: number; mine?: boolean };
+  VibeViewer: { id: number };
   Circles: undefined;
   Circle: { circleId: number };
   CloseOnes: undefined;

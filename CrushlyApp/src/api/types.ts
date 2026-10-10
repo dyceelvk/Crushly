@@ -296,3 +296,68 @@ export type Badges = {
 export type BlockedMember = { id: number; name: string; photo: string | null; blockedAt: number };
 
 export type CrushResult = { mutual: boolean; isNew: boolean; profile: Profile | null };
+
+/* ------------------------------------------------------------------ vibes */
+
+/** The author of a Vibe, as the feed returns them. */
+export type VibeAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
+
+/**
+ * A Vibe: a short clip with a fortnight to live.
+ *
+ * `seen` is whether you have opened it; `viewCount` is only ever filled in for
+ * your own, because who watched yours is yours to know and nobody else's.
+ */
+export type Vibe = {
+  id: number;
+  body: string;
+  mediaUrl: string;
+  coverUrl: string | null;
+  durationMs: number | null;
+  audience: 'connections' | 'everyone';
+  createdAt: number;
+  expiresAt: number;
+  author: VibeAuthor;
+  mine: boolean;
+  seen: boolean;
+  viewCount: number | null;
+};
+
+/* ----------------------------------------------------------------- search */
+
+export type SearchPost = {
+  id: number;
+  body: string;
+  mediaUrl: string | null;
+  audience: 'connections' | 'everyone';
+  createdAt: number;
+  author: VibeAuthor;
+};
+
+export type SearchVibe = {
+  id: number;
+  body: string;
+  mediaUrl: string;
+  coverUrl: string | null;
+  durationMs: number | null;
+  createdAt: number;
+  expiresAt: number;
+  author: VibeAuthor;
+};
+
+export type SearchMoment = {
+  id: number;
+  kind: 'text' | 'photo';
+  body: string;
+  mediaUrl: string | null;
+  createdAt: number;
+  author: VibeAuthor;
+};
+
+/** What the search box returns: members, and what they have shared. */
+export type SearchResults = {
+  members: Profile[];
+  posts: SearchPost[];
+  vibes: SearchVibe[];
+  moments: SearchMoment[];
+};

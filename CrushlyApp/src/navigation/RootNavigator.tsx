@@ -21,6 +21,7 @@ import {
   OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
 } from '../screens/onboarding/Onboarding';
 import { DiscoverScreen } from '../screens/discover/Discover';
+import { SearchScreen } from '../screens/discover/Search';
 import { FlowScreen } from '../screens/flow/Flow';
 import { FiltersScreen } from '../screens/discover/Filters';
 import { CrushesScreen } from '../screens/crushes/Crushes';
@@ -29,6 +30,7 @@ import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
 import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
+import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
@@ -83,8 +85,7 @@ function MainTabs() {
     <>
       <LiveNotifications />
       <Tabs.Navigator tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false, lazy: true }}>
-        <Tabs.Screen name="Flow" component={FlowScreen} />
-        <Tabs.Screen name="Discover" component={DiscoverScreen} />
+        <Tabs.Screen name="Flows" component={FlowScreen} />
         <Tabs.Screen name="Crushes" component={CrushesScreen} />
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Moments" component={MomentsScreen} />
@@ -134,7 +135,10 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
       ) : (
         <>
           <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade' }} />
+          <Stack.Screen name="VibeViewer" component={VibeViewerScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+          <Stack.Screen name="Discover" component={DiscoverScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+          <Stack.Screen name="Search" component={SearchScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="Circles" component={CirclesScreen} />
           <Stack.Screen name="Circle" component={CircleScreen} />
           <Stack.Screen name="CloseOnes" component={CloseOnesScreen} />

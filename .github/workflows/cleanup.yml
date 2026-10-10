@@ -45,11 +45,14 @@ jobs:
 
           # -v ON_ERROR_STOP=1 surfaces SQL errors instead of hiding them behind
           # psql's default "keep going" behaviour.
-          deleted=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tAc "select public.cleanup_expired_moments(500);" | tr -d '[:space:]')
-          echo "::notice::Deleted $deleted expired Moment(s)."
+          # One call sweeps both: Moments (a day) and Vibes (a fortnight), so a
+          # new kind of content is never left to rot because nobody remembered
+          # to schedule it.
+          deleted=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tAc "select public.cleanup_expired_media();" | tr -d '[:space:]')
+          echo "::notice::Swept expired content: $deleted"
 
-          remaining=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tAc "select count(*) from public.moments where expires_at <= public.now_ms();" | tr -d '[:space:]')
-          echo "::notice::$remaining expired Moment(s) still pending (carried to the next run)."
+          remaining=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tAc "select (select count(*) from public.moments where expires_at <= public.now_ms()) + (select count(*) from public.vibes where expires_at <= public.now_ms());" | tr -d '[:space:]')
+          echo "::notice::$remaining expired item(s) still pending (carried to the next run)."
 
           failed=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tAc "select count(*) from public.media_cleanup_log where not ok;" | tr -d '[:space:]')
           if [ "$failed" != "0" ]; then

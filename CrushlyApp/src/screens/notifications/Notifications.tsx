@@ -151,7 +151,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
                 icon="notifications-outline"
                 title="All quiet for now"
                 message="Crushes, Mutual Crushes and Whispers will show up here."
-                action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
+                action={{ label: 'Discover people', onPress: () => navigation.navigate('Discover') }}
               />
             )
           }

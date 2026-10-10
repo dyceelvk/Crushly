@@ -81,7 +81,7 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
         <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
         <ErrorState
           message={space_q.error instanceof Error ? space_q.error.message : 'This Circle isn’t available.'}
-          onRetry={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Flow' }))}
+          onRetry={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Flows' }))}
         />
       </View>
     );
@@ -341,7 +341,7 @@ function RoomPosts({ circleId }: { circleId: number }) {
         )}
         <Button title="Share with the Circle" size="md" variant="primary" onPress={submit} loading={create.isPending} disabled={!body.trim() && !photo} />
         <Txt variant="caption" color="textMuted">
-          Posts here stay in this Circle — they don’t appear in your Flow.
+          Posts here stay in this Circle — they don’t appear in your Flows.
         </Txt>
       </View>
 

@@ -27,9 +27,9 @@ import type { RootStackParamList } from '../../navigation/types';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * Flow — what people are sharing.
+ * Flows — what people are sharing.
  *
- * Home and Flow are the same screen, because they are the same idea: the place
+ * Home and Flows are the same screen, because they are the same idea: the place
  * you land, where posts live until their author removes them. Moments are the
  * opposite — twenty-four hours, then gone.
  *
@@ -66,13 +66,16 @@ export function FlowScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
             <Txt variant="display" accessibilityRole="header">
-              Flow
+              Flows
             </Txt>
             <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
               What people are sharing. Posts stay until they’re removed.
             </Txt>
           </View>
-          <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
+            <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
+          </View>
         </View>
 
         <Pressable
@@ -92,11 +95,40 @@ export function FlowScreen() {
           <Ionicons name="create-outline" size={18} color={colors.gold} />
         </Pressable>
 
+        {/* Discover is not a tab: it is one door, here, that opens into a
+            single screen holding People, Moments and Vibes as sections. */}
+        <Pressable
+          onPress={() => navigation.navigate('Discover')}
+          accessibilityRole="button"
+          accessibilityLabel="Discover. People nearby, Moments and Vibes"
+          style={{
+            marginTop: space.lg,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            backgroundColor: colors.goldSoft,
+            borderRadius: radius.lg,
+            borderWidth: 1,
+            borderColor: colors.gold,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+          }}
+        >
+          <Ionicons name="compass-outline" size={18} color={colors.gold} />
+          <Txt variant="bodyStrong" style={{ flex: 1 }}>
+            Discover
+          </Txt>
+          <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
+            People nearby, Moments and Vibes
+          </Txt>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </Pressable>
+
         <View style={{ marginTop: space.xl, gap: space.md }}>
           {flow.isLoading ? (
             <Skeleton style={{ height: 120 }} />
           ) : flow.isError ? (
-            <ErrorState message={flow.error instanceof Error ? flow.error.message : 'Your Flow didn’t load.'} onRetry={flow.refresh} />
+            <ErrorState message={flow.error instanceof Error ? flow.error.message : 'Your Flows didn’t load.'} onRetry={flow.refresh} />
           ) : flow.posts.length ? (
             <>
               {flow.posts.map((p) => (
@@ -107,7 +139,7 @@ export function FlowScreen() {
           ) : (
             <EmptyState
               icon="chatbubbles-outline"
-              title="Your Flow is quiet"
+              title="Your Flows are quiet"
               message="Posts from people you’re connected with show up here. Share something and it will."
               action={{ label: 'Share a post', onPress: () => setComposer(true) }}
             />
@@ -311,7 +343,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
           ) : null}
           <Txt variant="small" color="textMuted">
             {audience === 'circle'
-              ? 'Only the people in that Circle — up to twelve of them. It stays out of your Flow.'
+              ? 'Only the people in that Circle — up to twelve of them. It stays out of your Flows.'
               : audience === 'everyone'
                 ? 'Any signed-in member can read this — including people you haven’t met. Nobody outside Crushly can.'
                 : 'Only the people you’ve Clicked with, and anyone you Click with later.'}

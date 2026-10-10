@@ -24,6 +24,8 @@ export const keys = {
   circleFeed: (id: number) => ['circle-feed', id] as const,
   circleMessages: (id: number) => ['circle-messages', id] as const,
   closeOnes: ['close-ones'] as const,
+  vibes: ['vibes'] as const,
+  search: (q: string) => ['search', q] as const,
   keep: (id: number) => ['keep', id] as const,
 };
 
@@ -54,6 +56,18 @@ export const useConversation = (id: number) =>
 
 export const useMoments = () =>
   useQuery({ queryKey: keys.moments, queryFn: () => service.momentsFeed(), staleTime: 20_000 });
+
+export const useVibes = () =>
+  useQuery({ queryKey: keys.vibes, queryFn: () => service.vibesFeed(), staleTime: 20_000 });
+
+/** Debounced by the caller: only queries once the text is worth asking about. */
+export const useSearch = (query: string) =>
+  useQuery({
+    queryKey: keys.search(query),
+    queryFn: () => service.searchAll(query),
+    enabled: query.trim().length >= 2,
+    staleTime: 15_000,
+  });
 
 export const useNotifications = () =>
   useQuery({
@@ -648,3 +662,12 @@ export function useChat(conversationId: number) {
 }
 
 export type ChatDraft = Parameters<ReturnType<typeof useChat>['send']>[0];
+
+/** Watching someone's Vibe. Never counted for your own. */
+export const useViewVibe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => service.viewVibe(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.vibes }),
+  });
+};

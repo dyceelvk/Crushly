@@ -11,9 +11,9 @@ import { PressableScale } from '../../components/PressableScale';
 import { FeatureCard, ProfileTile } from '../../components/ProfileCard';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { BottomSheet } from '../../components/BottomSheet';
-import { Segmented } from '../../components/Segmented';
 import { Input } from '../../components/Input';
-import { MomentsGrid } from './MomentsGrid';
+import { VibesRow } from './VibesRow';
+import { MomentsRow } from './MomentsRow';
 import { Button } from '../../components/Button';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
@@ -73,9 +73,6 @@ export function DiscoverScreen() {
   const { openActions } = useMemberActions();
   const [deepFor, setDeepFor] = useState<Profile | null>(null);
   const [note, setNote] = useState('');
-  // People is the deck and it stays the default: Discover is for meeting
-  // somebody. Moments is the same people, browsable instead of one at a time.
-  const [tab, setTab] = useState<'people' | 'moments'>('people');
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const feature = items[0];
@@ -131,14 +128,6 @@ export function DiscoverScreen() {
         </View>
       </View>
 
-      <Segmented<'people' | 'moments'>
-        options={[
-          { value: 'people', label: 'People' },
-          { value: 'moments', label: 'Moments' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
       <View style={{ height: space.lg }} />
     </View>
   );
@@ -177,6 +166,27 @@ export function DiscoverScreen() {
         </PressableScale>
       ) : null}
 
+      <VibesRow />
+
+      <MomentsRow />
+
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          marginTop: space.xl,
+          marginBottom: space.sm,
+        }}
+      >
+        <Txt variant="title" accessibilityRole="header">
+          People
+        </Txt>
+        <Txt variant="small" color="textMuted">
+          {data ? `${data.total ?? 0} nearby` : ''}
+        </Txt>
+      </View>
+
       {feature ? (
         <Animated.View style={{ opacity: enter, transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }}>
           <FeatureCard
@@ -197,7 +207,7 @@ export function DiscoverScreen() {
       {rest.length ? (
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: space.xxl, marginBottom: space.md }}>
           <Txt variant="title" accessibilityRole="header">
-            More discoveries
+            More people
           </Txt>
           <Txt variant="small" color="textMuted">
             {Math.max(0, (data?.total ?? 0) - 1)} nearby
@@ -207,7 +217,7 @@ export function DiscoverScreen() {
     </View>
   );
 
-  if (isLoading && tab === 'people') {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top, paddingHorizontal: gutter }}>
         <View style={{ width: '100%', maxWidth: contentWidth - gutter * 2, alignSelf: 'center' }} accessibilityLabel="Loading discoveries" accessibilityRole="progressbar">
@@ -216,14 +226,6 @@ export function DiscoverScreen() {
           <Skeleton style={{ height: 34, width: 200, marginTop: space.md, borderRadius: 999 }} />
           <Skeleton style={{ height: 460, borderRadius: radius.xl, marginTop: space.lg }} />
         </View>
-      </View>
-    );
-  }
-
-  if (tab === 'moments') {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
-        <MomentsGrid header={titleRow} />
       </View>
     );
   }

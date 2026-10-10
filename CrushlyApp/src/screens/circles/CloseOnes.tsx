@@ -116,7 +116,7 @@ export function CloseOnesScreen() {
               icon="bookmark-outline"
               title="Nobody here yet"
               message="Keep someone close from their Space and they’ll show up here. It’s yours alone — they aren’t told, and nobody sees this list."
-              action={{ label: 'Find someone', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
+              action={{ label: 'Find someone', onPress: () => navigation.navigate('Discover') }}
             />
           )}
         </View>

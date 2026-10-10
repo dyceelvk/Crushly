@@ -10,13 +10,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {
-  AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind,
-  CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse,
-  CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post,
-  Preferences, Privacy, ReplyQuote,
-  NotificationSettings, Profile, MomentStyle,
-} from './types';
+import type { AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, MomentStyle, SearchResults, Vibe } from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -937,3 +931,71 @@ export const INTENTIONS: string[] = catalogIntentions.map((i) => i.value);
 export const INTERESTS: string[] = catalogInterests;
 export const LANGUAGES: string[] = catalogLanguages;
 export const RELATIONSHIP_INTENTIONS: string[] = catalogRelationshipIntentions;
+
+/* ------------------------------------------------------------------ vibes */
+
+export async function vibesFeed(): Promise<Vibe[]> {
+  const res = await rpc<{ items: Vibe[] }>('vibes_feed', { p_limit: 60 });
+  return res?.items ?? [];
+}
+
+/** Marks one watched. Only ever counted for somebody else's Vibe. */
+export async function viewVibe(id: number): Promise<void> {
+  await rpc<boolean>('view_vibe', { p_vibe_id: id });
+}
+
+export async function deleteVibe(id: number): Promise<void> {
+  await rpc<boolean>('delete_vibe', { p_vibe_id: id });
+}
+
+export async function createVibe(input: {
+  body: string;
+  audience: 'connections' | 'everyone';
+  videoUri: string;
+  videoMime?: string;
+  coverUri?: string | null;
+  coverMime?: string | null;
+  durationMs?: number | null;
+}): Promise<Vibe> {
+  const body = str(input.body, 'Caption', { max: 200 });
+  if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');
+  const id = await meId();
+
+  // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
+  // for a clip, so the container is chosen here instead.
+  const mime = (input.videoMime || 'video/mp4').toLowerCase();
+  const media = await uploadMediaFile(
+    'media',
+    `vibes/${id}/${Date.now()}.${mime.includes('webm') ? 'webm' : 'mp4'}`,
+    input.videoUri,
+    mime,
+  );
+
+  let cover: string | null = null;
+  if (input.coverUri) {
+    const cMime = (input.coverMime || 'image/jpeg').toLowerCase();
+    cover = await uploadMediaFile(
+      'media',
+      `vibes/${id}/${Date.now()}-cover.${cMime.includes('png') ? 'png' : 'jpg'}`,
+      input.coverUri,
+      cMime,
+    );
+  }
+
+  return rpc<Vibe>('create_vibe', {
+    p_body: body,
+    p_media_url: media,
+    p_cover_url: cover,
+    p_audience: input.audience,
+    p_duration_ms: input.durationMs ?? null,
+  });
+}
+
+/* ----------------------------------------------------------------- search */
+
+/** Members you can already see, plus the Flows, Vibes and Moments you may see. */
+export async function searchAll(query: string): Promise<SearchResults> {
+  const q = String(query ?? '').trim();
+  if (q.length < 2) return { members: [], posts: [], vibes: [], moments: [] };
+  return rpc<SearchResults>('search_all', { p_query: q, p_limit: 8 });
+}
