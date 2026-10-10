@@ -371,14 +371,88 @@ async function health(env: Env, origin: string | null): Promise<Response> {
   return json({ ok, supabase, ...storage }, ok ? 200 : 503, origin);
 }
 
+/* ---------------------------------------------------------------- the build */
+
+/**
+ * The Android build, served from our own address.
+ *
+ * The file itself is kept with the release, and GitHub only ever hands out
+ * signed links that expire in well under an hour — so nothing here stores or
+ * forwards a link. Each request goes and fetches the build at that moment and
+ * streams it straight back to the phone.
+ *
+ * Only names on this list are served, and the caller cannot choose a
+ * destination: this is a door with one keyhole, not an open proxy. Members
+ * never see the repository, and there is no token to steal — the build is
+ * already public.
+ */
+const BUILDS: Record<string, string> = {
+  'Crushly-1.0.2-Android9plus.apk':
+    'https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk',
+};
+
+/** What we pass through, and nothing else. Nothing upstream sets for us. */
+const BUILD_HEADERS = [
+  'content-type', 'content-length', 'content-disposition', 'content-range',
+  'accept-ranges', 'etag', 'last-modified',
+];
+
+async function apkBuild(
+  request: Request, url: URL, ctx: ExecutionContext, origin: string | null,
+): Promise<Response> {
+  const name = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
+  const release = Object.prototype.hasOwnProperty.call(BUILDS, name) ? BUILDS[name] : null;
+  if (!release) return fail(404, 'That build isn’t available.', origin);
+
+  const range = request.headers.get('Range');
+
+  // A whole download is worth keeping at the edge for a while — it is the same
+  // bytes for everybody, and the phone may well ask twice.
+  if (!range) {
+    const hit = await caches.default.match(url.toString()).catch(() => undefined);
+    if (hit) return hit;
+  }
+
+  const upstream = await fetch(release, {
+    method: request.method,
+    headers: range ? { Range: range } : undefined,
+    redirect: 'follow',
+  }).catch(() => null);
+
+  if (!upstream || (!upstream.ok && upstream.status !== 206)) {
+    return fail(502, 'The build could not be fetched just now. Try again shortly.', origin);
+  }
+
+  const headers = new Headers({ 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff', ...cors(origin) });
+  for (const h of BUILD_HEADERS) {
+    const value = upstream.headers.get(h);
+    if (value) headers.set(h, value);
+  }
+
+  const out = new Response(request.method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    headers,
+  });
+  if (!range && upstream.status === 200 && request.method === 'GET') {
+    ctx.waitUntil(caches.default.put(url.toString(), out.clone()).catch(() => undefined));
+  }
+  return out;
+}
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
     const head = cors(origin);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head });
     if (url.pathname === '/health') return health(env, origin);
+
+    // The Android build. Public, like the download page that links to it.
+    if (url.pathname.startsWith('/apk/')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
+      return apkBuild(request, url, ctx, origin);
+    }
 
     const { path, queryToken } = splitPath(url);
     const token = bearerToken(request, queryToken);

@@ -22,21 +22,9 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# The APK itself is served from our own address. A 200 rewrite is a proxy, so
-# the browser (and the person using it) never sees where the file really lives
-# — no repository, no storage bucket, no third-party host in the address bar.
-# Kept above the catch-all rules below so it wins.
-[[redirects]]
-  from = "/download/android"
-  to = "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/download/Crushly-1.0.2-Android9plus.apk"
-  to = "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"
-  status = 200
-  force = true
+# The APK is not served from here: Netlify does not proxy to another host on
+# this plan, so the build is streamed by the media Worker instead and the page
+# links there. Neither the repository nor the storage bucket appears in it.
 
 # Serve the download page before the app's single-page fallback.
 [[redirects]]
