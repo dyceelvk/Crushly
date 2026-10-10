@@ -159,7 +159,9 @@ async function authorize(env: Env): Promise<B2Auth> {
   const buckets = await fetch(`${data.apiUrl}/b2api/v2/b2_list_buckets`, {
     method: 'POST',
     headers: { Authorization: data.authorizationToken },
-    body: JSON.stringify({ bucketName: (env.B2_BUCKET ?? '').trim() }),
+    // Unfiltered on purpose: filtering by name here would make a wrong name
+    // look like "no buckets at all", which are very different problems.
+    body: JSON.stringify({}),
   });
   if (!buckets.ok) throw new B2Error('bucket');
   const list = (await buckets.json()) as {
