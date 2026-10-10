@@ -10,7 +10,7 @@ import { VerifiedBadge } from './Badges';
 import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius } from '../theme/tokens';
-import type { Message } from '../api/types';
+import type { Message, ReplyQuote } from '../api/types';
 import { mediaUrl } from '../api/client';
 import { mediaSource } from '../lib/mediaHost';
 import { MOMENT_STYLES, STICKERS } from '../lib/catalog';
@@ -34,9 +34,11 @@ type Props = {
   onOpenPhoto: (uri: string) => void;
   onOpenProfile: (id: number) => void;
   onRetry: (m: Message) => void;
+  /** Tapping the quoted original — jumps back to it in the conversation. */
+  onOpenReply?: (id: number) => void;
 };
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
   const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile';
@@ -70,6 +72,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
         accessibilityHint={m.id > 0 ? 'Double tap and hold for reactions' : undefined}
         style={{ maxWidth: '80%', opacity: m.pending ? 0.7 : 1 }}
       >
+        {m.meta?.replyTo ? <ReplyQuote quote={m.meta.replyTo as ReplyQuote} onPress={onOpenReply} /> : null}
         {m.kind === 'moment_reply' ? <MomentQuote m={m} /> : null}
         {bare ? (
           <BareContent m={m} />
@@ -164,6 +167,39 @@ function BareContent({ m }: { m: Message }) {
         </Txt>
       </View>
     </View>
+  );
+}
+
+/**
+ * The message being answered, quoted above the reply. The text and the name
+ * come from the database, not from the sender's phone, so nobody can be made
+ * to appear to have said something they didn't.
+ */
+function ReplyQuote({ quote, onPress }: { quote: ReplyQuote; onPress?: (id: number) => void }) {
+  const { colors } = useTheme();
+  const label = quote.mine ? 'You' : quote.name || 'Member';
+  return (
+    <Pressable
+      onPress={() => quote.id && onPress?.(quote.id)}
+      disabled={!onPress || !quote.id}
+      accessibilityRole="button"
+      accessibilityLabel={`Replying to ${label}: ${quote.preview || ''}`}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4, maxWidth: '100%',
+        alignSelf: 'flex-start', backgroundColor: colors.elevated, borderRadius: 10,
+        borderLeftWidth: 3, borderLeftColor: colors.gold, paddingHorizontal: 8, paddingVertical: 5,
+      }}
+    >
+      <Ionicons name="arrow-undo-outline" size={12} color={colors.gold} />
+      <View style={{ flexShrink: 1 }}>
+        <Txt variant="caption" color="gold" numberOfLines={1}>
+          {label}
+        </Txt>
+        <Txt variant="caption" color="textSecondary" numberOfLines={1}>
+          {quote.preview || 'Whisper'}
+        </Txt>
+      </View>
+    </Pressable>
   );
 }
 

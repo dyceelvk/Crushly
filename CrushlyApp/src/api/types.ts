@@ -25,6 +25,7 @@ export type CrushState = {
 export type Profile = {
   id: number;
   name: string;
+  username: string | null;
   age: number | null;
   pronouns: string | null;
   city: string | null;
@@ -42,6 +43,14 @@ export type Profile = {
   canMessage: boolean;
   acceptsCrushes: boolean;
   at?: number;
+};
+
+/** A stored quote of the message a Whisper is answering — built server-side. */
+export type ReplyQuote = {
+  id: number;
+  mine: boolean;
+  name: string | null;
+  preview: string | null;
 };
 
 export type MomentSummary = {
@@ -94,6 +103,7 @@ export type Me = {
   onboarded: boolean;
   profile: {
     name: string;
+    username: string;
     birthdate: string | null;
     age: number | null;
     pronouns: string;

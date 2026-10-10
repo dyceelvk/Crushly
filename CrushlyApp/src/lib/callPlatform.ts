@@ -1,6 +1,8 @@
+import { CALL_AUDIO_CONSTRAINTS } from './callAudio';
+
 export async function callMedia(): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls need a secure browser with microphone support.');
-  try { return await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  try { return await navigator.mediaDevices.getUserMedia(CALL_AUDIO_CONSTRAINTS as MediaStreamConstraints); }
   catch { throw new Error('Allow microphone access to make or answer calls.'); }
 }
 export function callPeer(iceServers: RTCIceServer[]): RTCPeerConnection { return new RTCPeerConnection({ iceServers }); }

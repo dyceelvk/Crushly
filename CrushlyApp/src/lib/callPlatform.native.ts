@@ -2,6 +2,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { getRandomBytes } from 'expo-crypto';
 import { mediaDevices, RTCPeerConnection } from 'react-native-webrtc';
+import { CALL_AUDIO_CONSTRAINTS } from './callAudio';
 const audio = requireOptionalNativeModule<{ start: () => Promise<void>; stop: () => void }>('CrushlyCallAudio');
 export async function callMedia(): Promise<MediaStream> {
   if (Platform.OS === 'android') {
@@ -9,7 +10,7 @@ export async function callMedia(): Promise<MediaStream> {
     if (permission !== PermissionsAndroid.RESULTS.GRANTED) throw new Error('Allow microphone access to make or answer calls.');
   }
   await audio?.start();
-  try { return await mediaDevices.getUserMedia({ audio: true, video: false }) as unknown as MediaStream; }
+  try { return await mediaDevices.getUserMedia(CALL_AUDIO_CONSTRAINTS as never) as unknown as MediaStream; }
   catch { audio?.stop(); throw new Error('Couldn’t open your microphone. Close other recording apps and try again.'); }
 }
 // Boundary adapter: react-native-webrtc implements the same voice-call methods/events.

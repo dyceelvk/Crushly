@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { newCallChannel, callMessageMeta } from './callChannel';
+import { lowLatencySdp } from './callAudio';
 
 test('newCallChannel makes unguessable per-call channel names', () => {
   const a = newCallChannel();
@@ -103,4 +104,23 @@ test('native media release is called on hang-up, not just track disable', async 
   const f = fixture(); let released = 0;
   f.deps.releaseMedia = () => { released++; };
   await f.manager.call('call-token'); await f.manager.hangup(); assert.equal(released, 1);
+});
+
+test('the SDP rewriter retunes Opus for back-and-forth conversation', () => {
+  const sdp = [
+    'm=audio 9 UDP/TLS/RTP/SAVPF 111 0',
+    'a=rtpmap:111 opus/48000/2',
+    'a=fmtp:111 minptime=10;useinbandfec=1',
+    'a=rtpmap:0 PCMU/8000',
+  ].join('\r\n');
+  const out = lowLatencySdp(sdp);
+  assert.match(out, /a=fmtp:111 minptime=10;useinbandfec=1;usedtx=0;stereo=0;maxaveragebitrate=24000;maxplaybackrate=16000/);
+  // Other codecs are left alone — we are not in the business of guessing.
+  assert.match(out, /a=rtpmap:0 PCMU\/8000/);
+});
+
+test('an SDP we do not recognise is passed through untouched', () => {
+  for (const sdp of ['', 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 VP8/90000']) {
+    assert.equal(lowLatencySdp(sdp), sdp);
+  }
 });

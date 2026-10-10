@@ -99,6 +99,22 @@ export function useUpdatePreferences() {
   });
 }
 
+/**
+ * Changing a handle is server-side: the database owns the format and the
+ * "once a day" rule, so the app just reports what came back.
+ */
+export function useSetUsername() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (username: string) => service.setUsername(username),
+    onSuccess: (username) => {
+      const prev = qc.getQueryData<Me>(keys.me);
+      if (prev) qc.setQueryData<Me>(keys.me, { ...prev, profile: { ...prev.profile, username } });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.me }),
+  });
+}
+
 export function useUpdatePrivacy() {
   const qc = useQueryClient();
   return useMutation({
@@ -346,14 +362,7 @@ export function useChat(conversationId: number) {
     }
   }, [conversationId, hasMore, loadingMore, messages]);
 
-  type Draft =
-    | { kind: 'text'; body: string }
-    | { kind: 'sticker'; sticker: string }
-    | { kind: 'profile'; profileId: number }
-    | { kind: 'photo'; uri: string; mimeType?: string }
-    | { kind: 'voice'; uri: string; duration: number; mimeType?: string }
-    | { kind: 'video'; uri: string; duration: number; mimeType?: string }
-    | { kind: 'call'; channel: string };
+  type Draft = service.SendDraft;
 
   const send = useCallback(
     async (draft: Draft, retryLocalId?: string) => {
@@ -367,14 +376,16 @@ export function useChat(conversationId: number) {
         kind: draft.kind,
         body: draft.kind === 'text' ? draft.body : draft.kind === 'call' ? 'Voice call' : '',
         mediaUrl: draft.kind === 'photo' || draft.kind === 'voice' || draft.kind === 'video' ? draft.uri : null,
-        meta:
-          draft.kind === 'sticker'
+        meta: {
+          ...(draft.kind === 'sticker'
             ? { sticker: draft.sticker }
             : draft.kind === 'voice' || draft.kind === 'video'
               ? { duration: draft.duration }
               : draft.kind === 'call'
                 ? { channel: draft.channel }
-                : {},
+                : {}),
+          ...(draft.replyQuote ? { replyTo: draft.replyQuote } : {}),
+        },
         createdAt: Date.now(),
         readAt: null,
         reactions: [],

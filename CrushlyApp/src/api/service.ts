@@ -13,6 +13,7 @@ import {
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, Moment, MomentAuthor, MomentsFeed, Preferences, Privacy,
+  ReplyQuote,
   NotificationSettings, Profile, MomentStyle,
 } from './types';
 
@@ -26,14 +27,22 @@ import type {
 const FREE_DEEP_CRUSHES_PER_DAY = 3;
 const MAX_PHOTOS = 6;
 
+/**
+ * Every kind of Whisper can answer another one. `replyTo` is only the id: the
+ * quote that gets stored is rebuilt by the database from the original row, so
+ * a member cannot put words in someone else's mouth. `replyQuote` is the
+ * client's own preview, used for the bubble while the message is still sending.
+ */
+type ReplyTo = { replyTo?: number; replyQuote?: ReplyQuote };
+
 export type SendDraft =
-  | { kind: 'text'; body: string }
-  | { kind: 'sticker'; sticker: string }
-  | { kind: 'profile'; profileId: number }
-  | { kind: 'photo'; uri: string; mimeType?: string; caption?: string }
-  | { kind: 'voice'; uri: string; duration: number; mimeType?: string }
-  | { kind: 'video'; uri: string; duration: number; mimeType?: string }
-  | { kind: 'call'; channel: string };
+  | ({ kind: 'text'; body: string } & ReplyTo)
+  | ({ kind: 'sticker'; sticker: string } & ReplyTo)
+  | ({ kind: 'profile'; profileId: number } & ReplyTo)
+  | ({ kind: 'photo'; uri: string; mimeType?: string; caption?: string } & ReplyTo)
+  | ({ kind: 'voice'; uri: string; duration: number; mimeType?: string } & ReplyTo)
+  | ({ kind: 'video'; uri: string; duration: number; mimeType?: string } & ReplyTo)
+  | ({ kind: 'call'; channel: string } & ReplyTo);
 
 const unwrap = <T>(res: { data: T | null; error: unknown }): T => {
   if (res.error) throw toApiError(res.error);
@@ -160,6 +169,7 @@ export async function getMe(): Promise<Me> {
     onboarded: !!p.onboarded,
     profile: {
       name: p.name,
+      username: p.username ?? '',
       birthdate: p.birthdate,
       age: ageFromBirthdate(p.birthdate),
       pronouns: p.pronouns,
@@ -336,6 +346,28 @@ const PRIVACY_FIELDS: Record<string, [string, 'bool' | readonly string[]]> = {
   whoCanMessage: ['who_can_message', ['everyone', 'crushes', 'mutual']],
   whoCanCrush: ['who_can_crush', ['everyone', 'verified']],
 };
+
+/**
+ * Usernames are the one identity rule the database owns, so the check and the
+ * change both go through it — the client never decides what a valid handle is.
+ */
+export async function usernameAvailable(candidate: string): Promise<boolean> {
+  const clean = String(candidate ?? '').trim().toLowerCase();
+  if (!clean) return false;
+  return (await rpc<boolean>('username_available', { p_username: clean })) === true;
+}
+
+export async function setUsername(candidate: string): Promise<string> {
+  const clean = String(candidate ?? '').trim().toLowerCase();
+  const row = await rpc<{ username: string }>('set_username', { p_username: clean });
+  return row.username;
+}
+
+export async function profileByUsername(candidate: string): Promise<FullProfile | null> {
+  const clean = String(candidate ?? '').trim().toLowerCase().replace(/^@/, '');
+  if (!clean) return null;
+  return await rpc<FullProfile | null>('profile_by_username', { p_username: clean });
+}
 
 export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
   if (patch.incognito) {
@@ -606,6 +638,7 @@ export async function sendMessage(conversationId: number, draft: SendDraft): Pro
   let mediaPath: string | null = null;
   let meta: Record<string, unknown> = {};
   let body = '';
+  if (draft.replyTo) meta.replyTo = { id: draft.replyTo };
   if (draft.kind === 'text') {
     body = str(draft.body, 'Whisper', { required: true, max: 2000 });
   } else if (draft.kind === 'sticker') {

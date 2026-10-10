@@ -5,6 +5,8 @@ import { Screen, useLayout } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
+import { UsernameField } from '../../components/UsernameField';
+import { useSetUsername } from '../../api/hooks';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { IconButton } from '../../components/IconButton';
 import { ProgressBar } from '../../components/States';
@@ -141,6 +143,8 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
   const [pronouns, setPronouns] = useState(p?.pronouns || '');
   const [custom, setCustom] = useState(p?.pronouns && !PRONOUNS.includes(p.pronouns) ? p.pronouns : '');
   const [city, setCity] = useState(p?.city || '');
+  const [username, setUsername] = useState(p?.username || '');
+  const setHandle = useSetUsername();
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -165,6 +169,10 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
     if (!name.trim()) e.name = 'What should we call you?';
     const d = Number(day), m = Number(month), y = Number(year);
     if (!d || !m || !y || year.length !== 4) e.birthday = 'Enter your full birthday.';
+    const handle = username.trim().toLowerCase();
+    if (!handle) e.username = 'Pick a username — it’s how people find you.';
+    else if (!/^[a-z0-9_]{3,20}$/.test(handle)) e.username = 'Usernames are 3–20 characters: letters, numbers and underscores.';
+    else if (!/[a-z]/.test(handle)) e.username = 'Use at least one letter.';
     setErrors(e);
     if (Object.keys(e).length) return;
     const patch: Record<string, unknown> = {
@@ -174,13 +182,23 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
       city: city.trim(),
     };
     if (location) patch.location = location;
-    if (await save(patch)) navigation.navigate('OnboardingPhotos');
+    if (!(await save(patch))) return;
+    if (handle && handle !== (p?.username || '')) {
+      try {
+        await setHandle.mutateAsync(handle);
+      } catch (err) {
+        toast({ kind: 'error', title: 'Username not saved', message: (err as Error).message });
+        return;
+      }
+    }
+    navigation.navigate('OnboardingPhotos');
   };
 
   return (
-    <Shell step={2} title="Who are you?" subtitle="The basics. Only your first name and age show on your Space." onBack={() => navigation.goBack()} onNext={next} loading={saving}>
+    <Shell step={2} title="Who are you?" subtitle="The basics. Only your first name and age show on your Space." onBack={() => navigation.goBack()} onNext={next} loading={saving || setHandle.isPending}>
       <View style={{ gap: space.lg }}>
         <Input label="First name" value={name} onChangeText={setName} placeholder="Your first name" autoComplete="given-name" textContentType="givenName" maxLength={30} error={errors.name} />
+        <UsernameField value={username} onChange={setUsername} error={errors.username} />
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
             Birthday

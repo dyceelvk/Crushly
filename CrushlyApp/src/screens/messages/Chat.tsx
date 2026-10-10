@@ -11,10 +11,11 @@ import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
+import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
 import { useChat, useConversation, useCrushes, useMe } from '../../api/hooks';
-import type { Message } from '../../api/types';
+import type { Message, ReplyQuote } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
@@ -49,6 +50,9 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const chat = useChat(conversationId);
   const { openActions } = useMemberActions();
   const [text, setText] = useState('');
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const listRef = useRef<FlatList<Row>>(null);
   const [tray, setTray] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
@@ -175,13 +179,46 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     return out.reverse(); // inverted list
   }, [chat.messages]);
 
+  /* ---------------------------------------------------------------- replies */
+
+  /** What a message looks like when quoted above an answer. */
+  const quoteOf = (m: Message): ReplyQuote => ({
+    id: m.id,
+    mine: m.mine,
+    name: m.mine ? 'You' : peer?.name ?? null,
+    preview:
+      m.kind === 'text' ? m.body
+        : m.kind === 'photo' ? (m.body || 'Photo')
+        : m.kind === 'voice' ? 'Voice note'
+        : m.kind === 'video' ? 'Video note'
+        : m.kind === 'sticker' ? 'Sticker'
+        : m.kind === 'profile' ? 'Shared a Space'
+        : m.kind === 'call' ? 'Voice call'
+        : m.body || 'Whisper',
+  });
+
   const send = useCallback(
     async (draft: Parameters<typeof chat.send>[0]) => {
-      const res = await chat.send(draft);
+      const withReply = replyTo ? { ...draft, replyTo: replyTo.id, replyQuote: quoteOf(replyTo) } : draft;
+      const res = await chat.send(withReply);
       if (!res.ok) toast({ kind: 'error', title: 'Whisper not sent', message: res.error });
+      else setReplyTo(null);
     },
-    [chat, toast],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chat, toast, replyTo, peer?.name],
   );
+
+  /** Tapping a quote goes back to the original and briefly lights it up. */
+  const jumpTo = (id: number) => {
+    const index = rows.findIndex((r) => r.type !== 'day' && r.m.id === id);
+    if (index < 0) {
+      toast({ kind: 'info', title: 'Not in this conversation anymore' });
+      return;
+    }
+    listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+    setFlashId(id);
+    setTimeout(() => setFlashId((current) => (current === id ? null : current)), 1400);
+  };
 
   const sendText = () => {
     const body = text.trim();
@@ -315,6 +352,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <ErrorState message={chat.error} onRetry={chat.reload} />
         ) : (
           <FlatList
+            ref={listRef}
             inverted={rows.length > 0}
             data={rows}
             keyExtractor={(r) => (r.type === 'day' ? r.key : r.m.localId || String(r.m.id))}
@@ -367,17 +405,34 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                   </Txt>
                 </View>
               ) : (
-                <MessageBubble
-                  message={item.m}
-                  firstInGroup={item.first}
-                  showSeen={item.seen}
-                  peerName={peer?.name ?? ''}
-                  onLongPress={setActionFor}
-                  onDoubleTap={react}
-                  onOpenPhoto={setViewer}
-                  onOpenProfile={openProfile}
-                  onRetry={retry}
-                />
+                <SwipeToReply
+                  mine={item.m.mine}
+                  onReply={() => {
+                    if (item.m.id > 0) setReplyTo(item.m);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <View
+                    style={
+                      flashId && flashId === item.m.id
+                        ? { margin: -4, padding: 4, borderRadius: 22, backgroundColor: colors.goldSoft }
+                        : undefined
+                    }
+                  >
+                    <MessageBubble
+                      message={item.m}
+                      firstInGroup={item.first}
+                      showSeen={item.seen}
+                      peerName={peer?.name ?? ''}
+                      onLongPress={setActionFor}
+                      onDoubleTap={react}
+                      onOpenPhoto={setViewer}
+                      onOpenProfile={openProfile}
+                      onRetry={retry}
+                      onOpenReply={jumpTo}
+                    />
+                  </View>
+                </SwipeToReply>
               )
             }
           />
@@ -393,6 +448,22 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           </View>
         ) : (
           <View style={{ borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg, paddingBottom: Math.max(insets.bottom, 8) }}>
+            {replyTo ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: space.md, paddingTop: 8 }}>
+                <Ionicons name="arrow-undo-outline" size={16} color={colors.gold} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Txt variant="caption" color="gold" numberOfLines={1}>
+                    {`Replying to ${replyTo.mine ? 'yourself' : peer?.name ?? 'them'}`}
+                  </Txt>
+                  <Txt variant="caption" color="textSecondary" numberOfLines={1}>
+                    {quoteOf(replyTo).preview}
+                  </Txt>
+                </View>
+                <Pressable onPress={() => setReplyTo(null)} accessibilityRole="button" accessibilityLabel="Cancel reply" hitSlop={8} style={{ padding: 4 }}>
+                  <Ionicons name="close" size={18} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            ) : null}
             {tray ? (
               <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.sm }}>

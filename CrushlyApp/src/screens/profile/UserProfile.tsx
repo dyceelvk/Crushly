@@ -156,7 +156,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               {p.verified ? <VerifiedBadge size={24} /> : null}
             </View>
             <Txt variant="body" color="rgba(255,255,255,0.86)" style={{ marginTop: 2 }}>
-              {[p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
+              {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
             </Txt>
           </View>
         </View>

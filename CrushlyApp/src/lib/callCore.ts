@@ -1,3 +1,4 @@
+import { lowLatencySdp, tunePlayback } from './callAudio';
 /** Platform-independent signaling; native and browser media live in callPlatform. */
 export type CallState = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'active';
 export type Signal =
@@ -66,10 +67,14 @@ export class CallManagerCore {
         void this.send({ type: 'ice', candidate }).catch(() => this.fail('Call signaling disconnected.'));
       }
     };
-    pc.ontrack = e => this.events.onRemote(e.streams[0] ?? null);
+    pc.ontrack = e => {
+      tunePlayback(pc);
+      this.events.onRemote(e.streams[0] ?? null);
+    };
     const connected = () => {
       if (generation !== this.generation) return;
       if (pc.connectionState === 'connected' || ['connected', 'completed'].includes(pc.iceConnectionState)) {
+        tunePlayback(pc);
         this.clearTimers(); this.setState('active');
       } else if (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed') {
         this.fail('Couldn’t connect. Try another network; this network may require a call relay.');
@@ -95,7 +100,8 @@ export class CallManagerCore {
       if (!this.pc.remoteDescription) {
         await this.pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp });
         await this.flushIce();
-        await this.pc.setLocalDescription(await this.pc.createAnswer());
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription({ type: 'answer', sdp: lowLatencySdp(answer.sdp ?? '') });
         this.setState('connecting');
       }
       await this.send({ type: 'answer', sdp: this.pc.localDescription!.sdp });
@@ -115,7 +121,8 @@ export class CallManagerCore {
     this.caller = true; this.channelName = name; this.setState('outgoing');
     try {
       if (!await this.join(name, generation) || !await this.setup(generation)) return;
-      await this.pc!.setLocalDescription(await this.pc!.createOffer());
+      const offer = await this.pc!.createOffer();
+      await this.pc!.setLocalDescription({ type: 'offer', sdp: lowLatencySdp(offer.sdp ?? '') });
       this.ringTimeout();
     } catch (error) { if (generation === this.generation) this.fail(error instanceof Error ? error.message : 'Allow microphone access to make calls.'); }
   }

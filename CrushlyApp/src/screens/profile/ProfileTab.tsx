@@ -55,6 +55,11 @@ export function ProfileTabScreen() {
           </Txt>
           {v === 'verified' ? <VerifiedBadge size={20} /> : null}
         </View>
+        {p.username ? (
+          <Txt variant="bodyStrong" color="gold" style={{ marginTop: 2 }}>
+            {`@${p.username}`}
+          </Txt>
+        ) : null}
         <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
           {[p.city, p.pronouns, p.intentions.slice(0, 2).map(intentionLabel).join(' · ')].filter(Boolean).join('  ·  ')}
         </Txt>

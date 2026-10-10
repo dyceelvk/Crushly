@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { Screen, Header, useLayout } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
+import { UsernameField } from '../../components/UsernameField';
 import { Button } from '../../components/Button';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { PhotoGrid } from '../../components/PhotoGrid';
@@ -10,7 +11,7 @@ import { ProgressBar, LoadingBlock } from '../../components/States';
 import { ListRow, Group } from '../../components/ListRow';
 import { ConfirmSheet } from '../../components/BottomSheet';
 import { useToast } from '../../components/Toast';
-import { useMe, useUpdateProfile } from '../../api/hooks';
+import { useMe, useSetUsername, useUpdateProfile } from '../../api/hooks';
 import type { Intention, Lifestyle, Me } from '../../api/types';
 import { INTENTIONS, INTERESTS, LANGUAGES, LIFESTYLE, PRONOUNS, RELATIONSHIP_INTENTIONS } from '../../lib/catalog';
 import { getApproximateLocation } from '../../lib/media';
@@ -19,6 +20,7 @@ import type { ScreenProps } from '../../navigation/types';
 
 type Form = {
   name: string;
+  username: string;
   pronouns: string;
   city: string;
   bio: string;
@@ -32,6 +34,7 @@ type Form = {
 
 const fromMe = (me: Me): Form => ({
   name: me.profile.name,
+  username: me.profile.username ?? '',
   pronouns: me.profile.pronouns,
   city: me.profile.city,
   bio: me.profile.bio,
@@ -66,6 +69,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
   const { contentWidth, gutter } = useLayout();
   const toast = useToast();
   const update = useUpdateProfile();
+  const setHandle = useSetUsername();
   const [form, setForm] = useState<Form | null>(null);
   const [locating, setLocating] = useState(false);
   const [leaving, setLeaving] = useState<null | (() => void)>(null);
@@ -111,6 +115,16 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
         languages: form.languages,
         lifestyle: { ...form.lifestyle, height, work: form.lifestyle.work?.trim() || undefined, education: form.lifestyle.education?.trim() || undefined },
       });
+      // The handle is saved on its own: the database owns its rules, and a
+      // taken or badly formed one shouldn't throw away everything else.
+      const handle = form.username.trim().toLowerCase();
+      if (handle !== (me.profile.username || '')) {
+        try {
+          await setHandle.mutateAsync(handle);
+        } catch (err) {
+          toast({ kind: 'error', title: 'Username not changed', message: (err as Error).message });
+        }
+      }
       setForm(fromMe(next));
       toast({ kind: 'success', title: 'Space saved' });
     } catch (e) {
@@ -134,7 +148,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
   const pct = me.completion.percent;
 
   return (
-    <Screen keyboard footer={dirty ? <Button title="Save changes" onPress={save} loading={update.isPending} /> : undefined}>
+    <Screen keyboard footer={dirty ? <Button title="Save changes" onPress={save} loading={update.isPending || setHandle.isPending} /> : undefined}>
       <Header title="Edit Space" back />
       <View style={{ gap: 6 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -154,6 +168,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
 
       <Section title="Basics">
         <Input label="First name" value={form.name} onChangeText={(t) => set('name', t)} maxLength={30} />
+        <UsernameField value={form.username} onChange={(t) => set('username', t)} />
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
             Pronouns
