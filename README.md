@@ -127,8 +127,8 @@ secret, so nothing in the repo changes:
    `EXPO_PUBLIC_SUPABASE_ANON_KEY` with the same values as the GitHub secrets.
    Git builds need them baked in at build time.
 3. **Keep the URL identical (recommended).** Rename the OLD site first
-   (Site configuration → General → Change site name → e.g. `mencrushly-old`),
-   then rename the NEW site to `mencrushly` (same place). `mencrushly.netlify.app`
+   (Site configuration → General → Change site name → e.g. `crushly-app-old`),
+   then rename the NEW site to `crushly-app` (same place). `crushly-app.netlify.app`
    then serves the new site, and the Supabase Site URL, email links and the
    logo inside the emails all keep working untouched. If you skip this, the
    new site gets a fresh `*.netlify.app` address — the deploy workflow points
@@ -155,7 +155,7 @@ secret, so nothing in the repo changes:
    site is **https://crushly-app.netlify.app**, and it serves the latest commit
    (`/` and `/download/` both return 200; `/download/` is byte-identical to
    `CrushlyApp/public/download/index.html`). `crushlyi.netlify.app` and
-   `mencrushly.netlify.app` both return **404** — treat any doc or config still
+   `crushly.netlify.app` both return **404** — treat any doc or config still
    naming them as stale. The pipeline follows `NETLIFY_SITE_ID`, so renaming a
    site is safe; the email templates now rewrite *any* `*.netlify.app` logo/link
    host to the resolved live site on every deploy.

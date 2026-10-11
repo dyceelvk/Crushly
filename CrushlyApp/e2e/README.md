@@ -25,7 +25,7 @@ app; only the browser is downloaded when you run the suite.
    - `EXPO_PUBLIC_SUPABASE_URL` is already a secret.
 2. Open **Actions → "E2E (live site)" → Run workflow**
    https://github.com/dyceelvk/Crushly/actions/workflows/e2e.yml
-   (pick the site if you're not testing the default https://mencrushly.netlify.app)
+   (pick the site if you're not testing the default https://crushly-app.netlify.app)
 
 > The workflow resolves the live site URL from the `NETLIFY_SITE_ID` secret
 > automatically (currently https://crushlyi.netlify.app) — the `base_url` input
@@ -36,7 +36,7 @@ app; only the browser is downloaded when you run the suite.
 ```bash
 cd CrushlyApp
 npm start                                    # serves the app on :8081 (or use the live site)
-export E2E_BASE_URL=http://localhost:8081   # or https://mencrushly.netlify.app
+export E2E_BASE_URL=http://localhost:8081   # or https://crushly-app.netlify.app
 export EXPO_PUBLIC_SUPABASE_URL=https://yzcssyebozfkmojqqdhc.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=…           # from your own machine's env — never commit it
 npm run e2e
