@@ -15,6 +15,8 @@
  * Nothing here is ever committed.
  */
 
+import release from './release.json';
+
 export interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
@@ -465,26 +467,29 @@ async function applyLifecycle(env: Env, origin: string | null): Promise<Response
  * never see the repository, and there is no token to steal — the build is
  * already public.
  */
-const BUILDS: Record<string, string> = {
-  'Crushly-1.0.2-Android9plus.apk':
-    'https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk',
-};
-
 /**
  * What the current Android build is, as the app is told about it.
  *
- * Deliberately not the upstream address. The app is only ever handed a URL on
- * this Worker, so where the file really lives stays ours to know, and moving
- * it one day is a change here rather than a change in every phone. Raise
- * `versionCode` — never reuse one — and keep `file` matching a key above.
+ * These facts live in `release.json` rather than in code because they are not
+ * written by a person: the Android workflow rewrites that file after a build
+ * passes its tests, so a release can never be published without the Worker
+ * being told about it in the same breath.
+ *
+ * `upstream` is deliberately not what the app is handed. The app only ever
+ * sees a URL on this Worker, so where the file really lives stays ours to
+ * know, and moving it one day is a change in one place rather than in every
+ * phone. `versionCode` only ever goes up — a reused one would make an update
+ * invisible to a phone that already installed it.
  */
+const BUILDS: Record<string, string> = { [release.file]: release.upstream };
+
 const RELEASE = {
-  version: '1.0.2',
-  versionCode: 3,
+  version: release.version,
+  versionCode: release.versionCode,
   // Below this the app is told it must update rather than merely may.
-  minVersionCode: 3,
-  file: 'Crushly-1.0.2-Android9plus.apk',
-  notes: 'The first release you can update from inside the app.',
+  minVersionCode: release.minVersionCode,
+  file: release.file,
+  notes: release.notes,
 } as const;
 
 /**

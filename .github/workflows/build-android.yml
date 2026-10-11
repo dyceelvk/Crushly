@@ -7,7 +7,7 @@ on:
       - 'CrushlyApp/**'
       - '.github/workflows/build-android.yml'
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -139,9 +139,10 @@ jobs:
       - name: Package test APK
         run: |
           mkdir -p apk
-          cp android/app/build/outputs/apk/release/app-release.apk apk/Crushly-android-test.apk
+          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          cp android/app/build/outputs/apk/release/app-release.apk "apk/Crushly-${version}-Android9plus.apk"
           cp "$RUNNER_TEMP/crushly-apk-compatibility.txt" apk/COMPATIBILITY.txt
-          sha256sum apk/Crushly-android-test.apk > apk/SHA256SUMS.txt
+          sha256sum "apk/Crushly-${version}-Android9plus.apk" > apk/SHA256SUMS.txt
           echo "Standalone Android 9+ test APK for 32-bit and 64-bit ARM phones (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
       - name: Build Android 9 emulator release
         run: |
@@ -172,7 +173,54 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: python3 ../.github/scripts/audit-apk-secrets.py apk/Crushly-android-test.apk apk/SECURITY-CHECK.txt
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          python3 ../.github/scripts/audit-apk-secrets.py "apk/Crushly-${version}-Android9plus.apk" apk/SECURITY-CHECK.txt
+      - name: Publish the asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          tag="android-test-${version}"
+          file="Crushly-${version}-Android9plus.apk"
+          echo "::notice::Publishing ${file} to ${tag}."
+          test -f "apk/${file}" || { echo "::error::apk/${file} is missing."; exit 1; }
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --prerelease \
+              --title "Crushly ${version} — Android 9+ testing" \
+              --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM."
+          fi
+          # Never silently replace a published APK at a version that already exists.
+          if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "$file"; then
+            gh release upload "$tag" "apk/${file}" apk/SHA256SUMS.txt apk/SECURITY-CHECK.txt apk/COMPATIBILITY.txt
+          fi
+
+      - name: Tell the media Worker which build is current
+        id: announce
+        run: |
+          set -euo pipefail
+          out=$(python3 ../.github/scripts/update-worker-release.py)
+          printf '%s\n' "$out"
+          if printf '%s' "$out" | grep -q 'changed=true'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit the release facts
+        if: steps.announce.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ../cloudflare/media-worker/src/release.json
+          git commit -m "Offer Android $(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])") to phones that ask"
+          # Pushing this file is what redeploys the Worker, so the build that
+          # was just published is the one /version points at. The push cannot
+          # retrigger this workflow: it only watches CrushlyApp/**.
+          git push
+
       - uses: actions/upload-artifact@v4
         with:
           name: Crushly-Android-test-APK

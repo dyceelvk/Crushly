@@ -1,0 +1,8 @@
+{
+  "version": "1.0.2",
+  "versionCode": 3,
+  "minVersionCode": 3,
+  "file": "Crushly-1.0.2-Android9plus.apk",
+  "notes": "The first release you can update from inside the app.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk"
+}
