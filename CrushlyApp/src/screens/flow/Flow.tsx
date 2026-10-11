@@ -24,6 +24,10 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { pickImage } from '../../lib/media';
+import * as ImagePicker from 'expo-image-picker';
+import { VideoEditorModal } from '../../components/VideoEditor';
+import { EditedClip } from '../../components/EditedClip';
+import { splitForUpload, emptyEdit, type LiveEdit } from '../../lib/videoEdit';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -235,7 +239,11 @@ export function PostCard({ post: p }: { post: Post }) {
 
       {p.mediaUrl ? (
         <View style={{ marginTop: space.sm }}>
-          <Photo uri={p.mediaUrl} style={{ width: '100%', aspectRatio: 4 / 3 }} alt={`Post by ${authorName}`} />
+          {p.mediaKind === 'video' ? (
+            <EditedClip uri={p.mediaUrl} live={p.edit} style={{ width: '100%', aspectRatio: 9 / 16 }} />
+          ) : (
+            <Photo uri={p.mediaUrl} style={{ width: '100%', aspectRatio: 4 / 3 }} alt={`Post by ${authorName}`} />
+          )}
         </View>
       ) : null}
 
@@ -271,6 +279,9 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
   const [audience, setAudience] = useState<'connections' | 'everyone' | 'circle'>('connections');
   const [circleId, setCircleId] = useState<number | null>(null);
   const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
+  const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
+  const [clipEdit, setClipEdit] = useState<LiveEdit | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [picking, setPicking] = useState(false);
 
   const pick = async () => {
@@ -282,6 +293,26 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
     setPhoto({ uri: img.uri, mimeType: img.mimeType || 'image/jpeg' });
   };
 
+  const pickClip = async () => {
+    setPicking(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        videoMaxDuration: 60,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      setPhoto(null);
+      setClipEdit(null);
+      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: asset.duration ?? 0 });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
+    } finally {
+      setPicking(false);
+    }
+  };
+
   const submit = async () => {
     try {
       await create.mutateAsync({
@@ -290,9 +321,14 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
         circleId: audience === 'circle' ? circleId : null,
         photoUri: photo?.uri ?? null,
         photoMime: photo?.mimeType ?? null,
+        videoUri: clip?.uri ?? null,
+        videoMime: clip?.mimeType ?? null,
+        edit: clipEdit,
       });
       setBody('');
       setPhoto(null);
+      setClip(null);
+      setClipEdit(null);
       setAudience('connections');
       setCircleId(null);
       onClose();
@@ -303,6 +339,20 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
   };
 
   return (
+    <>
+      <VideoEditorModal
+        visible={editorOpen}
+      sourceUri={clip?.uri ?? null}
+      sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
+      category="post"
+      onCancel={() => setEditorOpen(false)}
+      onDone={(r) => {
+        const edit = r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0);
+        setClipEdit(splitForUpload(edit, 'post').live);
+        setEditorOpen(false);
+      }}
+    />
+
     <BottomSheet visible={visible} onClose={onClose} title="Share a post">
       <View style={{ gap: space.md }}>
         <Input
@@ -321,9 +371,26 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
             <Photo uri={photo.uri} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
             <Button title="Remove photo" size="sm" variant="secondary" onPress={() => setPhoto(null)} />
           </View>
-        ) : (
-          <Button title="Add a photo" size="md" variant="secondary" icon="image-outline" loading={picking} onPress={pick} />
-        )}
+        ) : null}
+
+        {clip ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <EditedClip uri={clip.uri} live={clipEdit} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
+            <Button title={clipEdit ? 'Edit again' : 'Edit clip'} size="sm" variant="secondary" onPress={() => setEditorOpen(true)} />
+            <Button title="Remove" size="sm" variant="ghost" onPress={() => { setClip(null); setClipEdit(null); }} />
+          </View>
+        ) : null}
+
+        {!photo && !clip ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Button title="Add a photo" size="md" variant="secondary" icon="image-outline" loading={picking} onPress={pick} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button title="Add a clip" size="md" variant="secondary" icon="videocam-outline" loading={picking} onPress={pickClip} />
+            </View>
+          </View>
+        ) : null}
 
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
@@ -366,6 +433,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
           disabled={(!body.trim() && !photo) || (audience === 'circle' && !circleId)}
         />
       </View>
-    </BottomSheet>
+      </BottomSheet>
+    </>
   );
 }

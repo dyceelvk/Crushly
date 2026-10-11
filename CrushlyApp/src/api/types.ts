@@ -52,6 +52,10 @@ export type Post = {
   id: number;
   body: string;
   mediaUrl: string | null;
+  /** Whether the media is a photo or a clip. Null when the post has no media. */
+  mediaKind: 'photo' | 'video' | null;
+  /** Words and stickers drawn over a clip. Null when the post is not a clip. */
+  edit: LiveEdit | null;
   audience: PostAudience;
   /** Set when the post was written into a Circle; null everywhere else. */
   circleId: number | null;

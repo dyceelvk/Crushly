@@ -355,12 +355,15 @@ export async function flowFeed(limit = 20, after?: number | null): Promise<FlowP
   return { items: page?.items ?? [] };
 }
 
-/** Shares a post. Photos go to the object store like any other media. */
+/** Shares a post. Photos and clips go to the object store like any other media. */
 export async function createPost(input: {
   body: string;
   audience: 'connections' | 'everyone';
   photoUri?: string | null;
   photoMime?: string | null;
+  videoUri?: string | null;
+  videoMime?: string | null;
+  edit?: LiveEdit | null;
   /** When set, the post belongs to that Circle and its audience is the Circle. */
   circleId?: number | null;
 }): Promise<Post> {
@@ -371,11 +374,24 @@ export async function createPost(input: {
     const type = input.photoMime || 'image/jpeg';
     media = await uploadMediaFile('media', `posts/${id}/${Date.now()}.${extensionFor(type)}`, input.photoUri, type);
   }
+  if (input.videoUri) {
+    const id = await meId();
+    const type = (input.videoMime || 'video/mp4').toLowerCase();
+    // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
+    // for a clip, so the container is chosen here instead.
+    media = await uploadMediaFile(
+      'media',
+      `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`,
+      input.videoUri,
+      type,
+    );
+  }
   return rpc<Post>('create_post', {
     p_body: body,
     p_media_url: media,
     p_audience: input.audience === 'everyone' ? 'everyone' : 'connections',
     p_circle_id: input.circleId ?? null,
+    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
 }
 
