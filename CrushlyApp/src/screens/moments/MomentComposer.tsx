@@ -14,6 +14,10 @@ import { keys } from '../../api/hooks';
 import type { MomentStyle } from '../../api/types';
 import { MOMENT_STYLES } from '../../lib/catalog';
 import { pickImage, type PickedImage } from '../../lib/media';
+import * as ImagePicker from 'expo-image-picker';
+import { VideoEditorModal } from '../../components/VideoEditor';
+import { MomentVideo } from '../../components/MomentVideo';
+import { splitForUpload, emptyEdit, type LiveEdit } from '../../lib/videoEdit';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
@@ -24,10 +28,13 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const { contentWidth, gutter } = useLayout();
   const toast = useToast();
   const qc = useQueryClient();
-  const [mode, setMode] = useState<'text' | 'photo'>('text');
+  const [mode, setMode] = useState<'text' | 'photo' | 'video'>('text');
   const [body, setBody] = useState('');
   const [style, setStyle] = useState<MomentStyle>('champagne');
   const [photo, setPhoto] = useState<PickedImage | null>(null);
+  const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
+  const [clipEdit, setClipEdit] = useState<LiveEdit | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
   const [busy, setBusy] = useState(false);
 
@@ -35,7 +42,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const h = w * 1.4;
   const s = MOMENT_STYLES[style];
   const max = mode === 'text' ? 280 : 200;
-  const ready = mode === 'text' ? body.trim().length > 0 : !!photo;
+  const ready = mode === 'text' ? body.trim().length > 0 : mode === 'photo' ? !!photo : !!clip;
 
   const cam = useLiveCamera();
 
@@ -45,6 +52,27 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
     if ('error' in img) return toast({ kind: 'error', title: 'Photo not added', message: img.error });
     setPhoto(img);
     setMode('photo');
+  };
+
+  const chooseClip = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        videoMaxDuration: 15, // a Moment is a glance; the editor caps it here too
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      setClip({
+        uri: asset.uri,
+        mimeType: asset.mimeType || 'video/mp4',
+        durationMs: asset.duration ?? 0,
+      });
+      setClipEdit(null);
+      setMode('video');
+    } catch (e) {
+      toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
+    }
   };
 
   const share = async () => {
@@ -57,6 +85,9 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         audience,
         photoUri: photo?.uri,
         photoMime: photo?.mimeType,
+        videoUri: clip?.uri,
+        videoMime: clip?.mimeType,
+        edit: clipEdit,
       });
       qc.invalidateQueries({ queryKey: keys.moments });
       toast({ kind: 'success', title: 'Your Moment is live', message: 'It’ll disappear in 24 hours.' });
@@ -73,18 +104,42 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       <Header title="New Moment" subtitle="Share a glimpse. Gone in 24 hours." right={<IconButton icon="close" label="Close" onPress={() => navigation.goBack()} />} />
       {cam.node}
 
-      <Segmented<'text' | 'photo'>
+      <Segmented<'text' | 'photo' | 'video'>
         value={mode}
-        onChange={(m) => (m === 'photo' && !photo ? choosePhoto() : setMode(m))}
+        onChange={(m) => {
+          if (m === 'photo' && !photo) return choosePhoto();
+          if (m === 'video' && !clip) return chooseClip();
+          setMode(m);
+        }}
         options={[
           { value: 'text', label: 'Words' },
           { value: 'photo', label: 'Photo' },
+          { value: 'video', label: 'Clip' },
         ]}
       />
 
       <View style={{ alignItems: 'center', marginTop: space.lg }}>
         <View style={{ width: w, height: h, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.card }}>
-          {mode === 'photo' && photo ? (
+          {mode === 'video' && clip ? (
+            <>
+              <MomentVideo uri={clip.uri} live={clipEdit} style={{ width: w, height: h }} autoPlay />
+              <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 8 }}>
+                <IconButton icon="images-outline" variant="glass" label="Choose another clip" onPress={chooseClip} />
+              </View>
+              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14, backgroundColor: 'rgba(0,0,0,0.45)' }}>
+                <TextInput
+                  value={body}
+                  onChangeText={setBody}
+                  placeholder="Add a caption…"
+                  placeholderTextColor="rgba(255,255,255,0.65)"
+                  maxLength={max}
+                  multiline
+                  accessibilityLabel="Caption"
+                  style={[{ color: '#fff', fontFamily: fonts.medium, fontSize: 16 }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
+                />
+              </View>
+            </>
+          ) : mode === 'photo' && photo ? (
             <>
               <Photo uri={photo.uri} style={{ width: w, height: h }} contentPosition="center" alt="Selected photo" />
               <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 8 }}>
@@ -147,6 +202,21 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         </View>
       ) : null}
 
+      {mode === 'video' && clip ? (
+        <View style={{ marginTop: space.md, gap: 8 }}>
+          <Button
+            title={clipEdit ? 'Edit your clip again' : 'Edit your clip'}
+            icon="color-wand-outline"
+            variant="secondary"
+            onPress={() => setEditorOpen(true)}
+            accessibilityLabel="Open the video editor"
+          />
+          <Txt variant="caption" color="textMuted">
+            Fifteen seconds. Gone in 24 hours, like every Moment.
+          </Txt>
+        </View>
+      ) : null}
+
       <View style={{ marginTop: space.lg }}>
         <Txt variant="label" color="textSecondary" style={{ marginBottom: space.sm }}>
           Who can see it
@@ -160,6 +230,21 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
           ]}
         />
       </View>
+
+      <VideoEditorModal
+        visible={editorOpen}
+        sourceUri={clip?.uri ?? null}
+        sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
+        category="moment"
+        onCancel={() => setEditorOpen(false)}
+        onDone={(r) => {
+          // Only the words and stickers are kept. The cut is baked in on the
+          // phone, and a Moment is final the moment it is posted.
+          const edit = r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0);
+          setClipEdit(splitForUpload(edit, 'moment').live);
+          setEditorOpen(false);
+        }}
+      />
     </Screen>
   );
 }

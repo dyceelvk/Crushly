@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   useWindowDimensions,
@@ -294,6 +296,8 @@ export function VideoEditorModal({
           />
         </View>
 
+        {Platform.OS === 'web' ? <WebEditorNotice /> : null}
+
         <View style={{ alignItems: 'center', paddingHorizontal: space.md }}>
           <VideoEditCanvas
             player={player}
@@ -432,6 +436,46 @@ export function VideoEditorModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+/**
+ * On the web every tool here works, but the clip that gets posted is the one
+ * you picked — the encoder that makes a trimmed clip genuinely smaller lives in
+ * the app. Rather than quietly offering less, we say so and point at the app.
+ */
+function WebEditorNotice() {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        marginHorizontal: space.md,
+        marginBottom: space.xs,
+        padding: space.md,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: colors.goldLine,
+        backgroundColor: colors.goldSoft,
+        gap: 6,
+      }}
+      accessibilityRole="alert"
+    >
+      <Txt variant="bodyStrong">Full video editing is only available in the app version</Txt>
+      <Txt variant="small" color="textSecondary">
+        Get the latest Android version now
+      </Txt>
+      <Button
+        title="Install Crushly"
+        size="sm"
+        variant="primary"
+        icon="download-outline"
+        onPress={() => {
+          haptic.tap();
+          Linking.openURL('/download/').catch(() => undefined);
+        }}
+        accessibilityLabel="Install Crushly on Android"
+      />
+    </View>
   );
 }
 

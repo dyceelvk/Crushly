@@ -390,13 +390,13 @@ begin
   if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
     perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
   end if;
-  -- Moments stay a photo or nothing: they are a day long and meant to be
-  -- glanced at, and a clip belongs in a Vibe. A post may carry either.
-  if p_kind in ('photos', 'moments') and v_ext not in ('jpg', 'png', 'webp') then
+  if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
     perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
   end if;
-  if p_kind = 'posts' and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then
-    perform public.crushly_fail(415, '', 'A post takes a photo or a short clip.');
+  -- A Moment or a Flow may carry a photo or a clip. Moments are capped far
+  -- tighter in the app (fifteen seconds), because they are a glance.
+  if p_kind in ('moments', 'posts') and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'That takes a photo or a short clip.');
   end if;
   if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3') then
     perform public.crushly_fail(415, '', 'Circles take photos and voice notes.');

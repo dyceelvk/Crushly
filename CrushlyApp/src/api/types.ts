@@ -136,10 +136,12 @@ export type ReplyQuote = {
 
 export type MomentSummary = {
   id: number;
-  kind: 'photo' | 'text';
+  kind: 'photo' | 'text' | 'video';
   body: string;
   mediaUrl: string | null;
   style: MomentStyle;
+  /** Words and stickers drawn over a clip. Null when the Moment is not a clip. */
+  edit: LiveEdit | null;
   createdAt: number;
 };
 
@@ -300,7 +302,7 @@ export type CrushResult = { mutual: boolean; isNew: boolean; profile: Profile | 
 /* ------------------------------------------------------------------ vibes */
 
 /** The author of a Vibe, as the feed returns them. */
-import type { VideoEdit } from '../lib/videoEdit';
+import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
 
 export type VibeAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
 

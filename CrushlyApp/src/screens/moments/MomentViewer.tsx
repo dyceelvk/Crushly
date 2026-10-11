@@ -258,7 +258,13 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
-        <MomentPreview key={moment.id} moment={moment} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: space.xl }} textSize={26} />
+        <MomentPreview
+          key={moment.id}
+          moment={moment}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: moment.kind === 'video' ? 0 : space.xl }}
+          textSize={26}
+          autoPlay={moment.kind === 'video'}
+        />
 
         {/* Tap to move, hold to pause. One responder surface that claims the
             touch and keeps it until the finger lifts — a pause can no longer be

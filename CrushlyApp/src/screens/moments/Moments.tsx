@@ -16,12 +16,35 @@ import type { Moment, MomentGroup } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { MOMENT_STYLES } from '../../lib/catalog';
+import { MomentVideo } from '../../components/MomentVideo';
+import { mediaUrl } from '../../api/client';
+import { mediaSource } from '../../lib/mediaHost';
 import { timeAgo } from '../../lib/format';
 import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
-export function MomentPreview({ moment, style, textSize = 15, lines = 6 }: { moment?: Moment; style?: object; textSize?: number; lines?: number }) {
+export function MomentPreview({ moment, style, textSize = 15, lines = 6, autoPlay = false }: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
+  if (moment.kind === 'video') {
+    return (
+      <View style={[{ overflow: 'hidden', backgroundColor: '#000' }, style]}>
+        <MomentVideo
+          uri={mediaSource(mediaUrl(moment.mediaUrl)) as string}
+          live={moment.edit}
+          style={{ width: '100%', height: '100%' }}
+          autoPlay={autoPlay}
+          loop={autoPlay}
+        />
+        {moment.body ? (
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+            <Txt variant="body" numberOfLines={lines} style={{ fontSize: textSize, color: '#FFF', lineHeight: textSize * 1.35 }}>
+              <LinkText text={moment.body} bare />
+            </Txt>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
   if (moment.kind === 'photo') {
     return (
       <View style={[{ overflow: 'hidden' }, style]}>

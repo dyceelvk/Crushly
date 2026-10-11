@@ -5,7 +5,7 @@ import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
-import type { VideoEdit } from '../lib/videoEdit';
+import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
 import {
   INTENTIONS as catalogIntentions,
   INTERESTS as catalogInterests,
@@ -845,12 +845,15 @@ async function myAuthorCard(): Promise<MomentAuthor> {
 }
 
 export async function createMoment(input: {
-  kind: 'text' | 'photo';
+  kind: 'text' | 'photo' | 'video';
   body: string;
   style: MomentStyle;
   audience: 'everyone' | 'connections';
   photoUri?: string;
   photoMime?: string;
+  videoUri?: string;
+  videoMime?: string;
+  edit?: LiveEdit | null;
 }): Promise<Moment> {
   const max = input.kind === 'text' ? 280 : 200;
   const body = str(input.body, input.kind === 'text' ? 'Your Moment' : 'Caption', {
@@ -864,12 +867,26 @@ export async function createMoment(input: {
     const id = await meId();
     mediaPath = await uploadMediaFile('media', `moments/${id}/${Date.now()}.${extensionFor(type)}`, input.photoUri, type);
   }
+  if (input.kind === 'video') {
+    if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');
+    const type = (input.videoMime || 'video/mp4').toLowerCase();
+    const id = await meId();
+    // Same reason as a Vibe: extensionFor() maps mp4 to m4a, which is right for
+    // a voice note and wrong for a clip.
+    mediaPath = await uploadMediaFile(
+      'media',
+      `moments/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`,
+      input.videoUri,
+      type,
+    );
+  }
   const moment = await rpc<Moment>('create_moment', {
     p_kind: input.kind,
     p_body: body,
     p_media_url: mediaPath,
     p_style: input.style,
     p_audience: input.audience,
+    p_edit: (input.edit ?? null) as unknown as Record<string, unknown> | null,
   });
   return moment;
 }
