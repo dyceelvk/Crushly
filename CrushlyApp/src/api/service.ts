@@ -489,7 +489,7 @@ export async function sendCircleMessage(input: {
     p_body: input.body ?? '',
     p_media_url: media,
     p_kind: kind,
-    p_edit: (input.edit ?? null) as unknown as Record<string, unknown> | null,
+    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
 }
 
@@ -893,7 +893,7 @@ export async function createMoment(input: {
     p_media_url: mediaPath,
     p_style: input.style,
     p_audience: input.audience,
-    p_edit: (input.edit ?? null) as unknown as Record<string, unknown> | null,
+    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
   return moment;
 }
@@ -1015,7 +1015,7 @@ export async function createVibe(input: {
     p_cover_url: cover,
     p_audience: input.audience,
     p_duration_ms: input.durationMs ?? null,
-    p_edit: (input.edit ?? null) as unknown as Record<string, unknown> | null,
+    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
 }
 
