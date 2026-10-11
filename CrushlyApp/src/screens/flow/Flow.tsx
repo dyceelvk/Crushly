@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { LinkText } from '../../components/LinkText';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -222,7 +223,7 @@ export function PostCard({ post: p }: { post: Post }) {
 
       {p.body ? (
         <Txt variant="body" style={{ paddingHorizontal: space.md, paddingTop: space.sm, fontSize: 16, lineHeight: 23 }} selectable>
-          {p.body}
+          <LinkText text={p.body} bare />
         </Txt>
       ) : null}
 

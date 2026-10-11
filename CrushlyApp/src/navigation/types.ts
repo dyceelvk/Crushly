@@ -41,6 +41,7 @@ export type RootStackParamList = {
   Moments: undefined;
   MomentComposer: undefined;
   VibeComposer: undefined;
+  WebPreview: { url: string };
   Safety: undefined;
   Privacy: undefined;
   BlockedUsers: undefined;

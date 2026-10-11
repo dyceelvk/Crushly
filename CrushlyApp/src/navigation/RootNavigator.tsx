@@ -33,6 +33,7 @@ import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VibeComposerScreen } from '../screens/discover/VibeComposer';
+import { WebPreviewScreen } from '../screens/common/WebPreview';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
 import { CircleScreen } from '../screens/circles/Circle';
@@ -135,6 +136,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
       ) : (
         <>
           <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade' }} />
+          <Stack.Screen name="WebPreview" component={WebPreviewScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="VibeViewer" component={VibeViewerScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           <Stack.Screen name="Moments" component={MomentsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />

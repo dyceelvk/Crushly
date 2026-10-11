@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { LinkText } from '../../components/LinkText';
 import { Photo, Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
@@ -28,7 +29,7 @@ export function MomentPreview({ moment, style, textSize = 15, lines = 6 }: { mom
         {moment.body ? (
           <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(0,0,0,0.55)' }}>
             <Txt variant="body" numberOfLines={lines} style={{ fontSize: textSize, color: '#FFF', lineHeight: textSize * 1.35 }}>
-              {moment.body}
+              <LinkText text={moment.body} bare />
             </Txt>
           </View>
         ) : null}
@@ -39,7 +40,7 @@ export function MomentPreview({ moment, style, textSize = 15, lines = 6 }: { mom
   return (
     <LinearGradient colors={s.colors} style={[{ padding: 14, justifyContent: 'center' }, style]}>
       <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
-        {moment.body}
+        <LinkText text={moment.body} bare />
       </Txt>
     </LinearGradient>
   );

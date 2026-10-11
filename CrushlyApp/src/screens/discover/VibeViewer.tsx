@@ -4,6 +4,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { LinkText } from '../../components/LinkText';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -119,7 +120,7 @@ export function VibeViewerScreen({ route, navigation }: ScreenProps<'VibeViewer'
               }}
             >
               <Txt variant="body" style={{ color: '#fff' }}>
-                {vibe.body}
+                <LinkText text={vibe.body} bare />
               </Txt>
             </View>
           </View>
