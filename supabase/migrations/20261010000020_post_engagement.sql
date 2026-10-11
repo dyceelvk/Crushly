@@ -278,7 +278,8 @@ begin
 
   for r in
     select po.* from posts po
-     where (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+     where po.circle_id is null
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
                              or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
      order by po.created_at desc, po.id desc
      limit least(greatest(coalesce(p_limit, 20), 1), 50)
@@ -295,6 +296,7 @@ begin
             when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
             else 'photo'
           end,
+          'edit', r.edit,
           'audience', r.audience,
           'createdAt', r.created_at,
           'author', public.public_profile(me, r.author_id, false),
@@ -348,6 +350,7 @@ begin
             when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
             else 'photo'
           end,
+          'edit', r.edit,
           'audience', r.audience,
           'createdAt', r.created_at,
           'author', public.public_profile(me, r.author_id, false),
