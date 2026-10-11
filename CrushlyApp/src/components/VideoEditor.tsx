@@ -419,6 +419,7 @@ export function VideoEditorModal({
                   onSelect={setSelectedId}
                   update={update}
                   colors={colors}
+                  category={category}
                 />
               ) : null}
               {tool === 'filters' ? <FiltersPanel edit={edit} update={update} /> : null}
@@ -426,7 +427,13 @@ export function VideoEditorModal({
               {tool === 'speed' ? <SpeedPanel edit={edit} update={update} /> : null}
               {tool === 'crop' ? <CropPanel edit={edit} update={update} /> : null}
               {tool === 'stickers' ? (
-                <StickersPanel edit={edit} sticker={selectedSticker} onSelect={setSelectedId} update={update} />
+                <StickersPanel
+                  edit={edit}
+                  sticker={selectedSticker}
+                  onSelect={setSelectedId}
+                  update={update}
+                  category={category}
+                />
               ) : null}
               {tool === 'music' ? (
                 <MusicPanel edit={edit} update={update} onPick={pickMusic} />
@@ -550,14 +557,16 @@ function CaptionsPanel({
   onSelect,
   update,
   colors,
+  category,
 }: {
   edit: VideoEdit;
   caption: VideoEdit['captions'][number] | null;
   onSelect: (id: string | null) => void;
   update: (e: VideoEdit) => void;
   colors: ReturnType<typeof useTheme>['colors'];
+  category: EditCategory;
 }) {
-  const limit = EDIT_LIMITS.vibe.maxCaptions;
+  const limit = EDIT_LIMITS[category].maxCaptions;
   const width = clipLength(edit);
 
   return (
@@ -847,28 +856,39 @@ function StickersPanel({
   sticker,
   onSelect,
   update,
+  category,
 }: {
   edit: VideoEdit;
   sticker: VideoEdit['stickers'][number] | null;
   onSelect: (id: string | null) => void;
   update: (e: VideoEdit) => void;
+  category: EditCategory;
 }) {
   const width = clipLength(edit);
+  const limit = EDIT_LIMITS[category].maxStickers;
+  const full = edit.stickers.length >= limit;
   return (
     <>
-      <PanelNote>Tap to add, then drag it anywhere on the frame.</PanelNote>
+      <PanelNote>
+        {full
+          ? `That’s the lot — ${limit} stickers on ${CATEGORY_LABEL[category]}. Remove one to add another.`
+          : 'Tap to add, then drag it anywhere on the frame.'}
+      </PanelNote>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {STICKERS.map((g) => (
           <Pressable
             key={g}
             onPress={() => {
+              if (full) return;
               const s = newSticker(edit, g, 0);
               update({ ...edit, stickers: [...edit.stickers, s] });
               onSelect(s.id);
               haptic.tap();
             }}
+            disabled={full}
             accessibilityRole="button"
-            accessibilityLabel={`Add sticker ${g}`}
+            accessibilityState={{ disabled: full }}
+            accessibilityLabel={full ? `Sticker limit reached` : `Add sticker ${g}`}
             style={{
               width: 44,
               height: 44,
