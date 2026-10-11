@@ -16,7 +16,15 @@
  * code, and the app must never be unable to post because of it.
  */
 
-import { BakedEdit, EDIT_LIMITS, EditCategory, FILTERS, VideoEdit, clipLength } from './videoEdit';
+import { BakedEdit, EDIT_LIMITS, EditCategory, FILTERS, LiveEdit, VideoEdit, clipLength, splitForUpload } from './videoEdit';
+
+/**
+ * The trimmer is reached by dynamic import, never at load time.
+ *
+ * `planEncode` — the substance of this module — is tested in plain node, where
+ * React Native is not loaded. A static import of the native module would take
+ * the whole test file down with it.
+ */
 
 /** Longest edge we keep, per category. Short-lived clips do not need 4K. */
 const MAX_EDGE: Record<EditCategory, number> = {
@@ -192,9 +200,53 @@ export type EncodeResult = {
   uri: string;
   /** False when no encoder was present and the original was kept. */
   encoded: boolean;
+  /** How it was produced, when it was. */
+  via: 'lossless-trim' | 're-encode' | null;
   /** Bytes before and after, when we could measure them. */
   savedBytes: number | null;
 };
+
+/**
+ * The range to keep, in milliseconds — or null when the edit keeps the whole
+ * clip and there is nothing to cut.
+ *
+ * Half a second is the threshold. Cutting less than that off either end is not
+ * worth the work or the risk of a re-mux; more than that is a real trim.
+ */
+export function cutRange(baked: BakedEdit): { startMs: number; endMs: number } | null {
+  const startMs = Math.max(0, baked.trimStart * 1000);
+  const sourceMs = Math.max(0, baked.sourceDuration * 1000);
+  const endMs = Math.min(baked.trimEnd * 1000, sourceMs) || sourceMs;
+
+  const cutsStart = startMs >= 500;
+  const cutsEnd = endMs > 0 && endMs <= sourceMs - 500;
+  if (!cutsStart && !cutsEnd) return null;
+
+  return {
+    startMs,
+    endMs: Math.max(startMs + 100, cutsEnd ? endMs : sourceMs),
+  };
+}
+
+/**
+ * True when the only thing the edit does is cut.
+ *
+ * Speed, filters, crop, light and music all change the pixels or the sound, so
+ * they need a real re-encode; a plain cut does not, and it is by far the most
+ * common edit.
+ */
+export function isTrimOnly(baked: BakedEdit): boolean {
+  return (
+    baked.speed === 1 &&
+    baked.aspect === 'original' &&
+    baked.filter === 'none' &&
+    baked.brightness === 0 &&
+    baked.contrast === 0 &&
+    baked.saturation === 0 &&
+    baked.clipVolume === 1 &&
+    !baked.music
+  );
+}
 
 export type Encoder = {
   available: boolean;
@@ -240,20 +292,37 @@ export async function encodeClip(
   });
 
   if (plan.noop) {
-    return { uri: sourceUri, encoded: false, savedBytes: null };
+    return { uri: sourceUri, encoded: false, via: null, savedBytes: null };
+  }
+
+  // A plain cut is the common case and the phone can do it without touching a
+  // pixel: the encoded frames are copied straight into a shorter file, so a
+  // trimmed clip is genuinely smaller than the one that was chosen.
+  const cut = cutRange(baked);
+  if (cut && isTrimOnly(baked)) {
+    try {
+      const { trimmerAvailable, trimVideo } = await import('./nativeTrim');
+      if (trimmerAvailable()) {
+        const uri = await trimVideo(sourceUri, cut);
+        return { uri, encoded: true, via: 'lossless-trim', savedBytes: null };
+      }
+    } catch {
+      // A failed cut must never lose somebody's clip. Fall through and post
+      // the original, which is bigger but still correct.
+    }
   }
 
   const encoder = injected;
   if (!encoder?.available) {
-    return { uri: sourceUri, encoded: false, savedBytes: null };
+    return { uri: sourceUri, encoded: false, via: null, savedBytes: null };
   }
 
   try {
     const uri = await encoder.run(plan);
-    return { uri, encoded: true, savedBytes: null };
+    return { uri, encoded: true, via: 're-encode', savedBytes: null };
   } catch {
     // An encode that fails must never lose somebody's clip.
-    return { uri: sourceUri, encoded: false, savedBytes: null };
+    return { uri: sourceUri, encoded: false, via: null, savedBytes: null };
   }
 }
 
@@ -261,6 +330,29 @@ export async function encodeClip(
  * Why a clip could not be shrunk, in words a member can read. Deliberately free
  * of any platform import so it — and this whole module — can be tested in node.
  */
+/**
+ * Everything a composer needs in order to upload an edited clip: the file that
+ * should actually be sent, and the half that travels as data.
+ *
+ * Callers must not upload the picked file directly. Doing so posts the whole
+ * clip no matter how it was trimmed, which makes the trim a lie — and the part
+ * that was cut away stays in the bucket for anyone who fetches it.
+ */
+export async function preparedClip(
+  edit: VideoEdit | null,
+  sourceUri: string | null,
+  category: EditCategory,
+): Promise<{ uri: string | null; live: LiveEdit | null; encoded: boolean }> {
+  if (!sourceUri) return { uri: null, live: null, encoded: false };
+
+  // No edit at all: the picked file is the finished clip.
+  if (!edit) return { uri: sourceUri, live: null, encoded: false };
+
+  const { live } = splitForUpload(edit, category);
+  const result = await encodeClip(sourceUri, edit, category);
+  return { uri: result.uri, live, encoded: result.encoded };
+}
+
 export function encodeUnavailableNote(): string {
   return 'Your clip will be posted as it is.';
 }

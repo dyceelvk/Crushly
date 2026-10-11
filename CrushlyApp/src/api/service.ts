@@ -1024,7 +1024,7 @@ export async function createVibe(input: {
   coverUri?: string | null;
   coverMime?: string | null;
   durationMs?: number | null;
-  edit?: VideoEdit | null;
+  edit?: LiveEdit | null;
 }): Promise<Vibe> {
   const body = str(input.body, 'Caption', { max: 200 });
   if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');

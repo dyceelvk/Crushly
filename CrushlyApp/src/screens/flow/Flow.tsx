@@ -30,7 +30,8 @@ import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
-import { splitForUpload, emptyEdit, type LiveEdit } from '../../lib/videoEdit';
+import { splitForUpload, emptyEdit, type VideoEdit } from '../../lib/videoEdit';
+import { preparedClip } from '../../lib/videoEncode';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -420,9 +421,13 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
   const [circleId, setCircleId] = useState<number | null>(null);
   const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
   const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
-  const [clipEdit, setClipEdit] = useState<LiveEdit | null>(null);
+  const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+
+  // What the player draws over the clip: only the words and stickers. The cut
+  // itself is written into the file when the post is shared.
+  const liveEdit = clipEdit ? splitForUpload(clipEdit, 'post').live : null;
 
   const pick = async () => {
     setPicking(true);
@@ -455,15 +460,16 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
 
   const submit = async () => {
     try {
+      const prepared = clip ? await preparedClip(clipEdit, clip.uri, 'post') : null;
       await create.mutateAsync({
         body: body.trim(),
         audience: audience === 'circle' ? 'connections' : audience,
         circleId: audience === 'circle' ? circleId : null,
         photoUri: photo?.uri ?? null,
         photoMime: photo?.mimeType ?? null,
-        videoUri: clip?.uri ?? null,
+        videoUri: prepared ? prepared.uri : null,
         videoMime: clip?.mimeType ?? null,
-        edit: clipEdit,
+        edit: prepared ? prepared.live : null,
       });
       setBody('');
       setPhoto(null);
@@ -487,8 +493,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
       category="post"
       onCancel={() => setEditorOpen(false)}
       onDone={(r) => {
-        const edit = r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0);
-        setClipEdit(splitForUpload(edit, 'post').live);
+        setClipEdit(r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0));
         setEditorOpen(false);
       }}
     />
@@ -515,7 +520,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
 
         {clip ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <EditedClip uri={clip.uri} live={clipEdit} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
+            <EditedClip uri={clip.uri} live={liveEdit} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
             <Button title={clipEdit ? 'Edit again' : 'Edit clip'} size="sm" variant="secondary" onPress={() => setEditorOpen(true)} />
             <Button title="Remove" size="sm" variant="ghost" onPress={() => { setClip(null); setClipEdit(null); }} />
           </View>

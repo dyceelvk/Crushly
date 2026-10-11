@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planEncode } from './videoEncode';
+import { cutRange, isTrimOnly, planEncode } from './videoEncode';
 import { emptyEdit, type VideoEdit } from './videoEdit';
 
 const SRC = 60;
@@ -112,4 +112,57 @@ test('every plan overwrites rather than asking', () => {
   for (const over of [{}, { speed: 2 }, { filter: 'noir' as const }, { aspect: '1:1' as const }]) {
     assert.equal(plan(over).args[0], '-y');
   }
+});
+
+/* ---------------------------------------------------------------- the cut */
+
+/** The baked half, the way the encoder sees it: no captions, no stickers. */
+function baked(over: Partial<VideoEdit> = {}) {
+  const edit = { ...emptyEdit(SRC), ...over };
+  const { captions: _c, stickers: _s, ...rest } = edit;
+  return rest;
+}
+
+test('a clip that keeps its whole length has nothing to cut', () => {
+  assert.equal(cutRange(baked()), null);
+});
+
+test('cutting a few frames off either end is not worth a re-mux', () => {
+  assert.equal(cutRange(baked({ trimStart: 0.2, trimEnd: SRC - 0.2 })), null);
+});
+
+test('a real trim is reported in milliseconds', () => {
+  assert.deepEqual(cutRange(baked({ trimStart: 10, trimEnd: 25 })), { startMs: 10_000, endMs: 25_000 });
+});
+
+test('a trim from the start keeps to the end of the source', () => {
+  assert.deepEqual(cutRange(baked({ trimStart: 5 })), { startMs: 5_000, endMs: 60_000 });
+});
+
+test('a range is never empty, however short the kept part', () => {
+  const cut = cutRange(baked({ trimEnd: 10.05 }));
+  assert.ok(cut);
+  assert.ok(cut.endMs - cut.startMs >= 100);
+});
+
+test('a plain cut is the only thing that needs no re-encode', () => {
+  assert.equal(isTrimOnly(baked({ trimStart: 10, trimEnd: 25 })), true);
+});
+
+test('speed, filters, crop, light and music all need a re-encode', () => {
+  assert.equal(isTrimOnly(baked({ speed: 2 })), false);
+  assert.equal(isTrimOnly(baked({ filter: 'noir' })), false);
+  assert.equal(isTrimOnly(baked({ aspect: '9:16' })), false);
+  assert.equal(isTrimOnly(baked({ brightness: 0.2 })), false);
+  assert.equal(isTrimOnly(baked({ contrast: 0.2 })), false);
+  assert.equal(isTrimOnly(baked({ saturation: 0.2 })), false);
+  assert.equal(isTrimOnly(baked({ clipVolume: 0 })), false);
+  assert.equal(isTrimOnly(baked({ music: { id: 'a', label: 'A', uri: 'file:///a.m4a', volume: 0.6 } })), false);
+});
+
+test('a trimmed clip is what gets encoded, not just previewed', () => {
+  // The whole point of the cut: the file that is uploaded is the shorter one.
+  const cut = cutRange(baked({ trimStart: 10, trimEnd: 25 }));
+  assert.ok(cut);
+  assert.ok(cut.endMs - cut.startMs < SRC * 1000);
 });

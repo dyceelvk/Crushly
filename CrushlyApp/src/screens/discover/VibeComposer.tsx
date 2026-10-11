@@ -14,6 +14,7 @@ import { useToast } from '../../components/Toast';
 import { useCreateVibe } from '../../api/hooks';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import type { VideoEdit } from '../../lib/videoEdit';
+import { preparedClip } from '../../lib/videoEncode';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -94,13 +95,14 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
     if (!clip) return;
     setBusy(true);
     try {
+      const prepared = await preparedClip(clipEdit, clip.uri, 'vibe');
       await create.mutateAsync({
         body,
         audience,
-        videoUri: clip.uri,
+        videoUri: prepared.uri ?? clip.uri,
         videoMime: clip.mimeType,
         durationMs: clip.durationMs || null,
-        edit: clipEdit,
+        edit: prepared.live,
       });
       toast({ kind: 'success', title: 'Vibe shared', message: 'It stays for two weeks, then it’s gone.' });
       navigation.goBack();

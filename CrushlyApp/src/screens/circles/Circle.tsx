@@ -26,7 +26,8 @@ import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
-import { splitForUpload, emptyEdit, type LiveEdit } from '../../lib/videoEdit';
+import { splitForUpload, emptyEdit, type VideoEdit } from '../../lib/videoEdit';
+import { preparedClip } from '../../lib/videoEncode';
 import type { RootStackParamList, ScreenProps } from '../../navigation/types';
 import type { CircleMessage } from '../../api/types';
 import { PostCard } from '../flow/Flow';
@@ -159,9 +160,13 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
   const [body, setBody] = useState('');
   const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
   const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
-  const [clipEdit, setClipEdit] = useState<LiveEdit | null>(null);
+  const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+
+  // What the player draws over the clip: only the words and stickers. The rest
+  // is written into the file itself when the message is sent.
+  const liveEdit = clipEdit ? splitForUpload(clipEdit, 'circle').live : null;
 
   const byId = new Map(members.map((m) => [m.member.id, m.member]));
   const items = thread.data?.items ?? [];
@@ -199,13 +204,14 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
     const text = body.trim();
     if (!text && !photo && !clip) return;
     try {
+      const prepared = clip ? await preparedClip(clipEdit, clip.uri, 'circle') : null;
       await send.mutateAsync({
         circleId,
         body: text,
         kind: clip ? 'video' : photo ? 'photo' : 'text',
-        mediaUri: clip?.uri ?? photo?.uri ?? null,
+        mediaUri: prepared ? prepared.uri : photo?.uri ?? null,
         mediaMime: clip?.mimeType ?? photo?.mimeType ?? null,
-        edit: clipEdit,
+        edit: prepared ? prepared.live : null,
       });
       setBody('');
       setPhoto(null);
@@ -241,7 +247,7 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
         ) : null}
         {clip ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <EditedClip uri={clip.uri} live={clipEdit} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
+            <EditedClip uri={clip.uri} live={liveEdit} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
             <Button title={clipEdit ? 'Edit again' : 'Edit clip'} size="sm" variant="secondary" onPress={() => setEditorOpen(true)} />
             <Button title="Remove" size="sm" variant="ghost" onPress={() => { setClip(null); setClipEdit(null); }} />
           </View>
@@ -270,7 +276,7 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           const edit = r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0);
-          setClipEdit(splitForUpload(edit, 'circle').live);
+          setClipEdit(edit);
           setEditorOpen(false);
         }}
       />

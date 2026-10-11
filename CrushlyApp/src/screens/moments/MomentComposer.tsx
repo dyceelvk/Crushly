@@ -17,7 +17,8 @@ import { pickImage, type PickedImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
-import { splitForUpload, emptyEdit, type LiveEdit } from '../../lib/videoEdit';
+import { splitForUpload, emptyEdit, type LiveEdit, type VideoEdit } from '../../lib/videoEdit';
+import { preparedClip } from '../../lib/videoEncode';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
@@ -33,7 +34,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const [style, setStyle] = useState<MomentStyle>('champagne');
   const [photo, setPhoto] = useState<PickedImage | null>(null);
   const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
-  const [clipEdit, setClipEdit] = useState<LiveEdit | null>(null);
+  const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
   const [busy, setBusy] = useState(false);
@@ -78,6 +79,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const share = async () => {
     setBusy(true);
     try {
+      const prepared = clip ? await preparedClip(clipEdit, clip.uri, 'moment') : null;
       await createMoment({
         kind: mode,
         body: body.trim(),
@@ -85,9 +87,9 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         audience,
         photoUri: photo?.uri,
         photoMime: photo?.mimeType,
-        videoUri: clip?.uri,
+        videoUri: prepared ? prepared.uri ?? undefined : clip?.uri,
         videoMime: clip?.mimeType,
-        edit: clipEdit,
+        edit: prepared ? prepared.live : null,
       });
       qc.invalidateQueries({ queryKey: keys.moments });
       toast({ kind: 'success', title: 'Your Moment is live', message: 'It’ll disappear in 24 hours.' });
@@ -240,8 +242,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         onDone={(r) => {
           // Only the words and stickers are kept. The cut is baked in on the
           // phone, and a Moment is final the moment it is posted.
-          const edit = r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0);
-          setClipEdit(splitForUpload(edit, 'moment').live);
+          setClipEdit(r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0));
           setEditorOpen(false);
         }}
       />
