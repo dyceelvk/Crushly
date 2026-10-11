@@ -675,3 +675,12 @@ export const useViewVibe = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.vibes }),
   });
 };
+
+/** Posts a Vibe. */
+export const useCreateVibe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof service.createVibe>[0]) => service.createVibe(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.vibes }),
+  });
+};

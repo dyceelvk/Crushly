@@ -40,6 +40,7 @@ export type RootStackParamList = {
   CloseOnes: undefined;
   Moments: undefined;
   MomentComposer: undefined;
+  VibeComposer: undefined;
   Safety: undefined;
   Privacy: undefined;
   BlockedUsers: undefined;

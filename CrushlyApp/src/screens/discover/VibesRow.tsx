@@ -53,8 +53,6 @@ export function VibesRow() {
     );
   }
 
-  if (!items.length) return null;
-
   return (
     <View>
       <SectionLabel title="Vibes" hint="Gone in two weeks" />
@@ -63,6 +61,7 @@ export function VibesRow() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 10, paddingRight: space.md }}
       >
+        <AddTile onPress={() => navigation.navigate('VibeComposer')} />
         {items.map((v) => (
           <VibeTile
             key={v.id}
@@ -78,7 +77,41 @@ export function VibesRow() {
           </View>
         ) : null}
       </ScrollView>
+      {!items.length ? (
+        <Txt variant="small" color="textSecondary" style={{ marginTop: 8 }}>
+          Share a short clip. It stays for two weeks.
+        </Txt>
+      ) : null}
     </View>
+  );
+}
+
+/** The way in. Always first, and always there — even with nothing to watch. */
+function AddTile({ onPress }: { onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Share a Vibe"
+      style={{
+        width: TILE_W,
+        height: TILE_H,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+      }}
+    >
+      <Ionicons name="add" size={26} color={colors.gold} />
+      <Txt variant="caption" color="textSecondary">
+        Your Vibe
+      </Txt>
+    </Pressable>
   );
 }
 

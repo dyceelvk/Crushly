@@ -32,6 +32,7 @@ import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
+import { VibeComposerScreen } from '../screens/discover/VibeComposer';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
 import { CircleScreen } from '../screens/circles/Circle';
@@ -156,7 +157,8 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Info" component={InfoScreen} />
           <Stack.Group screenOptions={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }}>
             <Stack.Screen name="Filters" component={FiltersScreen} />
-            <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
+            <Stack.Screen name="VibeComposer" component={VibeComposerScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
+          <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
             <Stack.Screen name="Plus" component={PlusScreen} />
           </Stack.Group>
           <Stack.Group screenOptions={{ presentation: 'transparentModal', animation: reduceMotion ? 'none' : 'fade', contentStyle: { backgroundColor: 'transparent' } }}>
