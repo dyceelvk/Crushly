@@ -16,7 +16,7 @@ import { MOMENT_STYLES } from '../../lib/catalog';
 import { pickImage, type PickedImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
-import { MomentVideo } from '../../components/MomentVideo';
+import { EditedClip } from '../../components/EditedClip';
 import { splitForUpload, emptyEdit, type LiveEdit } from '../../lib/videoEdit';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -122,7 +122,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         <View style={{ width: w, height: h, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.card }}>
           {mode === 'video' && clip ? (
             <>
-              <MomentVideo uri={clip.uri} live={clipEdit} style={{ width: w, height: h }} autoPlay />
+              <EditedClip uri={clip.uri} live={clipEdit} style={{ width: w, height: h }} autoPlay />
               <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 8 }}>
                 <IconButton icon="images-outline" variant="glass" label="Choose another clip" onPress={chooseClip} />
               </View>

@@ -465,15 +465,21 @@ export async function sendCircleMessage(input: {
   kind?: CircleMessageKind;
   mediaUri?: string | null;
   mediaMime?: string | null;
+  edit?: LiveEdit | null;
 }): Promise<CircleMessage> {
   const kind = input.kind ?? 'text';
   let media: string | null = null;
   if (input.mediaUri) {
     const id = await meId();
-    const type = input.mediaMime || 'image/jpeg';
+    const type = (input.mediaMime || 'image/jpeg').toLowerCase();
+    // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
+    // for a clip, so the container is chosen here instead.
+    const ext = kind === 'video'
+      ? (type.includes('webm') ? 'webm' : 'mp4')
+      : extensionFor(type);
     media = await uploadMediaFile(
       'media',
-      `circles/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extensionFor(type)}`,
+      `circles/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`,
       input.mediaUri,
       type,
     );
@@ -483,6 +489,7 @@ export async function sendCircleMessage(input: {
     p_body: input.body ?? '',
     p_media_url: media,
     p_kind: kind,
+    p_edit: (input.edit ?? null) as unknown as Record<string, unknown> | null,
   });
 }
 

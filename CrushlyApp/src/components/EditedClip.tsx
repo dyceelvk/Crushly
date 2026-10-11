@@ -5,14 +5,16 @@ import { VideoEditCanvas } from './VideoEditCanvas';
 import { emptyEdit, type LiveEdit } from '../lib/videoEdit';
 
 /**
- * A Moment that is a clip.
+ * A clip that has already been cut, played back with its live half on top.
  *
- * The clip itself arrives already cut — the encoder wrote the trim, the speed,
- * the crop and the look into it on the phone. What is left to do here is draw
- * the half that was deliberately left out of the pixels: the words and the
- * stickers, which are why a caption can still be changed after posting.
+ * The file arrives already edited — the encoder wrote the trim, the speed, the
+ * crop and the look into it on the phone. What is left to draw here is the part
+ * that was deliberately kept out of the pixels: the words and the stickers,
+ * which is why a caption can still be changed after posting.
+ *
+ * Used by Moments, Circles and Vibes alike.
  */
-export function MomentVideo({
+export function EditedClip({
   uri,
   live,
   style,
@@ -23,7 +25,7 @@ export function MomentVideo({
   live: LiveEdit | null;
   style?: StyleProp<ViewStyle>;
   autoPlay?: boolean;
-  /** The full-screen viewer loops; a tile in a grid does not. */
+  /** A full-screen player loops; a tile in a grid does not. */
   loop?: boolean;
 }) {
   const player = useVideoPlayer(uri, (p) => {

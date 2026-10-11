@@ -106,7 +106,7 @@ export type CircleSpace = {
   members: CircleMember[];
 };
 
-export type CircleMessageKind = 'text' | 'photo' | 'voice';
+export type CircleMessageKind = 'text' | 'photo' | 'voice' | 'video';
 
 export type CircleMessage = {
   id: number;
@@ -116,6 +116,8 @@ export type CircleMessage = {
   kind: CircleMessageKind;
   body: string;
   mediaUrl: string | null;
+  /** Words and stickers drawn over a clip. Null when the message is not a clip. */
+  edit: LiveEdit | null;
   createdAt: number;
 };
 

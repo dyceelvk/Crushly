@@ -390,9 +390,6 @@ begin
   if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
     perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
   end if;
-  if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
-    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
-  end if;
   -- A Moment or a Flow may carry a photo or a clip. Moments are capped far
   -- tighter in the app (fifteen seconds), because they are a glance.
   if p_kind in ('moments', 'posts') and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then

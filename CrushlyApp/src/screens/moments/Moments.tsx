@@ -16,7 +16,7 @@ import type { Moment, MomentGroup } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { MOMENT_STYLES } from '../../lib/catalog';
-import { MomentVideo } from '../../components/MomentVideo';
+import { EditedClip } from '../../components/EditedClip';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { timeAgo } from '../../lib/format';
@@ -28,7 +28,7 @@ export function MomentPreview({ moment, style, textSize = 15, lines = 6, autoPla
   if (moment.kind === 'video') {
     return (
       <View style={[{ overflow: 'hidden', backgroundColor: '#000' }, style]}>
-        <MomentVideo
+        <EditedClip
           uri={mediaSource(mediaUrl(moment.mediaUrl)) as string}
           live={moment.edit}
           style={{ width: '100%', height: '100%' }}
