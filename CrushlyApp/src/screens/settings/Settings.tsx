@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { Linking } from 'react-native';
+import { useAppUpdate } from '../../api/hooks';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { Screen, Header } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
@@ -32,6 +34,10 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const [confirmOut, setConfirmOut] = useState(false);
   const [busy, setBusy] = useState(false);
   const version = Constants.expoConfig?.version ?? '1.0.0';
+  const versionCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
+  // Asked against our own Worker, never against GitHub: a member should never
+  // be handed a link into the machinery.
+  const update = useAppUpdate(versionCode);
 
   return (
     <Screen>
@@ -70,6 +76,29 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
         <ListRow title="Privacy policy" icon="lock-closed-outline" onPress={() => navigation.navigate('Info', { page: 'privacy' })} />
         <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
+      </Group>
+
+      <Group title="App">
+        <ListRow title="App version" value={version} icon="information-circle-outline" />
+        {update.data?.available ? (
+          <ListRow
+            title={update.data.required ? 'Update needed' : 'Update available'}
+            subtitle={update.data.notes || `Version ${update.data.version} is ready to install.`}
+            value={update.data.version}
+            icon="download-outline"
+            onPress={() => {
+              if (update.data?.apkUrl) Linking.openURL(update.data.apkUrl).catch(() => undefined);
+            }}
+            last
+          />
+        ) : (
+          <ListRow
+            title="You’re up to date"
+            subtitle="Crushly checks every few hours."
+            icon="checkmark-circle-outline"
+            last
+          />
+        )}
       </Group>
 
       <Button title="Sign out" variant="secondary" onPress={() => setConfirmOut(true)} style={{ marginTop: space.xl }} />

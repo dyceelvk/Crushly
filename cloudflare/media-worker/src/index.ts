@@ -391,6 +391,56 @@ const BUILDS: Record<string, string> = {
     'https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk',
 };
 
+/**
+ * What the current Android build is, as the app is told about it.
+ *
+ * Deliberately not the upstream address. The app is only ever handed a URL on
+ * this Worker, so where the file really lives stays ours to know, and moving
+ * it one day is a change here rather than a change in every phone. Raise
+ * `versionCode` — never reuse one — and keep `file` matching a key above.
+ */
+const RELEASE = {
+  version: '1.0.2',
+  versionCode: 3,
+  // Below this the app is told it must update rather than merely may.
+  minVersionCode: 3,
+  file: 'Crushly-1.0.2-Android9plus.apk',
+  notes: 'The first release you can update from inside the app.',
+} as const;
+
+/**
+ * The version check behind the in-app "Install update" button.
+ *
+ * Public: it says only what a member could read off the download page. It must
+ * never become a place that describes how we build or where we keep things, so
+ * the answer is assembled by hand rather than passed through from upstream.
+ */
+async function appVersion(url: URL, origin: string | null): Promise<Response> {
+  const known = Object.prototype.hasOwnProperty.call(BUILDS, RELEASE.file);
+  return new Response(
+    JSON.stringify({
+      platform: 'android',
+      version: RELEASE.version,
+      versionCode: RELEASE.versionCode,
+      minVersionCode: RELEASE.minVersionCode,
+      // Our own address, built from whatever host this was asked on, so it
+      // stays correct on workers.dev and on a custom domain alike.
+      apkUrl: known ? `${url.origin}/apk/${RELEASE.file}` : null,
+      notes: RELEASE.notes,
+    }),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        // Short, so a new release is seen quickly, but not so short that every
+        // phone asks on every open.
+        'Cache-Control': 'public, max-age=300',
+        ...cors(origin),
+      },
+    },
+  );
+}
+
 /** What we pass through, and nothing else. Nothing upstream sets for us. */
 const BUILD_HEADERS = [
   'content-type', 'content-length', 'content-disposition', 'content-range',
@@ -447,6 +497,13 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head });
     if (url.pathname === '/health') return health(env, origin);
+
+    // What version the app should be running. Public, and deliberately silent
+    // about where the build comes from.
+    if (url.pathname === '/version') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
+      return appVersion(url, origin);
+    }
 
     // The Android build. Public, like the download page that links to it.
     if (url.pathname.startsWith('/apk/')) {

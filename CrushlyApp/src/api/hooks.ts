@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
 import type {
@@ -26,6 +26,7 @@ export const keys = {
   closeOnes: ['close-ones'] as const,
   vibes: ['vibes'] as const,
   publicFlow: ['public-flow'] as const,
+  update: ['app-update'] as const,
   search: (q: string) => ['search', q] as const,
   keep: (id: number) => ['keep', id] as const,
 };
@@ -72,6 +73,26 @@ export const useSearch = (query: string) =>
 
 export const usePublicFlow = () =>
   useQuery({ queryKey: keys.publicFlow, queryFn: () => service.publicFlow(), staleTime: 30_000 });
+
+/**
+ * Is there a newer build? Only asked on Android, and only every few hours —
+ * an update check is not worth a request on every open.
+ */
+export const useAppUpdate = (currentVersionCode: number) =>
+  useQuery({
+    queryKey: keys.update,
+    queryFn: () => service.appUpdate(),
+    enabled: Platform.OS === 'android',
+    staleTime: 6 * 60 * 60 * 1000,
+    retry: 1,
+    select: (u) => ({
+      ...u,
+      // An update is only an update if the number actually went up, and only
+      // worth offering if we can hand over a file.
+      available: !!u.apkUrl && u.versionCode > currentVersionCode,
+      required: !!u.apkUrl && u.minVersionCode > currentVersionCode,
+    }),
+  });
 
 export const useNotifications = () =>
   useQuery({

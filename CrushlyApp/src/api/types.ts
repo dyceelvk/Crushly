@@ -361,3 +361,13 @@ export type SearchResults = {
   vibes: SearchVibe[];
   moments: SearchMoment[];
 };
+
+/** What our own update endpoint says the current build is. */
+export type AppUpdate = {
+  platform: string;
+  version: string;
+  versionCode: number;
+  minVersionCode: number;
+  apkUrl: string | null;
+  notes: string;
+};

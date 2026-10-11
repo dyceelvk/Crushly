@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
 import { callMessageMeta } from '../lib/callChannel';
+import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import {
@@ -10,7 +11,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type { AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, MomentStyle, SearchResults, Vibe } from './types';
+import type { AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, MomentStyle, SearchResults, Vibe } from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -1004,4 +1005,20 @@ export async function searchAll(query: string): Promise<SearchResults> {
 export async function publicFlow(): Promise<Post[]> {
   const res = await rpc<{ items: Post[] }>('public_flow_feed', { p_limit: 20 });
   return res?.items ?? [];
+}
+
+/* ----------------------------------------------------------------- updates */
+
+/**
+ * Asks our own Worker what the current build is.
+ *
+ * Deliberately not GitHub, and not the Play Store: a member is never handed a
+ * link into our infrastructure, and the address we call is the same one that
+ * already serves the app's media. A failure here is not an error worth showing
+ * anybody — the app simply carries on at the version it has.
+ */
+export async function appUpdate(): Promise<AppUpdate> {
+  const res = await fetch(`${MEDIA_BASE_URL}/version`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new ApiError(res.status, 'Couldn’t check for an update.');
+  return (await res.json()) as AppUpdate;
 }
