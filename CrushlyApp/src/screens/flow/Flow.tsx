@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { CircleStrip } from '../../components/CircleStrip';
 import { LinkText } from '../../components/LinkText';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -77,6 +78,11 @@ export function FlowScreen() {
             <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
             <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
           </View>
+        </View>
+
+        {/* Home opens on the rooms you belong to, not on a list of strangers. */}
+        <View style={{ marginTop: space.lg }}>
+          <CircleStrip />
         </View>
 
         <Pressable
