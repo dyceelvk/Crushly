@@ -5,6 +5,7 @@ import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
+import type { VideoEdit } from '../lib/videoEdit';
 import {
   INTENTIONS as catalogIntentions,
   INTERESTS as catalogInterests,
@@ -957,6 +958,7 @@ export async function createVibe(input: {
   coverUri?: string | null;
   coverMime?: string | null;
   durationMs?: number | null;
+  edit?: VideoEdit | null;
 }): Promise<Vibe> {
   const body = str(input.body, 'Caption', { max: 200 });
   if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');
@@ -989,6 +991,7 @@ export async function createVibe(input: {
     p_cover_url: cover,
     p_audience: input.audience,
     p_duration_ms: input.durationMs ?? null,
+    p_edit: (input.edit ?? null) as unknown as Record<string, unknown> | null,
   });
 }
 

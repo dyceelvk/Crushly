@@ -12,6 +12,8 @@ import { Segmented } from '../../components/Segmented';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { useCreateVibe } from '../../api/hooks';
+import { VideoEditorModal } from '../../components/VideoEditor';
+import type { VideoEdit } from '../../lib/videoEdit';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -50,6 +52,8 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'connections' | 'everyone'>('connections');
   const [busy, setBusy] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
 
   const player = useVideoPlayer(clip?.uri ?? null, (p) => {
     p.loop = true;
@@ -96,6 +100,7 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
         videoUri: clip.uri,
         videoMime: clip.mimeType,
         durationMs: clip.durationMs || null,
+        edit: clipEdit,
       });
       toast({ kind: 'success', title: 'Vibe shared', message: 'It stays for two weeks, then it’s gone.' });
       navigation.goBack();
@@ -175,14 +180,29 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
         )}
 
         {clip ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Txt variant="caption" color="textSecondary">
               {clip.durationMs ? durationLabel(clip.durationMs) : 'Clip'} · {Math.max(1, Math.round(clip.sizeBytes / 1024 / 1024))} MB
             </Txt>
+            {clipEdit ? (
+              <Txt variant="caption" color="gold">
+                · Edited
+              </Txt>
+            ) : null}
             <Txt variant="smallStrong" color="gold" onPress={pick} accessibilityRole="button" style={{ marginLeft: 'auto' }}>
               Choose a different clip
             </Txt>
           </View>
+        ) : null}
+
+        {clip ? (
+          <Button
+            title={clipEdit ? 'Edit your clip again' : 'Edit your clip'}
+            icon="color-wand-outline"
+            variant="secondary"
+            onPress={() => setEditorOpen(true)}
+            accessibilityLabel="Open the video editor"
+          />
         ) : null}
 
         <Input
@@ -249,6 +269,18 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
           />
         )}
       </ScrollView>
+
+      <VideoEditorModal
+        visible={editorOpen}
+        sourceUri={clip?.uri ?? null}
+        sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
+        category="vibe"
+        onCancel={() => setEditorOpen(false)}
+        onDone={(r) => {
+          setClipEdit(r.edit);
+          setEditorOpen(false);
+        }}
+      />
     </View>
   );
 }

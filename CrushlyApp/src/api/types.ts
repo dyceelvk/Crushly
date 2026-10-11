@@ -300,6 +300,8 @@ export type CrushResult = { mutual: boolean; isNew: boolean; profile: Profile | 
 /* ------------------------------------------------------------------ vibes */
 
 /** The author of a Vibe, as the feed returns them. */
+import type { VideoEdit } from '../lib/videoEdit';
+
 export type VibeAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
 
 /**
@@ -315,6 +317,8 @@ export type Vibe = {
   coverUrl: string | null;
   durationMs: number | null;
   audience: 'connections' | 'everyone';
+  /** The editor's recipe, or null when the clip is untouched. */
+  edit: VideoEdit | null;
   createdAt: number;
   expiresAt: number;
   author: VibeAuthor;

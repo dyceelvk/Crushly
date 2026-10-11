@@ -1,0 +1,133 @@
+-- The video editor, stored.
+--
+-- An edit is a recipe, not a file, so it costs a few hundred bytes instead of a
+-- re-encode. It rides along in a jsonb column next to the clip it belongs to and
+-- the player applies it on every play. Every place that can hold a video gets
+-- the column, so one editor serves all of them.
+--
+-- The column is deliberately unconstrained beyond "object or null": the shape
+-- lives in the app, and `parseEdit` there is written to survive an edit saved
+-- by an older build. Locking the shape down in the database would turn every
+-- new tool into a migration.
+
+alter table public.vibes add column if not exists edit jsonb;
+alter table public.posts add column if not exists edit jsonb;
+alter table public.moments add column if not exists edit jsonb;
+alter table public.circle_messages add column if not exists edit jsonb;
+
+do $$
+begin
+  -- Guards against a half-written recipe, which would otherwise break the
+  -- player for everybody who sees the clip, not just its author.
+  if not exists (select 1 from pg_constraint where conname = 'vibes_edit_is_object') then
+    alter table public.vibes
+      add constraint vibes_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'posts_edit_is_object') then
+    alter table public.posts
+      add constraint posts_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'moments_edit_is_object') then
+    alter table public.moments
+      add constraint moments_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'circle_messages_edit_is_object') then
+    alter table public.circle_messages
+      add constraint circle_messages_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+end $$;
+
+-- A recipe is small. If a client ever hands us something huge it is broken or
+-- hostile, and both are better off rejected than stored.
+create or replace function public.clean_video_edit(p_edit jsonb) returns jsonb
+language sql immutable set search_path = public as $$
+  select case
+    when p_edit is null then null
+    when jsonb_typeof(p_edit) <> 'object' then null
+    when octet_length(p_edit::text) > 24000 then null
+    else p_edit
+  end;
+$$;
+
+-- The edit goes out with every Vibe, so the feed and the viewer agree with what
+-- the composer showed.
+create or replace function public.serialize_vibe(p_vibe public.vibes, p_viewer bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return jsonb_build_object(
+    'id', p_vibe.id,
+    'body', p_vibe.body,
+    'mediaUrl', p_vibe.media_url,
+    'coverUrl', p_vibe.cover_url,
+    'durationMs', p_vibe.duration_ms,
+    'audience', p_vibe.audience,
+    'createdAt', p_vibe.created_at,
+    'expiresAt', p_vibe.expires_at,
+    'edit', p_vibe.edit,
+    'author', public.public_profile(p_viewer, p_vibe.author_id, false),
+    'mine', p_vibe.author_id = p_viewer,
+    'seen', p_vibe.author_id = p_viewer or exists (
+      select 1 from vibe_views vv where vv.vibe_id = p_vibe.id and vv.viewer_id = p_viewer
+    ),
+    'viewCount', case when p_vibe.author_id = p_viewer
+      then (select count(*) from vibe_views vv where vv.vibe_id = p_vibe.id)
+      else null end
+  );
+end $$;
+
+create or replace function public.create_vibe(
+  p_body text default '', p_media_url text default null, p_cover_url text default null,
+  p_audience text default 'connections', p_duration_ms integer default null,
+  p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      bigint := public.me_id();
+  clean_body text := left(btrim(coalesce(p_body, '')), 200);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  clean_cover text := nullif(coalesce(p_cover_url, ''), '');
+  clean_edit jsonb := public.clean_video_edit(p_edit);
+  new_id  bigint;
+  vibe    public.vibes;
+  n       int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_media is null then
+    perform public.crushly_fail(400, '', 'A Vibe needs a clip.');
+  end if;
+  if coalesce(p_audience, 'connections') not in ('connections', 'everyone') then
+    perform public.crushly_fail(400, '', 'Choose who can see this.');
+  end if;
+
+  -- Video costs us storage and the member his data allowance, so the ceiling
+  -- is lower than for photos: five clips an hour is more than anybody posts.
+  select count(*) into n from vibes v
+   where v.author_id = me and v.created_at > public.now_ms() - 3600 * 1000;
+  if n >= 5 then
+    perform public.crushly_fail(429, '', 'That’s a lot of clips — try again in a little while.');
+  end if;
+
+  insert into vibes (author_id, body, media_url, cover_url, duration_ms, audience, expires_at, edit)
+  values (
+    me, clean_body, clean_media, clean_cover,
+    case when p_duration_ms is null or p_duration_ms < 0 or p_duration_ms > 120000 then null else p_duration_ms end,
+    coalesce(p_audience, 'connections'),
+    public.now_ms() + public.vibe_lifetime_ms(),
+    clean_edit
+  )
+  returning id into new_id;
+
+  select * into vibe from vibes where id = new_id;
+  return public.serialize_vibe(vibe, me);
+end $$;
+
+-- The five-argument form is gone; revoke it so nothing can reach the old body,
+-- then hand execute to the six-argument one.
+revoke all on function public.create_vibe(text, text, text, text, integer) from public, anon, authenticated;
+revoke all on function public.create_vibe(text, text, text, text, integer, jsonb) from public, anon, authenticated;
+grant execute on function public.create_vibe(text, text, text, text, integer, jsonb) to authenticated, service_role;
+revoke all on function public.clean_video_edit(jsonb) from public, anon, authenticated;
+grant execute on function public.clean_video_edit(jsonb) to authenticated, service_role;
