@@ -96,4 +96,30 @@ jobs:
             echo "::error::Demo seed data found in the live database — run: cd supabase && npm run admin -- purge-demo"
             exit 1
           fi
-          echo "::notice::Database schema is live: profiles + signup trigger verified, no demo data."
+
+          # The newest migrations are the ones that go quietly missing: a push
+          # that stops early still reports success, and the app then calls an
+          # RPC the database has never heard of. Check for them by name.
+          missing=0
+          for fn in react_to_post post_comments_feed comment_on_post delete_post_comment post_engagement; do
+            have=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from pg_proc where proname = '$fn' and pronamespace = 'public'::regnamespace);")
+            if [ "$have" != "t" ]; then
+              echo "::error::public.$fn is missing — migration 20261010000020 did not land."
+              missing=1
+            fi
+          done
+          for col in posts.edit vibes.edit; do
+            table=${col%%.*}
+            column=${col##*.}
+            have=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from information_schema.columns where table_schema='public' and table_name='$table' and column_name='$column');")
+            if [ "$have" != "t" ]; then
+              echo "::error::public.$table.$column is missing — the video-edit migrations did not land."
+              missing=1
+            fi
+          done
+          if [ "$missing" != "0" ]; then
+            echo "::error::The database is behind the repository. Re-run this workflow; if it keeps failing, check the log above for the first statement that errored."
+            exit 1
+          fi
+
+          echo "::notice::Database schema is live: profiles, signup trigger, engagement and clip-edit support verified; no demo data."
