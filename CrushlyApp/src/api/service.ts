@@ -12,7 +12,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type { AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, MomentStyle, SearchResults, Vibe } from './types';
+import type { AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, MomentStyle, SearchResults, Vibe } from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -397,6 +397,32 @@ export async function createPost(input: {
 
 export async function deletePost(postId: number): Promise<void> {
   await rpc<boolean>('delete_post', { p_post_id: postId });
+}
+
+/**
+ * Liking is one-way news: the author hears about the first like and not about
+ * anybody changing their mind afterwards.
+ */
+export async function reactToPost(postId: number, liked = true): Promise<{ liked: boolean; likeCount: number }> {
+  const r = await rpc<{ liked: boolean; likeCount: number }>('react_to_post', {
+    p_post_id: postId,
+    p_liked: liked,
+  });
+  return { liked: r?.liked ?? liked, likeCount: r?.likeCount ?? 0 };
+}
+
+export async function postComments(postId: number, limit = 50): Promise<{ items: PostComment[] }> {
+  const page = await rpc<{ items: PostComment[] }>('post_comments_feed', { p_post_id: postId, p_limit: limit });
+  return { items: page?.items ?? [] };
+}
+
+export async function commentOnPost(postId: number, body: string): Promise<PostComment> {
+  return rpc<PostComment>('comment_on_post', { p_post_id: postId, p_body: str(body, 'Comment', { max: 1000 }) });
+}
+
+/** Yours to remove, or the post is yours and the comment was left on it. */
+export async function deletePostComment(commentId: number): Promise<void> {
+  await rpc<boolean>('delete_post_comment', { p_comment_id: commentId });
 }
 
 /* ------------------------------------------------------- keep close, circles */

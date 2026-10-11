@@ -23,6 +23,7 @@ export const keys = {
   circle: (id: number) => ['circle', id] as const,
   circleFeed: (id: number) => ['circle-feed', id] as const,
   circleMessages: (id: number) => ['circle-messages', id] as const,
+  postComments: (id: number) => ['post-comments', id] as const,
   closeOnes: ['close-ones'] as const,
   vibes: ['vibes'] as const,
   publicFlow: ['public-flow'] as const,
@@ -252,6 +253,44 @@ export function useDeletePost() {
   return useMutation({
     mutationFn: (postId: number) => service.deletePost(postId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+  });
+}
+
+export function useReactToPost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ postId, liked }: { postId: number; liked: boolean }) => service.reactToPost(postId, liked),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+  });
+}
+
+export function usePostComments(postId: number | null) {
+  return useQuery({
+    queryKey: keys.postComments(postId ?? 0),
+    queryFn: () => service.postComments(postId as number),
+    enabled: postId !== null,
+  });
+}
+
+export function useCommentOnPost(postId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => service.commentOnPost(postId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
+      void qc.invalidateQueries({ queryKey: keys.flow });
+    },
+  });
+}
+
+export function useDeletePostComment(postId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: number) => service.deletePostComment(commentId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
+      void qc.invalidateQueries({ queryKey: keys.flow });
+    },
   });
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,8 +17,11 @@ import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/Toast';
-import { useCreatePost, useDeletePost, useFlow, useMe, useMyCircles, useOpenConversation } from '../../api/hooks';
-import type { Post } from '../../api/types';
+import {
+  useCommentOnPost, useCreatePost, useDeletePost, useDeletePostComment, useFlow, useMe, useMyCircles,
+  useOpenConversation, usePostComments, useReactToPost,
+} from '../../api/hooks';
+import type { Post, PostComment } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
@@ -184,6 +187,17 @@ export function PostCard({ post: p }: { post: Post }) {
 
   const authorName = p.mine ? 'You' : p.author.name;
 
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const like = useReactToPost();
+
+  const share = async () => {
+    try {
+      await Share.share({ message: p.body ? `${p.body}\n\n— ${authorName} on Crushly` : `${authorName} on Crushly` });
+    } catch {
+      // Backing out of a share sheet is not a failure worth reporting.
+    }
+  };
+
   return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.md, paddingTop: space.md }}>
@@ -247,6 +261,23 @@ export function PostCard({ post: p }: { post: Post }) {
         </View>
       ) : null}
 
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm }}>
+        <PostAction
+          icon="chatbubble-outline"
+          count={p.commentCount}
+          label="Comments"
+          onPress={() => setCommentsOpen(true)}
+        />
+        <PostAction
+          icon={p.liked ? 'heart' : 'heart-outline'}
+          count={p.likeCount}
+          label={p.liked ? 'Take back your like' : 'Like'}
+          active={p.liked}
+          onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
+        />
+        <PostAction icon="share-social-outline" label="Share this post" onPress={share} />
+      </View>
+
       {!p.mine && p.author.crush?.mutual ? (
         <View style={{ paddingHorizontal: space.md, paddingVertical: space.sm }}>
           <Button title="Whisper" size="sm" variant="secondary" icon="chatbubble-outline" onPress={whisper} />
@@ -254,7 +285,116 @@ export function PostCard({ post: p }: { post: Post }) {
       ) : (
         <View style={{ height: space.sm }} />
       )}
+
+      <PostComments postId={p.id} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
     </View>
+  );
+}
+
+/** One of the three things you can do with a post, shown under it. */
+function PostAction({
+  icon, count, label, active, onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  count?: number;
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
+      style={({ pressed }) => ({
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        paddingVertical: 8, paddingHorizontal: 10, borderRadius: radius.md,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Ionicons name={icon} size={18} color={active ? colors.gold : colors.textMuted} />
+      {count === undefined || count === 0 ? null : (
+        <Txt variant="caption" color={active ? 'gold' : 'textSecondary'}>
+          {String(count)}
+        </Txt>
+      )}
+    </Pressable>
+  );
+}
+
+/** The comments under one post, read and written in place. */
+function PostComments({ postId, visible, onClose }: { postId: number; visible: boolean; onClose: () => void }) {
+  const { colors } = useTheme();
+  const toast = useToast();
+  const query = usePostComments(visible ? postId : null);
+  const send = useCommentOnPost(postId);
+  const remove = useDeletePostComment(postId);
+  const [draft, setDraft] = useState('');
+
+  const submit = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setDraft('');
+    try {
+      await send.mutateAsync(body);
+    } catch (e) {
+      setDraft(body);
+      toast({ kind: 'error', title: 'Comment not added', message: (e as Error).message });
+    }
+  };
+
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="Comments">
+      <View style={{ maxHeight: 380 }}>
+        {query.isLoading ? <Skeleton style={{ height: 60 }} /> : null}
+        {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : null}
+        {query.data?.items?.length === 0 ? (
+          <Txt variant="body" color="textMuted" style={{ paddingVertical: space.lg, textAlign: 'center' }}>
+            No comments yet. Be the first.
+          </Txt>
+        ) : null}
+        {(query.data?.items ?? []).map((c) => (
+          <CommentRow key={c.id} comment={c} onDelete={() => remove.mutate(c.id)} />
+        ))}
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingTop: space.sm, borderTopWidth: 1, borderColor: colors.border }}>
+        <View style={{ flex: 1 }}>
+          <Input
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Write a comment"
+            maxLength={1000}
+            multiline
+            containerStyle={{ minWidth: 0 }}
+          />
+        </View>
+        <Button title="Send" size="sm" onPress={submit} loading={send.isPending} disabled={!draft.trim()} />
+      </View>
+    </BottomSheet>
+  );
+}
+
+function CommentRow({ comment: c, onDelete }: { comment: PostComment; onDelete: () => void }) {
+  const navigation = useNavigation<Nav>();
+  return (
+    <Pressable
+      onPress={() => (c.mine ? navigation.navigate('Main', { screen: 'Profile' }) : navigation.navigate('UserProfile', { id: c.author.id }))}
+      accessibilityRole="button"
+      style={{ flexDirection: 'row', gap: 10, paddingVertical: space.sm }}
+    >
+      <Avatar uri={c.author.photos[0]?.url ?? null} name={c.author.name} size={32} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt variant="caption" color="textMuted">
+          {c.mine ? 'You' : c.author.name} · {timeAgo(c.createdAt)}
+        </Txt>
+        <Txt variant="body" selectable>
+          {c.body}
+        </Txt>
+      </View>
+      {c.mine ? <IconButton icon="trash-outline" label="Delete comment" onPress={onDelete} color="textMuted" /> : null}
+    </Pressable>
   );
 }
 

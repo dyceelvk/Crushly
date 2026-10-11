@@ -62,6 +62,19 @@ export type Post = {
   createdAt: number;
   author: Profile;
   mine: boolean;
+  /** How many have liked it, whether you are one of them, how many comments. */
+  likeCount: number;
+  liked: boolean;
+  commentCount: number;
+};
+
+/** One comment left on a post. */
+export type PostComment = {
+  id: number;
+  body: string;
+  createdAt: number;
+  mine: boolean;
+  author: Profile;
 };
 
 /** What Keep Close looks like from one member's Space. */
