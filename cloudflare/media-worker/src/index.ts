@@ -21,7 +21,19 @@ export interface Env {
   B2_KEY_ID: string;
   B2_APPLICATION_KEY: string;
   B2_BUCKET: string;
+  /** Optional. Without it /admin/lifecycle stays closed. */
+  ADMIN_TOKEN?: string;
 }
+
+/**
+ * How long each kind of media is kept, in days. A Moment is gone tomorrow; a
+ * Vibe lasts a fortnight. Both are enforced by the bucket itself rather than
+ * by a job of ours, so they hold even if nothing runs.
+ */
+const LIFECYCLE = {
+  moments: { hideAfterDays: 1, deleteAfterDays: 1 },
+  vibes: { hideAfterDays: 14, deleteAfterDays: 1 },
+} as const;
 
 const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account';
 const AUTH_TTL_MS = 23 * 60 * 60 * 1000; // B2 tokens last 24h; refresh early
@@ -136,7 +148,9 @@ type B2Auth = {
   downloadUrl: string;
   bucketId: string;
   bucketType: string;
+  accountId: string;
   lifecycle: Lifecycle | null;
+  vibesLifecycle: Lifecycle | null;
   rules: Lifecycle[];
   exp: number;
 };
@@ -213,7 +227,11 @@ async function authorize(env: Env): Promise<B2Auth> {
     hideAfterDays: r.daysFromUploadingToHiding ?? null,
     deleteAfterDays: r.daysFromHidingToDeleting ?? null,
   }));
-  const lifecycle = rules.find((r) => r.prefix.replace(/\/+$/, '') === 'moments') ?? null;
+  // A trailing slash is ignored, because the dashboard's prefix box is just as
+  // happy with `moments` as `moments/` and the two must not look different here.
+  const ruleFor = (prefix: string) => rules.find((r) => r.prefix.replace(/\/+$/, '') === prefix) ?? null;
+  const lifecycle = ruleFor('moments');
+  const vibesLifecycle = ruleFor('vibes');
 
   return {
     token: data.authorizationToken,
@@ -221,7 +239,9 @@ async function authorize(env: Env): Promise<B2Auth> {
     downloadUrl: data.downloadUrl,
     bucketId: bucket.bucketId,
     bucketType: bucket.bucketType ?? 'unknown',
+    accountId: data.accountId,
     lifecycle,
+    vibesLifecycle,
     rules,
     exp: Date.now() + AUTH_TTL_MS,
   };
@@ -323,6 +343,7 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     b2: boolean;
     bucketPrivate: boolean;
     momentsLifecycle: Lifecycle | null;
+    vibesLifecycle: Lifecycle | null;
     lifecycleRules?: Lifecycle[];
     problem?: 'auth' | 'bucket';
     lengths?: { keyId: number; applicationKey: number };
@@ -331,13 +352,14 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     caseMismatch?: boolean;
     listStatus?: number;
     listMessage?: string | null;
-  } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
+  } = { b2: false, bucketPrivate: false, momentsLifecycle: null, vibesLifecycle: null };
   try {
     const auth = await authorize(env);
     storage = {
       b2: true,
       bucketPrivate: auth.bucketType === 'allPrivate',
       momentsLifecycle: auth.lifecycle,
+      vibesLifecycle: auth.vibesLifecycle,
       lifecycleRules: auth.rules,
     };
   } catch (e) {
@@ -369,6 +391,63 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     storage.bucketPrivate &&
     (storage.momentsLifecycle?.deleteAfterDays ?? 0) >= 1;
   return json({ ok, supabase, ...storage }, ok ? 200 : 503, origin);
+}
+
+/* -------------------------------------------------------------- upkeep */
+
+/**
+ * Puts the two retention rules on the bucket and leaves every other rule
+ * alone. Closed unless ADMIN_TOKEN is set, and it never answers a GET, so the
+ * endpoint gives away nothing about whether it exists.
+ *
+ *   curl -X POST -H 'Authorization: Bearer $ADMIN_TOKEN' \
+ *        https://crushly-media.dyceelvk.workers.dev/admin/lifecycle
+ */
+async function applyLifecycle(env: Env, origin: string | null): Promise<Response> {
+  if (!env.ADMIN_TOKEN) return fail(404, '', origin);
+
+  try {
+    const auth = await b2Auth(env);
+
+    // b2_update_bucket replaces the whole list, so the rules already there are
+    // carried over and only ours are added or corrected.
+    const wanted: Record<string, { fileNamePrefix: string; daysFromUploadingToHiding: number; daysFromHidingToDeleting: number }> = {};
+    for (const r of auth.rules) {
+      const key = r.prefix.replace(/\/+$/, '');
+      if (key === 'moments' || key === 'vibes') continue; // replaced below
+      wanted[key] = {
+        fileNamePrefix: r.prefix,
+        daysFromUploadingToHiding: r.hideAfterDays ?? 0,
+        daysFromHidingToDeleting: r.deleteAfterDays ?? 0,
+      };
+    }
+    for (const [kind, rule] of Object.entries(LIFECYCLE)) {
+      wanted[kind] = {
+        fileNamePrefix: `${kind}/`,
+        daysFromUploadingToHiding: rule.hideAfterDays,
+        daysFromHidingToDeleting: rule.deleteAfterDays,
+      };
+    }
+
+    const res = await fetch(`${auth.apiUrl}/b2api/v2/b2_update_bucket`, {
+      method: 'POST',
+      headers: { Authorization: auth.token },
+      body: JSON.stringify({
+        accountId: auth.accountId,
+        bucketId: auth.bucketId,
+        bucketType: auth.bucketType,
+        lifecycleRules: Object.values(wanted),
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as { lifecycleRules?: unknown[]; message?: string } | null;
+    if (!res.ok) return fail(502, body?.message ?? 'Backblaze would not update the bucket.', origin);
+
+    // The next request must see the new rules, not the cached ones.
+    b2 = null;
+    return json({ ok: true, rules: Object.values(wanted) }, 200, origin);
+  } catch (e) {
+    return fail(502, e instanceof Error ? e.message : 'Could not reach Backblaze.', origin);
+  }
 }
 
 /* ---------------------------------------------------------------- the build */
@@ -497,6 +576,11 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head });
     if (url.pathname === '/health') return health(env, origin);
+    if (url.pathname === '/admin/lifecycle') {
+      if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
+      if (bearerToken(request, null) !== (env.ADMIN_TOKEN ?? '')) return fail(404, '', origin);
+      return applyLifecycle(env, origin);
+    }
 
     // What version the app should be running. Public, and deliberately silent
     // about where the build comes from.

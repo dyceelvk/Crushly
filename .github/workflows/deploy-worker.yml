@@ -12,6 +12,9 @@
 #     B2_KEY_ID                      Backblaze → App Keys → Add a New Application Key
 #     B2_APPLICATION_KEY             (shown once, at creation)
 #     B2_BUCKET                      the private bucket name, e.g. crushly-media
+#     ADMIN_TOKEN                    any long random string. Guards the one
+#                                    maintenance call, /admin/lifecycle, which
+#                                    puts the retention rules on the bucket.
 #
 #   Variables:
 #     CLOUDFLARE_ACCOUNT_ID          Cloudflare → any domain (or Workers & Pages)
@@ -69,9 +72,11 @@ jobs:
             B2_KEY_ID
             B2_APPLICATION_KEY
             B2_BUCKET
+            ADMIN_TOKEN
         env:
           SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
