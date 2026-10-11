@@ -157,7 +157,7 @@ test('speed, filters, crop, light and music all need a re-encode', () => {
   assert.equal(isTrimOnly(baked({ contrast: 0.2 })), false);
   assert.equal(isTrimOnly(baked({ saturation: 0.2 })), false);
   assert.equal(isTrimOnly(baked({ clipVolume: 0 })), false);
-  assert.equal(isTrimOnly(baked({ music: { id: 'a', label: 'A', uri: 'file:///a.m4a', volume: 0.6 } })), false);
+  assert.equal(isTrimOnly(baked({ music: { id: 'a', title: 'A', uri: 'file:///a.m4a', volume: 0.6, offset: 0 } })), false);
 });
 
 test('a trimmed clip is what gets encoded, not just previewed', () => {

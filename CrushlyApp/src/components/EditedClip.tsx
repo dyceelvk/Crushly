@@ -2,17 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { StyleProp, ViewStyle } from 'react-native';
 import { useVideoPlayer } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
-import { emptyEdit, type LiveEdit } from '../lib/videoEdit';
+import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
 
 /**
- * A clip that has already been cut, played back with its live half on top.
+ * A clip with its live half drawn on top.
  *
- * The file arrives already edited — the encoder wrote the trim, the speed, the
- * crop and the look into it on the phone. What is left to draw here is the part
- * that was deliberately kept out of the pixels: the words and the stickers,
- * which is why a caption can still be changed after posting.
+ * The file arrives already cut — that one edit had to happen to the file itself,
+ * because it is the only one that makes the clip smaller. Everything else is
+ * drawn here: the words, the stickers, and the look — the filter, the light,
+ * the shape of the frame, the speed and the sound.
  *
- * Used by Moments, Circles and Vibes alike.
+ * Drawing the look rather than baking it is what makes an edit survive at all on
+ * a phone with no encoder. What you saw while editing is what everybody sees.
+ *
+ * Used by Flows, Moments, Circles and Vibes alike.
  */
 export function EditedClip({
   uri,
@@ -28,26 +31,57 @@ export function EditedClip({
   /** A full-screen player loops; a tile in a grid does not. */
   loop?: boolean;
 }) {
+  const look = live?.look ?? NEUTRAL_LOOK;
+
   const player = useVideoPlayer(uri, (p) => {
     p.loop = loop;
   });
+
+  // Music is a second player running alongside the clip, the same way it was
+  // heard in the editor. Most clips have none, and then this costs nothing.
+  const musicPlayer = useVideoPlayer(look.music?.uri ?? null, (p) => {
+    p.loop = loop;
+    p.volume = look.music?.volume ?? 0.6;
+  });
+
   const [clipTime, setClipTime] = useState(0);
 
   // Only the live half is replayed here, so the edit is rebuilt from it and the
-  // baked half stays at its defaults — nothing is graded or trimmed twice.
+  // cut stays at its defaults — the file is already trimmed, and trimming it a
+  // second time would cut into the part that was kept.
   const edit = useMemo(
     () => ({
       ...emptyEdit(0),
       captions: live?.captions ?? [],
       stickers: live?.stickers ?? [],
+      filter: look.filter,
+      brightness: look.brightness,
+      contrast: look.contrast,
+      saturation: look.saturation,
+      aspect: look.aspect,
     }),
-    [live],
+    [live, look.filter, look.brightness, look.contrast, look.saturation, look.aspect],
   );
 
   useEffect(() => {
+    if (player) player.playbackRate = look.speed;
+  }, [player, look.speed]);
+
+  useEffect(() => {
+    if (player) player.volume = look.clipVolume;
+  }, [player, look.clipVolume]);
+
+  useEffect(() => {
+    if (musicPlayer && look.music) musicPlayer.volume = look.music.volume;
+  }, [musicPlayer, look.music]);
+
+  useEffect(() => {
     if (!player) return;
-    if (autoPlay) player.play();
-  }, [player, autoPlay]);
+    if (autoPlay) {
+      player.play();
+      if (look.music) musicPlayer?.play();
+    }
+  }, [player, musicPlayer, autoPlay, look.music]);
 
   useEffect(() => {
     let raf = 0;

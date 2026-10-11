@@ -16,7 +16,9 @@
  * code, and the app must never be unable to post because of it.
  */
 
-import { BakedEdit, EDIT_LIMITS, EditCategory, FILTERS, LiveEdit, VideoEdit, clipLength, splitForUpload } from './videoEdit';
+import {
+  BakedEdit, EDIT_LIMITS, EditCategory, FILTERS, LiveEdit, NEUTRAL_LOOK, VideoEdit, clipLength, splitForUpload,
+} from './videoEdit';
 
 /**
  * The trimmer is reached by dynamic import, never at load time.
@@ -350,7 +352,12 @@ export async function preparedClip(
 
   const { live } = splitForUpload(edit, category);
   const result = await encodeClip(sourceUri, edit, category);
-  return { uri: result.uri, live, encoded: result.encoded };
+
+  // A re-encode writes the look into the pixels. The player must not apply it a
+  // second time, so it is dropped from the half that travels as data.
+  const stored = live && result.via === 're-encode' ? { ...live, look: NEUTRAL_LOOK } : live;
+
+  return { uri: result.uri, live: stored, encoded: result.encoded };
 }
 
 export function encodeUnavailableNote(): string {

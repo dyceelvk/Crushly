@@ -18,6 +18,8 @@ import {
   setTrim,
   splitForUpload,
   toLiveEdit,
+  looksNeutral,
+  editFromLive,
 } from './videoEdit';
 
 const d = 60;
@@ -140,9 +142,48 @@ test('formatting reads the way a clock does', () => {
   assert.equal(formatTime(75.5), '1:15.50');
 });
 
-test('toLiveEdit carries words across, nothing else', () => {
-  const e = { ...emptyEdit(d), speed: 2, captions: [] as never[] };
+test('toLiveEdit carries the words and the look, never the cut', () => {
+  const e = { ...emptyEdit(d), speed: 2, filter: 'noir' as const, trimStart: 5, captions: [] as never[] };
   const live = toLiveEdit(e as never);
-  assert.equal((live as { speed?: unknown }).speed, undefined);
-  assert.equal(live.version, 1);
+
+  // The look travels, because the player is what applies it.
+  assert.equal(live.look.speed, 2);
+  assert.equal(live.look.filter, 'noir');
+
+  // The cut does not: it has already been applied to the file itself.
+  assert.equal((live as { trimStart?: unknown }).trimStart, undefined);
+  assert.equal(live.version, 2);
+});
+
+test('an untouched clip has a neutral look and sends nothing', () => {
+  const live = toLiveEdit(emptyEdit(d) as never);
+  assert.equal(looksNeutral(live.look), true);
+  assert.equal(splitForUpload(emptyEdit(d), 'post').live, null);
+});
+
+test('a look alone is worth sending, with no words on it', () => {
+  const edit = { ...emptyEdit(d), filter: 'mono' as const };
+  const live = splitForUpload(edit, 'post').live;
+  assert.ok(live);
+  assert.equal(live.captions.length, 0);
+  assert.equal(live.look.filter, 'mono');
+});
+
+test('a clip stored before the look travelled plays back untouched', () => {
+  const live = parseLiveEdit('{"version":1,"captions":[],"stickers":[]}');
+  assert.ok(live);
+  assert.equal(looksNeutral(live.look), true);
+});
+
+test('a look comes back out of storage the way it went in', () => {
+  const look = { filter: 'sunset' as const, brightness: 0.25, contrast: -0.1, saturation: 0.4, aspect: '1:1' as const, speed: 1.5, clipVolume: 0, music: null };
+  const live = parseLiveEdit(JSON.stringify({ version: 2, captions: [], stickers: [], look }));
+  assert.deepEqual(live?.look, look);
+});
+
+test('reopening a posted clip does not reset how it looks', () => {
+  const look = { filter: 'noir' as const, brightness: 0, contrast: 0, saturation: 0, aspect: 'original' as const, speed: 2, clipVolume: 1, music: null };
+  const reopened = editFromLive({ version: 2, captions: [], stickers: [], look }, d);
+  assert.equal(reopened.filter, 'noir');
+  assert.equal(reopened.speed, 2);
 });

@@ -47,6 +47,10 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
 
   const cam = useLiveCamera();
 
+  // What the player draws over the clip: the words, the stickers and the look.
+  // The cut itself is written into the file when the Moment is shared.
+  const liveEdit = clipEdit ? splitForUpload(clipEdit, 'moment').live : null;
+
   const choosePhoto = async (camera = false) => {
     const img = await (camera ? cam.capture() : pickImage());
     if (!img) return;
@@ -124,7 +128,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         <View style={{ width: w, height: h, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.card }}>
           {mode === 'video' && clip ? (
             <>
-              <EditedClip uri={clip.uri} live={clipEdit} style={{ width: w, height: h }} autoPlay />
+              <EditedClip uri={clip.uri} live={liveEdit} style={{ width: w, height: h }} autoPlay />
               <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 8 }}>
                 <IconButton icon="images-outline" variant="glass" label="Choose another clip" onPress={chooseClip} />
               </View>

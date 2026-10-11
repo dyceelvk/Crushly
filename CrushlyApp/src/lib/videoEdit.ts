@@ -480,9 +480,12 @@ export function splitForUpload(
 ): { baked: BakedEdit; live: LiveEdit | null } {
   const clamped = clampEdit(edit, category);
   const { captions, stickers, ...baked } = clamped;
+  const look = lookOf(clamped);
+  const worthSending = captions.length > 0 || stickers.length > 0 || !looksNeutral(look);
+
   return {
     baked,
-    live: captions.length || stickers.length ? { version: 1, captions, stickers } : null,
+    live: worthSending ? { version: 2, captions, stickers, look } : null,
   };
 }
 
@@ -490,22 +493,114 @@ export function splitForUpload(
  *
  * Once a clip is encoded, two very different things exist.
  *
- * The baked half — trim, speed, crop, filter, light, stickers, sound — has been
- * written into the pixels by the encoder. It is why a trimmed clip is genuinely
- * smaller, and it can never be changed again: the video that would be needed to
- * re-cut it is gone.
+ * One edit happens to the file itself: the cut. It is the only one that makes
+ * the clip smaller, and it is why a trimmed clip is genuinely shorter on disk.
+ * It can never be changed again — the video that would be needed to re-cut it
+ * is gone.
  *
- * The live half is your words. Captions are stored as data and drawn by the
- * player, never burned in, which is the only reason they remain editable after
- * posting. It costs a few hundred bytes and keeps the promise that the clip is
- * final but what you wrote is not.
+ * Everything else travels as data and is reproduced by the player: your words,
+ * your stickers, and the look — the filter, the light, the shape of the frame,
+ * the speed and the sound. None of that is written into the pixels, which is
+ * what makes it possible at all on a phone that has no encoder, and what keeps
+ * the promise that the picture is final but what you wrote is not.
  */
 
 export type LiveEdit = {
-  version: 1;
+  version: 2;
   captions: Caption[];
   stickers: Sticker[];
+  /**
+   * The look: everything the player can reproduce without touching the file.
+   *
+   * This travels as data for one reason — the picture has to match what was
+   * previewed. An encoder may or may not be present on the phone, and a clip
+   * posted without one must still look the way its author made it.
+   */
+  look: Look;
 };
+
+/**
+ * How the clip looks, as opposed to what it says.
+ *
+ * A filter, the light, the shape of the frame, the speed and the sound. All of
+ * it can be reproduced by the player at playback time, so all of it is stored
+ * as data rather than being written into the pixels.
+ *
+ * The cut is the exception and is deliberately absent: that is the one edit
+ * that has to happen to the file itself, because it is the only one that makes
+ * the file smaller.
+ */
+export type Look = {
+  filter: FilterId;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  aspect: AspectId;
+  speed: number;
+  /** The clip's own audio, or 0 when it was muted. */
+  clipVolume: number;
+  music: MusicTrack | null;
+};
+
+/** The look of a clip nobody has touched. */
+export const NEUTRAL_LOOK: Look = {
+  filter: 'none',
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  aspect: 'original',
+  speed: 1,
+  clipVolume: 1,
+  music: null,
+};
+
+/** The look one edit asks for. */
+export function lookOf(edit: VideoEdit): Look {
+  return {
+    filter: edit.filter,
+    brightness: edit.brightness,
+    contrast: edit.contrast,
+    saturation: edit.saturation,
+    aspect: edit.aspect,
+    speed: edit.speed,
+    clipVolume: edit.clipVolume,
+    music: edit.music,
+  };
+}
+
+/** Whether a look changes anything at all. */
+export function looksNeutral(look: Look): boolean {
+  return (
+    look.filter === 'none' &&
+    look.brightness === 0 &&
+    look.contrast === 0 &&
+    look.saturation === 0 &&
+    look.aspect === 'original' &&
+    look.speed === 1 &&
+    look.clipVolume === 1 &&
+    !look.music
+  );
+}
+
+/** A look read back from storage, where an older clip has none recorded. */
+export function readLook(raw: Partial<Look> | null | undefined): Look {
+  if (!raw || typeof raw !== 'object') return NEUTRAL_LOOK;
+  const music = raw.music ?? null;
+  return {
+    filter: raw.filter ?? 'none',
+    brightness: num(raw.brightness, 0),
+    contrast: num(raw.contrast, 0),
+    saturation: num(raw.saturation, 0),
+    aspect: raw.aspect ?? 'original',
+    speed: num(raw.speed, 1) || 1,
+    clipVolume: num(raw.clipVolume, 1),
+    music: music && typeof music.uri === 'string' ? music : null,
+  };
+}
+
+function num(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
 
 /**
  * Everything the encoder must write into the file before upload.
@@ -537,11 +632,11 @@ export function editWindowRemaining(createdAt: number, now: number = Date.now())
 
 /** The part that is kept after encoding and can still be changed. */
 export function toLiveEdit(edit: VideoEdit): LiveEdit {
-  return { version: 1, captions: edit.captions, stickers: edit.stickers };
+  return { version: 2, captions: edit.captions, stickers: edit.stickers, look: lookOf(edit) };
 }
 
 export function hasLiveEdits(live: LiveEdit | null): boolean {
-  return !!live && (live.captions.length > 0 || live.stickers.length > 0);
+  return !!live && (live.captions.length > 0 || live.stickers.length > 0 || !looksNeutral(live.look));
 }
 
 export function parseLiveEdit(json: string | null | undefined): LiveEdit | null {
@@ -550,9 +645,12 @@ export function parseLiveEdit(json: string | null | undefined): LiveEdit | null 
     const raw = JSON.parse(json) as Partial<LiveEdit>;
     if (!raw || typeof raw !== 'object') return null;
     return {
-      version: 1,
+      version: 2,
       captions: Array.isArray(raw.captions) ? raw.captions : [],
       stickers: Array.isArray(raw.stickers) ? raw.stickers : [],
+      // A clip stored before the look travelled simply has none, and is played
+      // back as it was recorded.
+      look: readLook(raw.look),
     };
   } catch {
     return null;
@@ -566,5 +664,6 @@ export function parseLiveEdit(json: string | null | undefined): LiveEdit | null 
  */
 export function editFromLive(live: LiveEdit | null, sourceDuration: number): VideoEdit {
   const base = emptyEdit(sourceDuration);
-  return { ...base, captions: live?.captions ?? [], stickers: live?.stickers ?? [] };
+  if (!live) return base;
+  return { ...base, captions: live.captions, stickers: live.stickers, ...live.look };
 }
