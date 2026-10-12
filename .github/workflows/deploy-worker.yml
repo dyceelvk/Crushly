@@ -48,6 +48,8 @@ jobs:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       B2_BUCKET: ${{ secrets.B2_BUCKET }}
+      # Read at job level too, so steps can skip themselves when it is unset.
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
     steps:
       - name: Report missing credentials
         if: env.CF_TOKEN == '' || env.CF_ACCOUNT == '' || env.B2_BUCKET == ''
@@ -80,3 +82,25 @@ jobs:
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+
+      # Retention rules live on the bucket, not in code, so they can drift —
+      # a rule somebody changed by hand, or one that never got added. Every
+      # deploy puts them back the way they should be.
+      #
+      # GitHub holds the token and sends it; nobody ever has to read it, type
+      # it, or paste it anywhere. Skipped silently when ADMIN_TOKEN is unset.
+      - name: Restore the storage retention rules
+        if: env.CF_TOKEN != '' && env.ADMIN_TOKEN != ''
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          url="https://crushly-media.dyceelvk.workers.dev/admin/lifecycle"
+          code=$(curl -s -o /tmp/lifecycle.json -w '%{http_code}' -X POST "$url" \
+            -H "Authorization: Bearer $ADMIN_TOKEN")
+          if [ "$code" = "200" ]; then
+            echo "::notice::Storage retention rules are in place."
+            cat /tmp/lifecycle.json
+          else
+            echo "::warning::Could not set the retention rules (HTTP $code). The app works without them, but Vibes would never expire."
+          fi
