@@ -1,10 +1,10 @@
 {
-  "version": "1.0.2",
-  "versionCode": 3,
+  "version": "1.0.3",
+  "versionCode": 100003,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.2-Android9plus.apk",
+  "file": "Crushly-1.0.3-Android9plus.apk",
   "notes": "The first release you can update from inside the app.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.2/Crushly-1.0.2-Android9plus.apk",
-  "bytes": 94427302,
-  "sha256": "6fe5888068311e11dc3c64a04514f54070b23d925e761f29e4e4325669e3c10c"
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.3/Crushly-1.0.3-Android9plus.apk",
+  "bytes": 95382591,
+  "sha256": "9eae841bd98f6a677e6679b725bc211082592c7871e216123e114d730b86cd17"
 }
