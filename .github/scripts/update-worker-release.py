@@ -46,6 +46,8 @@ def version_code(version: str) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--notes', default=None, help='What the update says about itself.')
+    ap.add_argument('--bytes', type=int, default=None, help='Exact size of the APK, so a member can check the download.')
+    ap.add_argument('--sha256', default=None, help='SHA-256 of the APK, published on the download page.')
     ap.add_argument('--check', action='store_true', help='Report whether it is up to date without writing.')
     args = ap.parse_args()
 
@@ -53,7 +55,12 @@ def main() -> int:
     version = app['expo']['version']
     release = json.loads(RELEASE_JSON.read_text())
 
-    if version == release['version'] and args.notes in (None, release['notes']):
+    if (
+        version == release['version']
+        and args.notes in (None, release['notes'])
+        and args.bytes in (None, release.get('bytes'))
+        and args.sha256 in (None, release.get('sha256'))
+    ):
         print(f"release.json already describes {version} — nothing to do.")
         print('changed=false')
         return 0
@@ -72,6 +79,10 @@ def main() -> int:
         'file': file_name,
         'notes': args.notes if args.notes is not None else release['notes'],
         'upstream': f'https://github.com/{REPO}/releases/download/android-test-{version}/{file_name}',
+        # Kept when not supplied, so a release can be re-announced without
+        # losing the fingerprint already published for it.
+        'bytes': args.bytes if args.bytes is not None else release.get('bytes'),
+        'sha256': args.sha256 if args.sha256 is not None else release.get('sha256'),
     }
 
     if args.check:

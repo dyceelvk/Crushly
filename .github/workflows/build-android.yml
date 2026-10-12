@@ -200,7 +200,13 @@ jobs:
         id: announce
         run: |
           set -euo pipefail
-          out=$(python3 ../.github/scripts/update-worker-release.py)
+          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          file="Crushly-${version}-Android9plus.apk"
+          # Measured from the file that was just published, so the download
+          # page can tell people exactly what they should be checking.
+          bytes=$(wc -c < "apk/${file}")
+          sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
+          out=$(python3 ../.github/scripts/update-worker-release.py --bytes "$bytes" --sha256 "$sha")
           printf '%s\n' "$out"
           if printf '%s' "$out" | grep -q 'changed=true'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"

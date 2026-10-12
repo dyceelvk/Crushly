@@ -510,6 +510,10 @@ async function appVersion(url: URL, origin: string | null): Promise<Response> {
       // Our own address, built from whatever host this was asked on, so it
       // stays correct on workers.dev and on a custom domain alike.
       apkUrl: known ? `${url.origin}/apk/${RELEASE.file}` : null,
+      // What a member needs to check the file they just downloaded is ours:
+      // the exact byte count and the fingerprint published on the page.
+      bytes: release.bytes,
+      sha256: release.sha256,
       notes: RELEASE.notes,
     }),
     {
