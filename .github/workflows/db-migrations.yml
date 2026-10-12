@@ -37,6 +37,28 @@ jobs:
         with:
           version: 2.120.0
 
+      - name: Pre-flight — can we reach the database at all
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
+          # Everything below is scrubbed: the password never reaches the log,
+          # only the shape of the string and whatever Postgres complains about.
+          safe=$(printf '%s' "$SUPABASE_DB_URL" | sed -E 's#(://[^:/]+):.*@(.*)$#\1:***@\2#')
+          echo "::notice::Connection string (password hidden): $safe"
+          out=$(psql "$SUPABASE_DB_URL" -tAc "select current_database(), version();" 2>&1)
+          rc=$?
+          echo "::notice::psql exit code: $rc"
+          echo "::notice::psql said: $(printf '%s' "$out" | sed -E "s#$SUPABASE_DB_URL#***#g" | tr '\n' ' ' | cut -c1-400)"
+          if [ "$rc" != "0" ]; then
+            echo "::error::Cannot reach the database with this connection string. Fix SUPABASE_DB_URL and re-run."
+            exit 1
+          fi
+          recorded=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from supabase_migrations.schema_migrations;" 2>/dev/null)
+          echo "::notice::Migrations already recorded in the database: ${recorded:-unknown}"
+          echo "::notice::Migration files in the repository: $(ls supabase/migrations | wc -l)"
+
       - name: Push migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
