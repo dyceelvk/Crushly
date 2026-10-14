@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
+import { mergeMessagePage, nextMessageCursor } from '../lib/messages';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
@@ -630,22 +631,24 @@ export function useChat(conversationId: number) {
   useEffect(() => {
     if (loading || error) return;
     let cancelled = false;
+    let inFlight = false;
     const tick = async () => {
+      if (inFlight) return;
       if (AppState.currentState !== 'active') return;
+      inFlight = true;
       try {
         const res = await service.getMessages(conversationId, { after: lastIdRef.current });
         if (cancelled) return;
         if (res.items.length) {
-          lastIdRef.current = res.items[res.items.length - 1].id;
-          setMessages((prev) => {
-            const known = new Set(prev.map((m) => m.id));
-            return [...prev, ...res.items.filter((m) => !known.has(m.id))];
-          });
+          lastIdRef.current = nextMessageCursor(lastIdRef.current, 'received', res.items);
+          setMessages((prev) => mergeMessagePage(prev, res.items));
           if (res.items.some((m) => !m.mine)) markRead();
         }
         if (res.lastReadMine !== lastReadRef.current) applyReadState(res.lastReadMine);
       } catch {
         /* transient; next tick retries */
+      } finally {
+        inFlight = false;
       }
     };
     const timer = setInterval(tick, POLL_MS);
@@ -661,7 +664,7 @@ export function useChat(conversationId: number) {
     try {
       const firstId = messages.find((m) => m.id > 0)?.id;
       const res = await service.getMessages(conversationId, { before: firstId, limit: 40 });
-      setMessages((prev) => [...res.items, ...prev]);
+      setMessages((prev) => mergeMessagePage(prev, res.items));
       setHasMore(res.hasMore);
     } finally {
       setLoadingMore(false);
@@ -700,10 +703,10 @@ export function useChat(conversationId: number) {
       setMessages((prev) => (retryLocalId ? prev.map((m) => (m.localId === localId ? optimistic : m)) : [...prev, optimistic]));
       try {
         const saved = await service.sendMessage(conversationId, draft);
-        lastIdRef.current = Math.max(lastIdRef.current, saved.id);
+        lastIdRef.current = nextMessageCursor(lastIdRef.current, 'sent', [saved]);
         setMessages((prev) => {
           const without = prev.filter((m) => m.id !== saved.id);
-          return without.map((m) => (m.localId === localId ? saved : m));
+          return mergeMessagePage(without.map((m) => (m.localId === localId ? saved : m)), []);
         });
         qc.invalidateQueries({ queryKey: keys.conversations });
         return { ok: true as const };

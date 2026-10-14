@@ -11,10 +11,9 @@
  *
  *   EXPO_PUBLIC_MEDIA_BASE_URL=https://crushly-media.<account>.workers.dev
  *
- * Empty means "keep using Supabase Storage", so the app runs unchanged and
- * unsetting it rolls back to files that are already there. Rows store whatever
- * the upload returned, so old paths and new URLs both resolve — nothing has to
- * be rewritten when this flips.
+ * An empty value disables new member uploads (fail closed). Legacy Storage
+ * files are private too and are proxied through the Worker using the caller
+ * JWT. New uploads store /m/ URLs; old stored paths use /legacy/.
  */
 import { cleanEnvValue } from './env';
 
@@ -38,15 +37,15 @@ export const mediaStoreEnabled = MEDIA_BASE_URL.length > 0;
  * Which kinds of media have moved over, comma-separated. Everything a member
  * uploads — profile photos, Moments, and chat media including photos and video
  * notes — lives on the object store; Supabase keeps the rows, not the files.
- * Listing fewer kinds here moves one back without touching this file.
+ * Removing a kind disables its uploads; it never enables public fallback.
  */
 export const MEDIA_KINDS: MediaKind[] = (() => {
   // Same shape as the base URL: unset means "use the default", set to ''
-  // means "none of them", so a kind can be pulled back without editing code.
+  // means "none of them", so uploads can be disabled without editing code.
   const configured = process.env.EXPO_PUBLIC_MEDIA_KINDS;
-  const raw = configured === undefined ? 'photos,moments,messages,posts,circles' : cleanEnvValue(configured);
+  const raw = configured === undefined ? 'photos,moments,messages,posts,circles,vibes' : cleanEnvValue(configured);
   return raw.split(',').map((k) => k.trim()).filter((k): k is MediaKind =>
-    k === 'photos' || k === 'moments' || k === 'messages' || k === 'posts' || k === 'circles',
+    k === 'photos' || k === 'moments' || k === 'messages' || k === 'posts' || k === 'circles' || k === 'vibes',
   );
 })();
 
@@ -66,12 +65,12 @@ export function setMediaTokenTransport(web: boolean): void {
   tokenInQuery = web;
 }
 
-export type MediaKind = 'photos' | 'moments' | 'messages' | 'posts' | 'circles';
+export type MediaKind = 'photos' | 'moments' | 'messages' | 'posts' | 'circles' | 'vibes';
 
 /** The kind of a stored path (`moments/12/a.jpg` → `moments`). */
 export function mediaKind(path: string): MediaKind | null {
   const kind = path.replace(/^\/+/, '').split('/')[0];
-  return kind === 'photos' || kind === 'moments' || kind === 'messages' || kind === 'posts' || kind === 'circles'
+  return kind === 'photos' || kind === 'moments' || kind === 'messages' || kind === 'posts' || kind === 'circles' || kind === 'vibes'
     ? kind
     : null;
 }
@@ -86,15 +85,34 @@ export function mediaStoreUrl(path: string, withToken = tokenInQuery): string {
   return withToken && token ? `${url}?token=${encodeURIComponent(token)}` : url;
 }
 
+/** Old Supabase object paths use a distinct route; never guess their store. */
+export function legacyMediaUrl(path: string): string {
+  return `${MEDIA_BASE_URL}/legacy/${path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/** Rewrite only our own project's old public/authenticated Storage URLs. */
+export function legacyMediaPath(value: string, projectUrl: string): string | null {
+  if (!projectUrl) return null;
+  for (const mode of ['public', 'authenticated']) {
+    const prefix = `${projectUrl}/storage/v1/object/${mode}/media/`;
+    if (value.startsWith(prefix)) {
+      try { return decodeURIComponent(value.slice(prefix.length).split('?')[0]); }
+      catch { return null; }
+    }
+  }
+  return null;
+}
+
 /** Absolute media-Worker URL → its stored path, or null if it isn't ours. */
 export function mediaStorePath(url: string): string | null {
   if (!mediaStoreEnabled || !url.startsWith(`${MEDIA_BASE_URL}/m/`)) return null;
   const path = url.slice(`${MEDIA_BASE_URL}/m/`.length).split('?')[0];
-  return path ? decodeURIComponent(path) : null;
+  try { return path ? decodeURIComponent(path) : null; } catch { return null; }
 }
 
 export function isMediaStoreUrl(url?: string | null): boolean {
-  return !!url && mediaStorePath(url) !== null;
+  return !!url && (mediaStorePath(url) !== null ||
+    (mediaStoreEnabled && url.startsWith(`${MEDIA_BASE_URL}/legacy/`)));
 }
 
 /* --------------------------------------------------------------- session token */

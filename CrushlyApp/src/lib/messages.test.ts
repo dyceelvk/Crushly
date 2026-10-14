@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { messagePreview } from './messages';
+import { messagePreview, nextMessageCursor, mergeMessagePage } from './messages';
 import type { Message } from '../api/types';
 
 const base = {
@@ -49,4 +49,27 @@ test('moment replies name whose moment', () => {
 test('unknown kinds fall back to the body', () => {
   assert.equal(messagePreview(msg({ kind: 'system' }), 'Ada'), 'New Whisper');
   assert.equal(messagePreview(msg({ kind: 'system', body: 'ok' }), 'Ada'), 'ok');
+});
+
+test('sending between polls does not skip an incoming message', () => {
+  let cursor = nextMessageCursor(0, 'received', [{ id: 100 }]);
+  const database = [{ id: 101 }, { id: 102 }]; // peer sends, then we send
+  cursor = nextMessageCursor(cursor, 'sent', [database[1]]);
+  assert.equal(cursor, 100);
+  const nextPage = database.filter((m) => m.id > cursor);
+  assert.deepEqual(nextPage.map((m) => m.id), [101, 102]);
+  cursor = nextMessageCursor(cursor, 'received', nextPage);
+  assert.equal(cursor, 102);
+  assert.equal(nextMessageCursor(cursor, 'received', [{ id: 101 }]), 102);
+  assert.equal(nextMessageCursor(cursor, 'received', []), 102);
+});
+
+test('catch-up polls keep incoming messages before outgoing ones and deduplicate', () => {
+  const draft = msg({ id: -1, pending: true, localId: 'draft' });
+  const visible = [msg({ id: 100 }), msg({ id: 102 }), draft];
+  const polled = [msg({ id: 101 }), msg({ id: 102 })];
+  const merged = mergeMessagePage(visible, polled);
+  assert.deepEqual(merged.map((m) => m.id), [100, 101, 102, -1]);
+  assert.equal(merged[3], draft);
+  assert.deepEqual(mergeMessagePage(merged, polled), merged);
 });

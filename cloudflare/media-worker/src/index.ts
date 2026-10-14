@@ -25,6 +25,8 @@ export interface Env {
   B2_BUCKET: string;
   /** Optional. Without it /admin/lifecycle stays closed. */
   ADMIN_TOKEN?: string;
+  /** Public build provenance set by the deploy job. */
+  DEPLOY_REVISION?: string;
 }
 
 /**
@@ -78,7 +80,7 @@ function hex(buffer: ArrayBuffer): string {
 
 /** `/m/photos/12/a.jpg?token=…` → `photos/12/a.jpg`, and the query token if any. */
 function splitPath(url: URL): { path: string; queryToken: string | null } {
-  const path = decodeURIComponent(url.pathname.replace(/^\/m\/?/, '').replace(/^\/+/, ''));
+  const path = decodeURIComponent(url.pathname.replace(/^\/(m|legacy)\/?/, '').replace(/^\/+/, ''));
   return { path, queryToken: url.searchParams.get('token') };
 }
 
@@ -585,6 +587,10 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head });
     if (url.pathname === '/health') return health(env, origin);
+    if (url.pathname === '/deployment') {
+      if (request.method !== 'GET') return fail(405, 'Unsupported method.', origin);
+      return json({ revision: env.DEPLOY_REVISION ?? 'unknown' }, 200, origin, { 'Cache-Control': 'no-store' });
+    }
     if (url.pathname === '/admin/lifecycle') {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
       if (bearerToken(request, null) !== (env.ADMIN_TOKEN ?? '')) return fail(404, '', origin);
@@ -604,13 +610,21 @@ export default {
       return apkBuild(request, url, ctx, origin);
     }
 
-    const { path, queryToken } = splitPath(url);
+    let parsed: ReturnType<typeof splitPath>;
+    try { parsed = splitPath(url); }
+    catch { return fail(400, 'Invalid media path.', origin); }
+    const { path, queryToken } = parsed;
+    if (path.split('/').some((part) => part === '..' || part === '.') || path.includes('\\')) {
+      return fail(400, 'Invalid media path.', origin);
+    }
+    const legacy = url.pathname.startsWith('/legacy/');
     const token = bearerToken(request, queryToken);
     if (!token) return fail(401, 'Sign in to load this.', origin);
     if (!(await memberId(env, token))) return fail(401, 'That session has expired — sign in again.', origin);
 
     /* ------------------------------------------------------------- upload */
     if (request.method === 'POST') {
+      if (legacy) return fail(405, 'Legacy media is read-only.', origin);
       const kind = request.headers.get('X-Media-Kind') ?? '';
       const contentType = request.headers.get('Content-Type') ?? 'application/octet-stream';
       const bytes = await request.arrayBuffer();
@@ -647,29 +661,20 @@ export default {
       if (!verdict.ok) return fail(verdict.status, verdict.message, origin);
       if (!verdict.data?.allowed) return fail(404, 'That file isn’t available.', origin);
 
-      // Only ever cache bytes every signed-in member would get — a private file
-      // cached under a shared key would be served to the next caller.
-      const key = `${url.origin}/m/${path}`;
-      if (verdict.data.cacheable) {
-        const cache = caches.default;
-        const hit = await cache.match(key).catch(() => undefined);
-        if (hit) return withHeaders(hit, path);
-      }
-
-      const auth = await b2Auth(env);
-      const upstream = await b2Download(env, auth, path);
+      // Never serve a browser/shared cached copy after permissions change.
+      // Legacy files stay in Supabase; use the member JWT, never a service key.
+      const upstream = legacy
+        ? await fetch(`${env.SUPABASE_URL}/storage/v1/object/authenticated/media/${path.split('/').map(encodeURIComponent).join('/')}`, {
+            headers: { Authorization: `Bearer ${token}`, apikey: env.SUPABASE_ANON_KEY },
+          })
+        : await b2Download(env, await b2Auth(env), path);
       if (!upstream.ok) return fail(404, 'That file isn’t available.', origin);
-
-      const response = withHeaders(new Response(upstream.body, upstream), path);
-      if (verdict.data.cacheable) {
-        const cached = response.clone();
-        void caches.default.put(key, cached).catch(() => undefined);
-      }
-      return response;
+      return withHeaders(new Response(upstream.body, upstream), origin);
     }
 
     /* ------------------------------------------------------------- delete */
     if (request.method === 'DELETE') {
+      if (legacy) return fail(405, 'Remove legacy files through Storage.', origin);
       if (!path) return fail(400, 'No file requested.', origin);
       const allowed = await rpc<boolean>(env, token, 'can_manage_media', {
         p_path: path,
@@ -678,7 +683,7 @@ export default {
       if (!allowed.ok) return fail(allowed.status, allowed.message, origin);
       if (!allowed.data) return fail(404, 'That file isn’t yours to remove.', origin);
 
-      await b2Delete(env, path);
+      if (!(await b2Delete(env, path))) return fail(502, 'Could not remove that file. Try again.', origin);
       return json({ ok: true }, 200, origin);
     }
 
@@ -686,13 +691,11 @@ export default {
   },
 };
 
-/** Cache policy by kind: Moments are short-lived, chat media is never shared. */
-function withHeaders(response: Response, path: string): Response {
-  const kind = path.split('/')[0];
+/** Private responses are never reusable without fresh authorization. */
+function withHeaders(response: Response, origin: string | null): Response {
   const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(cors(origin))) headers.set(name, value);
   headers.set('X-Content-Type-Options', 'nosniff');
-  if (kind === 'messages') headers.set('Cache-Control', 'private, no-store');
-  else if (kind === 'moments') headers.set('Cache-Control', 'public, max-age=3600');
-  else headers.set('Cache-Control', 'public, max-age=604800');
+  headers.set('Cache-Control', 'private, no-store');
   return new Response(response.body, { status: response.status, headers });
 }

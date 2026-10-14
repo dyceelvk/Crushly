@@ -2604,3 +2604,4378 @@ revoke all on function public.can_view_media(text, text) from public, anon, auth
 grant execute on function public.can_view_media(text, text) to authenticated, service_role;
 revoke all on function public.can_manage_media(text, text) from public, anon, authenticated;
 grant execute on function public.can_manage_media(text, text) to authenticated, service_role;
+
+-- ================================ 20261010000011_usernames.sql
+
+-- Usernames: a stable @handle for every member.
+--
+-- A first name is not an identity — dozens of members can be called Alex. A
+-- handle is how you tell people apart, how you find someone without knowing
+-- their name, and how you point at somebody in a post without misspelling
+-- them. It also gives us something to show publicly that is not a legal name,
+-- which matters for members who are not out everywhere.
+--
+-- Handles are stored lowercase so that @Alex and @alex cannot both exist and
+-- be mistaken for each other. Members keep the right to change theirs, with a
+-- day between changes so a handle cannot be used to dodge a block or to
+-- impersonate someone one minute at a time.
+
+alter table public.profiles
+  add column if not exists username text not null default '',
+  add column if not exists username_updated_at bigint;
+
+alter table public.profiles
+  drop constraint if exists profiles_username_format;
+alter table public.profiles
+  add constraint profiles_username_format
+  -- Written without anchors on purpose: the migration runner tracks
+  -- dollar-quoted function bodies, and a dollar sign outside one puts its
+  -- parser out of step with every function that follows in this file.
+  check (username = '' or (username !~ '[^a-z0-9_]' and length(username) between 3 and 30));
+
+-- Everyone already here gets one: first name, stripped to handle characters,
+-- with their id on the end so it cannot collide. e.g. Daniel, 12 → daniel12.
+update public.profiles p
+   set username = substr(
+         lower(regexp_replace(coalesce(nullif(btrim(p.name), ''), 'member'), '[^a-zA-Z0-9_]', '', 'g')),
+         1, 16) || p.id::text
+ where p.username = '';
+
+-- Unique among members who have chosen one. Members who haven't picked yet
+-- all sit on the empty string, and only a partial index lets them do that
+-- without colliding with each other — a plain unique index would break the
+-- second person to sign up after this migration.
+drop index if exists profiles_username_key;
+drop index if exists profiles_username_lookup_idx;
+create unique index profiles_username_key on public.profiles (username) where username <> '';
+
+-- Is this handle free? Deliberately says nothing about *who* holds a taken
+-- one, so it cannot be used to fish for accounts.
+create or replace function public.username_available(p_username text)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v text := lower(btrim(coalesce(p_username, '')));
+begin
+  if v !~ '^[a-z0-9_]{3,20}$' then return false; end if;
+  if v ~ '^[0-9_]+$' then return false; end if;           -- not a row of numbers or underscores
+  return not exists (select 1 from profiles p where p.username = v);
+end $$;
+
+-- Sets your own handle. Runs as the owner of the function so the format and
+-- uniqueness rules cannot be worked around by writing to the table directly.
+create or replace function public.set_username(p_username text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v text := lower(btrim(coalesce(p_username, '')));
+  changed bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if v = '' then
+    perform public.crushly_fail(400, '', 'Pick a username.');
+  elsif length(v) < 3 then
+    perform public.crushly_fail(400, '', 'Usernames are at least 3 characters.');
+  elsif length(v) > 20 then
+    perform public.crushly_fail(400, '', 'Usernames are at most 20 characters.');
+  elsif v ~ '^[0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Use at least one letter.');
+  elsif v !~ '^[a-z0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Letters, numbers and underscores only.');
+  end if;
+
+  select p.username_updated_at into changed from profiles p where p.id = me;
+  if changed is not null and public.now_ms() - changed < 24 * 60 * 60 * 1000 then
+    perform public.crushly_fail(429, '', 'You can change your username once a day.');
+  end if;
+
+  if exists (select 1 from profiles p where p.username = v and p.id <> me) then
+    perform public.crushly_fail(409, '', 'That username is taken.');
+  end if;
+
+  update profiles
+     set username = v,
+         username_updated_at = case when username = v then username_updated_at else public.now_ms() end,
+         updated_at = public.now_ms()
+   where id = me;
+
+  return jsonb_build_object('username', v);
+end $$;
+
+-- Find a member by handle. Goes through the same visibility rules as opening
+-- a Space, so blocked, hidden and paused members are not findable this way.
+create or replace function public.profile_by_username(p_username text)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  target bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select p.id into target from profiles p where p.username = lower(btrim(coalesce(p_username, '')));
+  if target is null then return null; end if;
+  return public.load_visible_profile(me, target, true);
+end $$;
+
+-- Handles travel with the profile everywhere it is shown.
+create or replace function public.public_profile(p_viewer bigint, p_target bigint, p_full boolean default false)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  r record;
+  v record;
+  interests jsonb;
+  intentions jsonb;
+  shared_interests jsonb;
+  km double precision;
+  my_deep boolean;
+  my_note text;
+  my_found boolean;
+  their_deep boolean;
+  their_note text;
+  their_found boolean;
+  connected boolean;
+  can_see_activity boolean;
+  result jsonb;
+begin
+  select p.*, pr.show_distance, pr.show_online, pr.discoverable, pr.profile_visibility,
+         pr.who_can_message, pr.who_can_crush, pr.show_age, pr.show_city, pr.incognito
+    into r
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_target;
+  if not found then
+    return null;
+  end if;
+
+  select p.lat, p.lng, p.interests, p.intentions, p.verification, pr.show_online
+    into v
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_viewer;
+
+  interests := coalesce(r.interests, '[]'::jsonb);
+  intentions := coalesce(r.intentions, '[]'::jsonb);
+  km := public.distance_km(v.lat, v.lng, r.lat, r.lng);
+  connected := public.is_connected_pair(p_viewer, p_target);
+
+  select c.deep, c.note into my_deep, my_note from crushes c
+   where c.from_id = p_viewer and c.to_id = p_target;
+  my_found := found;
+  select c.deep, c.note into their_deep, their_note from crushes c
+   where c.from_id = p_target and c.to_id = p_viewer;
+  their_found := found;
+
+  can_see_activity := r.show_online and coalesce(v.show_online, true);
+
+  select coalesce(jsonb_agg(i), '[]'::jsonb) into shared_interests
+    from jsonb_array_elements_text(interests) i
+   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb)));
+
+  result := jsonb_build_object(
+    'id', r.id,
+    'name', r.name,
+    'username', nullif(r.username, ''),
+    'age', case when r.show_age then public.age_of(r.birthdate) else null end,
+    'pronouns', nullif(r.pronouns, ''),
+    'city', case when r.show_city then nullif(r.city, '') else null end,
+    'verified', r.verification = 'verified',
+    'distance', case when r.show_distance then public.distance_label(km) else null end,
+    'online', case when can_see_activity then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when can_see_activity then public.activity_label_at(r.last_active_at) else null end,
+    'bio', r.bio,
+    'intentions', intentions,
+    'relationshipIntention', nullif(r.relationship_intention, ''),
+    'interests', interests,
+    'sharedInterests', shared_interests,
+    'photos', public.photos_of(p_target),
+    'crush', jsonb_build_object(
+      'sent', my_found,
+      'sentDeep', coalesce(my_deep, false),
+      'received', their_found,
+      'receivedDeep', coalesce(their_deep, false),
+      'note', case when their_found then their_note else null end,
+      'mutual', connected
+    ),
+    'canMessage', public.messaging_block_reason(p_viewer, p_target) is null,
+    'acceptsCrushes', r.who_can_crush <> 'verified' or (v.verification = 'verified')
+  );
+
+  if p_full then
+    result := result || jsonb_build_object(
+      'languages', coalesce(r.languages, '[]'::jsonb),
+      'lifestyle', coalesce(r.lifestyle, '{}'::jsonb),
+      'messageBlockReason', public.messaging_block_reason(p_viewer, p_target)
+    );
+  end if;
+  return result;
+end $$;
+
+-- ================================ 20261010000012_message_replies.sql
+
+-- Replies in Whispers: swipe a message toward the middle to answer it.
+--
+-- The client only sends the *id* of the message being answered. The quote that
+-- appears above the reply is rebuilt here, from the stored row, so a member
+-- cannot craft metadata that puts words in someone else's mouth — the quoted
+-- text is always the text that was actually sent, and the name is always the
+-- name of whoever sent it. A reply can only point at a message in the same
+-- conversation, so it cannot be used to surface something from elsewhere.
+
+create or replace function public.send_message(
+  p_conversation_id bigint, p_kind text default 'text', p_body text default '',
+  p_media_url text default null, p_meta jsonb default '{}'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  reason text;
+  new_id bigint;
+  clean_body text := coalesce(p_body, '');
+  clean_meta jsonb := coalesce(p_meta, '{}'::jsonb);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  shared jsonb;
+  preview text;
+  reply_id bigint;
+  reply jsonb;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into conv from conversations c where c.id = p_conversation_id;
+  if not found or (conv.user_a <> me and conv.user_b <> me) then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+  if conv.closed then
+    perform public.crushly_fail(403, '', 'This connection has ended.');
+  end if;
+  reason := public.messaging_block_reason(me, peer);
+  if reason is not null then
+    perform public.crushly_fail(403, 'messaging_restricted', reason);
+  end if;
+
+  case p_kind
+    when 'text' then
+      if btrim(clean_body) = '' then
+        perform public.crushly_fail(400, '', 'Say something worth replying to.');
+      end if;
+      clean_body := left(clean_body, 2000);
+    when 'photo' then
+      if clean_media is null then
+        perform public.crushly_fail(400, '', 'Choose a photo to send.');
+      end if;
+      clean_body := left(clean_body, 300);
+    when 'voice' then
+      if clean_media is null then
+        perform public.crushly_fail(400, '', 'Record a voice note to send.');
+      end if;
+      clean_meta := jsonb_build_object('duration',
+        least(greatest(coalesce((clean_meta ->> 'duration')::int, 1), 1), 300));
+    when 'video' then
+      if clean_media is null then
+        perform public.crushly_fail(400, '', 'Record a video note to send.');
+      end if;
+      clean_meta := jsonb_build_object('duration',
+        least(greatest(coalesce((clean_meta ->> 'duration')::int, 1), 1), 120));
+    when 'call' then
+      if clean_meta ->> 'channel' is null or btrim(clean_meta ->> 'channel') = '' then
+        perform public.crushly_fail(400, '', 'Call requests need a channel.');
+      end if;
+      clean_body := 'Voice call';
+      clean_meta := jsonb_build_object('channel', clean_meta ->> 'channel');
+    when 'sticker' then
+      if clean_meta ->> 'sticker' not in ('wave', 'blush', 'fire', 'cheers', 'wink', 'heart_eyes', 'coffee', 'crown') then
+        perform public.crushly_fail(400, '', 'Pick a sticker to send.');
+      end if;
+    when 'profile' then
+      shared := public.load_visible_profile(me, (clean_meta ->> 'profileId')::bigint);
+      if shared is null then
+        perform public.crushly_fail(404, '', 'That Space can’t be shared.');
+      end if;
+      clean_meta := jsonb_build_object(
+        'profileId', (shared ->> 'id')::bigint,
+        'name', shared ->> 'name',
+        'age', shared ->> 'age',
+        'photo', shared #>> '{photos,0,url}',
+        'verified', (shared ->> 'verified')::boolean);
+    else
+      perform public.crushly_fail(400, '', 'Unsupported message type.');
+  end case;
+
+  -- Rebuild the quote from the row itself, never from what the client said it
+  -- said. Anything that does not resolve is dropped rather than trusted.
+  if coalesce(clean_meta #>> '{replyTo,id}', '') ~ '^[0-9]{1,18}$' then
+    reply_id := (clean_meta #>> '{replyTo,id}')::bigint;
+    select jsonb_build_object(
+             'id', rm.id,
+             'mine', rm.sender_id = me,
+             'name', case when rm.sender_id = me then 'You'
+                          else coalesce((select p.name from profiles p where p.id = rm.sender_id), 'Member') end,
+             'preview', case rm.kind
+               when 'text' then left(coalesce(nullif(btrim(rm.body), ''), 'Whisper'), 80)
+               when 'photo' then coalesce(nullif(btrim(rm.body), ''), 'Photo')
+               when 'voice' then 'Voice note'
+               when 'video' then 'Video note'
+               when 'sticker' then 'Sticker'
+               when 'profile' then 'Shared a Space'
+               when 'call' then 'Voice call'
+               else coalesce(nullif(btrim(rm.body), ''), 'Whisper') end
+           )
+      into reply
+      from messages rm
+     where rm.id = reply_id and rm.conversation_id = p_conversation_id;
+
+    if reply is null then
+      clean_meta := clean_meta - 'replyTo';
+    else
+      clean_meta := jsonb_set(clean_meta, '{replyTo}', reply);
+    end if;
+  end if;
+
+  insert into messages (conversation_id, sender_id, kind, body, media_url, meta)
+  values (p_conversation_id, me, p_kind, clean_body, clean_media, clean_meta)
+  returning id into new_id;
+  update conversations set last_message_at = public.now_ms() where id = p_conversation_id;
+
+  preview := case p_kind
+    when 'text' then left(clean_body, 80)
+    when 'photo' then 'Sent a photo'
+    when 'voice' then 'Sent a voice note'
+    when 'video' then 'Sent a video note'
+    when 'call' then 'Voice call'
+    when 'sticker' then 'Sent a sticker'
+    else 'Shared a Space'
+  end;
+  perform public.notify_to(peer, 'message', me, p_conversation_id, preview);
+
+  return (
+    select public.serialize_message(m, me, public.receipts_visible(me, peer))
+      from messages m where m.id = new_id
+  );
+end $$;
+
+-- ================================ 20261010000013_reserved_usernames.sql
+
+-- Reserved handles.
+--
+-- Nobody should be able to be @support, @admin or @rielinc. Impersonating staff
+-- is the oldest trick there is, and a member who looks official can talk people
+-- out of money, photos or personal details before anyone thinks to check.
+--
+-- A reserved handle is simply one nobody may claim — unless it has an owner,
+-- which is how Riel Inc.'s own account takes @rielinc without opening the door
+-- to everybody else. Setting that owner is done here, in a migration, not by
+-- anything a member can reach from the app.
+
+create table if not exists public.reserved_usernames (
+  handle    text primary key,
+  owner_id  bigint references public.profiles(id) on delete set null,
+  note      text not null default ''
+);
+
+alter table public.reserved_usernames enable row level security;
+
+-- Anyone signed in may read the list — it is not a secret, and seeing it saves
+-- someone from wondering why a handle they fancied is unavailable. Only
+-- migrations write to it.
+drop policy if exists reserved_usernames_read on public.reserved_usernames;
+create policy reserved_usernames_read on public.reserved_usernames
+  for select to authenticated using (true);
+
+insert into public.reserved_usernames (handle, note) values
+  ('rielinc', 'Riel Inc. official'),
+  ('riel', 'Riel Inc.'),
+  ('crushly', 'The service itself'),
+  ('crushlyapp', 'The service itself'),
+  ('admin', 'Staff'),
+  ('administrator', 'Staff'),
+  ('moderator', 'Staff'),
+  ('moderation', 'Staff'),
+  ('support', 'Staff'),
+  ('help', 'Staff'),
+  ('safety', 'Staff'),
+  ('security', 'Staff'),
+  ('billing', 'Staff'),
+  ('team', 'Staff'),
+  ('official', 'Staff'),
+  ('staff', 'Staff'),
+  ('founder', 'Staff'),
+  ('ceo', 'Staff'),
+  ('legal', 'Staff'),
+  ('privacy', 'Staff'),
+  ('terms', 'Staff'),
+  ('abuse', 'Staff'),
+  ('system', 'Reserved'),
+  ('root', 'Reserved'),
+  ('null', 'Reserved'),
+  ('undefined', 'Reserved'),
+  ('test', 'Reserved'),
+  ('verified', 'Could be mistaken for a badge')
+on conflict (handle) do nothing;
+
+-- Nobody can be given a handle that is already somebody's: reserved words are
+-- for the future, not for taking something away from a member who has it.
+delete from public.reserved_usernames r
+ where r.owner_id is null
+   and exists (select 1 from profiles p where p.username = r.handle);
+
+-- Is this handle free? Says nothing about who holds a taken one, so it cannot
+-- be used to fish for accounts.
+create or replace function public.username_available(p_username text)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v text := lower(btrim(coalesce(p_username, '')));
+begin
+  if v !~ '^[a-z0-9_]{3,20}$' then return false; end if;
+  if v ~ '^[0-9_]+$' then return false; end if;           -- not a row of numbers or underscores
+  if exists (select 1 from reserved_usernames r where r.handle = v and (r.owner_id is null or r.owner_id <> me)) then
+    return false;
+  end if;
+  return not exists (select 1 from profiles p where p.username = v and p.id <> coalesce(me, -1));
+end $$;
+
+create or replace function public.set_username(p_username text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v text := lower(btrim(coalesce(p_username, '')));
+  changed bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if v = '' then
+    perform public.crushly_fail(400, '', 'Pick a username.');
+  elsif length(v) < 3 then
+    perform public.crushly_fail(400, '', 'Usernames are at least 3 characters.');
+  elsif length(v) > 20 then
+    perform public.crushly_fail(400, '', 'Usernames are at most 20 characters.');
+  elsif v ~ '^[0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Use at least one letter.');
+  elsif v !~ '^[a-z0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Letters, numbers and underscores only.');
+  end if;
+
+  -- Reserved so nobody can pass themselves off as staff or as the company.
+  if exists (select 1 from reserved_usernames r where r.handle = v and (r.owner_id is null or r.owner_id <> me)) then
+    perform public.crushly_fail(409, '', 'That username is reserved.');
+  end if;
+
+  select p.username_updated_at into changed from profiles p where p.id = me;
+  if changed is not null and public.now_ms() - changed < 24 * 60 * 60 * 1000 then
+    perform public.crushly_fail(429, '', 'You can change your username once a day.');
+  end if;
+
+  if exists (select 1 from profiles p where p.username = v and p.id <> me) then
+    perform public.crushly_fail(409, '', 'That username is taken.');
+  end if;
+
+  update profiles
+     set username = v,
+         username_updated_at = case when username = v then username_updated_at else public.now_ms() end,
+         updated_at = public.now_ms()
+   where id = me;
+
+  return jsonb_build_object('username', v);
+end $$;
+
+-- ================================ 20261010000014_flow_posts.sql
+
+-- Flow: posts that do not expire.
+--
+-- Moments are what you share with people you know; they are gone in a day. Flow
+-- is what you share to be read — a thought, a photo, an update — by people you
+-- have not met yet. It is the difference between talking to your connections
+-- and being part of a place.
+--
+-- Two audiences, and the safe one is the default: a post reaches your
+-- Connections, unless you deliberately choose Everyone. Nothing here is
+-- readable by someone who is not signed in — not the text, not the photos. That
+-- is not an oversight, it is the point: for men who are not out everywhere, a
+-- public-facing feed is a risk, not a feature.
+
+create table if not exists public.posts (
+  id          bigint generated always as identity primary key,
+  author_id   bigint not null references public.profiles(id) on delete cascade,
+  body        text not null default '',
+  media_url   text,
+  audience    text not null default 'connections'
+                check (audience in ('connections', 'everyone')),
+  created_at  bigint not null default public.now_ms()
+);
+
+create index if not exists posts_created_idx on public.posts (created_at desc, id desc);
+create index if not exists posts_author_idx on public.posts (author_id, created_at desc);
+
+alter table public.posts enable row level security;
+
+-- Posts are read through flow_feed, which applies the audience and block rules.
+-- Direct access is limited to your own, so a stray client query cannot sweep
+-- the table.
+drop policy if exists posts_select_own on public.posts;
+create policy posts_select_own on public.posts
+  for select to authenticated using (author_id = public.me_id());
+
+-- Who may read a post, in one place.
+create or replace function public.can_view_post(p_post public.posts, p_viewer bigint)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_viewer is null then return false; end if;
+  if p_post.author_id = p_viewer then return true; end if;
+  if public.is_blocked_pair(p_viewer, p_post.author_id) then return false; end if;
+  if p_post.audience = 'everyone' then
+    return exists (
+      select 1 from profiles p join privacy pr on pr.user_id = p.id
+       where p.id = p_post.author_id and p.onboarded and p.status = 'active'
+         and pr.profile_visibility = 'everyone' and not pr.incognito
+    );
+  end if;
+  return public.is_connected_pair(p_viewer, p_post.author_id);
+end $$;
+
+-- The Flow: newest first, only what you are allowed to see.
+create or replace function public.flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    -- The loop variable is a record, and a record will not cast itself to a
+    -- row type — so the row is fetched again into one before it is judged.
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        )
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.create_post(
+  p_body text default '', p_media_url text default null, p_audience text default 'connections'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_body text := left(btrim(coalesce(p_body, '')), 500);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  new_id bigint;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_body = '' and clean_media is null then
+    perform public.crushly_fail(400, '', 'Write something, or add a photo.');
+  end if;
+  if p_audience not in ('connections', 'everyone') then
+    perform public.crushly_fail(400, '', 'Choose who can see this.');
+  end if;
+
+  -- A post is not a Moment: it stays. So the ceiling is lower — ten an hour is
+  -- more than anyone posts and nowhere near enough to fill a feed.
+  select count(*) into n from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000;
+  if n >= 10 then
+    perform public.crushly_fail(429, '', 'That’s a lot of posting — try again in a little while.');
+  end if;
+
+  insert into posts (author_id, body, media_url, audience)
+  values (me, clean_body, clean_media, p_audience)
+  returning id into new_id;
+
+  return (
+    select jsonb_build_object(
+      'id', po.id, 'body', po.body, 'mediaUrl', po.media_url, 'audience', po.audience,
+      'createdAt', po.created_at, 'author', public.public_profile(me, po.author_id, false), 'mine', true
+    )
+    from posts po where po.id = new_id
+  );
+end $$;
+
+create or replace function public.delete_post(p_post_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  delete from posts where id = p_post_id and author_id = me;
+  return found;
+end $$;
+
+-- Photos on a post live in the same private bucket as everything else, behind
+-- the same Worker, so a post that is only for your Connections cannot be
+-- fetched by someone who is not one.
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind not in ('photos', 'moments', 'messages', 'posts') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind in ('photos', 'moments', 'posts') and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+
+  v_limit := case when p_kind = 'messages' then 25 * 1024 * 1024 else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+begin
+  if me is null then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind = 'photos' then
+    return jsonb_build_object('allowed', true, 'cacheable', true);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where mo.media_url = p_path limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', m.audience = 'everyone');
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where ms.media_url = p_path and (c.user_a = me or c.user_b = me)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- A post's photo follows the post: Everyone can be shared and cached,
+  -- Connections-only never leaves the pair.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where po.media_url = p_path or (p_url is not null and po.media_url = p_url)
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', post.audience = 'everyone' and post.author_id <> me);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $$;
+
+-- ================================ 20261010000015_keeps.sql
+
+-- Keep Close: the people you want near.
+--
+-- A Connection is mutual, and it is a big word. Keep Close is smaller, and it
+-- is yours alone: it means "I want to see what this person shares", and it asks
+-- nothing back. You can Keep Close anyone you can see — the two of you do not
+-- have to have Clicked.
+--
+-- Two rules keep it from being a weapon. Cutting someone off severs the
+-- keeping in both directions, so a member you have cut off cannot stay in your
+-- Close Ones and you cannot stay in theirs. And the list is private: you see
+-- yours, nobody sees anyone else's. Another member's Space shows you a count
+-- and one quiet yes-or-no — whether they keep you close — and nothing about
+-- who else does.
+
+create table if not exists public.keeps (
+  keeper_id  bigint not null references public.profiles(id) on delete cascade,
+  kept_id    bigint not null references public.profiles(id) on delete cascade,
+  created_at bigint not null default public.now_ms(),
+  primary key (keeper_id, kept_id),
+  check (keeper_id <> kept_id)
+);
+
+create index if not exists keeps_kept_idx on public.keeps (kept_id, created_at desc);
+
+alter table public.keeps enable row level security;
+
+-- Only your own list is queryable, and even that the app reads through
+-- close_ones(). Who keeps *you* close is not a table anybody may sweep.
+drop policy if exists keeps_select_own on public.keeps;
+create policy keeps_select_own on public.keeps
+  for select to authenticated using (keeper_id = public.me_id());
+
+-- Cutting someone off should end the keeping, in both directions, the moment
+-- it happens — without every call site having to remember to do it.
+create or replace function public.keeps_severed_on_block() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.keeps k
+   where (k.keeper_id = new.blocker_id and k.kept_id = new.blocked_id)
+      or (k.keeper_id = new.blocked_id and k.kept_id = new.blocker_id);
+  return null;
+end $$;
+
+drop trigger if exists blocks_sever_keeps on public.blocks;
+create trigger blocks_sever_keeps after insert on public.blocks
+  for each row execute function public.keeps_severed_on_block();
+
+-- Everything the app needs to draw the Keep Close button on a Space, in one
+-- call: what I have done, what they have done, and the two counts.
+create or replace function public.keep_state(p_member_id bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_member_id is null or me = p_member_id then
+    return jsonb_build_object('keeps', false, 'keepsYou', false, 'keepsCount', 0, 'keptByCount', 0, 'self', true);
+  end if;
+  -- Someone you have cut off, or who has cut you off, gets nothing at all.
+  if public.is_blocked_pair(me, p_member_id) then
+    return jsonb_build_object('keeps', false, 'keepsYou', false, 'keepsCount', 0, 'keptByCount', 0, 'self', false);
+  end if;
+
+  return jsonb_build_object(
+    'keeps',       exists (select 1 from keeps k where k.keeper_id = me and k.kept_id = p_member_id),
+    'keepsYou',    exists (select 1 from keeps k where k.keeper_id = p_member_id and k.kept_id = me),
+    'keepsCount',  (select count(*) from keeps k where k.keeper_id = p_member_id),
+    'keptByCount', (select count(*) from keeps k where k.kept_id = p_member_id),
+    'self',        false
+  );
+end $$;
+
+create or replace function public.keep_close(p_member_id bigint)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  n  int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_member_id is null or me = p_member_id then
+    perform public.crushly_fail(400, '', 'You can’t keep yourself close.');
+  end if;
+  if not exists (select 1 from profiles p where p.id = p_member_id and p.status = 'active') then
+    perform public.crushly_fail(404, '', 'Member not found.');
+  end if;
+  if public.is_blocked_pair(me, p_member_id) then
+    perform public.crushly_fail(403, '', 'You can’t keep this member close.');
+  end if;
+
+  -- A hundred a day is far past what a person does by hand and far short of
+  -- what it takes to farm a follower list.
+  select count(*) into n from keeps k
+   where k.keeper_id = me and k.created_at > public.now_ms() - 86400 * 1000;
+  if n >= 100 then
+    perform public.crushly_fail(429, '', 'That’s a lot for one day — try again tomorrow.');
+  end if;
+
+  insert into keeps (keeper_id, kept_id) values (me, p_member_id) on conflict do nothing;
+  return public.keep_state(p_member_id);
+end $$;
+
+-- Letting go is not an accusation and it is not announced: the row simply
+-- goes, and the other member is never told.
+create or replace function public.let_go(p_member_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  delete from keeps k where k.keeper_id = me and k.kept_id = p_member_id;
+  return true;
+end $$;
+
+-- Your Close Ones. Yours only — there is no way to ask for somebody else's.
+create or replace function public.close_ones(p_limit integer default 50, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select k.kept_id, k.created_at
+      from keeps k
+     where k.keeper_id = me
+       and not public.is_blocked_pair(me, k.kept_id)
+       and (
+         p_after is null
+         or k.created_at < (select k2.created_at from keeps k2 where k2.keeper_id = me and k2.kept_id = p_after)
+         or (
+           k.created_at = (select k2.created_at from keeps k2 where k2.keeper_id = me and k2.kept_id = p_after)
+           and k.kept_id < p_after
+         )
+       )
+     order by k.created_at desc, k.kept_id desc
+     limit least(greatest(coalesce(p_limit, 50), 1), 100)
+  loop
+    items := items || jsonb_build_array(jsonb_build_object(
+      'member',   public.public_profile(me, r.kept_id, false),
+      'keepsYou', exists (select 1 from keeps k where k.keeper_id = r.kept_id and k.kept_id = me),
+      'keptAt',   r.created_at
+    ));
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+revoke all on function public.keep_state(bigint) from public, anon, authenticated;
+grant execute on function public.keep_state(bigint) to authenticated, service_role;
+revoke all on function public.keep_close(bigint) from public, anon, authenticated;
+grant execute on function public.keep_close(bigint) to authenticated, service_role;
+revoke all on function public.let_go(bigint) from public, anon, authenticated;
+grant execute on function public.let_go(bigint) to authenticated, service_role;
+revoke all on function public.close_ones(integer, bigint) from public, anon, authenticated;
+grant execute on function public.close_ones(integer, bigint) to authenticated, service_role;
+
+-- ================================ 20261010000016_circles.sql
+
+-- Circles: a small room of your own.
+--
+-- A Circle is a private group — up to twelve people — with its own posts and
+-- its own conversation. Not a forum, not a public feed: a room. You start one,
+-- or someone you have Clicked with brings you into theirs, and what is said in
+-- it stays in it.
+--
+-- The shape of it, and why:
+--
+--   - Membership is the whole permission. There are no roles that see more,
+--     no moderators, no anonymous reading. You are in the Circle or you are
+--     not, and if you are not, the posts and the messages do not exist for
+--     you — not in the feed, not by direct query, not as a photo URL.
+--   - You can only bring in somebody you have Clicked with, and only twelve
+--     people fit. A room stays a room.
+--   - Cutting someone off still works inside a Circle: their words stop
+--     reaching you and yours stop reaching them, even though you share it.
+--   - A post can go to a Circle instead of to your Connections or to Everyone.
+--     It then appears in that Circle and nowhere else — not in the Flow.
+--   - Leaving hands the room to the person who has been in it longest, so one
+--     member walking out does not delete everybody else's conversation.
+
+create table if not exists public.circles (
+  id          bigint generated always as identity primary key,
+  owner_id    bigint not null references public.profiles(id) on delete cascade,
+  name        text not null,
+  about       text not null default '',
+  cover_url   text,
+  created_at  bigint not null default public.now_ms(),
+  constraint circles_name_length check (char_length(btrim(name)) between 2 and 40),
+  constraint circles_about_length check (char_length(about) <= 160)
+);
+
+create table if not exists public.circle_members (
+  circle_id   bigint not null references public.circles(id) on delete cascade,
+  member_id   bigint not null references public.profiles(id) on delete cascade,
+  role        text not null default 'member' check (role in ('owner', 'member')),
+  muted       boolean not null default false,
+  joined_at   bigint not null default public.now_ms(),
+  last_read_at bigint not null default 0,
+  primary key (circle_id, member_id)
+);
+
+create index if not exists circle_members_member_idx on public.circle_members (member_id, joined_at desc);
+
+create table if not exists public.circle_messages (
+  id          bigint generated always as identity primary key,
+  circle_id   bigint not null references public.circles(id) on delete cascade,
+  sender_id   bigint not null references public.profiles(id) on delete cascade,
+  kind        text not null default 'text' check (kind in ('text', 'photo', 'voice')),
+  body        text not null default '',
+  media_url   text,
+  created_at  bigint not null default public.now_ms()
+);
+
+create index if not exists circle_messages_circle_idx on public.circle_messages (circle_id, id desc);
+
+alter table public.circles enable row level security;
+alter table public.circle_members enable row level security;
+alter table public.circle_messages enable row level security;
+
+-- Everything is read through the functions below, which apply the membership
+-- and block rules. Direct access is limited to Circles you are in, so a stray
+-- client query cannot walk someone else's room.
+-- The one question every Circle rule boils down to.
+create or replace function public.is_circle_member(p_circle_id bigint, p_member_id bigint default null)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from circle_members cm
+     where cm.circle_id = p_circle_id
+       and cm.member_id = coalesce(p_member_id, public.me_id())
+  )
+$$;
+
+-- The three policies below ask the same question, and they ask it through
+-- is_circle_member() on purpose. A policy that reads circle_members to decide
+-- who may read circle_members is infinite recursion — Postgres evaluates that
+-- subquery under the very policy it is writing. The helper is security
+-- definer, so the lookup happens as the table owner and skips RLS entirely.
+drop policy if exists circles_select_member on public.circles;
+create policy circles_select_member on public.circles
+  for select to authenticated using (public.is_circle_member(circles.id));
+
+drop policy if exists circle_members_select_member on public.circle_members;
+create policy circle_members_select_member on public.circle_members
+  for select to authenticated using (public.is_circle_member(circle_members.circle_id));
+
+drop policy if exists circle_messages_select_member on public.circle_messages;
+create policy circle_messages_select_member on public.circle_messages
+  for select to authenticated using (public.is_circle_member(circle_messages.circle_id));
+
+-- A post may belong to a Circle instead of to an audience of people.
+alter table public.posts add column if not exists circle_id bigint references public.circles(id) on delete cascade;
+create index if not exists posts_circle_idx on public.posts (circle_id, created_at desc, id desc);
+
+alter table public.posts drop constraint if exists posts_audience_check;
+alter table public.posts add constraint posts_audience_check
+  check (audience in ('connections', 'everyone', 'circle'));
+
+-- A Circle post carries its Circle; anything else carries none. The two cannot
+-- disagree — otherwise a post could be filed under a Circle and still be
+-- judged as visible to every Connection.
+alter table public.posts drop constraint if exists posts_circle_pairing;
+alter table public.posts add constraint posts_circle_pairing
+  check ((audience = 'circle') = (circle_id is not null));
+
+-- Who may read a post, in one place — now including Circle posts.
+create or replace function public.can_view_post(p_post public.posts, p_viewer bigint)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_viewer is null then return false; end if;
+  if p_post.author_id = p_viewer then return true; end if;
+  if public.is_blocked_pair(p_viewer, p_post.author_id) then return false; end if;
+  if p_post.audience = 'circle' then
+    return public.is_circle_member(p_post.circle_id, p_viewer);
+  end if;
+  if p_post.audience = 'everyone' then
+    return exists (
+      select 1 from profiles p join privacy pr on pr.user_id = p.id
+       where p.id = p_post.author_id and p.onboarded and p.status = 'active'
+         and pr.profile_visibility = 'everyone' and not pr.incognito
+    );
+  end if;
+  return public.is_connected_pair(p_viewer, p_post.author_id);
+end $$;
+
+-- The Flow: newest first, only what you are allowed to see. Circle posts are
+-- not part of it — they were written for a room, not for a square.
+create or replace function public.flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.circle_id is null
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    -- The loop variable is a record, and a record will not cast itself to a
+    -- row type — so the row is fetched again into one before it is judged.
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        )
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+drop function if exists public.create_post(text, text, text);
+
+create or replace function public.create_post(
+  p_body text default '', p_media_url text default null, p_audience text default 'connections',
+  p_circle_id bigint default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_body text := left(btrim(coalesce(p_body, '')), 500);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  v_audience text;
+  new_id bigint;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_body = '' and clean_media is null then
+    perform public.crushly_fail(400, '', 'Write something, or add a photo.');
+  end if;
+
+  if p_circle_id is not null then
+    if not public.is_circle_member(p_circle_id, me) then
+      perform public.crushly_fail(403, '', 'You’re not in that Circle.');
+    end if;
+    v_audience := 'circle';
+  elsif p_audience in ('connections', 'everyone') then
+    v_audience := p_audience;
+  else
+    perform public.crushly_fail(400, '', 'Choose who can see this.');
+  end if;
+
+  -- A post is not a Moment: it stays. So the ceiling is lower — ten an hour is
+  -- more than anyone posts and nowhere near enough to fill a feed.
+  select count(*) into n from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000;
+  if n >= 10 then
+    perform public.crushly_fail(429, '', 'That’s a lot of posting — try again in a little while.');
+  end if;
+
+  insert into posts (author_id, body, media_url, audience, circle_id)
+  values (me, clean_body, clean_media, v_audience, case when v_audience = 'circle' then p_circle_id end)
+  returning id into new_id;
+
+  return (
+    select jsonb_build_object(
+      'id', po.id, 'body', po.body, 'mediaUrl', po.media_url, 'audience', po.audience,
+      'circleId', po.circle_id, 'createdAt', po.created_at,
+      'author', public.public_profile(me, po.author_id, false), 'mine', true
+    )
+    from posts po where po.id = new_id
+  );
+end $$;
+
+-- The Circles you are in, newest activity first, with what the tab needs to
+-- show a badge without opening each one.
+create or replace function public.my_circles()
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(t.item), '[]'::jsonb))
+    from (
+      select jsonb_build_object(
+        'id', c.id,
+        'name', c.name,
+        'about', c.about,
+        'coverUrl', c.cover_url,
+        'createdAt', c.created_at,
+        'ownerId', c.owner_id,
+        'myRole', cm.role,
+        'muted', cm.muted,
+        'memberCount', (select count(*) from circle_members m where m.circle_id = c.id),
+        'lastMessageAt', (select max(m2.created_at) from circle_messages m2 where m2.circle_id = c.id),
+        'unreadCount', (
+          select count(*) from circle_messages m3
+           where m3.circle_id = c.id and m3.sender_id <> me and m3.created_at > cm.last_read_at
+             and not public.is_blocked_pair(me, m3.sender_id)
+        )
+      ) as item,
+      coalesce((select max(m4.created_at) from circle_messages m4 where m4.circle_id = c.id), c.created_at) as activity
+      from circles c join circle_members cm on cm.circle_id = c.id
+      where cm.member_id = me
+      order by activity desc, c.id desc
+    ) t
+  );
+end $$;
+
+-- One Circle: the room itself, and everybody in it.
+create or replace function public.circle_space(p_circle_id bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  return (
+    select jsonb_build_object(
+      'circle', jsonb_build_object(
+        'id', c.id,
+        'name', c.name,
+        'about', c.about,
+        'coverUrl', c.cover_url,
+        'createdAt', c.created_at,
+        'ownerId', c.owner_id,
+        'myRole', (select cm0.role from circle_members cm0 where cm0.circle_id = c.id and cm0.member_id = me),
+        'muted', (select cm0.muted from circle_members cm0 where cm0.circle_id = c.id and cm0.member_id = me),
+        'memberCount', (select count(*) from circle_members m where m.circle_id = c.id)
+      ),
+      'members', coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'member', public.public_profile(me, m.member_id, false),
+            'role', m.role,
+            'joinedAt', m.joined_at
+          ) order by m.role, m.joined_at, m.member_id
+        )
+        from circle_members m
+        where m.circle_id = c.id and not public.is_blocked_pair(me, m.member_id)
+      ), '[]'::jsonb)
+    )
+    from circles c where c.id = p_circle_id
+  );
+end $$;
+
+create or replace function public.create_circle(
+  p_name text, p_about text default '', p_member_ids bigint[] default '{}'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_name text := btrim(coalesce(p_name, ''));
+  v_about text := left(btrim(coalesce(p_about, '')), 160);
+  v_id bigint;
+  v_total int;
+  target bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if char_length(v_name) < 2 then
+    perform public.crushly_fail(400, '', 'Give your Circle a name.');
+  end if;
+  if char_length(v_name) > 40 then
+    perform public.crushly_fail(400, '', 'That name is too long — keep it under 40 characters.');
+  end if;
+  if (select count(*) from circles c where c.owner_id = me) >= 10 then
+    perform public.crushly_fail(429, '', 'You have enough Circles for now.');
+  end if;
+
+  insert into circles (owner_id, name, about) values (me, v_name, v_about) returning id into v_id;
+  insert into circle_members (circle_id, member_id, role) values (v_id, me, 'owner');
+
+  -- Only people you have Clicked with, and only up to twelve in the room.
+  v_total := 1;
+  if p_member_ids is not null then
+    foreach target in array p_member_ids
+    loop
+      exit when v_total >= 12;
+      if target is null or target = me then continue; end if;
+      if exists (select 1 from circle_members m where m.circle_id = v_id and m.member_id = target) then continue; end if;
+      if not public.is_connected_pair(me, target) then continue; end if;
+      if public.is_blocked_pair(me, target) then continue; end if;
+      insert into circle_members (circle_id, member_id, role) values (v_id, target, 'member');
+      v_total := v_total + 1;
+    end loop;
+  end if;
+
+  return public.circle_space(v_id);
+end $$;
+
+create or replace function public.rename_circle(p_circle_id bigint, p_name text)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_name text := btrim(coalesce(p_name, ''));
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if char_length(v_name) between 2 and 40 then
+    update circles c set name = v_name
+     where c.id = p_circle_id and c.owner_id = me;
+    if not found then
+      perform public.crushly_fail(404, '', 'Only the member who started a Circle can rename it.');
+    end if;
+    return true;
+  end if;
+  perform public.crushly_fail(400, '', 'Give your Circle a name of 2 to 40 characters.');
+  return false;
+end $$;
+
+create or replace function public.delete_circle(p_circle_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  delete from circles c where c.id = p_circle_id and c.owner_id = me;
+  if not found then
+    perform public.crushly_fail(404, '', 'Only the member who started a Circle can close it.');
+  end if;
+  return true;
+end $$;
+
+-- Bringing somebody in is a small thing to ask and a big thing to have done
+-- to you, so it is limited to people you have already Clicked with.
+create or replace function public.add_circle_member(p_circle_id bigint, p_member_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+  if p_member_id is null or p_member_id = me then
+    perform public.crushly_fail(400, '', 'Pick somebody to bring in.');
+  end if;
+  if public.is_blocked_pair(me, p_member_id) then
+    perform public.crushly_fail(403, '', 'You can’t bring this member into a Circle.');
+  end if;
+  if not public.is_connected_pair(me, p_member_id) then
+    perform public.crushly_fail(403, '', 'You can only bring in members you’ve Clicked with.');
+  end if;
+
+  select count(*) into n from circle_members m where m.circle_id = p_circle_id;
+  if n >= 12 then
+    perform public.crushly_fail(400, '', 'A Circle holds twelve people — this one is full.');
+  end if;
+
+  insert into circle_members (circle_id, member_id, role) values (p_circle_id, p_member_id, 'member')
+    on conflict do nothing;
+  return true;
+end $$;
+
+create or replace function public.remove_circle_member(p_circle_id bigint, p_member_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_role text;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select cm.role into v_role from circle_members cm where cm.circle_id = p_circle_id and cm.member_id = me;
+  if v_role is null then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+  if p_member_id <> me and v_role <> 'owner' then
+    perform public.crushly_fail(403, '', 'Only the member who started a Circle can remove somebody from it.');
+  end if;
+  delete from circle_members cm
+   where cm.circle_id = p_circle_id and cm.member_id = p_member_id and cm.role <> 'owner';
+  if not found then
+    perform public.crushly_fail(400, '', 'That member can’t be removed from this Circle.');
+  end if;
+  return true;
+end $$;
+
+-- Leaving does not close the room behind you. If you started it and others are
+-- still in it, it passes to whoever has been there longest.
+create or replace function public.leave_circle(p_circle_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_role text;
+  v_heir bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select cm.role into v_role from circle_members cm where cm.circle_id = p_circle_id and cm.member_id = me;
+  if v_role is null then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  delete from circle_members cm where cm.circle_id = p_circle_id and cm.member_id = me;
+
+  if v_role = 'owner' then
+    select m.member_id into v_heir
+      from circle_members m
+     where m.circle_id = p_circle_id
+     order by m.joined_at, m.member_id
+     limit 1;
+    if v_heir is null then
+      delete from circles c where c.id = p_circle_id;
+    else
+      update circle_members m set role = 'owner' where m.circle_id = p_circle_id and m.member_id = v_heir;
+      update circles c set owner_id = v_heir where c.id = p_circle_id;
+    end if;
+  end if;
+
+  return true;
+end $$;
+
+-- What a Circle has said and shared. Only members, and nobody you have cut
+-- off — a shared room does not cancel a block.
+create or replace function public.circle_feed(
+  p_circle_id bigint, p_limit integer default 20, p_after bigint default null
+) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.circle_id = p_circle_id
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        )
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.send_circle_message(
+  p_circle_id bigint, p_body text default '', p_media_url text default null, p_kind text default 'text'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_body text := left(coalesce(p_body, ''), 2000);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  v_kind text := coalesce(p_kind, 'text');
+  new_id bigint;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+  if v_kind not in ('text', 'photo', 'voice') then
+    perform public.crushly_fail(400, '', 'That message type isn’t supported here.');
+  end if;
+  if v_kind = 'text' and btrim(clean_body) = '' then
+    perform public.crushly_fail(400, '', 'Write something first.');
+  end if;
+  if v_kind <> 'text' and clean_media is null then
+    perform public.crushly_fail(400, '', 'That attachment didn’t come through — try again.');
+  end if;
+
+  -- Sixty an hour: a busy room, not a firehose.
+  select count(*) into n from circle_messages m
+   where m.sender_id = me and m.created_at > public.now_ms() - 3600 * 1000;
+  if n >= 60 then
+    perform public.crushly_fail(429, '', 'That’s a lot of messages — give it a little while.');
+  end if;
+
+  insert into circle_messages (circle_id, sender_id, kind, body, media_url)
+  values (p_circle_id, me, v_kind, case when v_kind = 'text' then btrim(clean_body) else '' end, clean_media)
+  returning id into new_id;
+
+  update circle_members cm set last_read_at = public.now_ms()
+   where cm.circle_id = p_circle_id and cm.member_id = me;
+
+  return (
+    select jsonb_build_object(
+      'id', m.id, 'circleId', m.circle_id, 'senderId', m.sender_id, 'mine', true,
+      'kind', m.kind, 'body', m.body, 'mediaUrl', m.media_url, 'createdAt', m.created_at
+    )
+    from circle_messages m where m.id = new_id
+  );
+end $$;
+
+-- Newest last, the way a conversation reads. p_before is a message id: ask for
+-- what came before it and you have your "older messages".
+create or replace function public.circle_messages(
+  p_circle_id bigint, p_limit integer default 30, p_before bigint default null
+) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(t.item order by t.created_at, t.id), '[]'::jsonb))
+    from (
+      select jsonb_build_object(
+        'id', m.id, 'circleId', m.circle_id, 'senderId', m.sender_id, 'mine', m.sender_id = me,
+        'kind', m.kind, 'body', m.body, 'mediaUrl', m.media_url, 'createdAt', m.created_at
+      ) as item, m.created_at, m.id
+      from circle_messages m
+      where m.circle_id = p_circle_id
+        and (p_before is null or m.id < p_before)
+        and not public.is_blocked_pair(me, m.sender_id)
+      order by m.id desc
+      limit least(greatest(coalesce(p_limit, 30), 1), 100)
+    ) t
+  );
+end $$;
+
+-- Marks the room read as of now.
+create or replace function public.read_circle(p_circle_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+  update circle_members cm set last_read_at = public.now_ms()
+   where cm.circle_id = p_circle_id and cm.member_id = me;
+  return true;
+end $$;
+
+-- Photos and voice notes in a Circle ride in the same private bucket, and the
+-- Circle's cover with them.
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind in ('photos', 'moments', 'posts') and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+  if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3') then
+    perform public.crushly_fail(415, '', 'Circles take photos and voice notes.');
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles') then 25 * 1024 * 1024 else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+begin
+  if me is null then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind = 'photos' then
+    return jsonb_build_object('allowed', true, 'cacheable', true);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where mo.media_url = p_path limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', m.audience = 'everyone');
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where ms.media_url = p_path and (c.user_a = me or c.user_b = me)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- A post's photo follows the post: Everyone can be shared and cached,
+  -- Connections-only never leaves the pair, and a Circle post stays in the
+  -- Circle.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where po.media_url = p_path or (p_url is not null and po.media_url = p_url)
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', post.audience = 'everyone' and post.author_id <> me);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (m2.media_url = p_path or (p_url is not null and m2.media_url = p_url))
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (c.cover_url = p_path or (p_url is not null and c.cover_url = p_url))
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $$;
+
+-- Post photos and Circle files had no rule here at all: their authors could
+-- not clear an upload that was never saved.
+create or replace function public.can_manage_media(p_path text, p_url text default null)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and split_part(ltrim(regexp_replace(p_url, '^https?://[^/]+/', ''), '/'), '/', 2) <> me::text then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where url = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (url = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where media_url = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (media_url = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where cover_url = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (cover_url = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $$;
+
+revoke all on function public.is_circle_member(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.is_circle_member(bigint, bigint) to authenticated, service_role;
+revoke all on function public.my_circles() from public, anon, authenticated;
+grant execute on function public.my_circles() to authenticated, service_role;
+revoke all on function public.circle_space(bigint) from public, anon, authenticated;
+grant execute on function public.circle_space(bigint) to authenticated, service_role;
+revoke all on function public.create_circle(text, text, bigint[]) from public, anon, authenticated;
+grant execute on function public.create_circle(text, text, bigint[]) to authenticated, service_role;
+revoke all on function public.rename_circle(bigint, text) from public, anon, authenticated;
+grant execute on function public.rename_circle(bigint, text) to authenticated, service_role;
+revoke all on function public.delete_circle(bigint) from public, anon, authenticated;
+grant execute on function public.delete_circle(bigint) to authenticated, service_role;
+revoke all on function public.add_circle_member(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.add_circle_member(bigint, bigint) to authenticated, service_role;
+revoke all on function public.remove_circle_member(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.remove_circle_member(bigint, bigint) to authenticated, service_role;
+revoke all on function public.leave_circle(bigint) from public, anon, authenticated;
+grant execute on function public.leave_circle(bigint) to authenticated, service_role;
+revoke all on function public.circle_feed(bigint, integer, bigint) from public, anon, authenticated;
+grant execute on function public.circle_feed(bigint, integer, bigint) to authenticated, service_role;
+revoke all on function public.send_circle_message(bigint, text, text, text) from public, anon, authenticated;
+grant execute on function public.send_circle_message(bigint, text, text, text) to authenticated, service_role;
+revoke all on function public.circle_messages(bigint, integer, bigint) from public, anon, authenticated;
+grant execute on function public.circle_messages(bigint, integer, bigint) to authenticated, service_role;
+revoke all on function public.read_circle(bigint) from public, anon, authenticated;
+grant execute on function public.read_circle(bigint) to authenticated, service_role;
+revoke all on function public.create_post(text, text, text, bigint) from public, anon, authenticated;
+grant execute on function public.create_post(text, text, text, bigint) to authenticated, service_role;
+
+-- ================================ 20261010000017_vibes.sql
+
+-- Vibes: short clips that last a fortnight.
+--
+-- A Moment is a day: here for the people you know, then gone. A Vibe is a
+-- short piece of video with a fortnight to live — long enough to say something
+-- that is not a mood, short enough that nothing here becomes a permanent
+-- record of a member's face and voice. Two weeks is a deliberate number: long
+-- enough to be worth posting, short enough that it cannot be used against
+-- somebody later.
+--
+-- The same rules that govern everything else govern these:
+--
+--   - The audience is chosen per Vibe, and the default is the safe one —
+--     Connections, not Everyone.
+--   - Cutting someone off hides you from them and them from you, and an
+--     expired Vibe is deleted, not merely hidden: the row goes and the file
+--     goes with it.
+--   - Who watched is visible to the author alone. A view is not a public
+--     number, and it is not something other members can browse.
+--   - Clips are short. The ceiling is on the file, because that is the only
+--     limit the database can actually hold someone to.
+
+create table if not exists public.vibes (
+  id          bigint generated always as identity primary key,
+  author_id   bigint not null references public.profiles(id) on delete cascade,
+  body        text not null default '',
+  media_url   text not null,
+  cover_url   text,                                  -- a still, so a grid is not all black
+  duration_ms integer,                               -- what the phone recorded; never trusted for rules
+  audience    text not null default 'connections'
+                check (audience in ('connections', 'everyone')),
+  created_at  bigint not null default public.now_ms(),
+  expires_at  bigint not null
+);
+
+create index if not exists vibes_created_idx on public.vibes (created_at desc, id desc);
+create index if not exists vibes_author_idx on public.vibes (author_id, created_at desc);
+create index if not exists vibes_expires_idx on public.vibes (expires_at);
+
+-- Who watched. Not a public counter: only the author may read it.
+create table if not exists public.vibe_views (
+  vibe_id     bigint not null references public.vibes(id) on delete cascade,
+  viewer_id   bigint not null references public.profiles(id) on delete cascade,
+  created_at  bigint not null default public.now_ms(),
+  primary key (vibe_id, viewer_id)
+);
+
+create index if not exists vibe_views_vibe_idx on public.vibe_views (vibe_id, created_at desc);
+
+alter table public.vibes enable row level security;
+alter table public.vibe_views enable row level security;
+
+-- Reads go through vibes_feed, which applies the audience, block and expiry
+-- rules. Direct access is limited to your own, as with posts.
+drop policy if exists vibes_select_own on public.vibes;
+create policy vibes_select_own on public.vibes
+  for select to authenticated using (author_id = public.me_id());
+
+drop policy if exists vibe_views_select_own on public.vibe_views;
+create policy vibe_views_select_own on public.vibe_views
+  for select to authenticated using (viewer_id = public.me_id());
+
+-- A Vibe lives fourteen days. Nothing here is trusted to expire on its own.
+create or replace function public.vibe_lifetime_ms() returns bigint
+language sql immutable as $$
+  select 14::bigint * 24 * 60 * 60 * 1000
+$$;
+
+-- Who may watch one, in one place.
+create or replace function public.can_view_vibe(p_vibe public.vibes, p_viewer bigint)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  owner record;
+begin
+  if p_viewer is null then return false; end if;
+  if p_vibe.author_id = p_viewer then return true; end if;
+  if p_vibe.expires_at <= public.now_ms() then return false; end if;
+  if public.is_blocked_pair(p_viewer, p_vibe.author_id) then return false; end if;
+  if p_vibe.audience = 'connections' and not public.is_connected_pair(p_viewer, p_vibe.author_id) then return false; end if;
+  select p.status, p.onboarded, pr.profile_visibility into owner
+    from profiles p join privacy pr on pr.user_id = p.id where p.id = p_vibe.author_id;
+  if not found or owner.status <> 'active' or not owner.onboarded then return false; end if;
+  if owner.profile_visibility = 'connections'
+     and not public.is_connected_pair(p_viewer, p_vibe.author_id) then return false; end if;
+  return true;
+end $$;
+
+create or replace function public.serialize_vibe(p_vibe public.vibes, p_viewer bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return jsonb_build_object(
+    'id', p_vibe.id,
+    'body', p_vibe.body,
+    'mediaUrl', p_vibe.media_url,
+    'coverUrl', p_vibe.cover_url,
+    'durationMs', p_vibe.duration_ms,
+    'audience', p_vibe.audience,
+    'createdAt', p_vibe.created_at,
+    'expiresAt', p_vibe.expires_at,
+    'author', public.public_profile(p_viewer, p_vibe.author_id, false),
+    'mine', p_vibe.author_id = p_viewer,
+    'seen', p_vibe.author_id = p_viewer or exists (
+      select 1 from vibe_views vv where vv.vibe_id = p_vibe.id and vv.viewer_id = p_viewer
+    ),
+    'viewCount', case when p_vibe.author_id = p_viewer
+      then (select count(*) from vibe_views vv where vv.vibe_id = p_vibe.id)
+      else null end
+  );
+end $$;
+
+-- The Vibes you can watch, newest first.
+create or replace function public.vibes_feed(p_limit integer default 30, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  vibe  public.vibes;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select v.* from vibes v
+     where v.expires_at > public.now_ms()
+       and (
+         p_after is null
+         or v.created_at < (select v2.created_at from vibes v2 where v2.id = p_after)
+         or (
+           v.created_at = (select v2.created_at from vibes v2 where v2.id = p_after)
+           and v.id < p_after
+         )
+       )
+     order by v.created_at desc, v.id desc
+     limit least(greatest(coalesce(p_limit, 30), 1), 60)
+  loop
+    -- The loop variable is a record, and a record will not cast itself to a
+    -- row type — so the row is fetched again into one before it is judged.
+    select * into vibe from vibes where id = r.id;
+    if public.can_view_vibe(vibe, me) then
+      items := items || jsonb_build_array(public.serialize_vibe(vibe, me));
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.create_vibe(
+  p_body text default '', p_media_url text default null, p_cover_url text default null,
+  p_audience text default 'connections', p_duration_ms integer default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      bigint := public.me_id();
+  clean_body text := left(btrim(coalesce(p_body, '')), 200);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  clean_cover text := nullif(coalesce(p_cover_url, ''), '');
+  new_id  bigint;
+  vibe    public.vibes;
+  n       int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_media is null then
+    perform public.crushly_fail(400, '', 'A Vibe needs a clip.');
+  end if;
+  if coalesce(p_audience, 'connections') not in ('connections', 'everyone') then
+    perform public.crushly_fail(400, '', 'Choose who can see this.');
+  end if;
+
+  -- Video costs us storage and the member his data allowance, so the ceiling
+  -- is lower than for photos: five clips an hour is more than anybody posts.
+  select count(*) into n from vibes v
+   where v.author_id = me and v.created_at > public.now_ms() - 3600 * 1000;
+  if n >= 5 then
+    perform public.crushly_fail(429, '', 'That’s a lot of clips — try again in a little while.');
+  end if;
+
+  insert into vibes (author_id, body, media_url, cover_url, duration_ms, audience, expires_at)
+  values (
+    me, clean_body, clean_media, clean_cover,
+    case when p_duration_ms is null or p_duration_ms < 0 or p_duration_ms > 120000 then null else p_duration_ms end,
+    coalesce(p_audience, 'connections'),
+    public.now_ms() + public.vibe_lifetime_ms()
+  )
+  returning id into new_id;
+
+  select * into vibe from vibes where id = new_id;
+  return public.serialize_vibe(vibe, me);
+end $$;
+
+create or replace function public.delete_vibe(p_vibe_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  delete from vibes v where v.id = p_vibe_id and v.author_id = me;
+  return found;
+end $$;
+
+create or replace function public.view_vibe(p_vibe_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me   bigint := public.me_id();
+  vibe public.vibes;
+begin
+  select * into vibe from vibes where id = p_vibe_id;
+  if not found or not public.can_view_vibe(vibe, me) then
+    perform public.crushly_fail(404, '', 'This Vibe has passed.');
+  end if;
+  if vibe.author_id <> me then
+    insert into vibe_views (vibe_id, viewer_id) values (vibe.id, me) on conflict do nothing;
+  end if;
+  return true;
+end $$;
+
+-- Who watched — the author's to see, and nobody else's.
+create or replace function public.vibe_viewers(p_vibe_id bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not exists (select 1 from vibes v where v.id = p_vibe_id and v.author_id = me) then
+    perform public.crushly_fail(404, '', 'Vibe not found.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(
+      jsonb_build_object(
+        'member', public.public_profile(me, vv.viewer_id, false),
+        'viewedAt', vv.created_at
+      ) order by vv.created_at desc
+    ), '[]'::jsonb))
+    from vibe_views vv
+    where vv.vibe_id = p_vibe_id and not public.is_blocked_pair(me, vv.viewer_id)
+  );
+end $$;
+
+-- Expired Vibes are deleted, not filtered — the same promise a Moment makes.
+-- A clip somebody saved a link to must stop working when the Vibe ends.
+--
+-- Mirrors cleanup_expired_moments: the row goes first, then the file, and every
+-- attempt is logged so an orphan is visible instead of silent. A Vibe holds two
+-- files (the clip and the still in front of it), so both are swept. Files in
+-- the external object store are left to that bucket's own lifecycle rule, which
+-- needs a rule for the `vibes/` prefix; anything that has not expired is never
+-- touched.
+create or replace function public.cleanup_expired_vibes(p_limit integer default 200)
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  v_row record;
+  v_deleted integer := 0;
+  v_path text;
+  v_has_storage boolean := to_regclass('storage.objects') is not null;
+begin
+  for v_row in
+    select id, media_url, cover_url
+      from public.vibes
+     where expires_at <= public.now_ms()
+     order by expires_at
+     limit greatest(coalesce(p_limit, 200), 1)
+  loop
+    begin
+      delete from public.vibes v where v.id = v_row.id;
+      v_deleted := v_deleted + 1;
+
+      foreach v_path in array array[v_row.media_url, v_row.cover_url]
+      loop
+        v_path := nullif(btrim(coalesce(v_path, '')), '');
+        -- Absolute URLs point at the external object store, where the bucket's
+        -- lifecycle rule owns deletion. Bare paths are Supabase Storage objects.
+        if v_path is not null
+           and v_path !~ '^(https?:|file:|blob:|data:)'
+           and v_has_storage then
+          begin
+            delete from storage.objects o
+             where o.bucket_id = 'media'
+               and o.name = regexp_replace(v_path, '^/+', '');
+            insert into public.media_cleanup_log (media_path, reason, ok)
+              values (v_path, 'vibe_expired', true);
+          exception when others then
+            insert into public.media_cleanup_log (media_path, reason, ok, detail)
+              values (v_path, 'vibe_expired', false, sqlerrm);
+          end;
+        end if;
+      end loop;
+    exception when others then
+      -- One bad row must never stop the sweep, and must never be silent.
+      insert into public.media_cleanup_log (media_path, reason, ok, detail)
+        values (coalesce(v_row.media_url, ''), 'vibe_row', false, sqlerrm);
+    end;
+  end loop;
+
+  return v_deleted;
+end $$;
+
+-- One sweep for both, so the hourly job has a single thing to call.
+create or replace function public.cleanup_expired_media()
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  return jsonb_build_object(
+    'moments', public.cleanup_expired_moments(),
+    'vibes', public.cleanup_expired_vibes()
+  );
+end $$;
+
+-- ------------------------------------------------------------------- media
+
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind in ('photos', 'moments', 'posts') and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+  if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3') then
+    perform public.crushly_fail(415, '', 'Circles take photos and voice notes.');
+  end if;
+  -- A Vibe is a clip, or the still that stands in for one. Nothing else.
+  if p_kind = 'vibes' and v_ext not in ('mp4', 'webm', 'jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Vibes are short video clips, with a still for the cover.');
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles') then 25 * 1024 * 1024
+                  when p_kind = 'vibes' then 25 * 1024 * 1024
+                  else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from vibes where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+  vibe public.vibes;
+begin
+  if me is null then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind = 'photos' then
+    return jsonb_build_object('allowed', true, 'cacheable', true);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where mo.media_url = p_path limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', m.audience = 'everyone');
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where ms.media_url = p_path and (c.user_a = me or c.user_b = me)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- A post's photo follows the post: Everyone can be shared and cached,
+  -- Connections-only never leaves the pair, and a Circle post stays in the
+  -- Circle.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where po.media_url = p_path or (p_url is not null and po.media_url = p_url)
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', post.audience = 'everyone' and post.author_id <> me);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (m2.media_url = p_path or (p_url is not null and m2.media_url = p_url))
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (c.cover_url = p_path or (p_url is not null and c.cover_url = p_url))
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  -- A Vibe's clip, and the still in front of it. Same audience as the Vibe,
+  -- and nothing is cached: a clip is not a profile photo.
+  if v_kind = 'vibes' then
+    select v.* into vibe from vibes v
+     where v.media_url = p_path or v.cover_url = p_path
+        or (p_url is not null and (v.media_url = p_url or v.cover_url = p_url))
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_vibe(vibe, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $$;
+
+create or replace function public.can_manage_media(p_path text, p_url text default null)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and split_part(ltrim(regexp_replace(p_url, '^https?://[^/]+/', ''), '/'), '/', 2) <> me::text then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where url = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (url = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where media_url = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (media_url = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where media_url = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (media_url = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where cover_url = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (cover_url = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  if v_kind = 'vibes' and exists (
+    select 1 from vibes where media_url = p_path or cover_url = p_path
+       or (p_url is not null and (media_url = p_url or cover_url = p_url))
+  ) then
+    return exists (
+      select 1 from vibes where author_id = me
+        and (media_url = p_path or cover_url = p_path
+             or (p_url is not null and (media_url = p_url or cover_url = p_url)))
+    );
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $$;
+
+revoke all on function public.vibe_lifetime_ms() from public, anon, authenticated;
+grant execute on function public.vibe_lifetime_ms() to authenticated, service_role;
+revoke all on function public.vibes_feed(integer, bigint) from public, anon, authenticated;
+grant execute on function public.vibes_feed(integer, bigint) to authenticated, service_role;
+revoke all on function public.create_vibe(text, text, text, text, integer) from public, anon, authenticated;
+grant execute on function public.create_vibe(text, text, text, text, integer) to authenticated, service_role;
+revoke all on function public.delete_vibe(bigint) from public, anon, authenticated;
+grant execute on function public.delete_vibe(bigint) to authenticated, service_role;
+revoke all on function public.view_vibe(bigint) from public, anon, authenticated;
+grant execute on function public.view_vibe(bigint) to authenticated, service_role;
+revoke all on function public.vibe_viewers(bigint) from public, anon, authenticated;
+grant execute on function public.vibe_viewers(bigint) to authenticated, service_role;
+
+-- The sweeps are infrastructure: nobody signed in to the app may call them.
+revoke all on function public.cleanup_expired_vibes(integer) from public, anon, authenticated;
+grant execute on function public.cleanup_expired_vibes(integer) to service_role;
+revoke all on function public.cleanup_expired_media() from public, anon, authenticated;
+grant execute on function public.cleanup_expired_media() to service_role;
+
+-- ================================ 20261010000018_search.sql
+
+-- Search: members, and what they have shared.
+--
+-- The rule is the whole design: search finds you nothing you could not already
+-- have reached by scrolling. Every result is put through the same test the feed
+-- puts it through, so the search box is never a way round an audience choice,
+-- a block, or a profile somebody has made private. A Flow post written for one
+-- Circle does not appear here; a Vibe you were never shown is not indexed for
+-- you; a member who has hidden himself from Discover is not findable by name.
+--
+-- Two ways of matching, because they answer different needs:
+--
+--   * Postgres full-text search (to_tsvector @@ websearch_to_tsquery) for
+--     words — it understands word boundaries, several words, quoted phrases
+--     and "or", and it is what the indexes below are built for.
+--   * A plain substring match for the half-typed word, so results appear while
+--     somebody is still typing "ali" on the way to "Alice".
+--
+-- Like patterns are escaped, because a member searching for "100%" should find
+-- that text, not every post in the app.
+
+-- Escapes a user's search text for use inside ILIKE: % and _ stop being
+-- wildcards, and the escape character itself is escaped first.
+create or replace function public.search_like(p_query text)
+returns text
+language sql immutable as $$
+  select '%' || replace(replace(replace(coalesce(p_query, ''), '\', '\\'), '%', '\%'), '_', '\_') || '%';
+$$;
+
+-- Word indexes for the three kinds of sharing. Expression indexes, so they
+-- only ever serve the exact expression the search uses.
+create index if not exists posts_body_fts_idx on public.posts using gin (to_tsvector('simple', body));
+create index if not exists vibes_body_fts_idx on public.vibes using gin (to_tsvector('simple', body));
+create index if not exists moments_body_fts_idx on public.moments using gin (to_tsvector('simple', body));
+create index if not exists profiles_fts_idx on public.profiles
+  using gin (to_tsvector('simple', name || ' ' || username || ' ' || city));
+
+-- One call, four lists: members, Flows, Vibes, Moments. Returns at most
+-- `p_limit` of each (1–20), newest first for content.
+create or replace function public.search_all(p_query text, p_limit int default 8)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me  bigint := public.me_id();
+  q   text := btrim(coalesce(p_query, ''));
+  n   int := least(greatest(coalesce(p_limit, 8), 1), 20);
+  tsq tsquery;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  -- One letter would match nearly everything and tell nobody anything.
+  if char_length(q) < 2 then
+    return jsonb_build_object(
+      'members', '[]'::jsonb,
+      'posts', '[]'::jsonb,
+      'vibes', '[]'::jsonb,
+      'moments', '[]'::jsonb
+    );
+  end if;
+
+  -- websearch_to_tsquery, not to_tsquery: it never raises on odd punctuation,
+  -- so a member typing a quote or a dash gets results instead of an error.
+  tsq := websearch_to_tsquery('simple', q);
+
+  return jsonb_build_object(
+    'members', (
+      select coalesce(jsonb_agg(x.member), '[]'::jsonb)
+        from (
+          select public.public_profile(me, p.id, false) as member
+            from profiles p
+            join privacy pr on pr.user_id = p.id
+           where p.id <> me
+             and p.onboarded
+             and p.status = 'active'
+             and pr.discoverable
+             and not pr.incognito
+             and not public.is_blocked_pair(me, p.id)
+             -- Somebody who has made his Space Connections-only is still
+             -- findable by the people he is connected to, and by nobody else.
+             and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, p.id))
+             and (
+                  to_tsvector('simple', coalesce(p.name, '') || ' ' || coalesce(p.username, '') || ' ' || coalesce(p.city, '')) @@ tsq
+               or coalesce(p.name, '')     ilike public.search_like(q)
+               or coalesce(p.username, '') ilike public.search_like(q)
+               or coalesce(p.city, '')     ilike public.search_like(q)
+               or exists (
+                    select 1 from jsonb_array_elements_text(
+                      case when jsonb_typeof(p.interests) = 'array' then p.interests else '[]'::jsonb end
+                    ) as i where i ilike public.search_like(q)
+                  )
+             )
+           order by
+             (coalesce(p.name, '') ilike q || '%') desc,
+             (coalesce(p.username, '') ilike q || '%') desc,
+             p.name
+           limit n
+        ) x
+    ),
+
+    -- Flows. A post written inside a Circle is not a post you can search for:
+    -- it belongs to that room, and the room is the only door.
+    'posts', (
+      select coalesce(jsonb_agg(x.item), '[]'::jsonb)
+        from (
+          select jsonb_build_object(
+                   'id', po.id,
+                   'body', po.body,
+                   'mediaUrl', po.media_url,
+                   'audience', po.audience,
+                   'createdAt', po.created_at,
+                   'author', public.public_profile(me, po.author_id, false)
+                 ) as item
+            from posts po
+           where po.circle_id is null
+             and public.can_view_post(po, me)
+             and (
+                  to_tsvector('simple', coalesce(po.body, '')) @@ tsq
+               or coalesce(po.body, '') ilike public.search_like(q)
+             )
+           order by po.created_at desc, po.id desc
+           limit n
+        ) x
+    ),
+
+    -- Vibes: only the ones still inside their fortnight, and only where the
+    -- audience already let you watch.
+    'vibes', (
+      select coalesce(jsonb_agg(x.item), '[]'::jsonb)
+        from (
+          select jsonb_build_object(
+                   'id', v.id,
+                   'body', v.body,
+                   'mediaUrl', v.media_url,
+                   'coverUrl', v.cover_url,
+                   'durationMs', v.duration_ms,
+                   'createdAt', v.created_at,
+                   'expiresAt', v.expires_at,
+                   'author', public.public_profile(me, v.author_id, false)
+                 ) as item
+            from vibes v
+           where v.expires_at > public.now_ms()
+             and public.can_view_vibe(v, me)
+             and (
+                  to_tsvector('simple', coalesce(v.body, '')) @@ tsq
+               or coalesce(v.body, '') ilike public.search_like(q)
+             )
+           order by v.created_at desc, v.id desc
+           limit n
+        ) x
+    ),
+
+    -- Moments: the same test visible_moments applies, so a Moment you cannot
+    -- see is not searchable either.
+    'moments', (
+      select coalesce(jsonb_agg(x.item), '[]'::jsonb)
+        from (
+          select jsonb_build_object(
+                   'id', m.id,
+                   'kind', m.kind,
+                   'body', m.body,
+                   'mediaUrl', m.media_url,
+                   'createdAt', m.created_at,
+                   'author', public.public_profile(me, m.user_id, false)
+                 ) as item
+            from moments m
+           where m.expires_at > public.now_ms()
+             and public.can_view_moment(m, me)
+             and (
+                  to_tsvector('simple', coalesce(m.body, '')) @@ tsq
+               or coalesce(m.body, '') ilike public.search_like(q)
+             )
+           order by m.created_at desc, m.id desc
+           limit n
+        ) x
+    )
+  );
+end $$;
+
+revoke all on function public.search_like(text) from public, anon, authenticated;
+grant execute on function public.search_like(text) to authenticated, service_role;
+revoke all on function public.search_all(text, int) from public, anon, authenticated;
+grant execute on function public.search_all(text, int) to authenticated, service_role;
+
+-- ================================ 20261010000019_public_flow.sql
+
+-- Discover: what people chose to share with everybody.
+--
+-- Crushly is a social app, not a catalogue of faces, so the place you go to
+-- find something new shows you what people have *said*, not rows of profile
+-- photographs to sort through. This is the feed behind that: posts whose
+-- author set them to Everyone, newest first.
+--
+-- Nothing here is a way round a rule. Only posts already published to
+-- Everyone qualify; a post written for one member's Connections, or for a
+-- Circle, is not public and does not appear. Everything is then put through
+-- the same can_view_post test the Home feed uses, so a block, a paused Space
+-- or a private profile still keeps a post out of here. Your own posts are
+-- left out too — you already have a Home feed for those.
+
+create or replace function public.public_flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  post  public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.audience = 'everyone'
+       and po.circle_id is null
+       and po.author_id <> me
+       and (
+         p_after is null
+         or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+         or (
+           po.created_at = (select p2.created_at from posts p2 where p2.id = p_after)
+           and po.id < p_after
+         )
+       )
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    -- The loop variable is a record, and a record will not cast itself to a
+    -- row type — so the row is fetched again into one before it is judged.
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'audience', r.audience,
+          'circleId', null,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', false
+        )
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+revoke all on function public.public_flow_feed(integer, bigint) from public, anon, authenticated;
+grant execute on function public.public_flow_feed(integer, bigint) to authenticated, service_role;
+
+-- ================================ 20261010000020_post_engagement.sql
+
+-- Likes and comments on a Flow post.
+--
+-- A Moment answers with a Whisper, because a Moment is a day long and private
+-- between two people. A Flow post is not that: it is something somebody put in
+-- front of whoever he allowed to see it, and the answer to it belongs under it,
+-- where everyone who can see the post can read it. That is what a comment is.
+--
+-- So this adds two things a post did not have: a like, and a comment that is
+-- public to exactly the audience the post already had. Nothing here widens
+-- anything. A comment inherits its post's audience — if you could not read the
+-- post you cannot read a single word under it — a block still silences both
+-- ways, and the author of a post may remove a comment on his own post, because
+-- it is his doorstep.
+
+create table if not exists public.post_reactions (
+  post_id    bigint not null references public.posts(id) on delete cascade,
+  user_id    bigint not null references public.profiles(id) on delete cascade,
+  created_at bigint not null default public.now_ms(),
+  primary key (post_id, user_id)
+);
+
+create index if not exists post_reactions_post_idx on public.post_reactions (post_id, created_at desc);
+
+create table if not exists public.post_comments (
+  id         bigint generated always as identity primary key,
+  post_id    bigint not null references public.posts(id) on delete cascade,
+  author_id  bigint not null references public.profiles(id) on delete cascade,
+  body       text not null,
+  created_at bigint not null default public.now_ms()
+);
+
+create index if not exists post_comments_post_idx on public.post_comments (post_id, created_at, id);
+
+alter table public.post_reactions enable row level security;
+alter table public.post_comments enable row level security;
+
+-- Who may read: whoever may read the post. Not one person more.
+drop policy if exists post_reactions_select on public.post_reactions;
+create policy post_reactions_select on public.post_reactions
+  for select to authenticated
+  using (
+    exists (
+      select 1 from posts p
+       where p.id = post_reactions.post_id
+         and public.can_view_post(p, public.me_id())
+    )
+  );
+
+drop policy if exists post_reactions_insert on public.post_reactions;
+create policy post_reactions_insert on public.post_reactions
+  for insert to authenticated with check (user_id = public.me_id());
+
+drop policy if exists post_reactions_delete on public.post_reactions;
+create policy post_reactions_delete on public.post_reactions
+  for delete to authenticated using (user_id = public.me_id());
+
+drop policy if exists post_comments_select on public.post_comments;
+create policy post_comments_select on public.post_comments
+  for select to authenticated
+  using (
+    exists (
+      select 1 from posts p
+       where p.id = post_comments.post_id
+         and public.can_view_post(p, public.me_id())
+    )
+  );
+
+drop policy if exists post_comments_insert on public.post_comments;
+create policy post_comments_insert on public.post_comments
+  for insert to authenticated
+  with check (
+    author_id = public.me_id()
+    and exists (
+      select 1 from posts p
+       where p.id = post_comments.post_id
+         and public.can_view_post(p, public.me_id())
+    )
+  );
+
+-- Your own comment, always. And a comment left on your post, because you
+-- should not have to host something you would rather not have said on your
+-- own doorstep.
+drop policy if exists post_comments_delete on public.post_comments;
+create policy post_comments_delete on public.post_comments
+  for delete to authenticated
+  using (
+    author_id = public.me_id()
+    or exists (
+      select 1 from posts p
+       where p.id = post_comments.post_id and p.author_id = public.me_id()
+    )
+  );
+
+-- Two new kinds of notification. The constraint has to be widened first or
+-- every insert below it would fail.
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('crush', 'deep_crush', 'mutual', 'message', 'moment_reply',
+                  'moment_reaction', 'verified', 'verification_rejected',
+                  'post_reaction', 'post_comment'));
+
+-- ------------------------------------------------------------------- liking
+
+create or replace function public.react_to_post(p_post_id bigint, p_liked boolean default true)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me  bigint := public.me_id();
+  po  public.posts;
+  had boolean;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+  if po.author_id = me then
+    perform public.crushly_fail(400, '', 'You can’t like your own post.');
+  end if;
+
+  select exists (select 1 from post_reactions r where r.post_id = po.id and r.user_id = me) into had;
+
+  if coalesce(p_liked, true) then
+    insert into post_reactions (post_id, user_id) values (po.id, me) on conflict do nothing;
+    -- Only the first like is news; un-liking and re-liking is not.
+    if not had then
+      perform public.notify_to(po.author_id, 'post_reaction', me, po.id, '');
+    end if;
+  else
+    delete from post_reactions r where r.post_id = po.id and r.user_id = me;
+  end if;
+
+  return jsonb_build_object(
+    'liked', coalesce(p_liked, true),
+    'likeCount', (select count(*) from post_reactions r where r.post_id = po.id)
+  );
+end $$;
+
+-- ----------------------------------------------------------------- commenting
+
+create or replace function public.post_comments_feed(p_post_id bigint, p_limit integer default 50)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  po public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', c.id,
+        'body', c.body,
+        'createdAt', c.created_at,
+        'mine', c.author_id = me,
+        'author', public.public_profile(me, c.author_id, false)
+      ) order by c.created_at, c.id
+    ), '[]'::jsonb))
+    from post_comments c
+    where c.post_id = po.id
+      -- A comment from somebody you have cut off is not shown to you, even
+      -- though he was allowed to leave it.
+      and not public.is_blocked_pair(me, c.author_id)
+    limit least(greatest(coalesce(p_limit, 50), 1), 100)
+  );
+end $$;
+
+create or replace function public.comment_on_post(p_post_id bigint, p_body text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me         bigint := public.me_id();
+  po         public.posts;
+  clean_body text := left(btrim(coalesce(p_body, '')), 1000);
+  new_id     bigint;
+  n          integer;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+  if clean_body = '' then
+    perform public.crushly_fail(400, '', 'Write something first.');
+  end if;
+
+  -- Somebody working through a feed leaving a hundred comments is not a
+  -- conversation; it is noise. Thirty an hour is more than anybody writes.
+  select count(*) into n from post_comments c
+   where c.author_id = me and c.created_at > public.now_ms() - 3600 * 1000;
+  if n >= 30 then
+    perform public.crushly_fail(429, '', 'That’s a lot of commenting — take a moment.');
+  end if;
+
+  insert into post_comments (post_id, author_id, body)
+  values (po.id, me, clean_body)
+  returning id into new_id;
+
+  if po.author_id <> me then
+    perform public.notify_to(po.author_id, 'post_comment', me, po.id, left(clean_body, 80));
+  end if;
+
+  return jsonb_build_object(
+    'id', new_id,
+    'body', clean_body,
+    'createdAt', (select c.created_at from post_comments c where c.id = new_id),
+    'mine', true,
+    'author', public.public_profile(me, me, false)
+  );
+end $$;
+
+create or replace function public.delete_post_comment(p_comment_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  po bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  -- Yours to remove, or the post is yours and the comment was left on it.
+  select c.post_id into po
+    from post_comments c
+    join posts p on p.id = c.post_id
+   where c.id = p_comment_id
+     and (c.author_id = me or p.author_id = me);
+
+  if not found then
+    perform public.crushly_fail(404, '', 'That comment isn’t there.');
+  end if;
+
+  delete from post_comments c where c.id = p_comment_id;
+  return true;
+end $$;
+
+-- ------------------------------------------------------- feeds carry the counts
+
+-- flow_feed is redefined so every post arrives with its counts and whether you
+-- liked it, rather than the app asking once per post.
+create or replace function public.post_engagement(p_post_id bigint, p_viewer bigint)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'likeCount', (select count(*) from post_reactions r where r.post_id = p_post_id),
+    'commentCount', (select count(*) from post_comments c where c.post_id = p_post_id),
+    'liked', exists (select 1 from post_reactions r where r.post_id = p_post_id and r.user_id = p_viewer)
+  );
+$$;
+
+create or replace function public.flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  post  public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.circle_id is null
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.public_flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  post  public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.audience = 'everyone'
+       and po.circle_id is null
+       and po.author_id <> me
+       and (
+         p_after is null
+         or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+         or (
+           po.created_at = (select p2.created_at from posts p2 where p2.id = p_after)
+           and po.id < p_after
+         )
+       )
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', false
+        ) || public.post_engagement(r.id, me)
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+-- ------------------------------------------------------- posts may carry a clip
+
+-- A post could hold a photo. It can hold a short clip now too: the Flows in the
+-- member's sketch have both, and there is no reason a post should be the one
+-- kind of sharing that cannot move.
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+  -- A Moment or a Flow may carry a photo or a clip. Moments are capped far
+  -- tighter in the app (fifteen seconds), because they are a glance.
+  if p_kind in ('moments', 'posts') and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'That takes a photo or a short clip.');
+  end if;
+  if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3') then
+    perform public.crushly_fail(415, '', 'Circles take photos and voice notes.');
+  end if;
+  if p_kind = 'vibes' and v_ext not in ('mp4', 'webm', 'jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Vibes are short video clips, with a still for the cover.');
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles', 'vibes', 'posts') then 25 * 1024 * 1024
+                  else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from vibes where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+-- ------------------------------------------------------------------- grants
+
+revoke all on function public.react_to_post(bigint, boolean) from public, anon, authenticated;
+grant execute on function public.react_to_post(bigint, boolean) to authenticated, service_role;
+revoke all on function public.post_comments_feed(bigint, integer) from public, anon, authenticated;
+grant execute on function public.post_comments_feed(bigint, integer) to authenticated, service_role;
+revoke all on function public.comment_on_post(bigint, text) from public, anon, authenticated;
+grant execute on function public.comment_on_post(bigint, text) to authenticated, service_role;
+revoke all on function public.delete_post_comment(bigint) from public, anon, authenticated;
+grant execute on function public.delete_post_comment(bigint) to authenticated, service_role;
+revoke all on function public.post_engagement(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.post_engagement(bigint, bigint) to authenticated, service_role;
+
+-- ================================ 20261010000021_video_edit.sql
+
+-- The video editor, stored.
+--
+-- An edit is a recipe, not a file, so it costs a few hundred bytes instead of a
+-- re-encode. It rides along in a jsonb column next to the clip it belongs to and
+-- the player applies it on every play. Every place that can hold a video gets
+-- the column, so one editor serves all of them.
+--
+-- The column is deliberately unconstrained beyond "object or null": the shape
+-- lives in the app, and `parseEdit` there is written to survive an edit saved
+-- by an older build. Locking the shape down in the database would turn every
+-- new tool into a migration.
+
+alter table public.vibes add column if not exists edit jsonb;
+alter table public.posts add column if not exists edit jsonb;
+alter table public.moments add column if not exists edit jsonb;
+alter table public.circle_messages add column if not exists edit jsonb;
+
+do $$
+begin
+  -- Guards against a half-written recipe, which would otherwise break the
+  -- player for everybody who sees the clip, not just its author.
+  if not exists (select 1 from pg_constraint where conname = 'vibes_edit_is_object') then
+    alter table public.vibes
+      add constraint vibes_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'posts_edit_is_object') then
+    alter table public.posts
+      add constraint posts_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'moments_edit_is_object') then
+    alter table public.moments
+      add constraint moments_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'circle_messages_edit_is_object') then
+    alter table public.circle_messages
+      add constraint circle_messages_edit_is_object check (edit is null or jsonb_typeof(edit) = 'object');
+  end if;
+end $$;
+
+-- A recipe is small. If a client ever hands us something huge it is broken or
+-- hostile, and both are better off rejected than stored.
+create or replace function public.clean_video_edit(p_edit jsonb) returns jsonb
+language sql immutable set search_path = public as $$
+  select case
+    when p_edit is null then null
+    when jsonb_typeof(p_edit) <> 'object' then null
+    when octet_length(p_edit::text) > 24000 then null
+    else p_edit
+  end;
+$$;
+
+-- The edit goes out with every Vibe, so the feed and the viewer agree with what
+-- the composer showed.
+create or replace function public.serialize_vibe(p_vibe public.vibes, p_viewer bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return jsonb_build_object(
+    'id', p_vibe.id,
+    'body', p_vibe.body,
+    'mediaUrl', p_vibe.media_url,
+    'coverUrl', p_vibe.cover_url,
+    'durationMs', p_vibe.duration_ms,
+    'audience', p_vibe.audience,
+    'createdAt', p_vibe.created_at,
+    'expiresAt', p_vibe.expires_at,
+    'edit', p_vibe.edit,
+    'author', public.public_profile(p_viewer, p_vibe.author_id, false),
+    'mine', p_vibe.author_id = p_viewer,
+    'seen', p_vibe.author_id = p_viewer or exists (
+      select 1 from vibe_views vv where vv.vibe_id = p_vibe.id and vv.viewer_id = p_viewer
+    ),
+    'viewCount', case when p_vibe.author_id = p_viewer
+      then (select count(*) from vibe_views vv where vv.vibe_id = p_vibe.id)
+      else null end
+  );
+end $$;
+
+create or replace function public.create_vibe(
+  p_body text default '', p_media_url text default null, p_cover_url text default null,
+  p_audience text default 'connections', p_duration_ms integer default null,
+  p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      bigint := public.me_id();
+  clean_body text := left(btrim(coalesce(p_body, '')), 200);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  clean_cover text := nullif(coalesce(p_cover_url, ''), '');
+  clean_edit jsonb := public.clean_video_edit(p_edit);
+  new_id  bigint;
+  vibe    public.vibes;
+  n       int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_media is null then
+    perform public.crushly_fail(400, '', 'A Vibe needs a clip.');
+  end if;
+  if coalesce(p_audience, 'connections') not in ('connections', 'everyone') then
+    perform public.crushly_fail(400, '', 'Choose who can see this.');
+  end if;
+
+  -- Video costs us storage and the member his data allowance, so the ceiling
+  -- is lower than for photos: five clips an hour is more than anybody posts.
+  select count(*) into n from vibes v
+   where v.author_id = me and v.created_at > public.now_ms() - 3600 * 1000;
+  if n >= 5 then
+    perform public.crushly_fail(429, '', 'That’s a lot of clips — try again in a little while.');
+  end if;
+
+  insert into vibes (author_id, body, media_url, cover_url, duration_ms, audience, expires_at, edit)
+  values (
+    me, clean_body, clean_media, clean_cover,
+    case when p_duration_ms is null or p_duration_ms < 0 or p_duration_ms > 120000 then null else p_duration_ms end,
+    coalesce(p_audience, 'connections'),
+    public.now_ms() + public.vibe_lifetime_ms(),
+    clean_edit
+  )
+  returning id into new_id;
+
+  select * into vibe from vibes where id = new_id;
+  return public.serialize_vibe(vibe, me);
+end $$;
+
+-- The five-argument form is gone; revoke it so nothing can reach the old body,
+-- then hand execute to the six-argument one.
+revoke all on function public.create_vibe(text, text, text, text, integer) from public, anon, authenticated;
+revoke all on function public.create_vibe(text, text, text, text, integer, jsonb) from public, anon, authenticated;
+grant execute on function public.create_vibe(text, text, text, text, integer, jsonb) to authenticated, service_role;
+revoke all on function public.clean_video_edit(jsonb) from public, anon, authenticated;
+grant execute on function public.clean_video_edit(jsonb) to authenticated, service_role;
+
+-- ================================ 20261010000022_moment_video.sql
+
+-- Moments can carry a clip.
+--
+-- A Moment was words or a photo. It becomes words, a photo, or a short clip —
+-- edited with the same editor a Vibe uses, capped tighter than anywhere else
+-- because a Moment is a glance and is gone within the day.
+--
+-- The `edit` column was added for every surface in 021; here Moments start
+-- filling it in.
+
+alter table public.moments drop constraint if exists moments_kind_check;
+alter table public.moments
+  add constraint moments_kind_check check (kind in ('text', 'photo', 'video'));
+
+-- A clip in a Moment inherits the Moment's day, not the Vibe's fortnight, so
+-- nothing here touches the expiry: it is still created_at plus 24 hours.
+
+create or replace function public.serialize_moment(m public.moments, p_viewer bigint) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  mine boolean := m.user_id = p_viewer;
+  result jsonb;
+begin
+  result := jsonb_build_object(
+    'id', m.id,
+    'userId', m.user_id,
+    'kind', m.kind,
+    'body', m.body,
+    'mediaUrl', m.media_url,
+    'style', m.style,
+    'audience', m.audience,
+    'createdAt', m.created_at,
+    'expiresAt', m.expires_at,
+    -- The words and stickers drawn over the clip. Never the cut itself.
+    'edit', m.edit,
+    'seen', exists (select 1 from moment_views mv where mv.moment_id = m.id and mv.user_id = p_viewer),
+    'myReaction', (select r.kind from moment_reactions r where r.moment_id = m.id and r.user_id = p_viewer),
+    -- Author card for the feed's grouping (the app strips it into MomentAuthor).
+    'author', (
+      select jsonb_build_object(
+        'id', pf.id,
+        'name', pf.name,
+        'verified', pf.verification = 'verified',
+        'photo', public.photos_of(pf.id) -> 0 ->> 'url',
+        'mutual', pf.id <> p_viewer and public.is_connected_pair(p_viewer, pf.id)
+      ) from profiles pf where pf.id = m.user_id
+    )
+  );
+  if mine then
+    result := result || jsonb_build_object(
+      'viewCount', (select count(*)::int from moment_views mv where mv.moment_id = m.id and mv.user_id <> p_viewer),
+      'reactions', coalesce((
+        select jsonb_agg(jsonb_build_object('kind', r.kind, 'userId', r.user_id, 'name', p.name)
+                         order by r.created_at desc)
+          from moment_reactions r join profiles p on p.id = r.user_id
+         where r.moment_id = m.id
+      ), '[]'::jsonb)
+    );
+  end if;
+  return result;
+end $$;
+
+create or replace function public.create_moment(
+  p_kind text default 'text', p_body text default '', p_media_url text default null,
+  p_style text default 'noir', p_audience text default 'everyone',
+  p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_kind text := coalesce(p_kind, 'text');
+  clean_body text := coalesce(p_body, '');
+  clean_style text := coalesce(p_style, 'noir');
+  clean_audience text := coalesce(p_audience, 'everyone');
+  clean_edit jsonb := public.clean_video_edit(p_edit);
+  new_id bigint;
+  m public.moments;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_kind not in ('text', 'photo', 'video') then
+    perform public.crushly_fail(400, '', 'Moments are words, a photo or a short clip.');
+  end if;
+  if clean_style not in ('noir', 'champagne', 'crimson', 'midnight', 'emerald') then
+    clean_style := 'noir';
+  end if;
+  if clean_audience not in ('everyone', 'connections') then
+    clean_audience := 'everyone';
+  end if;
+  if clean_kind = 'text' and btrim(clean_body) = '' then
+    perform public.crushly_fail(400, '', 'Say something in your Moment.');
+  end if;
+  clean_body := left(clean_body, case when clean_kind = 'text' then 280 else 200 end);
+
+  -- A photo or a clip must actually bring media with it.
+  if clean_kind in ('photo', 'video') and nullif(coalesce(p_media_url, ''), '') is null then
+    perform public.crushly_fail(400, '', clean_kind || ' Moments need a file.');
+  end if;
+
+  insert into moments (user_id, kind, body, media_url, style, audience, expires_at, edit)
+  values (me, clean_kind, clean_body, nullif(coalesce(p_media_url, ''), ''), clean_style, clean_audience,
+          public.now_ms() + 24 * 60 * 60 * 1000, clean_edit)
+  returning id into new_id;
+  select * into m from moments mo where mo.id = new_id;
+  return public.serialize_moment(m, me);
+end $$;
+
+revoke all on function public.create_moment(text, text, text, text, text) from public, anon, authenticated;
+revoke all on function public.create_moment(text, text, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.create_moment(text, text, text, text, text, jsonb) to authenticated, service_role;
+
+-- ================================ 20261010000023_circle_video.sql
+
+-- Circles can carry a clip.
+--
+-- A room of about twelve people talks in text, photos and voice notes. It can
+-- now send a short clip, edited with the same editor every other surface uses,
+-- capped at a minute — long enough to say something to a room, short enough
+-- that it never becomes a broadcast inside a private space.
+--
+-- The `edit` column arrived for every surface in 021.
+
+alter table public.circle_messages drop constraint if exists circle_messages_kind_check;
+alter table public.circle_messages
+  add constraint circle_messages_kind_check
+  check (kind in ('text', 'photo', 'voice', 'video'));
+
+-- Circles take photos, voice notes and now clips.
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+  -- A Moment or a Flow may carry a photo or a clip. Moments are capped far
+  -- tighter in the app (fifteen seconds), because they are a glance.
+  if p_kind in ('moments', 'posts') and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'That takes a photo or a short clip.');
+  end if;
+  if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'Circles take photos, voice notes and clips.');
+  end if;
+  if p_kind = 'vibes' and v_ext not in ('mp4', 'webm', 'jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Vibes are short video clips, with a still for the cover.');
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles', 'vibes', 'posts') then 25 * 1024 * 1024
+                  else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from vibes where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+-- The live half goes out with every message, so a caption drawn over a clip in
+-- a room looks the same to all twelve people in it.
+create or replace function public.circle_messages(
+  p_circle_id bigint, p_limit integer default 30, p_before bigint default null
+) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(t.item order by t.created_at, t.id), '[]'::jsonb))
+    from (
+      select jsonb_build_object(
+        'id', m.id, 'circleId', m.circle_id, 'senderId', m.sender_id, 'mine', m.sender_id = me,
+        'kind', m.kind, 'body', m.body, 'mediaUrl', m.media_url, 'createdAt', m.created_at,
+        'edit', m.edit
+      ) as item, m.created_at, m.id
+      from circle_messages m
+      where m.circle_id = p_circle_id
+        and (p_before is null or m.id < p_before)
+        and not public.is_blocked_pair(me, m.sender_id)
+      order by m.id desc
+      limit least(greatest(coalesce(p_limit, 30), 1), 100)
+    ) t
+  );
+end $$;
+
+create or replace function public.send_circle_message(
+  p_circle_id bigint, p_body text default '', p_media_url text default null,
+  p_kind text default 'text', p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_body text := left(coalesce(p_body, ''), 2000);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  clean_edit jsonb := public.clean_video_edit(p_edit);
+  v_kind text := coalesce(p_kind, 'text');
+  new_id bigint;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+  if v_kind not in ('text', 'photo', 'voice', 'video') then
+    perform public.crushly_fail(400, '', 'That message type isn’t supported here.');
+  end if;
+  if v_kind = 'text' and btrim(clean_body) = '' then
+    perform public.crushly_fail(400, '', 'Write something first.');
+  end if;
+  if v_kind <> 'text' and clean_media is null then
+    perform public.crushly_fail(400, '', 'That attachment didn’t come through — try again.');
+  end if;
+
+  -- Sixty an hour: a busy room, not a firehose.
+  select count(*) into n from circle_messages m
+   where m.sender_id = me and m.created_at > public.now_ms() - 3600 * 1000;
+  if n >= 60 then
+    perform public.crushly_fail(429, '', 'That room is moving fast — give it a moment.');
+  end if;
+
+  insert into circle_messages (circle_id, sender_id, kind, body, media_url, edit)
+  values (p_circle_id, me, v_kind, clean_body, clean_media, clean_edit)
+  returning id into new_id;
+
+  return jsonb_build_object(
+    'id', new_id, 'circleId', p_circle_id, 'senderId', me, 'mine', true,
+    'kind', v_kind, 'body', clean_body, 'mediaUrl', clean_media,
+    'createdAt', public.now_ms(), 'edit', clean_edit
+  );
+end $$;
+
+revoke all on function public.media_upload_ticket(text, text, int) from public, anon, authenticated;
+grant execute on function public.media_upload_ticket(text, text, int) to authenticated, service_role;
+
+revoke all on function public.circle_messages(bigint, integer, bigint) from public, anon, authenticated;
+grant execute on function public.circle_messages(bigint, integer, bigint) to authenticated, service_role;
+
+revoke all on function public.send_circle_message(bigint, text, text, text) from public, anon, authenticated;
+revoke all on function public.send_circle_message(bigint, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.send_circle_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+
+-- ================================ 20261010000024_post_video.sql
+
+-- A Flow can carry a clip.
+--
+-- Posts were words and a photo. They become words, a photo, or a clip of up to
+-- a minute, edited with the same editor everywhere else uses. The `edit` column
+-- arrived in 021 and the feeds began returning it in 020; this teaches
+-- create_post to write it.
+
+create or replace function public.create_post(
+  p_body text default '', p_media_url text default null, p_audience text default 'connections',
+  p_circle_id bigint default null, p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_body text := left(btrim(coalesce(p_body, '')), 500);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  clean_edit jsonb := public.clean_video_edit(p_edit);
+  v_audience text;
+  new_id bigint;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_body = '' and clean_media is null then
+    perform public.crushly_fail(400, '', 'Write something, or add a photo.');
+  end if;
+
+  if p_circle_id is not null then
+    if not public.is_circle_member(p_circle_id, me) then
+      perform public.crushly_fail(403, '', 'You’re not in that Circle.');
+    end if;
+    v_audience := 'circle';
+  elsif p_audience in ('connections', 'everyone') then
+    v_audience := p_audience;
+  else
+    perform public.crushly_fail(400, '', 'Choose who can see this.');
+  end if;
+
+  -- A post is not a Moment: it stays. So the ceiling is lower — ten an hour is
+  -- more than anyone posts and nowhere near enough to fill a feed.
+  select count(*) into n from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000;
+  if n >= 10 then
+    perform public.crushly_fail(429, '', 'That’s a lot of posting — try again in a little while.');
+  end if;
+
+  insert into posts (author_id, body, media_url, audience, circle_id, edit)
+  values (me, clean_body, clean_media, v_audience, case when v_audience = 'circle' then p_circle_id end, clean_edit)
+  returning id into new_id;
+
+  return (
+    select jsonb_build_object(
+      'id', po.id, 'body', po.body, 'mediaUrl', po.media_url, 'audience', po.audience,
+      'circleId', po.circle_id, 'createdAt', po.created_at, 'edit', po.edit,
+      'author', public.public_profile(me, po.author_id, false), 'mine', true
+    )
+      from posts po where po.id = new_id
+  );
+end $$;
+
+revoke all on function public.create_post(text, text, text, bigint) from public, anon, authenticated;
+revoke all on function public.create_post(text, text, text, bigint, jsonb) from public, anon, authenticated;
+grant execute on function public.create_post(text, text, text, bigint, jsonb) to authenticated, service_role;
+
+-- A Circle's own wall was missing what the feeds gained: it did not say whether
+-- its media is a photo or a clip, and it did not return the edit. Without both,
+-- a clip posted to a room would arrive as a still with its words missing.
+create or replace function public.circle_feed(
+  p_circle_id bigint, p_limit integer default 20, p_after bigint default null
+) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.circle_id = p_circle_id
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        )
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+revoke all on function public.circle_feed(bigint, integer, bigint) from public, anon, authenticated;
+grant execute on function public.circle_feed(bigint, integer, bigint) to authenticated, service_role;
+
+-- ================================ 20261012000025_drop_superseded_overloads.sql
+
+-- Remove the functions that were left behind when a parameter was added.
+--
+-- `create or replace function` only replaces a function whose parameter list is
+-- identical. Adding `p_edit` at the end (021, 022, 023, 024) therefore created a
+-- second function instead of replacing the first, and the older one stayed. When
+-- the app posts something without a video edit it does not send `p_edit`, and
+-- two candidates both accept that call, so PostgREST cannot choose one and
+-- answers 300. That is why posting a Vibe, a Moment, a post — and sending a
+-- Circle message — all failed while the rest of the app worked.
+--
+-- Each drop is guarded: the older function is removed only when the newer one is
+-- present, so this can be run more than once and cannot take anything down.
+--
+-- After the drops, PostgREST is told to reload its schema cache, so the fix is
+-- live at once instead of on its next refresh.
+
+do $$
+begin
+  -- 024 added p_edit to create_post; 016's four-argument version is the leftover.
+  if to_regprocedure('public.create_post(text, text, text, bigint, jsonb)') is not null then
+    drop function if exists public.create_post(text, text, text, bigint);
+  end if;
+
+  -- 022 added p_edit to create_moment.
+  if to_regprocedure('public.create_moment(text, text, text, text, text, jsonb)') is not null then
+    drop function if exists public.create_moment(text, text, text, text, text);
+  end if;
+
+  -- 021 added p_edit to create_vibe.
+  if to_regprocedure('public.create_vibe(text, text, text, text, integer, jsonb)') is not null then
+    drop function if exists public.create_vibe(text, text, text, text, integer);
+  end if;
+
+  -- 023 added p_edit to send_circle_message.
+  if to_regprocedure('public.send_circle_message(bigint, text, text, text, jsonb)') is not null then
+    drop function if exists public.send_circle_message(bigint, text, text, text);
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- Check afterwards: each name below should answer with exactly one signature.
+--
+--   select p.proname, pg_get_function_identity_arguments(p.oid) as args
+--     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public'
+--      and p.proname in ('create_post', 'create_moment', 'create_vibe', 'send_circle_message')
+--    order by p.proname, args;
+
+-- ================================ 20261013000026_media_security.sql
+
+-- Audit fixes: enforce the same privacy contract at every write/read boundary.
+-- Additive migration: do not rewrite migrations already deployed.
+
+create or replace function public.guard_managed_username() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_user in ('anon', 'authenticated') and (
+    new.username is distinct from old.username or
+    new.username_updated_at is distinct from old.username_updated_at
+  ) then
+    raise exception 'Use set_username to change your username' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_managed_username on public.profiles;
+create trigger guard_managed_username before update on public.profiles
+for each row execute function public.guard_managed_username();
+
+-- Canonical object name for old Storage paths/URLs and new Worker URLs.
+-- File names minted by the app/Worker are URL-safe. Reject traversal at the
+-- HTTP boundary as well; never interpret this result as a remote fetch URL.
+create or replace function public.media_object_path(p_value text) returns text
+language sql immutable set search_path = '' as $$
+  select regexp_replace(
+    ltrim(regexp_replace(split_part(split_part(coalesce(p_value, ''), '?', 1), '#', 1),
+      '^https?://[^/]+/', ''), '/'),
+    '^(m/|legacy/|storage/v1/object/(public|authenticated)/media/)', '');
+$$;
+revoke all on function public.media_object_path(text) from public, anon, authenticated;
+
+create or replace function public.set_username(p_username text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v text := lower(btrim(coalesce(p_username, '')));
+  changed bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if v = '' then
+    perform public.crushly_fail(400, '', 'Pick a username.');
+  elsif length(v) < 3 then
+    perform public.crushly_fail(400, '', 'Usernames are at least 3 characters.');
+  elsif length(v) > 20 then
+    perform public.crushly_fail(400, '', 'Usernames are at most 20 characters.');
+  elsif v ~ '^[0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Use at least one letter.');
+  elsif v !~ '^[a-z0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Letters, numbers and underscores only.');
+  end if;
+
+  -- Reserved so nobody can pass themselves off as staff or as the company.
+  if exists (select 1 from reserved_usernames r where r.handle = v and (r.owner_id is null or r.owner_id <> me)) then
+    perform public.crushly_fail(409, '', 'That username is reserved.');
+  end if;
+
+  select p.username_updated_at into changed from profiles p where p.id = me for update;
+  if changed is not null and public.now_ms() - changed < 24 * 60 * 60 * 1000 then
+    perform public.crushly_fail(429, '', 'You can change your username once a day.');
+  end if;
+
+  if exists (select 1 from profiles p where p.username = v and p.id <> me) then
+    perform public.crushly_fail(409, '', 'That username is taken.');
+  end if;
+
+  update profiles
+     set username = v,
+         username_updated_at = case when username = v then username_updated_at else public.now_ms() end,
+         updated_at = public.now_ms()
+   where id = me;
+
+  return jsonb_build_object('username', v);
+end $$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+  vibe public.vibes;
+begin
+  if me is null or p_path is null or p_path = ''
+     or (p_url is not null and public.media_object_path(p_url) <> p_path) then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind in ('photos', 'seed') then
+    return jsonb_build_object('allowed', exists (
+      select 1 from photos ph join profiles pf on pf.id = ph.user_id
+        join privacy pr on pr.user_id = pf.id
+       where public.media_object_path(ph.url) = p_path
+         and (v_kind = 'seed' or split_part(p_path, '/', 2) = ph.user_id::text)
+         and (ph.user_id = me or (
+           pf.onboarded and pf.status = 'active'
+           and not public.is_blocked_pair(me, ph.user_id)
+           and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, ph.user_id))
+           and (not pr.incognito or public.is_connected_pair(me, ph.user_id))
+         ))
+    ), 'cacheable', false);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where public.media_object_path(mo.media_url) = p_path
+      and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url
+        and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where public.media_object_path(ms.media_url) = p_path and (c.user_a = me or c.user_b = me)
+        and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+          and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Media belongs to the original uploader's row, not an arbitrary row that
+  -- copied its URL. Visibility is checked again on every request.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where (public.media_object_path(po.media_url) = p_path or (p_url is not null and po.media_url = p_url))
+       and split_part(p_path, '/', 2) = po.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (public.media_object_path(m2.media_url) = p_path or (p_url is not null and m2.media_url = p_url))
+         and split_part(p_path, '/', 2) = m2.sender_id::text
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (public.media_object_path(c.cover_url) = p_path or (p_url is not null and c.cover_url = p_url))
+         and split_part(p_path, '/', 2) = c.owner_id::text
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  -- A Vibe's clip, and the still in front of it. Same audience as the Vibe,
+  -- and nothing is cached: a clip is not a profile photo.
+  if v_kind = 'vibes' then
+    select v.* into vibe from vibes v
+     where (public.media_object_path(v.media_url) = p_path or public.media_object_path(v.cover_url) = p_path
+        or (p_url is not null and (v.media_url = p_url or v.cover_url = p_url)))
+       and split_part(p_path, '/', 2) = v.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_vibe(vibe, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $$;
+
+create or replace function public.can_manage_media(p_path text, p_url text default null)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null or p_path is null or p_path = '' then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and public.media_object_path(p_url) <> p_path then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where public.media_object_path(url) = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (public.media_object_path(url) = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  if v_kind = 'vibes' and exists (
+    select 1 from vibes where public.media_object_path(media_url) = p_path or public.media_object_path(cover_url) = p_path
+       or (p_url is not null and (media_url = p_url or cover_url = p_url))
+  ) then
+    return exists (
+      select 1 from vibes where author_id = me
+        and (public.media_object_path(media_url) = p_path or public.media_object_path(cover_url) = p_path
+             or (p_url is not null and (media_url = p_url or cover_url = p_url)))
+    );
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $$;
+
+-- No anonymous media reads and no member writes to the legacy store. New
+-- uploads must use Worker tickets. Existing files are read through /legacy/
+-- using the caller's JWT and this same database authorization, not a service key.
+update storage.buckets set public = false where id = 'media';
+drop policy if exists media_public_read on storage.objects;
+drop policy if exists media_insert_own on storage.objects;
+drop policy if exists media_private_read on storage.objects;
+create policy media_private_read on storage.objects for select to authenticated
+  using (bucket_id = 'media' and (public.can_view_media(name)->>'allowed')::boolean);
+drop policy if exists media_delete_own on storage.objects;
+create policy media_delete_own on storage.objects for delete to authenticated
+  using (bucket_id = 'media' and public.can_manage_media(name));
+
+-- Durable reservations: one per attempted upload, including files never
+-- published into a post/message. Clients cannot insert, reset or erase them.
+create table if not exists public.media_upload_reservations (
+  path text primary key,
+  user_id bigint not null references public.profiles(id) on delete cascade,
+  bytes integer not null check (bytes > 0),
+  created_at bigint not null default public.now_ms()
+);
+create index if not exists media_upload_reservations_user_time
+  on public.media_upload_reservations(user_id, created_at);
+alter table public.media_upload_reservations enable row level security;
+revoke all on public.media_upload_reservations from anon, authenticated;
+
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind is null or p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+  -- A Moment or a Flow may carry a photo or a clip. Moments are capped far
+  -- tighter in the app (fifteen seconds), because they are a glance.
+  if p_kind in ('moments', 'posts') and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'That takes a photo or a short clip.');
+  end if;
+  if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'Circles take photos, voice notes and clips.');
+  end if;
+  if p_kind = 'vibes' and v_ext not in ('mp4', 'webm', 'jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Vibes are short video clips, with a still for the cover.');
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles', 'vibes', 'posts') then 25 * 1024 * 1024
+                  else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  -- Serialize reservations for one member across concurrent requests.
+  perform 1 from profiles where id = me for update;
+  select count(*) into n from media_upload_reservations
+    where user_id = me and created_at > public.now_ms() - 3600 * 1000;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  insert into media_upload_reservations(path, user_id, bytes) values (v_path, me, p_bytes);
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+-- Expression indexes keep normalized legacy lookups out of full-table scans.
+create index if not exists photos_object_path on public.photos(public.media_object_path(url));
+create index if not exists moments_object_path on public.moments(public.media_object_path(media_url));
+create index if not exists messages_object_path on public.messages(public.media_object_path(media_url));
+create index if not exists posts_object_path on public.posts(public.media_object_path(media_url));
+create index if not exists circle_messages_object_path on public.circle_messages(public.media_object_path(media_url));
+create index if not exists circles_cover_path on public.circles(public.media_object_path(cover_url));
+create index if not exists vibes_object_path on public.vibes(public.media_object_path(media_url));
+create index if not exists vibes_cover_path on public.vibes(public.media_object_path(cover_url));
+
+-- Index expressions run for permitted direct table writes too. This helper
+-- parses strings only and exposes no member data.
+grant execute on function public.media_object_path(text) to authenticated, service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261013000027_feed_pagination.sql
+
+-- Filter visible rows BEFORE paging; limit comments BEFORE aggregation.
+
+create or replace function public.flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  post  public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.circle_id is null
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.public_flow_feed(p_limit integer default 20, p_after bigint default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  post  public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.audience = 'everyone'
+       and po.circle_id is null
+       and po.author_id <> me
+       and (
+         p_after is null
+         or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+         or (
+           po.created_at = (select p2.created_at from posts p2 where p2.id = p_after)
+           and po.id < p_after
+         )
+       )
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', false
+        ) || public.post_engagement(r.id, me)
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.circle_feed(
+  p_circle_id bigint, p_limit integer default 20, p_after bigint default null
+) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.circle_id = p_circle_id
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        )
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $$;
+
+create or replace function public.post_comments_feed(p_post_id bigint, p_limit integer default 50)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  po public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', c.id,
+        'body', c.body,
+        'createdAt', c.created_at,
+        'mine', c.author_id = me,
+        'author', public.public_profile(me, c.author_id, false)
+      ) order by c.created_at, c.id
+    ), '[]'::jsonb))
+    from (
+      select c.* from post_comments c
+       where c.post_id = po.id and not public.is_blocked_pair(me, c.author_id)
+       order by c.created_at, c.id
+       limit least(greatest(coalesce(p_limit, 50), 1), 100)
+    ) c
+  );
+end $$;
+
+notify pgrst, 'reload schema';

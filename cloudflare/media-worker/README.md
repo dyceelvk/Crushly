@@ -90,8 +90,15 @@ web):
 EXPO_PUBLIC_MEDIA_BASE_URL=https://crushly-media.<your-subdomain>.workers.dev
 ```
 
-Leave it empty and the app keeps using Supabase Storage exactly as before. The
-Worker URL is printed by the deploy job's output.
+Unset uses the default deployed Worker. Explicitly empty disables new uploads;
+there is no public fallback. Legacy files are served from `/legacy/<path>` using
+the member JWT against private Supabase Storage. New files use `/m/<path>` and
+B2. The Worker URL is printed by the deploy job's output.
+
+All media responses are `private, no-store`; permission checks run on every
+request. Upload reservations enforce 40 attempts/hour atomically, even when a
+file is never attached to a post. See the [rollout guide](../../docs/audit-fix-rollout.md)
+before applying migration 026 to an existing installation.
 
 ## Deploying
 

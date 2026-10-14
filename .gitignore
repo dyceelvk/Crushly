@@ -26,3 +26,7 @@ CrushlyApp/apk/
 
 # Local Python test environment
 .venv/
+
+# Local Worker bundles and Wrangler state
+cloudflare/media-worker/dist/
+cloudflare/media-worker/.wrangler/

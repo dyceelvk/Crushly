@@ -59,13 +59,30 @@ jobs:
       - uses: actions/checkout@v4
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
 
+      - name: Preflight coordinated release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
+          python3 .github/scripts/check-release.py preflight
+
       - uses: cloudflare/wrangler-action@v3
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare/media-worker
-          command: deploy
+          command: deploy --var DEPLOY_REVISION:${{ github.sha }}
           # Names only: the action reads each value from `env` below. Writing
           # `NAME=value` here makes it look for an env var called "NAME=value".
           secrets: |
@@ -104,3 +121,15 @@ jobs:
           else
             echo "::warning::Could not set the retention rules (HTTP $code). The app works without them, but Vibes would never expire."
           fi
+
+      - name: Verify deployed Worker revision
+        if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          with urllib.request.urlopen('https://crushly-media.dyceelvk.workers.dev/deployment', timeout=30) as r:
+              revision = json.load(r).get('revision')
+          if revision != os.environ['GITHUB_SHA']:
+              raise SystemExit('Worker revision does not match this release')
+          print(f'::notice::Cloudflare Worker revision verified: {revision}')
+          PY

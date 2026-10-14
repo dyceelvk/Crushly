@@ -51,7 +51,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
      Never commit that value or paste it into chat.
    - **SQL editor, one migration at a time**: open each file on GitHub and
      click the **copy button** (clipboard icon, top-right of the code box) —
-     no text selection needed. Run the three parts **in order**, each in its
+     no text selection needed. Run **all numbered parts in `setup/`, in order**, each in its
      own New query:
 
    | File | What it makes |
@@ -60,10 +60,15 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
    | [`setup/02-functions.sql`](setup/02-functions.sql) | all the RPCs the app calls |
    | [`setup/03-storage.sql`](setup/03-storage.sql) | media buckets + upload rules |
 
+   The first three files above are only the foundation. Continue through every
+   remaining numbered file, including `26-media_security.sql` and
+   `27-feed_pagination.sql`; stopping at 03 leaves an incomplete and unsafe backend.
+
    `setup.sql` is the same thing as one file if you prefer a single paste
    (generated from `migrations/` by `npm run bundle:sql`). Re-running any of
    them is safe. Sanity check afterwards: `select to_regclass('public.profiles');`
-   must return `profiles`.
+   must return `profiles`. CI checks generated-file parity with
+   `node scripts/bundle-setup.mjs --check`.
 
    Or with the CLI:
 

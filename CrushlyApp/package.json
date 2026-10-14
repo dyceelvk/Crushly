@@ -54,11 +54,11 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:web": "expo export -p web --output-dir dist",
+    "build:web": "expo export -p web --output-dir dist && node scripts/write-deployment.mjs",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "admin": "node scripts/admin.mjs",
-    "test": "node --import tsx --test src/lib/format.test.ts src/lib/mediaHost.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/videoEdit.test.ts src/lib/videoEncode.test.ts src/lib/env.test.ts src/lib/auth.test.ts src/lib/browser.test.ts src/lib/call.test.ts src/lib/verification.test.ts && node --import tsx --test ../supabase/functions/_shared/didit.test.ts"
+    "test": "node --import tsx --test src/api/client.test.ts src/lib/format.test.ts src/lib/mediaHost.test.ts src/lib/messages.test.ts src/lib/moments.test.ts src/lib/videoEdit.test.ts src/lib/videoEncode.test.ts src/lib/env.test.ts src/lib/auth.test.ts src/lib/browser.test.ts src/lib/call.test.ts src/lib/verification.test.ts && node --import tsx --test ../supabase/functions/_shared/didit.test.ts ../cloudflare/media-worker/src/index.test.ts"
   },
   "private": true
 }

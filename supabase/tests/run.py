@@ -20,6 +20,8 @@ import tempfile
 import pgserver
 import psycopg2
 
+from audit_concurrency import test_upload_quota
+
 ROOT = pathlib.Path(__file__).resolve().parent
 MIGRATIONS = ROOT.parent / 'migrations'
 SEED = ROOT.parent / 'seed.sql'
@@ -67,6 +69,9 @@ def main() -> int:
         for table in ['profiles', 'photos', 'crushes', 'connections', 'conversations', 'messages', 'moments', 'notifications']:
             cur.execute(f'select count(*) from {table}')
             print(f'  {table}: {cur.fetchone()[0]}')
+        if not run_file(ROOT / 'audit_regressions.sql'):
+            return 1
+        test_upload_quota(uri)
         if not run_file(ROOT / 'smoke.sql'):
             return 1
         print('ALL TESTS PASSED')

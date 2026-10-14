@@ -3,7 +3,8 @@ import { Platform } from 'react-native';
 import { cleanEnvValue, looksLikeSecretKey, normalizeProjectUrl } from '../lib/env';
 import {
   MEDIA_BASE_URL,
-  isMediaStoreUrl,
+  legacyMediaUrl,
+  legacyMediaPath,
   mediaKind,
   mediaStorePath,
   mediaStoreUrl,
@@ -134,13 +135,12 @@ export function toApiError(err: unknown): ApiError {
 /** Resolves stored media paths (`seed/x.jpg`, `photos/1/2.jpg`) to absolute URLs. */
 export function mediaUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
+  const legacy = legacyMediaPath(path, SUPABASE_URL);
+  if (legacy) return legacyMediaUrl(legacy);
   if (/^(https?:|file:|blob:|data:)/.test(path)) return path;
-  const clean = path.replace(/^\//, '');
-  // The object store mints its own paths, so rows store the URL it handed back.
-  const kind = mediaKind(clean);
-  if (kind && moved(kind)) return mediaStoreUrl(clean);
-  if (!SUPABASE_URL) return `/${clean}`;
-  return supabase.storage.from('media').getPublicUrl(clean).data.publicUrl;
+  // New Worker objects always store absolute /m/ URLs. Bare paths belong to
+  // the old Supabase store, even if that kind now uploads to B2.
+  return legacyMediaUrl(path);
 }
 
 /**
@@ -233,15 +233,14 @@ export async function uploadMediaFile(
 ): Promise<string> {
   requireConfig();
   const blob = await uriToBlob(uri);
-  const kind = bucket === 'media' ? mediaKind(path) : null;
-  if (kind && moved(kind)) {
-    try {
-      return await uploadToMediaStore(kind, blob, contentType);
-    } catch (e) {
-      // A member must never lose a photo because the object store hiccuped —
-      // fall back to Supabase Storage for this upload and carry on.
-      console.warn('object store upload failed, using Supabase Storage:', (e as Error).message);
+  if (bucket === 'media') {
+    const kind = mediaKind(path);
+    if (!kind || !moved(kind)) {
+      throw new ApiError(503, 'Private media uploads are unavailable. Please try again later.');
     }
+    // Do not catch and downgrade to a public bucket, even on network/quota
+    // errors. The original failure remains retryable by the member.
+    return uploadToMediaStore(kind, blob, contentType);
   }
   const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType, upsert: true });
   if (error) throw toApiError(error);
@@ -250,7 +249,9 @@ export async function uploadMediaFile(
 
 export async function removeMediaFile(path?: string | null): Promise<void> {
   if (!path) return;
-  if (isMediaStoreUrl(path)) {
+  const legacy = legacyMediaPath(path, SUPABASE_URL);
+  if (legacy) path = legacy;
+  if (mediaStorePath(path) !== null) {
     await deleteFromMediaStore(path);
     return;
   }

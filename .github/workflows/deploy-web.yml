@@ -51,7 +51,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  worker-ready:
+    name: Wait for this release's media Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Gate database changes on the matching Worker
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          for attempt in range(36):
+              try:
+                  with urllib.request.urlopen('https://crushly-media.dyceelvk.workers.dev/deployment?release=' + os.environ['GITHUB_SHA'], timeout=10) as r:
+                      if json.load(r).get('revision') == os.environ['GITHUB_SHA']:
+                          print('::notice::Matching Cloudflare Worker is live; database migration may proceed.')
+                          break
+              except Exception:
+                  pass
+              if attempt == 35:
+                  raise SystemExit('Matching Worker not live. Deploy the Worker before applying privacy migrations.')
+              time.sleep(10)
+          PY
+
   database:
+    needs: worker-ready
     uses: ./.github/workflows/db-migrations.yml
     secrets: inherit
 
@@ -519,7 +542,7 @@ jobs:
           # From the repo root: netlify.toml (and build.sh) live there, and the
           # site's configured build command resolves relative to it.
           cd "$GITHUB_WORKSPACE"
-          if ! out=$(npx --yes netlify-cli@latest deploy --prod --dir=CrushlyApp/dist --message="Deploy ${{ github.sha }}" --debug 2>&1); then
+          if ! out=$(npx --yes netlify-cli@latest deploy --prod --no-build --dir=CrushlyApp/dist --message="Deploy ${{ github.sha }}" --debug 2>&1); then
             # Mask the token value itself, whatever it looks like.
             safe_out=${out//$NETLIFY_AUTH_TOKEN/***}
             echo "::error::netlify deploy failed: $(printf '%s' "$safe_out" | tail -c 1400 | tr '\n' ' ')"
@@ -553,3 +576,12 @@ jobs:
             exit 0
           fi
           python3 "$GITHUB_WORKSPACE/.github/scripts/probe-web-config.py"
+
+      - name: Confirm all three production services
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
+          python3 ../.github/scripts/check-release.py verify

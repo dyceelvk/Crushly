@@ -31,6 +31,7 @@ test('mediaKind reads the folder that decides a file’s rules', () => {
   assert.equal(mediaKind('/moments/12/a.jpg'), 'moments');
   assert.equal(mediaKind('secrets/12/a.jpg'), null);
   assert.equal(mediaKind(''), null);
+  assert.equal(mediaKind('vibes/12/a.mp4'), 'vibes');
 });
 
 test('the deployed Worker is used with no configuration at all', () => {
@@ -49,14 +50,15 @@ test('setting the base URL to empty switches the object store off', () => {
 
 test('every kind moves by default; the list can pull one back', () => {
   let mod = loadWith(BASE, undefined);
-  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages', 'posts', 'circles']);
+  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages', 'posts', 'circles', 'vibes']);
   assert.equal(mod.moved('photos'), true);
   assert.equal(mod.moved('moments'), true);
   assert.equal(mod.moved('messages'), true);
   assert.equal(mod.moved('posts'), true);
   assert.equal(mod.moved('circles'), true);
+  assert.equal(mod.moved('vibes'), true);
 
-  // Moving one kind back to Supabase is a config change, never a code change.
+  // Disabling one upload kind is a config change, never a code change.
   mod = loadWith(BASE, 'moments');
   assert.equal(mod.moved('moments'), true);
   assert.equal(mod.moved('photos'), false);
@@ -131,4 +133,19 @@ test('the access token only ever goes to our own media host', () => {
   mod.setMediaToken(null);
   assert.equal(mod.mediaAuthHeaders(`${BASE}/m/photos/12/a.jpg`), undefined);
   assert.equal(mod.mediaSource('photos/12/a.jpg'), 'photos/12/a.jpg');
+});
+
+test('legacy paths are proxied privately and keep their own store', () => {
+  const mod = loadWith(BASE);
+  const url = mod.legacyMediaUrl('photos/12/a b.jpg');
+  assert.equal(url, `${BASE}/legacy/photos/12/a%20b.jpg`);
+  assert.equal(mod.mediaStorePath(url), null); // never delete from B2
+  mod.setMediaToken('current');
+  assert.deepEqual(mod.mediaAuthHeaders(url), { Authorization: 'Bearer current' });
+  mod.setMediaTokenTransport(true);
+  assert.equal(mod.mediaSource(url), `${url}?token=current`);
+  assert.equal(mod.legacyMediaPath('https://project.example/storage/v1/object/public/media/photos/12/a%20b.jpg', 'https://project.example'), 'photos/12/a b.jpg');
+  assert.equal(mod.legacyMediaPath('https://evil.example/storage/v1/object/public/media/photos/12/a.jpg', 'https://project.example'), null);
+  assert.equal(mod.legacyMediaPath('https://project.example/storage/v1/object/public/media/%xx', 'https://project.example'), null);
+  assert.equal(mod.mediaStorePath(`${BASE}/m/%xx`), null);
 });

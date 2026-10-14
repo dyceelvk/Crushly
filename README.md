@@ -69,7 +69,7 @@ zero:
      2. GitHub repo → **Settings → Secrets and variables → Actions** →
         **New repository secret** → name it `SUPABASE_DB_URL`, paste the URI.
      Never commit that value or paste it into chat.
-   - **No CLI, one time**: run the three parts in [`supabase/setup/`](supabase/setup/)
+   - **No CLI, one time**: run **all numbered parts in order** in [`supabase/setup/`](supabase/setup/)
      in the project's **SQL editor** (each file on GitHub has a copy button),
      or paste the all-in-one [`supabase/setup.sql`](supabase/setup.sql) —
      either way it's re-runnable and self-healing.
@@ -190,9 +190,13 @@ Switching it on is one build-time value:
 EXPO_PUBLIC_MEDIA_BASE_URL=https://crushly-media.<subdomain>.workers.dev
 ```
 
-Empty means "keep using Supabase Storage" — the default, and the rollback.
-Uploaded files store the URL the Worker returned, so old paths and new URLs both
-resolve and nothing has to be rewritten when it flips.
+The deployed Worker is the default when the value is unset. An explicitly empty
+value disables uploads; it does **not** enable public Storage fallback. New
+uploads store the Worker's `/m/` URL. Existing Supabase paths use its `/legacy/`
+route with the member JWT; migration 026 makes that bucket private too.
+
+See [the audit-fix rollout guide](docs/audit-fix-rollout.md) before deploying these
+privacy changes to an existing installation.
 
 Two things make the 24-hour Moment promise real: a **B2 lifecycle rule** that
 deletes everything under `moments/` after a day, and
