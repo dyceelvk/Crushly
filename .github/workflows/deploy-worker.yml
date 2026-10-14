@@ -1,7 +1,7 @@
 # Deploys the media Worker: the private bucket's only door.
 #
-# Until every secret below exists, this job prints a warning and stops — it
-# never fails the branch, so nothing blocks while the accounts are being set up.
+# A coordinated release must stop when credentials are missing. The web
+# workflow gates database changes on the matching deployed Worker revision.
 #
 # One-time setup (GitHub → Settings → Secrets and variables → Actions):
 #
@@ -54,13 +54,13 @@ jobs:
       - name: Report missing credentials
         if: env.CF_TOKEN == '' || env.CF_ACCOUNT == '' || env.B2_BUCKET == ''
         run: |
-          echo "::warning::Media Worker not deployed yet — credentials missing. Add CLOUDFLARE_API_TOKEN (secret), CLOUDFLARE_ACCOUNT_ID (variable), and B2_KEY_ID / B2_APPLICATION_KEY / B2_BUCKET (secrets) under Settings → Secrets and variables → Actions. Steps are in cloudflare/media-worker/README.md. Nothing else is broken by this."
+          echo "::error::Media Worker not deployed — credentials missing. Add CLOUDFLARE_API_TOKEN (secret), CLOUDFLARE_ACCOUNT_ID (variable), and B2_KEY_ID / B2_APPLICATION_KEY / B2_BUCKET (secrets) under Settings → Secrets and variables → Actions. Steps are in cloudflare/media-worker/README.md. Coordinated release stopped before database changes."
+          exit 1
 
       - uses: actions/checkout@v4
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
 
       - name: Preflight coordinated release
-        if: github.event_name == 'workflow_dispatch'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
