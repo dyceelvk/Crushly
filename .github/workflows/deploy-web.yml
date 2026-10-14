@@ -521,24 +521,22 @@ jobs:
           # The deploy above (auto publishing) is the single deployer — no build
           # hook here: every extra build costs credits.
 
-      # Actions-side deployer — only when Netlify's own git integration did NOT
-      # already build this commit. Every deploy costs build credits, so with
-      # auto publishing ON this step stays idle (one deploy per push, total).
-      - name: Deploy to Netlify (only if git auto-publish is off)
-        continue-on-error: true
+      # A failed git build is NOT a deploy. Reuse only a ready build for this
+      # exact commit; otherwise upload the artifact already tested above.
+      - name: Deploy to Netlify unless this commit already has a ready build
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          head_short=$(git rev-parse --short=7 HEAD)
-          has_git_build=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=10" \
-            | jq -r --arg h "$head_short" '[.[] | select(((.commit_ref // "")[0:7]) == $h)] | length')
-          if [ "${has_git_build:-0}" -gt 0 ]; then
-            echo "::notice::Git auto-publish already built $head_short - skipping the CLI deploy (one deploy per push saves build credits)."
+          set -euo pipefail
+          ready=$(curl --fail --silent --show-error -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=25" \
+            | jq -r --arg sha "$GITHUB_SHA" '[.[] | select(.commit_ref == $sha and .state == "ready")][0].id // empty')
+          if [ -n "$ready" ]; then
+            echo "::notice::A ready build exists for this exact commit; the next step will publish it."
             exit 0
           fi
-          echo "::notice::No git build for $head_short (auto publishing off?) - deploying via CLI."
+          echo "::notice::No ready build for this commit. Uploading the tested artifact; failed git builds do not block deployment."
           # From the repo root: netlify.toml (and build.sh) live there, and the
           # site's configured build command resolves relative to it.
           cd "$GITHUB_WORKSPACE"
