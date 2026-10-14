@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { type Env } from './index';
+import deployment from './deployment.json';
 
 const env: Env = {
   SUPABASE_URL: 'https://project.example', SUPABASE_ANON_KEY: 'public-key',
@@ -102,8 +103,7 @@ test('bad URL escapes and encoded path traversal are refused', async () => {
 });
 
 test('deployment provenance is public, minimal and never cached', async () => {
-  const revision = 'a'.repeat(40);
-  const res = await worker.fetch(new Request('https://worker.example/deployment'), { ...env, DEPLOY_REVISION: revision }, context);
+  const res = await worker.fetch(new Request('https://worker.example/deployment'), env, context);
   assert.equal(res.headers.get('Cache-Control'), 'no-store');
-  assert.deepEqual(await res.json(), { revision });
+  assert.deepEqual(await res.json(), deployment);
 });

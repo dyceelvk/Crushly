@@ -16,6 +16,7 @@
  */
 
 import release from './release.json';
+import deployment from './deployment.json';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -25,8 +26,6 @@ export interface Env {
   B2_BUCKET: string;
   /** Optional. Without it /admin/lifecycle stays closed. */
   ADMIN_TOKEN?: string;
-  /** Public build provenance set by the deploy job. */
-  DEPLOY_REVISION?: string;
 }
 
 /**
@@ -589,7 +588,7 @@ export default {
     if (url.pathname === '/health') return health(env, origin);
     if (url.pathname === '/deployment') {
       if (request.method !== 'GET') return fail(405, 'Unsupported method.', origin);
-      return json({ revision: env.DEPLOY_REVISION ?? 'unknown' }, 200, origin, { 'Cache-Control': 'no-store' });
+      return json({ revision: deployment.revision }, 200, origin, { 'Cache-Control': 'no-store' });
     }
     if (url.pathname === '/admin/lifecycle') {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);

@@ -77,13 +77,16 @@ jobs:
           command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
           python3 .github/scripts/check-release.py preflight
 
+      - name: Stamp public Worker build revision
+        run: printf '{"revision":"%s"}\n' "$GITHUB_SHA" > cloudflare/media-worker/src/deployment.json
+
       - uses: cloudflare/wrangler-action@v3
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ steps.release-preflight.outputs.account_id }}
           workingDirectory: cloudflare/media-worker
-          command: deploy --var DEPLOY_REVISION:${{ github.sha }}
+          command: deploy
           # Names only: the action reads each value from `env` below. Writing
           # `NAME=value` here makes it look for an env var called "NAME=value".
           secrets: |
@@ -127,10 +130,23 @@ jobs:
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
         run: |
           python3 - <<'PY'
-          import json, os, urllib.request
-          with urllib.request.urlopen('https://crushly-media.dyceelvk.workers.dev/deployment', timeout=30) as r:
-              revision = json.load(r).get('revision')
-          if revision != os.environ['GITHUB_SHA']:
-              raise SystemExit('Worker revision does not match this release')
-          print(f'::notice::Cloudflare Worker revision verified: {revision}')
+          import json, os, time, urllib.request, urllib.error
+          expected = os.environ['GITHUB_SHA']
+          observed = 'unavailable'
+          for attempt in range(20):
+              try:
+                  with urllib.request.urlopen('https://crushly-media.dyceelvk.workers.dev/deployment?release=' + expected, timeout=15) as r:
+                      observed = str(json.load(r).get('revision', 'missing'))
+                  if observed == expected:
+                      print(f'::notice::Cloudflare Worker revision verified: {observed}')
+                      break
+                  observed = observed if observed == 'development' or len(observed) == 40 else 'missing revision'
+              except urllib.error.HTTPError as e:
+                  observed = 'HTTP ' + str(e.code)
+              except Exception as e:
+                  observed = type(e).__name__
+              if attempt == 19:
+                  print(f'::error::Worker verification failed: {observed}; expected {expected}')
+                  raise SystemExit(1)
+              time.sleep(5)
           PY
