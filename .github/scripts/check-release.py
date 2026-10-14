@@ -5,9 +5,11 @@ or response bodies. Does not create users, upload media or modify production dat
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.request
+import urllib.error
 from urllib.parse import urlparse
 
 
@@ -15,8 +17,11 @@ def request_json(url, token=None):
     headers = {'User-Agent': 'Crushly-release-check', 'Cache-Control': 'no-cache'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f'HTTP check failed for {urlparse(url).hostname}: status {error.code}') from None
 
 
 def database_check(sql):
@@ -46,9 +51,15 @@ def main():
         raise RuntimeError('Netlify site has no HTTPS production URL')
     print(f'::notice::Netlify target verified: {base}', flush=True)
     if args.phase == 'preflight':
-        cf = request_json('https://api.cloudflare.com/client/v4/accounts/' + os.environ['CLOUDFLARE_ACCOUNT_ID'] + '/workers/scripts/crushly-media/settings', os.environ['CLOUDFLARE_API_TOKEN'])
+        account = os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+        if not re.fullmatch(r'[a-fA-F0-9]{32}', account):
+            raise RuntimeError('CLOUDFLARE_ACCOUNT_ID must contain the 32-character account ID; check its repository variable formatting')
+        cf = request_json('https://api.cloudflare.com/client/v4/accounts/' + account + '/workers/scripts/crushly-media/settings', os.environ['CLOUDFLARE_API_TOKEN'].strip())
         if not cf.get('success'):
             raise RuntimeError('Cloudflare Worker access check failed')
+        if os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                output.write('account_id=' + account + '\n')
         database_check("select to_regclass('public.profiles') is not null and to_regclass('supabase_migrations.schema_migrations') is not null;")
         print('::notice::PREFLIGHT PASSED: Netlify site, Cloudflare Worker access, Supabase connection and required configuration verified.', flush=True)
         return

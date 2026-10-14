@@ -61,6 +61,7 @@ jobs:
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
 
       - name: Preflight coordinated release
+        id: release-preflight
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -80,7 +81,7 @@ jobs:
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ steps.release-preflight.outputs.account_id }}
           workingDirectory: cloudflare/media-worker
           command: deploy --var DEPLOY_REVISION:${{ github.sha }}
           # Names only: the action reads each value from `env` below. Writing
