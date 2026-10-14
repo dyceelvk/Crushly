@@ -59,13 +59,13 @@ jobs:
       - name: Gate database changes on the matching Worker
         run: |
           python3 - <<'PY'
-          import json, os, time, urllib.request
+          import json, os, time, subprocess
           for attempt in range(36):
               try:
-                  with urllib.request.urlopen('https://crushly-media.dyceelvk.workers.dev/deployment?release=' + os.environ['GITHUB_SHA'], timeout=10) as r:
-                      if json.load(r).get('revision') == os.environ['GITHUB_SHA']:
-                          print('::notice::Matching Cloudflare Worker is live; database migration may proceed.')
-                          break
+                  result = subprocess.run(['curl', '--fail', '--silent', '--max-time', '10', 'https://crushly-media.dyceelvk.workers.dev/deployment?release=' + os.environ['GITHUB_SHA']], capture_output=True, timeout=15)
+                  if result.returncode == 0 and json.loads(result.stdout).get('revision') == os.environ['GITHUB_SHA']:
+                      print('::notice::Matching Cloudflare Worker is live; database migration may proceed.')
+                      break
               except Exception:
                   pass
               if attempt == 35:

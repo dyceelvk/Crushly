@@ -130,17 +130,21 @@ jobs:
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
         run: |
           python3 - <<'PY'
-          import json, os, time, urllib.request, urllib.error
+          import json, os, time, subprocess, urllib.error
           expected = os.environ['GITHUB_SHA']
           observed = 'unavailable'
           for attempt in range(20):
               try:
-                  with urllib.request.urlopen('https://crushly-media.dyceelvk.workers.dev/deployment?release=' + expected, timeout=15) as r:
-                      observed = str(json.load(r).get('revision', 'missing'))
+                  result = subprocess.run(['curl', '--silent', '--show-error', '--max-time', '15', '--write-out', '\n%{http_code}', 'https://crushly-media.dyceelvk.workers.dev/deployment?release=' + expected], capture_output=True, text=True, timeout=20)
+                  body, code = result.stdout.rsplit('\n', 1)
+                  if code != '200':
+                      observed = 'HTTP ' + code
+                  else:
+                      observed = str(json.loads(body).get('revision', 'missing'))
                   if observed == expected:
                       print(f'::notice::Cloudflare Worker revision verified: {observed}')
                       break
-                  observed = observed if observed == 'development' or len(observed) == 40 else 'missing revision'
+                  observed = observed if observed == 'development' or len(observed) == 40 or observed.startswith('HTTP ') else 'missing revision'
               except urllib.error.HTTPError as e:
                   observed = 'HTTP ' + str(e.code)
               except Exception as e:
@@ -149,4 +153,25 @@ jobs:
                   print(f'::error::Worker verification failed: {observed}; expected {expected}')
                   raise SystemExit(1)
               time.sleep(5)
+          PY
+
+      - name: Diagnose Worker verification without exposing configuration
+        if: failure() && steps.release-preflight.outcome == 'success'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ steps.release-preflight.outputs.account_id }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, urllib.request
+          for path in ['/health', '/version', '/deployment', '/m/photos/0/nonexistent.jpg']:
+              result = subprocess.run(['curl', '-s', '--max-time', '20', '-o', '/dev/null', '-w', '%{http_code}', 'https://crushly-media.dyceelvk.workers.dev' + path], capture_output=True, text=True)
+              print(f'::notice::Worker probe {path}: HTTP {result.stdout}')
+          url = 'https://api.cloudflare.com/client/v4/accounts/' + os.environ['CLOUDFLARE_ACCOUNT_ID'] + '/workers/scripts/crushly-media'
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['CLOUDFLARE_API_TOKEN'].strip()}), timeout=30) as response:
+                  content = response.read(2 * 1024 * 1024)
+              found = os.environ['GITHUB_SHA'].encode() in content
+              print(f'::notice::Cloudflare stored Worker code contains this release revision: {found}')
+          except Exception as error:
+              print(f'::warning::Worker code inspection failed ({type(error).__name__})')
           PY

@@ -14,6 +14,11 @@ from urllib.parse import urlparse
 
 
 def request_json(url, token=None):
+    if token is None:
+        result = subprocess.run(['curl', '--fail', '--silent', '--show-error', '--max-time', '30', url], capture_output=True, timeout=35)
+        if result.returncode:
+            raise RuntimeError(f'Public HTTP check failed for {urlparse(url).hostname} (curl exit {result.returncode})')
+        return json.loads(result.stdout)
     headers = {'User-Agent': 'Crushly-release-check', 'Cache-Control': 'no-cache'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
