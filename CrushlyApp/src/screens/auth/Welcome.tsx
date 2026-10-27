@@ -72,7 +72,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
             Welcome to Crushly
           </Txt>
           <Txt variant="accent" color="textSecondary" align="center" style={{ marginTop: space.sm }}>
-            Meet men. Make connections.{'\n'}Follow the feeling.
+            Meet people. Make connections.{'\n'}Follow the feeling.
           </Txt>
         </Animated.View>
         <View style={{ gap: space.xs, marginTop: compact ? space.lg : space.xxl }}>
