@@ -5,63 +5,57 @@ import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
- * The Crushly mark: a gold "C" that sweeps into a crimson arc — two opposing
- * shapes meeting to form a heart. Works on its own as the app icon.
+ * The Crushly mark: an abstract, dynamic "C" monogram with fluid ribbon
+ * accents. Gradient runs cyan → electric purple → vibrant magenta.
+ * No heart / love symbol — pure connection.
  */
 export function CrushlyMark({ size = 48, mono }: { size?: number; mono?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const g = `g${uid}`;
-  const r = `r${uid}`;
-  const stroke = 8.5;
+  const stroke = 9;
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Defs>
         <LinearGradient id={g} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor="#F3DDA6" />
-          <Stop offset="1" stopColor="#B8893E" />
-        </LinearGradient>
-        <LinearGradient id={r} x1="1" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#FF7A93" />
-          <Stop offset="1" stopColor="#E0284F" />
+          <Stop offset="0%" stopColor="#00C6FF" />
+          <Stop offset="50%" stopColor="#A040FF" />
+          <Stop offset="100%" stopColor="#FF4081" />
         </LinearGradient>
       </Defs>
+      {/* Main C monogram — open, dynamic form */}
       <Path
-        d="M62 22 C 56 14, 48 11, 39 11 C 22 11, 10 23, 10 39 C 10 58, 30 72, 50 86"
+        d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
         fill="none"
         stroke={mono || `url(#${g})`}
         strokeWidth={stroke}
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
+      {/* Fluid ribbon accent sweeping through the C */}
       <Path
-        d="M50 86 C 70 72, 90 58, 90 39 C 90 25, 81 15, 69 15 C 60 15, 54 21, 50 28"
+        d="M 44 52 C 50 50, 58 52, 62 56"
         fill="none"
-        stroke={mono || `url(#${r})`}
-        strokeWidth={stroke}
+        stroke={mono || '#FFFFFF'}
+        strokeWidth={stroke * 0.45}
         strokeLinecap="round"
+        opacity={0.5}
       />
     </Svg>
   );
 }
 
-/** Outline heart-mark used as the Crush icon in controls (single color). */
+/** Outline C-mark used as the Crush icon in controls (single color). */
 export function CrushIcon({ size = 22, color, filled }: { size?: number; color: string; filled?: boolean }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {filled ? (
         <Path
-          d="M50 88 C 26 70, 8 56, 8 37 C 8 22, 20 11, 35 11 C 42 11, 47 14, 50 19 C 53 14, 58 11, 65 11 C 80 11, 92 22, 92 37 C 92 56, 74 70, 50 88 Z"
+          d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
           fill={color}
         />
       ) : null}
       <Path
-        d="M62 22 C 56 14, 48 11, 39 11 C 22 11, 10 23, 10 39 C 10 58, 30 72, 50 86"
-        fill="none"
-        stroke={filled ? 'transparent' : color}
-        strokeWidth={10}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M50 86 C 70 72, 90 58, 90 39 C 90 25, 81 15, 69 15 C 60 15, 54 21, 50 28"
+        d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
         fill="none"
         stroke={filled ? 'transparent' : color}
         strokeWidth={10}
