@@ -1,20 +1,30 @@
 import React, { useId } from 'react';
 import { View } from 'react-native';
-import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
  * The Crushly mark: an abstract, dynamic "C" monogram with fluid ribbon
- * accents. Gradient runs cyan → electric purple → vibrant magenta.
- * No heart / love symbol — pure connection.
+ * accents inside a dark rounded-square container. Gradient runs
+ * cyan → electric purple → vibrant magenta. No heart / love symbol.
  */
 export function CrushlyMark({ size = 48, mono }: { size?: number; mono?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const g = `g${uid}`;
-  const stroke = 9;
+  const pad = size * 0.14;
+  const inner = size - pad * 2;
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      {/* Dark rounded-square container */}
+      <Rect
+        x={12}
+        y={12}
+        width={76}
+        height={76}
+        rx={18}
+        fill={mono || '#0F142D'}
+      />
       <Defs>
         <LinearGradient id={g} x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%" stopColor="#00C6FF" />
@@ -27,7 +37,7 @@ export function CrushlyMark({ size = 48, mono }: { size?: number; mono?: string 
         d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
         fill="none"
         stroke={mono || `url(#${g})`}
-        strokeWidth={stroke}
+        strokeWidth={9}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -36,9 +46,9 @@ export function CrushlyMark({ size = 48, mono }: { size?: number; mono?: string 
         d="M 44 52 C 50 50, 58 52, 62 56"
         fill="none"
         stroke={mono || '#FFFFFF'}
-        strokeWidth={stroke * 0.45}
+        strokeWidth={4}
         strokeLinecap="round"
-        opacity={0.5}
+        opacity={0.6}
       />
     </Svg>
   );
@@ -71,7 +81,13 @@ export function Wordmark({ size = 28, color }: { size?: number; color?: string }
     <Txt
       variant="display"
       accessibilityRole="header"
-      style={{ fontSize: size, lineHeight: size * 1.2, letterSpacing: -0.3, color: color || colors.text }}
+      style={{
+        fontSize: size,
+        lineHeight: size * 1.2,
+        letterSpacing: 2,
+        textTransform: 'uppercase',
+        color: color || colors.text,
+      }}
     >
       Crushly
     </Txt>
