@@ -23,13 +23,18 @@ export function EditedClip({
   style,
   autoPlay = false,
   loop = true,
+  paused = false,
+  contentFit = 'contain',
 }: {
   uri: string;
   live: LiveEdit | null;
   style?: StyleProp<ViewStyle>;
   autoPlay?: boolean;
-  /** A full-screen player loops; a tile in a grid does not. */
   loop?: boolean;
+  /** Pause playback (e.g. when a full-screen viewer is open on top). */
+  paused?: boolean;
+  /** 'contain' shows the full video without cropping; 'cover' fills the frame. */
+  contentFit?: 'contain' | 'cover';
 }) {
   const look = live?.look ?? NEUTRAL_LOOK;
 
@@ -77,11 +82,23 @@ export function EditedClip({
 
   useEffect(() => {
     if (!player) return;
-    if (autoPlay) {
+    if (autoPlay && !paused) {
       player.play();
       if (look.music) musicPlayer?.play();
+    } else if (paused) {
+      player.pause();
+      if (look.music) musicPlayer?.pause();
     }
-  }, [player, musicPlayer, autoPlay, look.music]);
+  }, [player, musicPlayer, autoPlay, paused, look.music]);
+
+  // Always pause when the component unmounts so audio never leaks
+  // into another screen (e.g. feed video under a post viewer).
+  useEffect(() => {
+    return () => {
+      if (player) player.pause();
+      if (musicPlayer) musicPlayer.pause();
+    };
+  }, [player, musicPlayer]);
 
   useEffect(() => {
     let raf = 0;
@@ -98,5 +115,7 @@ export function EditedClip({
     return () => cancelAnimationFrame(raf);
   }, [player]);
 
-  return <VideoEditCanvas player={player} edit={edit} clipTime={clipTime} style={style} />;
+  return (
+    <VideoEditCanvas player={player} edit={edit} clipTime={clipTime} style={style} contentFit={contentFit} />
+  );
 }

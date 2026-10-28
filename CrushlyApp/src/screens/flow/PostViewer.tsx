@@ -388,16 +388,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         </View>
       </BottomSheet>
 
-      {/* Fixed comment input bar at bottom, keyboard-avoiding */}
-      <View
-        style={{
-          position: 'absolute',
-          bottom: Math.max(insets.bottom, space.sm),
-          left: 0,
-          right: 0,
-          paddingHorizontal: space.sm,
-        }}
-      >
+      {/* Fixed comment input bar at bottom — only visible when comments panel is open */}
+      {commentsOpen && (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: Math.max(insets.bottom, space.sm),
+            left: 0,
+            right: 0,
+            paddingHorizontal: space.sm,
+          }}
+        >
         <View
           style={{
             backgroundColor: colors.elevated,
@@ -433,6 +434,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           />
         </View>
       </View>
+      )}
 
       {post.mine ? (
         <BottomSheet

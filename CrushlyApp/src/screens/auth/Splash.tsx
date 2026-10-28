@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View, Image } from 'react-native';
 import { Glow, LightSweep } from '../../components/Ambient';
 import { useTheme } from '../../theme/ThemeProvider';
-import { palettes, fonts } from '../../theme/tokens';
+import { palettes, fonts, space } from '../../theme/tokens';
 
 /**
  * Cinematic but brief: the mark fades up through a champagne glow while a
@@ -32,6 +32,10 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
       <Glow size={460} color={c.gold} opacity={0.9} style={{ position: 'absolute' }} />
       <LightSweep duration={1300} />
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
+        <Image
+          source={require('../../assets/logo-c-mark.png')}
+          style={{ width: 120, height: 120, marginBottom: space.lg, opacity: fade }}
+        />
         {fontsReady ? (
           <Animated.Text style={{ fontFamily: fonts.display, fontSize: 40, color: c.text, marginTop: 18, letterSpacing: -0.4 }}>Crushly</Animated.Text>
         ) : (

@@ -35,6 +35,7 @@ export function VideoEditCanvas({
   onMoveCaption,
   onMoveSticker,
   onFrame,
+  contentFit = 'contain',
 }: {
   player: VideoPlayer;
   edit: VideoEdit;
@@ -49,6 +50,8 @@ export function VideoEditCanvas({
   onMoveCaption?: (id: string, x: number, y: number) => void;
   onMoveSticker?: (id: string, x: number, y: number) => void;
   onFrame?: (frame: Frame) => void;
+  /** 'contain' shows the full video without cropping; 'cover' fills the frame. */
+  contentFit?: 'contain' | 'cover';
 }) {
   const frame = useRef<Frame>({ width: 0, height: 0 });
   const { captions, stickers } = overlaysAt(edit, clipTime);
@@ -88,7 +91,7 @@ export function VideoEditCanvas({
       <VideoView
         player={player}
         style={videoStyle}
-        contentFit={edit.aspect === 'original' ? 'contain' : 'cover'}
+        contentFit={contentFit}
         nativeControls={false}
         pointerEvents="none"
       />

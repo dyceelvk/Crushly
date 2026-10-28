@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -215,7 +215,11 @@ export function PostCard({ post: p }: { post: Post }) {
   // renders as video even before the migration lands everywhere.
   const mediaKind = p.mediaKind ?? (p.mediaUrl ? /\.(mp4|webm|mov|m4v)(\?|$)/i.test(p.mediaUrl) ? 'video' : 'photo' : null);
 
-  return (
+// Pause the feed video when a full-screen viewer (or any other screen) is
+// opened on top, so its audio never overlaps the viewer's audio.
+const isFocused = useIsFocused();
+
+return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.md, paddingTop: space.md }}>
         <Pressable
@@ -279,7 +283,7 @@ export function PostCard({ post: p }: { post: Post }) {
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {mediaKind === 'video' ? (
-              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
+              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay loop paused={!isFocused} contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
