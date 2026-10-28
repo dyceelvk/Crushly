@@ -33,6 +33,7 @@ import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VibeComposerScreen } from '../screens/discover/VibeComposer';
+import { VideoTrimScreen } from '../screens/common/VideoTrimScreen';
 import { WebPreviewScreen } from '../screens/common/WebPreview';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
@@ -161,6 +162,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
             <Stack.Screen name="Filters" component={FiltersScreen} />
             <Stack.Screen name="VibeComposer" component={VibeComposerScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
+            <Stack.Screen name="VideoTrim" component={VideoTrimScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
             <Stack.Screen name="Plus" component={PlusScreen} />
           </Stack.Group>
           <Stack.Group screenOptions={{ presentation: 'transparentModal', animation: reduceMotion ? 'none' : 'fade', contentStyle: { backgroundColor: 'transparent' } }}>
