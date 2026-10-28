@@ -89,7 +89,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
           icon: icon('share-outline'),
           hint: 'Only their first name and age are shared',
           onPress: () => {
-            Share.share({ message: `Meet ${member.name}${member.age ? `, ${member.age}` : ''} on Crushly — a private space for men to connect.` }).catch(() => {});
+            Share.share({ message: `Meet ${member.name}${member.age ? `, ${member.age}` : ''} on Crushly — a private space to connect.` }).catch(() => {});
           },
         },
         ...(member.connected

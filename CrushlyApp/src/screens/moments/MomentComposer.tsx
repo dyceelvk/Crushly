@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, TextInput, View, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Screen, Header, useLayout } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
@@ -20,6 +21,7 @@ import { EditedClip } from '../../components/EditedClip';
 import { splitForUpload, emptyEdit, type LiveEdit, type VideoEdit } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import { useLiveCamera } from '../../components/CameraCapture';
+import { takeTrimResult } from '../common/VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -34,6 +36,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const [style, setStyle] = useState<MomentStyle>('champagne');
   const [photo, setPhoto] = useState<PickedImage | null>(null);
   const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
+  const [pendingClip, setPendingClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
   const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
@@ -46,6 +49,27 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const ready = mode === 'text' ? body.trim().length > 0 : mode === 'photo' ? !!photo : !!clip;
 
   const cam = useLiveCamera();
+
+  // When returning from the dedicated trim screen, apply the chosen trim to the
+  // clip and its edit. If the user cancelled, clear the pending clip so they can
+  // pick again.
+  useFocusEffect(
+    useCallback(() => {
+      const result = takeTrimResult();
+      if (result && pendingClip) {
+        setClip(pendingClip);
+        setPendingClip(null);
+        setMode('video');
+        setClipEdit({
+          ...emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0),
+          trimStart: result.trimStart,
+          trimEnd: result.trimEnd,
+        });
+      } else if (!result && pendingClip) {
+        setPendingClip(null);
+      }
+    }, [pendingClip])
+  );
 
   // What the player draws over the clip: the words, the stickers and the look.
   // The cut itself is written into the file when the Moment is shared.
@@ -68,13 +92,16 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      setClip({
+      setPendingClip({
         uri: asset.uri,
         mimeType: asset.mimeType || 'video/mp4',
         durationMs: asset.duration ?? 0,
       });
-      setClipEdit(null);
-      setMode('video');
+      navigation.navigate('VideoTrim', {
+        sourceUri: asset.uri,
+        sourceDuration: (asset.duration ?? 0) / 1000,
+        category: 'moment',
+      });
     } catch (e) {
       toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
     }
@@ -114,7 +141,10 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         value={mode}
         onChange={(m) => {
           if (m === 'photo' && !photo) return choosePhoto();
-          if (m === 'video' && !clip) return chooseClip();
+          if (m === 'video' && !clip) {
+            setMode('video');
+            return chooseClip();
+          }
           setMode(m);
         }}
         options={[

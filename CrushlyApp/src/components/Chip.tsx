@@ -12,7 +12,7 @@ type ChipProps = {
   selected?: boolean;
   onPress?: () => void;
   icon?: keyof typeof Ionicons.glyphMap;
-  tone?: 'default' | 'gold' | 'crush';
+  tone?: 'default' | 'primary' | 'crush';
   size?: 'sm' | 'md';
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
@@ -24,11 +24,11 @@ type ChipProps = {
  */
 export function Chip({ label, selected, onPress, icon, tone = 'default', size = 'md', style, disabled }: ChipProps) {
   const { colors } = useTheme();
-  const accent = tone === 'crush' ? colors.crush : colors.gold;
+  const accent = tone === 'crush' ? colors.crush : colors.primary;
   const active = selected || tone !== 'default';
-  const bg = selected ? (tone === 'crush' ? colors.crushSoft : colors.goldSoft) : tone === 'gold' ? colors.goldSoft : tone === 'crush' ? colors.crushSoft : colors.card;
+  const bg = selected ? (tone === 'crush' ? colors.crushSoft : colors.primarySoft) : tone === 'primary' ? colors.primarySoft : tone === 'crush' ? colors.crushSoft : colors.card;
   const border = selected ? accent : active ? 'transparent' : colors.border;
-  const fg = active ? (tone === 'crush' ? colors.crush : selected || tone === 'gold' ? colors.gold : colors.text) : colors.text;
+  const fg = active ? (tone === 'crush' ? colors.crush : selected || tone === 'primary' ? colors.primary : colors.text) : colors.text;
   const body = (
     <View
       style={[

@@ -34,7 +34,7 @@ const LEGAL_PAGES: InfoPage[] = ['terms', 'privacy', 'guidelines'];
 const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }> = {
   guidelines: {
     title: 'Community guidelines',
-    intro: 'Crushly is a private club for men who want real connection. A few simple rules keep it that way.',
+    intro: 'Crushly is a private club for people who want real connection. A few simple rules keep it that way.',
     blocks: [
       { h: 'Be yourself', p: 'Use recent photos of you, your real first name and your real age. No impersonation, no catfishing.' },
       { h: 'Respect is the baseline', p: 'No harassment, hate speech, threats or pressure. “No” — or no reply — is an answer.' },

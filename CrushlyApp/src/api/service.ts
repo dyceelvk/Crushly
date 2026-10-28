@@ -411,6 +411,11 @@ export async function reactToPost(postId: number, liked = true): Promise<{ liked
   return { liked: r?.liked ?? liked, likeCount: r?.likeCount ?? 0 };
 }
 
+/** One post by id, enforcing the same audience and block rules as the Feed. */
+export async function loadPost(postId: number): Promise<Post> {
+  return rpc<Post>('load_post', { p_post_id: postId });
+}
+
 export async function postComments(postId: number, limit = 50): Promise<{ items: PostComment[] }> {
   const page = await rpc<{ items: PostComment[] }>('post_comments_feed', { p_post_id: postId, p_limit: limit });
   return { items: page?.items ?? [] };
@@ -1057,7 +1062,6 @@ export async function createVibe(input: {
     p_cover_url: cover,
     p_audience: input.audience,
     p_duration_ms: input.durationMs ?? null,
-    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
 }
 

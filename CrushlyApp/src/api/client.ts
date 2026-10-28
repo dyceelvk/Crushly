@@ -205,19 +205,31 @@ async function deleteFromMediaStore(url: string): Promise<void> {
 
 /** Reads a local file (camera roll / recorder URI) into a Blob on any platform. */
 export async function uriToBlob(uri: string): Promise<Blob> {
+  let lastError: unknown = null;
+
+  // fetch() works for blob:, data: and http: URIs on both web and native.
   try {
-    const res = await fetch(uri);
-    if (!res.ok) throw new Error('read failed');
+    const res = await fetch(uri, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`read failed (${res.status})`);
     return await res.blob();
-  } catch {
-    return new Promise<Blob>((resolve, reject) => {
+  } catch (e) {
+    lastError = e;
+  }
+
+  // XHR fallback — sometimes reads blob: URIs that fetch() refuses.
+  try {
+    const blob = await new Promise<Blob>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.onload = () => resolve(xhr.response as Blob);
-      xhr.onerror = () => reject(new ApiError(0, 'We couldn’t read that file. Try picking it again.'));
+      xhr.onerror = () => reject(lastError);
       xhr.responseType = 'blob';
       xhr.open('GET', uri, true);
       xhr.send();
     });
+    return blob;
+  } catch {
+    console.warn('uriToBlob failed for:', uri, lastError);
+    throw new ApiError(0, 'We couldn’t read that file. Try picking it again.');
   }
 }
 

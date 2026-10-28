@@ -23,6 +23,7 @@ export const keys = {
   circle: (id: number) => ['circle', id] as const,
   circleFeed: (id: number) => ['circle-feed', id] as const,
   circleMessages: (id: number) => ['circle-messages', id] as const,
+  post: (id: number) => ['post', id] as const,
   postComments: (id: number) => ['post-comments', id] as const,
   closeOnes: ['close-ones'] as const,
   vibes: ['vibes'] as const,
@@ -261,6 +262,16 @@ export function useReactToPost() {
   return useMutation({
     mutationFn: ({ postId, liked }: { postId: number; liked: boolean }) => service.reactToPost(postId, liked),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+  });
+}
+
+/** One post, fetched directly so a post view never depends on the post
+ * still sitting in the current feed page. */
+export function usePost(postId: number | null) {
+  return useQuery({
+    queryKey: keys.post(postId ?? 0),
+    queryFn: () => service.loadPost(postId as number),
+    enabled: postId !== null,
   });
 }
 

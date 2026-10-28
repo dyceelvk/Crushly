@@ -12,7 +12,7 @@ export function Toggle({ value, onChange, label, disabled }: Props) {
   useEffect(() => {
     Animated.timing(x, { toValue: value ? 1 : 0, duration: reduceMotion ? 0 : 160, useNativeDriver: false }).start();
   }, [value, reduceMotion, x]);
-  const track = x.interpolate({ inputRange: [0, 1], outputRange: [colors.elevated, colors.gold] });
+  const track = x.interpolate({ inputRange: [0, 1], outputRange: [colors.elevated, colors.primary] });
   const left = x.interpolate({ inputRange: [0, 1], outputRange: [3, 23] });
   return (
     <Pressable
@@ -36,7 +36,7 @@ export function Toggle({ value, onChange, label, disabled }: Props) {
         <Animated.View
           style={{
             position: 'absolute', left, width: 22, height: 22, borderRadius: 11,
-            backgroundColor: value ? colors.onGold : colors.textSecondary,
+            backgroundColor: value ? colors.onPrimary : colors.textSecondary,
             ...(Platform.OS === 'web' ? {} : { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } }),
           }}
         />

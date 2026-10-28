@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
@@ -14,7 +15,9 @@ import { useToast } from '../../components/Toast';
 import { useCreateVibe } from '../../api/hooks';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import type { VideoEdit } from '../../lib/videoEdit';
+import { emptyEdit } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
+import { takeTrimResult } from '../common/VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -50,6 +53,7 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
   const create = useCreateVibe();
 
   const [clip, setClip] = useState<Clip | null>(null);
+  const [pendingClip, setPendingClip] = useState<Clip | null>(null);
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'connections' | 'everyone'>('connections');
   const [busy, setBusy] = useState(false);
@@ -59,6 +63,26 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
   const player = useVideoPlayer(clip?.uri ?? null, (p) => {
     p.loop = true;
   });
+
+  // When returning from the dedicated trim screen, apply the chosen trim to the
+  // clip and its edit. If the user cancelled, clear the pending clip so they can
+  // pick again.
+  useFocusEffect(
+    useCallback(() => {
+      const result = takeTrimResult();
+      if (result && pendingClip) {
+        setClip(pendingClip);
+        setPendingClip(null);
+        setClipEdit({
+          ...emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0),
+          trimStart: result.trimStart,
+          trimEnd: result.trimEnd,
+        });
+      } else if (!result && pendingClip) {
+        setPendingClip(null);
+      }
+    }, [pendingClip])
+  );
 
   const pick = async () => {
     try {
@@ -80,11 +104,16 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
         return;
       }
 
-      setClip({
+      setPendingClip({
         uri: asset.uri,
         mimeType: asset.mimeType || 'video/mp4',
         durationMs: asset.duration ?? 0,
         sizeBytes,
+      });
+      navigation.navigate('VideoTrim', {
+        sourceUri: asset.uri,
+        sourceDuration: (asset.duration ?? 0) / 1000,
+        category: 'vibe',
       });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t open your clips', message: (e as Error).message });

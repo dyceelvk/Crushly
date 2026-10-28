@@ -328,9 +328,28 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
 
         <View style={{ flex: 1 }} pointerEvents="none" />
 
-        {moment.kind === 'photo' && moment.body ? (
-          <View style={{ paddingHorizontal: space.lg, paddingBottom: space.md }} pointerEvents="none">
-            <Txt variant="body" color="#fff" style={{ fontSize: 17, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 8 }}>
+        {(moment.kind === 'photo' || moment.kind === 'video') && moment.body ? (
+          <View
+            style={{
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              borderRadius: 12,
+              paddingHorizontal: space.md,
+              paddingVertical: space.sm,
+              marginBottom: space.sm,
+            }}
+            pointerEvents="none"
+          >
+            <Txt
+              variant="body"
+              color="#fff"
+              numberOfLines={4}
+              style={{
+                fontSize: 17,
+                lineHeight: 23,
+                textShadowColor: 'rgba(0,0,0,0.7)',
+                textShadowRadius: 8,
+              }}
+            >
               {moment.body}
             </Txt>
           </View>

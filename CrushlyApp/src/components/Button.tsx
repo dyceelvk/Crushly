@@ -33,7 +33,7 @@ export function Button({
   const { colors } = useTheme();
   const height = size === 'lg' ? 56 : size === 'md' ? 48 : 40;
   const fg = {
-    primary: colors.onGold,
+    primary: colors.onPrimary,
     crush: colors.onCrush,
     secondary: colors.text,
     ghost: colors.textSecondary,
@@ -71,7 +71,7 @@ export function Button({
   let surface: React.ReactNode;
   if (variant === 'primary') {
     surface = (
-      <LinearGradient colors={[colors.goldBright, colors.gold, colors.goldDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[base, style]}>
+      <LinearGradient colors={[colors.primary, colors.primaryDeep, colors.crush]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[base, style]}>
         {content}
       </LinearGradient>
     );
