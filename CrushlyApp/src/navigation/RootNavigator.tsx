@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { browserLocation } from '../lib/browser';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';

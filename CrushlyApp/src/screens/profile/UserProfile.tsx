@@ -245,7 +245,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             <Section title="Interests">
               <ChipGroup>
                 {p.interests.map((i) => (
-                  <Chip key={i} label={i} tone={p.sharedInterests.includes(i) ? 'gold' : 'default'} icon={p.sharedInterests.includes(i) ? 'sparkles' : undefined} />
+                  <Chip key={i} label={i} tone={p.sharedInterests.includes(i) ? 'primary' : 'default'} icon={p.sharedInterests.includes(i) ? 'sparkles' : undefined} />
                 ))}
               </ChipGroup>
               {p.sharedInterests.length ? (
