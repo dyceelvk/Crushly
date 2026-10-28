@@ -406,7 +406,7 @@ function ComposerLeft({
   fontOptions,
 }: {
   body: string;
-  setBody: (v: string) => void;
+  setBody: React.Dispatch<React.SetStateAction<string>>;
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
   postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
@@ -421,7 +421,7 @@ function ComposerLeft({
   openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
   editing: boolean;
   fontIndex: number;
-  setFontIndex: (v: number) => void;
+  setFontIndex: React.Dispatch<React.SetStateAction<number>>;
   fontOptions: readonly string[];
 }) {
   const { colors } = useTheme();
@@ -455,7 +455,7 @@ function ComposerLeft({
               <Ionicons name="close-outline" size={16} color="#fff" />
             </Pressable>
             {m.type === 'video' && (
-              <Pressable onPress={openEditor} accessibilityLabel="Edit video" hitSlop={8} style={{ position: 'absolute', bottom: 4, left: 4, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable onPress={() => openEditor()} accessibilityLabel="Edit video" hitSlop={8} style={{ position: 'absolute', bottom: 4, left: 4, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="color-wand-outline" size={14} color="#fff" />
               </Pressable>
             )}
@@ -515,7 +515,7 @@ function ComposerLeft({
 
           {/* Hashtag */}
           <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
-            <Ionicons name="hash" size={18} color={colors.textMuted} />
+            <Txt variant="caption" style={{ color: colors.text }}>#</Txt>
           </Pressable>
 
           {/* Public / private toggle */}
