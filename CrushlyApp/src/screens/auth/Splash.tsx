@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View, Image } from 'react-native';
+import logoCMark from '../../assets/logo-c-mark.png';
 import { Glow, LightSweep } from '../../components/Ambient';
 import { useTheme } from '../../theme/ThemeProvider';
 import { palettes, fonts, space } from '../../theme/tokens';
@@ -33,7 +34,7 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
       <LightSweep duration={1300} />
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
         <Image
-          source={require('../../assets/logo-c-mark.png')}
+          source={logoCMark}
           style={{ width: 120, height: 120, marginBottom: space.lg, opacity: fade }}
         />
         {fontsReady ? (
