@@ -22,7 +22,7 @@ export function EditedClip({
   live,
   style,
   autoPlay = false,
-  loop = true,
+  loop = false,
   paused = false,
   contentFit = 'contain',
 }: {
@@ -39,13 +39,13 @@ export function EditedClip({
   const look = live?.look ?? NEUTRAL_LOOK;
 
   const player = useVideoPlayer(uri, (p) => {
-    p.loop = loop;
+    p.loop = loop ?? false;
   });
 
   // Music is a second player running alongside the clip, the same way it was
   // heard in the editor. Most clips have none, and then this costs nothing.
   const musicPlayer = useVideoPlayer(look.music?.uri ?? null, (p) => {
-    p.loop = loop;
+    p.loop = loop ?? false;
     p.volume = look.music?.volume ?? 0.6;
   });
 
