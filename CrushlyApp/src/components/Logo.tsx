@@ -5,50 +5,56 @@ import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
- * The Crushly mark: an abstract, dynamic "C" monogram with fluid ribbon
- * accents inside a dark rounded-square container. Gradient runs
- * cyan → electric purple → vibrant magenta. No heart / love symbol.
+ * The Crushly mark: two intertwined fluid ribbons forming an abstract
+ * dynamic "C" inside a dark rounded-square container.
+ *
+ * Left/top ribbon: cyan → blue gradient (#00C6FF → #0099CC)
+ * Right/bottom ribbon: purple → magenta gradient (#A040FF → #FF4081)
+ * No heart / love symbol — pure connection.
  */
 export function CrushlyMark({ size = 48, mono }: { size?: number; mono?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const g = `g${uid}`;
+  const m = `m${uid}`;
   const pad = size * 0.14;
-  const inner = size - pad * 2;
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      {/* Dark rounded-square container */}
+      {/* Dark rounded-square container (matches logo design) */}
       <Rect
         x={12}
         y={12}
         width={76}
         height={76}
         rx={18}
-        fill={mono || '#0F142D'}
+        fill={mono || '#0A0E27'}
       />
       <Defs>
         <LinearGradient id={g} x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%" stopColor="#00C6FF" />
-          <Stop offset="50%" stopColor="#A040FF" />
+          <Stop offset="100%" stopColor="#0099CC" />
+        </LinearGradient>
+        <LinearGradient id={m} x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor="#A040FF" />
           <Stop offset="100%" stopColor="#FF4081" />
         </LinearGradient>
       </Defs>
-      {/* Main C monogram — open, dynamic form */}
+      {/* Cyan ribbon — left/top arm of the C */}
       <Path
-        d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
+        d="M 58 32 C 40 28, 28 30, 24 48 C 22 64, 28 74, 44 76"
         fill="none"
         stroke={mono || `url(#${g})`}
-        strokeWidth={9}
+        strokeWidth={14}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Fluid ribbon accent sweeping through the C */}
+      {/* Magenta ribbon — right/bottom arm of the C, intertwined */}
       <Path
-        d="M 44 52 C 50 50, 58 52, 62 56"
+        d="M 46 26 C 60 22, 72 28, 75 42 C 77 58, 62 72, 48 74"
         fill="none"
-        stroke={mono || '#FFFFFF'}
-        strokeWidth={4}
+        stroke={mono || `url(#${m})`}
+        strokeWidth={14}
         strokeLinecap="round"
-        opacity={0.6}
+        strokeLinejoin="round"
       />
     </Svg>
   );
@@ -60,12 +66,12 @@ export function CrushIcon({ size = 22, color, filled }: { size?: number; color: 
     <Svg width={size} height={size} viewBox="0 0 100 100" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {filled ? (
         <Path
-          d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
+          d="M 58 32 C 40 28, 28 30, 24 48 C 22 64, 28 74, 44 76"
           fill={color}
         />
       ) : null}
       <Path
-        d="M 68 45 C 52 40, 38 42, 32 55 C 28 68, 30 78, 42 78"
+        d="M 58 32 C 40 28, 28 30, 24 48 C 22 64, 28 74, 44 76"
         fill="none"
         stroke={filled ? 'transparent' : color}
         strokeWidth={10}
