@@ -136,6 +136,21 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
           durationMs,
         };
 
+        // On web, expo-image-picker's blob: URIs can be revoked when the picker
+        // closes or when navigating to/from the trim screen. Pin the file by
+        // reading it into our own blob URL so it survives until upload.
+        if (isVideo && Platform.OS === 'web') {
+          try {
+            const res = await fetch(asset.uri, { cache: 'no-store' });
+            if (res.ok) {
+              const blob = await res.blob();
+              item.uri = URL.createObjectURL(blob);
+            }
+          } catch {
+            // keep the original URI
+          }
+        }
+
         if (isVideo) {
           // Videos go trim-first before anything else.
           setPendingMedia(item);

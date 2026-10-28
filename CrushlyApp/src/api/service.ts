@@ -1057,7 +1057,6 @@ export async function createVibe(input: {
     p_cover_url: cover,
     p_audience: input.audience,
     p_duration_ms: input.durationMs ?? null,
-    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
 }
 
