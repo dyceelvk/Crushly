@@ -29,7 +29,7 @@ import { emptyEdit, splitForUpload } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import { setTrimResult, takeTrimResult, TrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
-import { radius, space } from '../../theme/tokens';
+import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
 type MediaItem = {
@@ -272,23 +272,26 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
           <View style={{ flexDirection: 'row', gap: space.xl, alignItems: 'flex-start' }}>
             {/* Left column — composer */}
             <View style={{ flex: 1, minWidth: 0 }}>
-              <ComposerLeft
-                body={body}
-                setBody={setBody}
-                audience={audience}
-                setAudience={setAudience}
-                postType={postType}
-                setPostType={setPostType}
-                scheduleOn={scheduleOn}
-                setScheduleOn={setScheduleOn}
-                maxBody={maxBody}
-                media={media}
-                removeMedia={removeMedia}
-                pickMedia={pickMedia}
-                primaryMedia={primaryMedia}
-                openEditor={openEditor}
-                editing={editingMediaId === primaryMedia?.id}
-              />
+            <ComposerLeft
+              body={body}
+              setBody={setBody}
+              audience={audience}
+              setAudience={setAudience}
+              postType={postType}
+              setPostType={setPostType}
+              scheduleOn={scheduleOn}
+              setScheduleOn={setScheduleOn}
+              maxBody={maxBody}
+              media={media}
+              removeMedia={removeMedia}
+              pickMedia={pickMedia}
+              primaryMedia={primaryMedia}
+              openEditor={openEditor}
+              editing={editingMediaId === primaryMedia?.id}
+              fontIndex={fontIndex}
+              setFontIndex={setFontIndex}
+              fontOptions={FONT_OPTIONS}
+            />
             </View>
 
             {/* Right column — preview + settings */}
@@ -322,6 +325,9 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               primaryMedia={primaryMedia}
               openEditor={openEditor}
               editing={editingMediaId === primaryMedia?.id}
+              fontIndex={fontIndex}
+              setFontIndex={setFontIndex}
+              fontOptions={FONT_OPTIONS}
             />
             <ComposerRight
               primaryMedia={primaryMedia}
@@ -395,6 +401,9 @@ function ComposerLeft({
   primaryMedia,
   openEditor,
   editing,
+  fontIndex,
+  setFontIndex,
+  fontOptions,
 }: {
   body: string;
   setBody: (v: string) => void;
@@ -411,6 +420,9 @@ function ComposerLeft({
   primaryMedia: MediaItem | undefined;
   openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
   editing: boolean;
+  fontIndex: number;
+  setFontIndex: (v: number) => void;
+  fontOptions: readonly string[];
 }) {
   const { colors } = useTheme();
 
@@ -431,7 +443,7 @@ function ComposerLeft({
           placeholder="Good energy, better days. Same me, just more focused."
           maxLength={500}
           showCount
-          style={{ minHeight: 150, fontFamily: FONT_OPTIONS[fontIndex] }}
+          style={{ minHeight: 150, fontFamily: fontOptions[fontIndex] }}
         />
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, flexWrap: 'wrap' }}>
           {/* Media Settings — line up under the text bar */}
@@ -455,7 +467,7 @@ function ComposerLeft({
           </Pressable>
 
           {/* Font cycle */}
-          <Pressable onPress={() => setFontIndex((i) => (i + 1) % FONT_OPTIONS.length)} accessibilityLabel="Change font" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+          <Pressable onPress={() => setFontIndex((i) => (i + 1) % fontOptions.length)} accessibilityLabel="Change font" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Txt variant="caption" style={{ color: colors.text }}>Aa</Txt>
           </Pressable>
 
