@@ -362,17 +362,17 @@ begin
   end;
 
   j := public.can_view_media('photos/1/a.jpg');
-  assert (j ->> 'allowed')::bool and (j ->> 'cacheable')::bool, 'profile photos are readable by members and cacheable';
+  assert not (j ->> 'allowed')::bool, 'unregistered photo paths are not readable';
 
   insert into public.messages (conversation_id, sender_id, kind, media_url)
-    values (conv_id, me, 'photo', 'messages/999/note.jpg');
-  j := public.can_view_media('messages/999/note.jpg');
+    values (conv_id, me, 'photo', 'messages/' || me || '/note.jpg');
+  j := public.can_view_media('messages/' || me || '/note.jpg');
   assert (j ->> 'allowed')::bool, 'you can read your own chat media';
   assert not (j ->> 'cacheable')::bool, 'chat media is never cached under a shared key';
   perform set_config('request.jwt.claim.sub', marcus::text, false);
-  assert (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
+  assert (public.can_view_media('messages/' || me || '/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000000', false);
-  assert not (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
+  assert not (public.can_view_media('messages/' || me || '/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
   assert not (public.can_view_media('photos/1/a.jpg') ->> 'allowed')::bool, 'signed-out callers get nothing at all';
   perform set_config('request.jwt.claim.sub', daniel::text, false);
 
@@ -400,13 +400,11 @@ begin
 
   -- Runaway-upload guard: storage beyond the free allowance is billed, so the
   -- ceiling is enforced here rather than in the app.
-  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
-       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
-       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
-    into n;
-  insert into public.moments (user_id, kind, body, style, audience, created_at, expires_at)
-    select me, 'text', 'flood', 'noir', 'everyone', public.now_ms(), public.now_ms() + 3600 * 1000
-      from generate_series(1, greatest(40 - n, 1));
+  select count(*) into n from public.media_upload_reservations
+    where user_id = me and created_at > public.now_ms() - 3600 * 1000;
+  for i in 1..(40 - n) loop
+    perform public.media_upload_ticket('moments', 'image/jpeg', 1000);
+  end loop;
   begin
     perform public.media_upload_ticket('moments', 'image/jpeg', 1000);
     raise exception 'the hourly upload ceiling must hold';
@@ -492,7 +490,7 @@ begin
   end;
 
   delete from public.moments where body in ('connections only', 'gone', 'flood');
-  delete from public.messages where media_url = 'messages/999/note.jpg';
+  delete from public.messages where media_url = 'messages/' || me || '/note.jpg';
 
   reset role;
   raise notice 'smoke tests passed';

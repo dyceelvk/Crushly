@@ -3,9 +3,13 @@
 #
 # One-time setup (GitHub → Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN            Vercel → https://vercel.com/account/tokens
+#   VERCEL_ORG_ID           the "orgId" in CrushlyApp/.vercel/project.json (after `vercel link`)
+#   VERCEL_PROJECT_ID       the "projectId" in the same file
+#                           (for project "mecrushly" these are team_nnPzMnGPlVWsqxvwqhUorYEA
+#                            and prj_KYBzDmPBZAxHcmau8uzRuhT9dlze)
 #   EXPO_PUBLIC_SUPABASE_URL  Supabase → Project Settings → API → Project URL
 #   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Settings → API Keys → Publishable key
-#   SUPABASE_DB_URL           Supabase → Project Settings → Database → Session pooler URI
+#   SUPABASE_DB_URL         Supabase → Project Settings → Database → Session pooler URI
 #
 # Never commit these values or paste them into chat.
 #
@@ -16,6 +20,8 @@ name: Deploy web app
 on:
   workflow_dispatch:
   push:
+    # main is where Vercel's git integration points; arena/** is where work lands
+    # before it is merged. Remove arena/** if you only want merged work to ship.
     branches: [main, arena/**]
 
 concurrency:
@@ -24,7 +30,7 @@ concurrency:
 
 jobs:
   database:
-    name: Run database migrations
+    name: Apply pending database migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +43,10 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
           set +e
           out=$(psql "$SUPABASE_DB_URL" -tAc "select current_database(), version();" 2>&1)
           rc=$?
@@ -47,13 +57,84 @@ jobs:
             exit 1
           fi
 
-      - name: Apply load_post migration
+      # Replaces the old single hardcoded file:
+      #     psql ... -f supabase/migrations/20261028000027_load_post.sql
+      # which silently ignored every other migration in the repo. Each unapplied
+      # file is now run in its own transaction, then recorded exactly the way
+      # `supabase db push` records it — so the migration history stays truthful
+      # and a later `supabase db push` will not replay anything.
+      - name: Apply every migration that is not recorded yet
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261028000027_load_post.sql
-          echo "::notice::Migration 20261028000027_load_post.sql applied successfully."
+          applied=0
+          skipped=0
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            version=$(basename "$f" | cut -d_ -f1)
+            name=$(basename "$f" .sql | cut -d_ -f2-)
+            have=$(psql "$SUPABASE_DB_URL" -tAc \
+              "select exists (select 1 from supabase_migrations.schema_migrations where version = '$version');")
+            if [ "$have" = "t" ]; then
+              skipped=$((skipped+1))
+              continue
+            fi
+            echo "::group::Applying $version ($name)"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$f"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c \
+              "insert into supabase_migrations.schema_migrations (version, name)
+               values ('$version', '$name') on conflict (version) do nothing;"
+            echo "::endgroup::"
+            applied=$((applied+1))
+          done
+          echo "::notice::Migrations applied this run: $applied. Already recorded, skipped: $skipped."
+
+      # The failure that made this job worth rewriting: a migration can "succeed"
+      # and still leave the app calling an RPC that returns less than it did.
+      # These assertions are cheap and they fail the deploy instead of the feed.
+      - name: Verify the functions the app actually calls
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for fn in load_post flow_feed circle_feed post_comments_feed create_post; do
+            have=$(psql "$SUPABASE_DB_URL" -tAc \
+              "select exists (select 1 from pg_proc where proname = '$fn' and pronamespace = 'public'::regnamespace);")
+            if [ "$have" != "t" ]; then
+              echo "::error::public.$fn is missing — a migration did not land."
+              fail=1
+            fi
+          done
+          # A post looks empty or silent in the feed when its engagement fields go
+          # missing. These three carry them today; circle_feed deliberately does
+          # not (see the review — Circle posts read 0 likes because of it), so it
+          # is not asserted here: a gate that fails on a pre-existing gap would
+          # block every deploy for a bug it did not cause.
+          for fn in load_post flow_feed public_flow_feed; do
+            engages=$(psql "$SUPABASE_DB_URL" -tAc \
+              "select prosrc ilike '%post_engagement%' from pg_proc
+                where proname = '$fn' and pronamespace = 'public'::regnamespace limit 1;")
+            if [ "$engages" != "t" ]; then
+              echo "::error::public.$fn no longer returns post_engagement — feed likes/comments would read as 0."
+              fail=1
+            fi
+          done
+          # mediaKind is what makes a clip render as a clip rather than a still.
+          for fn in flow_feed public_flow_feed circle_feed load_post; do
+            kind=$(psql "$SUPABASE_DB_URL" -tAc \
+              "select prosrc ilike '%mediaKind%' from pg_proc
+                where proname = '$fn' and pronamespace = 'public'::regnamespace limit 1;")
+            if [ "$kind" != "t" ]; then
+              echo "::error::public.$fn does not return mediaKind — video posts would render as photos."
+              fail=1
+            fi
+          done
+          if [ "$fail" != "0" ]; then
+            echo "::error::The database does not match the repository. Fix the failing migration above and re-run."
+            exit 1
+          fi
+          echo "::notice::All app-facing functions are present and return what the app expects."
 
   deploy:
     name: Build & deploy to Vercel
@@ -85,9 +166,28 @@ jobs:
           node scripts/check-public-build.mjs
           npm run build:web
 
+      # Why this step used to fail with a perfectly good build:
+      # a fresh CI checkout has no .vercel/ link, and `vercel deploy` without
+      # --yes on an unlinked directory stops to ask an interactive question that
+      # can never be answered in CI ("No existing credentials found").
+      # VERCEL_ORG_ID + VERCEL_PROJECT_ID state the target explicitly, so the
+      # CLI never guesses — and never creates a duplicate project either.
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          cd "$GITHUB_WORKSPACE/CrushlyApp"
-          npx --yes vercel@latest deploy --prod --token="$VERCEL_TOKEN" --message="Deploy ${{ github.sha }}"
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN is not set."
+            exit 1
+          fi
+          if [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::VERCEL_ORG_ID / VERCEL_PROJECT_ID are not set — run 'vercel link' locally and copy both out of CrushlyApp/.vercel/project.json."
+            exit 1
+          fi
+          npx --yes vercel@latest deploy \
+            --prod \
+            --yes \
+            --token="$VERCEL_TOKEN" \
+            --message="Deploy ${{ github.sha }}"
