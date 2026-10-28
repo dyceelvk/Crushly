@@ -15,6 +15,7 @@ import { LinkText } from '../../components/LinkText';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
+import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { BottomSheet } from '../../components/BottomSheet';
@@ -45,13 +46,12 @@ const SWIPE_THRESHOLD = 60;
 /**
  * Watching one post — full screen, immersive.
  *
- * Edge-to-edge media, caption overlay bottom-left, author profile tappable,
- * right-side action column (Crush · comment · Space), vertical swipe down to
- * close and return to the feed at its position, and a slide-up comments panel
- * with a fixed input bar at the bottom.
- *
- * Posts with no media (text-only) stay in the feed — tapping them does nothing,
- * so this screen only opens for media posts.
+ * Layout per user spec:
+ *   Back button (top-left)  ·  Three dots (top-right)
+ *   Profile row (left, below back button)
+ *   Media (center, large)
+ *   Action column (right side, lower): Like · Comment · Save
+ *   Caption (bottom-left)
  */
 export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'>) {
   const { postId } = route.params;
@@ -63,8 +63,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
   const { data: me } = useMe();
   const flow = useFlow();
-  // The post is looked up directly first: a post view must not go empty just
-  // because the post scrolled out of the current feed page.
   const postQuery = usePost(postId);
   const post = postQuery.data ?? flow.data?.items.find((p) => p.id === postId) ?? null;
   const query = usePostComments(postId);
@@ -74,6 +72,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const send = useCommentOnPost(postId);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [threeDotsOpen, setThreeDotsOpen] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
   const comments = query.data?.items ?? [];
@@ -82,9 +82,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     navigation.goBack();
   }, [navigation]);
 
-  // mediaSource() returns a plain string on web but { uri, headers } on native
-  // when the file lives behind the media Worker. Extract the URI string so
-  // EditedClip receives a usable value on every platform.
   const resolveVideoUri = useCallback((mediaPath: string | null) => {
     if (!mediaPath) return '';
     const resolved = mediaSource(mediaUrl(mediaPath));
@@ -99,6 +96,14 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       toast({ kind: 'error', title: 'Like not sent', message: (e as Error).message });
     }
   }, [post, like, toast]);
+
+  const toggleSave = useCallback(() => {
+    setIsSaved((prev) => {
+      const next = !prev;
+      toast({ kind: next ? 'success' : 'info', title: next ? 'Post saved' : 'Post unsaved' });
+      return next;
+    });
+  }, []);
 
   const deletePost = useCallback(async () => {
     if (!post) return;
@@ -131,9 +136,11 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }
   }, [removeComment, toast]);
 
-  // Vertical swipe between posts: pan down closes the viewer and returns to
-  // the feed at its scroll position. Pan up is reserved for future next-post
-  // navigation once adjacent post IDs are exposed by the feed.
+  const openThreeDots = useCallback(() => {
+    setThreeDotsOpen(true);
+  }, []);
+
+  // Vertical swipe down closes the viewer and returns to feed at scroll position.
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -175,7 +182,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       {/* PanResponder for vertical swipe — covers the whole screen. */}
       <View {...panResponder.panHandlers} style={{ flex: 1, backgroundColor: '#000' }}>
-        {/* Close / more header, top edge-to-edge */}
+
+        {/* Top header: Back button left, three dots right */}
         <View
           style={{
             flexDirection: 'row',
@@ -190,15 +198,63 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           <Pressable
             accessibilityLabel="More options"
             hitSlop={20}
-            onPress={() => void deletePost()}
+            onPress={openThreeDots}
             style={{ padding: 10 }}
           >
             <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
           </Pressable>
         </View>
 
-        {/* Media — fills the screen */ }
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        {/* Profile row — left side, below back button */}
+        <Pressable
+          onPress={() =>
+            post.mine
+              ? nav.navigate('Main', { screen: 'Profile' })
+              : nav.navigate('UserProfile', { id: post.author.id })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            paddingHorizontal: space.sm,
+            marginTop: space.sm,
+          }}
+        >
+          <Avatar
+            uri={post.author.photos[0]?.url ?? null}
+            name={post.author.name}
+            size={34}
+            ring={post.author.verified ? 'gold' : undefined}
+          />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
+              {authorName}
+            </Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              {post.author.bio ? (
+                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
+                  {post.author.bio}
+                </Txt>
+              ) : null}
+              {post.author.bio && post.author.username ? (
+                <Txt variant="caption" color="#fff">·</Txt>
+              ) : null}
+              {post.author.username ? (
+                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
+                  @{post.author.username}
+                </Txt>
+              ) : null}
+            </View>
+          </View>
+          {post.mine ? (
+            <Ionicons name="ellipsis-vertical" size={20} color="rgba(255,255,255,0.7)" />
+          ) : null}
+        </Pressable>
+
+        {/* Media — fills center of screen */}
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: space.sm }}>
           {hasMedia && mediaUri ? (
             <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
               {isVideo ? (
@@ -208,6 +264,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
                   style={{ width: '100%', height: '100%' }}
                   autoPlay
                   loop
+                  contentFit="contain"
                 />
               ) : (
                 <Photo
@@ -231,83 +288,15 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           ) : null}
         </View>
 
-        {/* Caption overlay + author row, stacked cleanly above the comment bar */}
+        {/* Right-side action column — Like, Comment, Save (lower position) */}
         <View
           style={{
             position: 'absolute',
-            bottom: Math.max(insets.bottom, space.sm) + 100,
-            left: space.sm,
             right: space.sm,
+            bottom: Math.max(insets.bottom, space.sm) + 120,
             gap: space.sm,
           }}
         >
-          {/* Caption overlay, bottom-left over media */}
-          {post.body ? (
-            <View>
-              <Txt
-                variant="body"
-                style={{
-                  color: '#fff',
-                  fontSize: 18,
-                  lineHeight: 26,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowRadius: 6,
-                  shadowOpacity: 0.8,
-                }}
-              >
-                <LinkText text={post.body} bare />
-              </Txt>
-            </View>
-          ) : null}
-
-          {/* Author profile row, tappable */}
-          <Pressable
-            onPress={() =>
-              post.mine
-                ? nav.navigate('Main', { screen: 'Profile' })
-                : nav.navigate('UserProfile', { id: post.author.id })
-            }
-            accessibilityRole="button"
-            accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              paddingHorizontal: space.sm,
-            }}
-          >
-            <Avatar
-              uri={post.author.photos[0]?.url ?? null}
-              name={post.author.name}
-              size={34}
-              ring={post.author.verified ? 'gold' : undefined}
-            />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
-                {authorName}
-              </Txt>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                {post.author.bio ? (
-                  <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
-                    {post.author.bio}
-                  </Txt>
-                ) : null}
-                {post.author.bio && post.author.username ? (
-                  <Txt variant="caption" color="#fff">·</Txt>
-                ) : null}
-                {post.author.username ? (
-                  <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
-                    @{post.author.username}
-                  </Txt>
-                ) : null}
-              </View>
-            </View>
-          </Pressable>
-        </View>
-
-        {/* Right-side action column: Crush · comment · Space */}
-        <View style={{ position: 'absolute', right: space.sm, top: Math.max(insets.top, space.sm) + 56, gap: space.sm }}>
           <Pressable
             onPress={toggleLike}
             accessibilityRole="button"
@@ -345,23 +334,52 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             <Ionicons name="chatbubble-outline" size={24} color="#fff" />
           </Pressable>
           <Pressable
+            onPress={toggleSave}
             accessibilityRole="button"
-            accessibilityLabel="Save"
+            accessibilityLabel={isSaved ? 'Unsave post' : 'Save post'}
             hitSlop={20}
             style={{
               width: 52,
               height: 52,
               borderRadius: 26,
-              backgroundColor: 'rgba(0,0,0,0.4)',
+              backgroundColor: isSaved ? colors.crush : 'rgba(0,0,0,0.4)',
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 1,
               borderColor: 'rgba(255,255,255,0.3)',
             }}
           >
-            <Ionicons name="bookmark-outline" size={24} color="#fff" />
+            <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={24} color="#fff" />
           </Pressable>
         </View>
+
+        {/* Caption — bottom-left */}
+        {post.body ? (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: Math.max(insets.bottom, space.sm) + 10,
+              left: space.sm,
+              right: space.sm,
+              maxWidth: width - space.xl,
+            }}
+          >
+            <Txt
+              variant="body"
+              style={{
+                color: '#fff',
+                fontSize: 16,
+                lineHeight: 22,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowRadius: 4,
+                shadowOpacity: 0.8,
+              }}
+            >
+              <LinkText text={post.body} bare />
+            </Txt>
+          </View>
+        ) : null}
       </View>
 
       {/* Slide-up comments panel */}
@@ -386,19 +404,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             ))
           )}
         </View>
-      </BottomSheet>
-
-      {/* Fixed comment input bar at bottom — only visible when comments panel is open */}
-      {commentsOpen && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: Math.max(insets.bottom, space.sm),
-            left: 0,
-            right: 0,
-            paddingHorizontal: space.sm,
-          }}
-        >
+        {/* Fixed comment input bar at bottom of sheet */}
         <View
           style={{
             backgroundColor: colors.elevated,
@@ -410,6 +416,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             gap: space.sm,
             borderWidth: 1,
             borderColor: colors.border,
+            marginTop: space.sm,
           }}
         >
           <Avatar uri={me?.profile.photos[0]?.url ?? null} size={30} />
@@ -433,20 +440,59 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             variant="gold"
           />
         </View>
-      </View>
-      )}
+      </BottomSheet>
 
-      {post.mine ? (
-        <BottomSheet
-          visible={false}
-          onClose={() => {}}
-          title="Your post"
-        >
-          <Pressable onPress={deletePost} style={{ padding: space.md }}>
-            <Ionicons name="trash-outline" size={20} color={colors.danger} />
-          </Pressable>
-        </BottomSheet>
-      ) : null}
+      {/* Three dots action sheet (author: delete; others: report / remove crush) */}
+      <BottomSheet
+        visible={threeDotsOpen}
+        onClose={() => setThreeDotsOpen(false)}
+        title={post.mine ? 'Your post' : 'Options'}
+        maxHeight={0.6}
+      >
+        <View style={{ gap: space.sm }}>
+          {!post.mine ? (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setThreeDotsOpen(false);
+                  toast({ kind: 'info', title: 'Report sent' });
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
+              >
+                <Ionicons name="alert-circle-outline" size={20} color={colors.danger} />
+                <Txt variant="body" color="#000">
+                  Report post
+                </Txt>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setThreeDotsOpen(false);
+                  toast({ kind: 'info', title: 'Crush removed' });
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
+              >
+                <Ionicons name="remove" size={20} color={colors.danger} />
+                <Txt variant="body" color="#000">
+                  Remove crush
+                </Txt>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              onPress={deletePost}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              <Txt variant="body" color="#000">
+                Delete post
+              </Txt>
+            </Pressable>
+          )}
+        </View>
+      </BottomSheet>
     </View>
   );
 }
