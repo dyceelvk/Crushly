@@ -121,7 +121,7 @@ export function ProgressBar({ value, style, label }: { value: number; style?: St
       accessibilityValue={{ min: 0, max: 100, now: Math.round(pct * 100) }}
       style={[{ height: 4, borderRadius: 2, backgroundColor: colors.elevated, overflow: 'hidden' }, style]}
     >
-      <LinearGradient colors={[colors.primary, colors.primaryDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: `${pct * 100}%`, height: '100%' }} />
+      <LinearGradient colors={[colors.primary, colors.primaryDeep, colors.crush]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: `${pct * 100}%`, height: '100%' }} />
     </View>
   );
 }

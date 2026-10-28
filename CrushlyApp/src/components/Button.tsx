@@ -71,7 +71,7 @@ export function Button({
   let surface: React.ReactNode;
   if (variant === 'primary') {
     surface = (
-      <LinearGradient colors={[colors.primary, colors.primaryDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[base, style]}>
+      <LinearGradient colors={[colors.primary, colors.primaryDeep, colors.crush]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[base, style]}>
         {content}
       </LinearGradient>
     );
