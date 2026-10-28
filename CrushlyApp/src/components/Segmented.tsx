@@ -28,14 +28,14 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
             style={{
               flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minHeight: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
               paddingHorizontal: 10, backgroundColor: active ? colors.elevated : 'transparent',
-              borderWidth: active ? 1 : 0, borderColor: colors.goldLine,
+              borderWidth: active ? 1 : 0, borderColor: colors.primaryLine,
             }}
           >
             <Txt variant="smallStrong" color={active ? 'text' : 'textSecondary'} numberOfLines={1} maxFontSizeMultiplier={1.25} style={{ flexShrink: 1 }}>
               {o.label}
             </Txt>
             {o.count ? (
-              <Txt variant="caption" color={active ? 'gold' : 'textMuted'} maxFontSizeMultiplier={1.2}>
+              <Txt variant="caption" color={active ? 'primary' : 'textMuted'} maxFontSizeMultiplier={1.2}>
                 {o.count}
               </Txt>
             ) : null}

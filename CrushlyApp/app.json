@@ -8,7 +8,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#070708",
-    "primaryColor": "#D8B46A",
+    "primaryColor": "#00C6FF",
     "description": "Crushly \u2014 a private, modern social space to meet people and make connections.",
     "ios": {
       "supportsTablet": true,

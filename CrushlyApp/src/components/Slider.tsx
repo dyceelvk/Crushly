@@ -79,7 +79,7 @@ export function RangeSlider({ min, max, low, high, step = 1, onChange, label, fo
   const highX = range ? toX(high!) : lowX;
   const thumbStyle = {
     position: 'absolute' as const, top: 0, width: THUMB, height: THUMB, borderRadius: THUMB / 2, backgroundColor: colors.text,
-    borderWidth: 3, borderColor: colors.gold, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+    borderWidth: 3, borderColor: colors.primary, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3,
   };
 
   return (
@@ -90,7 +90,7 @@ export function RangeSlider({ min, max, low, high, step = 1, onChange, label, fo
           <>
             <View
               style={{
-                position: 'absolute', height: 4, borderRadius: 2, backgroundColor: colors.gold,
+                position: 'absolute', height: 4, borderRadius: 2, backgroundColor: colors.primary,
                 left: (range ? lowX : 0) + THUMB / 2, width: Math.max(0, (range ? highX - lowX : lowX)),
               }}
             />

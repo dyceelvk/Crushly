@@ -261,7 +261,7 @@ export function OnboardingPhotosScreen({ navigation }: ScreenProps<'OnboardingPh
       <View style={{ marginTop: space.lg, gap: 10 }}>
         {['Clear, recent photos of your face get the most Crushes.', 'No nudity or other people’s photos — keep it classy.', 'Tap a photo to make it your main one or remove it.'].map((tip) => (
           <View key={tip} style={{ flexDirection: 'row', gap: 10 }}>
-            <Ionicons name="sparkles-outline" size={16} color="#D8B46A" style={{ marginTop: 2 }} />
+            <Ionicons name="sparkles-outline" size={16} color="#00C6FF" style={{ marginTop: 2 }} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
               {tip}
             </Txt>

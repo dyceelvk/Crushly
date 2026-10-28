@@ -24,18 +24,18 @@ export function EmptyState({ icon = 'sparkles-outline', title, message, action, 
     <View style={[{ alignItems: 'center', paddingVertical: space.xxxl, paddingHorizontal: space.xl }, style]}>
       <View style={{ width: 96, height: 96, alignItems: 'center', justifyContent: 'center', marginBottom: space.lg }}>
         <LinearGradient
-          colors={[colors.goldSoft, 'transparent']}
+          colors={[colors.primarySoft, 'transparent']}
           style={{ position: 'absolute', width: 96, height: 96, borderRadius: 48 }}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
         />
         <View
           style={{
-            width: 64, height: 64, borderRadius: 32, borderWidth: 1, borderColor: colors.goldLine,
+            width: 64, height: 64, borderRadius: 32, borderWidth: 1, borderColor: colors.primaryLine,
             alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card,
           }}
         >
-          {icon === 'crush' ? <CrushIcon size={28} color={colors.gold} /> : <Ionicons name={icon} size={26} color={colors.gold} />}
+          {icon === 'crush' ? <CrushIcon size={28} color={colors.primary} /> : <Ionicons name={icon} size={26} color={colors.primary} />}
         </View>
       </View>
       <Txt variant="title" align="center" accessibilityRole="header">
@@ -121,7 +121,7 @@ export function ProgressBar({ value, style, label }: { value: number; style?: St
       accessibilityValue={{ min: 0, max: 100, now: Math.round(pct * 100) }}
       style={[{ height: 4, borderRadius: 2, backgroundColor: colors.elevated, overflow: 'hidden' }, style]}
     >
-      <LinearGradient colors={[colors.goldBright, colors.gold]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: `${pct * 100}%`, height: '100%' }} />
+      <LinearGradient colors={[colors.primary, colors.primaryDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: `${pct * 100}%`, height: '100%' }} />
     </View>
   );
 }
