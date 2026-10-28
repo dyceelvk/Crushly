@@ -1,0 +1,412 @@
+-- Audit fixes: enforce the same privacy contract at every write/read boundary.
+-- Additive migration: do not rewrite migrations already deployed.
+
+create or replace function public.guard_managed_username() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_user in ('anon', 'authenticated') and (
+    new.username is distinct from old.username or
+    new.username_updated_at is distinct from old.username_updated_at
+  ) then
+    raise exception 'Use set_username to change your username' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_managed_username on public.profiles;
+create trigger guard_managed_username before update on public.profiles
+for each row execute function public.guard_managed_username();
+
+-- Canonical object name for old Storage paths/URLs and new Worker URLs.
+-- File names minted by the app/Worker are URL-safe. Reject traversal at the
+-- HTTP boundary as well; never interpret this result as a remote fetch URL.
+create or replace function public.media_object_path(p_value text) returns text
+language sql immutable set search_path = '' as $$
+  select regexp_replace(
+    ltrim(regexp_replace(split_part(split_part(coalesce(p_value, ''), '?', 1), '#', 1),
+      '^https?://[^/]+/', ''), '/'),
+    '^(m/|legacy/|storage/v1/object/(public|authenticated)/media/)', '');
+$$;
+revoke all on function public.media_object_path(text) from public, anon, authenticated;
+
+create or replace function public.set_username(p_username text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v text := lower(btrim(coalesce(p_username, '')));
+  changed bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if v = '' then
+    perform public.crushly_fail(400, '', 'Pick a username.');
+  elsif length(v) < 3 then
+    perform public.crushly_fail(400, '', 'Usernames are at least 3 characters.');
+  elsif length(v) > 20 then
+    perform public.crushly_fail(400, '', 'Usernames are at most 20 characters.');
+  elsif v ~ '^[0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Use at least one letter.');
+  elsif v !~ '^[a-z0-9_]+$' then
+    perform public.crushly_fail(400, '', 'Letters, numbers and underscores only.');
+  end if;
+
+  -- Reserved so nobody can pass themselves off as staff or as the company.
+  if exists (select 1 from reserved_usernames r where r.handle = v and (r.owner_id is null or r.owner_id <> me)) then
+    perform public.crushly_fail(409, '', 'That username is reserved.');
+  end if;
+
+  select p.username_updated_at into changed from profiles p where p.id = me for update;
+  if changed is not null and public.now_ms() - changed < 24 * 60 * 60 * 1000 then
+    perform public.crushly_fail(429, '', 'You can change your username once a day.');
+  end if;
+
+  if exists (select 1 from profiles p where p.username = v and p.id <> me) then
+    perform public.crushly_fail(409, '', 'That username is taken.');
+  end if;
+
+  update profiles
+     set username = v,
+         username_updated_at = case when username = v then username_updated_at else public.now_ms() end,
+         updated_at = public.now_ms()
+   where id = me;
+
+  return jsonb_build_object('username', v);
+end $$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+  vibe public.vibes;
+begin
+  if me is null or p_path is null or p_path = ''
+     or (p_url is not null and public.media_object_path(p_url) <> p_path) then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind in ('photos', 'seed') then
+    return jsonb_build_object('allowed', exists (
+      select 1 from photos ph join profiles pf on pf.id = ph.user_id
+        join privacy pr on pr.user_id = pf.id
+       where public.media_object_path(ph.url) = p_path
+         and (v_kind = 'seed' or split_part(p_path, '/', 2) = ph.user_id::text)
+         and (ph.user_id = me or (
+           pf.onboarded and pf.status = 'active'
+           and not public.is_blocked_pair(me, ph.user_id)
+           and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, ph.user_id))
+           and (not pr.incognito or public.is_connected_pair(me, ph.user_id))
+         ))
+    ), 'cacheable', false);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where public.media_object_path(mo.media_url) = p_path
+      and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url
+        and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where public.media_object_path(ms.media_url) = p_path and (c.user_a = me or c.user_b = me)
+        and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+          and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Media belongs to the original uploader's row, not an arbitrary row that
+  -- copied its URL. Visibility is checked again on every request.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where (public.media_object_path(po.media_url) = p_path or (p_url is not null and po.media_url = p_url))
+       and split_part(p_path, '/', 2) = po.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (public.media_object_path(m2.media_url) = p_path or (p_url is not null and m2.media_url = p_url))
+         and split_part(p_path, '/', 2) = m2.sender_id::text
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (public.media_object_path(c.cover_url) = p_path or (p_url is not null and c.cover_url = p_url))
+         and split_part(p_path, '/', 2) = c.owner_id::text
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  -- A Vibe's clip, and the still in front of it. Same audience as the Vibe,
+  -- and nothing is cached: a clip is not a profile photo.
+  if v_kind = 'vibes' then
+    select v.* into vibe from vibes v
+     where (public.media_object_path(v.media_url) = p_path or public.media_object_path(v.cover_url) = p_path
+        or (p_url is not null and (v.media_url = p_url or v.cover_url = p_url)))
+       and split_part(p_path, '/', 2) = v.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_vibe(vibe, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $$;
+
+create or replace function public.can_manage_media(p_path text, p_url text default null)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null or p_path is null or p_path = '' then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and public.media_object_path(p_url) <> p_path then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where public.media_object_path(url) = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (public.media_object_path(url) = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  if v_kind = 'vibes' and exists (
+    select 1 from vibes where public.media_object_path(media_url) = p_path or public.media_object_path(cover_url) = p_path
+       or (p_url is not null and (media_url = p_url or cover_url = p_url))
+  ) then
+    return exists (
+      select 1 from vibes where author_id = me
+        and (public.media_object_path(media_url) = p_path or public.media_object_path(cover_url) = p_path
+             or (p_url is not null and (media_url = p_url or cover_url = p_url)))
+    );
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $$;
+
+-- No anonymous media reads and no member writes to the legacy store. New
+-- uploads must use Worker tickets. Existing files are read through /legacy/
+-- using the caller's JWT and this same database authorization, not a service key.
+update storage.buckets set public = false where id = 'media';
+drop policy if exists media_public_read on storage.objects;
+drop policy if exists media_insert_own on storage.objects;
+drop policy if exists media_private_read on storage.objects;
+create policy media_private_read on storage.objects for select to authenticated
+  using (bucket_id = 'media' and (public.can_view_media(name)->>'allowed')::boolean);
+drop policy if exists media_delete_own on storage.objects;
+create policy media_delete_own on storage.objects for delete to authenticated
+  using (bucket_id = 'media' and public.can_manage_media(name));
+
+-- Durable reservations: one per attempted upload, including files never
+-- published into a post/message. Clients cannot insert, reset or erase them.
+create table if not exists public.media_upload_reservations (
+  path text primary key,
+  user_id bigint not null references public.profiles(id) on delete cascade,
+  bytes integer not null check (bytes > 0),
+  created_at bigint not null default public.now_ms()
+);
+create index if not exists media_upload_reservations_user_time
+  on public.media_upload_reservations(user_id, created_at);
+alter table public.media_upload_reservations enable row level security;
+revoke all on public.media_upload_reservations from anon, authenticated;
+
+create or replace function public.media_upload_ticket(
+  p_kind text, p_content_type text, p_bytes int default 0
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind is null or p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'vibes') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type isn’t supported.');
+  end if;
+  if p_kind = 'photos' and v_ext not in ('jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Photos must be JPEG, PNG or WebP.');
+  end if;
+  -- A Moment or a Flow may carry a photo or a clip. Moments are capped far
+  -- tighter in the app (fifteen seconds), because they are a glance.
+  if p_kind in ('moments', 'posts') and v_ext not in ('jpg', 'png', 'webp', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'That takes a photo or a short clip.');
+  end if;
+  if p_kind = 'circles' and v_ext not in ('jpg', 'png', 'webp', 'm4a', 'mp3', 'mp4', 'webm') then
+    perform public.crushly_fail(415, '', 'Circles take photos, voice notes and clips.');
+  end if;
+  if p_kind = 'vibes' and v_ext not in ('mp4', 'webm', 'jpg', 'png', 'webp') then
+    perform public.crushly_fail(415, '', 'Vibes are short video clips, with a still for the cover.');
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles', 'vibes', 'posts') then 25 * 1024 * 1024
+                  else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty — try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  -- Serialize reservations for one member across concurrent requests.
+  perform 1 from profiles where id = me for update;
+  select count(*) into n from media_upload_reservations
+    where user_id = me and created_at > public.now_ms() - 3600 * 1000;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+
+  insert into media_upload_reservations(path, user_id, bytes) values (v_path, me, p_bytes);
+
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $$;
+
+-- Expression indexes keep normalized legacy lookups out of full-table scans.
+create index if not exists photos_object_path on public.photos(public.media_object_path(url));
+create index if not exists moments_object_path on public.moments(public.media_object_path(media_url));
+create index if not exists messages_object_path on public.messages(public.media_object_path(media_url));
+create index if not exists posts_object_path on public.posts(public.media_object_path(media_url));
+create index if not exists circle_messages_object_path on public.circle_messages(public.media_object_path(media_url));
+create index if not exists circles_cover_path on public.circles(public.media_object_path(cover_url));
+create index if not exists vibes_object_path on public.vibes(public.media_object_path(media_url));
+create index if not exists vibes_cover_path on public.vibes(public.media_object_path(cover_url));
+
+-- Index expressions run for permitted direct table writes too. This helper
+-- parses strings only and exposes no member data.
+grant execute on function public.media_object_path(text) to authenticated, service_role;
+notify pgrst, 'reload schema';
