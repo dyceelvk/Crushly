@@ -25,8 +25,35 @@ concurrency:
 jobs:
   database:
     name: Run database migrations
-    uses: ./.github/workflows/db-migrations.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
+
+      - name: Pre-flight — can we reach the database at all
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          out=$(psql "$SUPABASE_DB_URL" -tAc "select current_database(), version();" 2>&1)
+          rc=$?
+          echo "psql exit code: $rc"
+          echo "psql said: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-400)"
+          if [ "$rc" != "0" ]; then
+            echo "::error::Cannot reach the database with SUPABASE_DB_URL."
+            exit 1
+          fi
+
+      - name: Apply load_post migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261028000027_load_post.sql
+          echo "::notice::Migration 20261028000027_load_post.sql applied successfully."
 
   deploy:
     name: Build & deploy to Vercel
