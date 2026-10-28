@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { browserLocation } from '../lib/browser';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -85,6 +86,8 @@ function LiveNotifications() {
 }
 
 function MainTabs() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { colors } = useTheme();
   return (
     <>
       <LiveNotifications />
@@ -94,6 +97,31 @@ function MainTabs() {
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>
+
+      <Pressable
+        onPress={() => navigation.navigate('CreatePost')}
+        accessibilityLabel="Create post"
+        hitSlop={20}
+        style={{
+          position: 'absolute',
+          bottom: 100,
+          right: 24,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+          shadowColor: colors.primaryDeep,
+          shadowOpacity: 0.4,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 8,
+          zIndex: 100,
+        }}
+      >
+        <Ionicons name="add" size={26} color="#fff" />
+      </Pressable>
     </>
   );
 }
