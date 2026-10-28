@@ -197,7 +197,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           </Pressable>
         </View>
 
-        {/* Media + caption overlay — fills the screen */}
+        {/* Media — fills the screen */ }
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           {hasMedia && mediaUri ? (
             <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
@@ -218,33 +218,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
                   alt={`Post by ${authorName}`}
                 />
               )}
-              {/* Caption overlay, bottom-left */}
-              {post.body ? (
-                <View
-                  style={{
-                    position: 'absolute',
-                    bottom: Math.max(insets.bottom, space.lg) + 60,
-                    left: space.md,
-                    right: space.md,
-                    maxWidth: width - space.xl,
-                  }}
-                >
-                  <Txt
-                    variant="body"
-                    style={{
-                      color: '#fff',
-                      fontSize: 18,
-                      lineHeight: 26,
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowRadius: 6,
-                      shadowOpacity: 0.8,
-                    }}
-                  >
-                    <LinkText text={post.body} bare />
-                  </Txt>
-                </View>
-              ) : null}
             </View>
           ) : null}
 
@@ -258,53 +231,80 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           ) : null}
         </View>
 
-        {/* Author row, bottom-left */}
-        <Pressable
-          onPress={() =>
-            post.mine
-              ? nav.navigate('Main', { screen: 'Profile' })
-              : nav.navigate('UserProfile', { id: post.author.id })
-          }
-          accessibilityRole="button"
-          accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
+        {/* Caption overlay + author row, stacked cleanly above the comment bar */}
+        <View
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            paddingHorizontal: space.sm,
             position: 'absolute',
-            bottom: Math.max(insets.bottom, space.sm) + 70,
+            bottom: Math.max(insets.bottom, space.sm) + 100,
             left: space.sm,
             right: space.sm,
+            gap: space.sm,
           }}
         >
-          <Avatar
-            uri={post.author.photos[0]?.url ?? null}
-            name={post.author.name}
-            size={34}
-            ring={post.author.verified ? 'gold' : undefined}
-          />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
-              {authorName}
-            </Txt>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              {post.author.bio ? (
-                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
-                  {post.author.bio}
-                </Txt>
-              ) : null}
-              {post.author.bio && post.author.username ? (
-                <Txt variant="caption" color="#fff">·</Txt>
-              ) : null}
-              {post.author.username ? (
-                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
-                  @{post.author.username}
-                </Txt>
-              ) : null}
+          {/* Caption overlay, bottom-left over media */}
+          {post.body ? (
+            <View>
+              <Txt
+                variant="body"
+                style={{
+                  color: '#fff',
+                  fontSize: 18,
+                  lineHeight: 26,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowRadius: 6,
+                  shadowOpacity: 0.8,
+                }}
+              >
+                <LinkText text={post.body} bare />
+              </Txt>
             </View>
-          </View>
-        </Pressable>
+          ) : null}
+
+          {/* Author profile row, tappable */}
+          <Pressable
+            onPress={() =>
+              post.mine
+                ? nav.navigate('Main', { screen: 'Profile' })
+                : nav.navigate('UserProfile', { id: post.author.id })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingHorizontal: space.sm,
+            }}
+          >
+            <Avatar
+              uri={post.author.photos[0]?.url ?? null}
+              name={post.author.name}
+              size={34}
+              ring={post.author.verified ? 'gold' : undefined}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
+                {authorName}
+              </Txt>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                {post.author.bio ? (
+                  <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
+                    {post.author.bio}
+                  </Txt>
+                ) : null}
+                {post.author.bio && post.author.username ? (
+                  <Txt variant="caption" color="#fff">·</Txt>
+                ) : null}
+                {post.author.username ? (
+                  <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
+                    @{post.author.username}
+                  </Txt>
+                ) : null}
+              </View>
+            </View>
+          </Pressable>
+        </View>
 
         {/* Right-side action column: Crush · comment · Space */}
         <View style={{ position: 'absolute', right: space.sm, top: Math.max(insets.top, space.sm) + 56, gap: space.sm }}>
