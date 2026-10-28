@@ -246,21 +246,29 @@ export function PostCard({ post: p }: { post: Post }) {
         )}
       </View>
 
-      {p.body ? (
-        <Txt variant="body" style={{ paddingHorizontal: space.md, paddingTop: space.sm, fontSize: 16, lineHeight: 23 }} selectable>
-          <LinkText text={p.body} bare />
-        </Txt>
-      ) : null}
+      {/* Post body + media: tap to open the full post view */}
+      <Pressable
+        onPress={() => navigation.navigate('PostViewer', { postId: p.id })}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${authorName}’s post`}
+        style={{ marginTop: space.sm }}
+      >
+        {p.body ? (
+          <Txt variant="body" style={{ paddingHorizontal: space.md, paddingTop: space.sm, fontSize: 16, lineHeight: 23 }} selectable>
+            <LinkText text={p.body} bare />
+          </Txt>
+        ) : null}
 
-      {p.mediaUrl ? (
-        <View style={{ marginTop: space.sm }}>
-          {p.mediaKind === 'video' ? (
-            <EditedClip uri={p.mediaUrl} live={p.edit} style={{ width: '100%', aspectRatio: 9 / 16 }} />
-          ) : (
-            <Photo uri={p.mediaUrl} style={{ width: '100%', aspectRatio: 4 / 3 }} alt={`Post by ${authorName}`} />
-          )}
-        </View>
-      ) : null}
+        {p.mediaUrl ? (
+          <View style={{ marginTop: space.sm }}>
+            {p.mediaKind === 'video' ? (
+              <EditedClip uri={p.mediaUrl} live={p.edit} style={{ width: '100%', aspectRatio: 9 / 16 }} />
+            ) : (
+              <Photo uri={p.mediaUrl} style={{ width: '100%', aspectRatio: 4 / 3 }} alt={`Post by ${authorName}`} />
+            )}
+          </View>
+        ) : null}
+      </Pressable>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm }}>
         <PostAction
