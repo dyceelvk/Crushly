@@ -104,7 +104,7 @@ export const FeatureCard = memo(function FeatureCard({ profile, onOpen, onCrush,
         {p.interests.length ? (
           <ChipGroup style={{ marginTop: 2 }}>
             {[...p.sharedInterests, ...p.interests.filter((i) => !p.sharedInterests.includes(i))].slice(0, 5).map((i) => (
-              <Chip key={i} label={i} size="sm" tone={p.sharedInterests.includes(i) ? 'gold' : 'default'} icon={p.sharedInterests.includes(i) ? 'sparkles' : undefined} />
+              <Chip key={i} label={i} size="sm" tone={p.sharedInterests.includes(i) ? 'crush' : 'default'} icon={p.sharedInterests.includes(i) ? 'sparkles' : undefined} />
             ))}
           </ChipGroup>
         ) : null}
