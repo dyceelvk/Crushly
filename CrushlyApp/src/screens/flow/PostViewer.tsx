@@ -313,7 +313,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
         {/* Media */}
         {post.mediaUrl ? (
-          <View style={{ marginTop: space.sm, borderRadius: radius.lg, overflow: 'hidden' }}>
+          <View style={{ marginTop: space.sm }}>
             {post.mediaKind === 'video' ? (
               <EditedClip
                 uri={mediaSource(mediaUrl(post.mediaUrl)) as string}
@@ -325,7 +325,13 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             ) : (
               <Photo
                 uri={mediaUrl(post.mediaUrl)}
-                style={{ width: '100%', aspectRatio: 4 / 3 }}
+                fit="contain"
+                contentPosition="center"
+                style={{
+                  width: '100%',
+                  maxHeight: contentWidth * 1.6,
+                  borderRadius: radius.lg,
+                }}
                 alt={`Post by ${authorName}`}
               />
             )}
