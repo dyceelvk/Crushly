@@ -42,6 +42,7 @@ export type RootStackParamList = {
   MomentComposer: undefined;
   VibeComposer: undefined;
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle' };
+  CreatePost: undefined;
   WebPreview: { url: string };
   Safety: undefined;
   Privacy: undefined;
