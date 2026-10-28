@@ -24,6 +24,7 @@ import {
   useDeletePostComment,
   useFlow,
   useMe,
+  usePost,
   usePostComments,
   useReactToPost,
 } from '../../api/hooks';
@@ -55,7 +56,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
   const { data: me } = useMe();
   const flow = useFlow();
-  const post = flow.data?.items.find((p) => p.id === postId) ?? null;
+  // The post is looked up directly first: a post view must not go empty just
+  // because the post scrolled out of the current feed page.
+  const postQuery = usePost(postId);
+  const post = postQuery.data ?? flow.data?.items.find((p) => p.id === postId) ?? null;
   const query = usePostComments(postId);
   const like = useReactToPost();
   const remove = useDeletePost();
@@ -125,9 +129,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   }, [post, authorName]);
 
   if (!post) {
+    const loading = (flow.isLoading || postQuery.isLoading) && postQuery.data === undefined;
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.sm }}>
-        {flow.isLoading || query.isLoading ? (
+        {loading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator size="large" color={colors.gold} />
           </View>
@@ -437,10 +442,21 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             <Input
               value={draft}
               onChangeText={setDraft}
+              onSubmitEditing={submitComment}
+              returnKeyType="send"
               placeholder="Write a comment..."
               maxLength={1000}
               containerStyle={{ minWidth: 0 }}
               style={{ color: colors.text, flex: 1 }}
+            />
+            <IconButton
+              icon="arrow-up"
+              label="Send comment"
+              onPress={submitComment}
+              disabled={!draft.trim()}
+              color={colors.crush}
+              size={36}
+              variant="gold"
             />
           </View>
 
