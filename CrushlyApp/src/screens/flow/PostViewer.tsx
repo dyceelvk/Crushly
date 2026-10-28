@@ -198,17 +198,38 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       {/* PanResponder for vertical swipe — covers the whole screen. */}
       <View {...panResponder.panHandlers} style={{ flex: 1, backgroundColor: '#000' }}>
 
-        {/* Top header: Back button left, three dots right */}
+        {/* Top header — profile picture left, three dots right */}
         <View
           style={{
             flexDirection: 'row',
             justifyContent: 'space-between',
+            alignItems: 'center',
             paddingHorizontal: space.sm,
             paddingTop: Math.max(insets.top, space.sm),
           }}
         >
-          <Pressable onPress={close} accessibilityLabel="Close" hitSlop={20}>
-            <Ionicons name="close" size={24} color="#fff" />
+          <Pressable
+            onPress={() =>
+              post.mine
+                ? nav.navigate('Main', { screen: 'Profile' })
+                : nav.navigate('UserProfile', { id: post.author.id })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
+            hitSlop={20}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          >
+            <Avatar
+              uri={post.author.photos[0]?.url ?? null}
+              name={post.author.name}
+              size={32}
+              ring={post.author.verified ? 'gold' : undefined}
+            />
+            <View style={{ minWidth: 0 }}>
+              <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
+                {authorName}
+              </Txt>
+            </View>
           </Pressable>
           <Pressable
             accessibilityLabel="More options"
@@ -219,51 +240,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
           </Pressable>
         </View>
-
-        {/* Profile row — left side, below back button */}
-        <Pressable
-          onPress={() =>
-            post.mine
-              ? nav.navigate('Main', { screen: 'Profile' })
-              : nav.navigate('UserProfile', { id: post.author.id })
-          }
-          accessibilityRole="button"
-          accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            paddingHorizontal: space.sm,
-            marginTop: space.sm,
-          }}
-        >
-          <Avatar
-            uri={post.author.photos[0]?.url ?? null}
-            name={post.author.name}
-            size={34}
-            ring={post.author.verified ? 'gold' : undefined}
-          />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
-              {authorName}
-            </Txt>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              {post.author.bio ? (
-                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
-                  {post.author.bio}
-                </Txt>
-              ) : null}
-              {post.author.bio && post.author.username ? (
-                <Txt variant="caption" color="#fff">·</Txt>
-              ) : null}
-              {post.author.username ? (
-                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
-                  @{post.author.username}
-                </Txt>
-              ) : null}
-            </View>
-          </View>
-        </Pressable>
 
         {/* Media — always shrinks to fit the whole screen, nothing cut off */}
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
