@@ -26,7 +26,6 @@ import {
   useDeletePostComment,
   useFlow,
   useMe,
-  useOpenConversation,
   usePost,
   usePostComments,
   useReactToPost,
@@ -72,20 +71,16 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const remove = useDeletePost();
   const removeComment = useDeletePostComment(postId);
   const send = useCommentOnPost(postId);
-  const open = useOpenConversation();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [threeDotsOpen, setThreeDotsOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
-  const whisper = async () => {
-    if (!post) return;
-    try {
-      const conv = await open.mutateAsync(post.author.id);
-      nav.navigate('Chat', { conversationId: conv.id });
-    } catch (e) {
-      toast({ kind: 'error', title: "Couldn't open Whisper", message: (e as Error).message });
-    }
+  // Share to Whisper: pick a connection to send this post to — never whisper
+  // to yourself, so open your Close Ones list and let you choose.
+  const shareToWhisper = () => {
+    setThreeDotsOpen(false);
+    nav.navigate('CloseOnes');
   };
 
   // When the viewer opens, pause every feed video so only this viewer plays.
@@ -270,29 +265,26 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           </View>
         </Pressable>
 
-        {/* Media — fills center of screen */}
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: space.sm }}>
+        {/* Media — always shrinks to fit the whole screen, nothing cut off */}
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           {hasMedia && mediaUri ? (
-            <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-              {isVideo ? (
-                <EditedClip
-                  uri={mediaUri}
-                  live={post.edit ?? null}
-                  style={{ width: '100%', height: '100%' }}
-                  autoPlay
-                  loop
-                  contentFit="contain"
-                />
-              ) : (
-                <Photo
-                  uri={mediaUrl(post.mediaUrl)}
-                  fit="contain"
-                  contentPosition="center"
-                  style={{ width: '100%', height: '100%' }}
-                  alt={`Post by ${authorName}`}
-                />
-              )}
-            </View>
+            <EditedClip
+              uri={mediaUri}
+              live={post.edit ?? null}
+              style={{ width: '100%', height: '100%' }}
+              autoPlay
+              loop
+              contentFit="contain"
+            />
+          ) : null}
+          {hasMedia && !isVideo ? (
+            <Photo
+              uri={mediaUrl(post.mediaUrl)}
+              fit="contain"
+              contentPosition="center"
+              style={{ width: '100%', height: '100%' }}
+              alt={`Post by ${authorName}`}
+            />
           ) : null}
 
           {/* Text-only post fallback */}
@@ -310,7 +302,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           style={{
             position: 'absolute',
             right: space.sm,
-            bottom: Math.max(insets.bottom, space.sm) + 170,
+            bottom: Math.max(insets.bottom, space.sm) + 240,
             gap: space.sm,
           }}
         >
@@ -469,10 +461,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         <View style={{ gap: space.sm }}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => {
-              setThreeDotsOpen(false);
-              whisper();
-            }}
+            onPress={shareToWhisper}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
           >
             <Ionicons name="share-social-outline" size={20} color={colors.crush} />
