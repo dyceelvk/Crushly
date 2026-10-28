@@ -3,9 +3,9 @@
 #
 # One-time setup (GitHub → Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN            Vercel → https://vercel.com/account/tokens
-#                           Create a token and add it as VERCEL_TOKEN.
 #   EXPO_PUBLIC_SUPABASE_URL  Supabase → Project Settings → API → Project URL
 #   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Settings → API Keys → Publishable key
+#   SUPABASE_DB_URL           Supabase → Project Settings → Database → Session pooler URI
 #
 # Never commit these values or paste them into chat.
 #
@@ -23,8 +23,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  database:
+    name: Run database migrations
+    uses: ./.github/workflows/db-migrations.yml
+    secrets: inherit
+
+  deploy:
     name: Build & deploy to Vercel
+    needs: database
     runs-on: ubuntu-latest
     defaults:
       run:
