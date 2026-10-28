@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   PanResponder,
@@ -26,6 +26,7 @@ import {
   useDeletePostComment,
   useFlow,
   useMe,
+  useOpenConversation,
   usePost,
   usePostComments,
   useReactToPost,
@@ -33,6 +34,7 @@ import {
 import type { Post, PostComment } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
+import { setVideosPaused } from '../../lib/videoPlayback';
 import { EditedClip } from '../../components/EditedClip';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
@@ -70,10 +72,28 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const remove = useDeletePost();
   const removeComment = useDeletePostComment(postId);
   const send = useCommentOnPost(postId);
+  const open = useOpenConversation();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [threeDotsOpen, setThreeDotsOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+
+  const whisper = async () => {
+    if (!post) return;
+    try {
+      const conv = await open.mutateAsync(post.author.id);
+      nav.navigate('Chat', { conversationId: conv.id });
+    } catch (e) {
+      toast({ kind: 'error', title: "Couldn't open Whisper", message: (e as Error).message });
+    }
+  };
+
+  // When the viewer opens, pause every feed video so only this viewer plays.
+  // When it closes, feed videos resume.
+  useEffect(() => {
+    setVideosPaused(true);
+    return () => setVideosPaused(false);
+  }, []);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
   const comments = query.data?.items ?? [];
@@ -248,9 +268,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               ) : null}
             </View>
           </View>
-          {post.mine ? (
-            <Ionicons name="ellipsis-vertical" size={20} color="rgba(255,255,255,0.7)" />
-          ) : null}
         </Pressable>
 
         {/* Media — fills center of screen */}
@@ -293,7 +310,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           style={{
             position: 'absolute',
             right: space.sm,
-            bottom: Math.max(insets.bottom, space.sm) + 110,
+            bottom: Math.max(insets.bottom, space.sm) + 170,
             gap: space.sm,
           }}
         >
@@ -442,44 +459,41 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         </View>
       </BottomSheet>
 
-      {/* Three dots action sheet (author: delete; others: report / remove crush) */}
+      {/* Three dots action sheet: Share (whisper), Report, Delete (author only) */}
       <BottomSheet
         visible={threeDotsOpen}
         onClose={() => setThreeDotsOpen(false)}
-        title={post.mine ? 'Your post' : 'Options'}
+        title="More"
         maxHeight={0.6}
       >
         <View style={{ gap: space.sm }}>
-          {!post.mine ? (
-            <>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setThreeDotsOpen(false);
-                  toast({ kind: 'info', title: 'Report sent' });
-                }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
-              >
-                <Ionicons name="alert-circle-outline" size={20} color={colors.danger} />
-                <Txt variant="body" color="#000">
-                  Report post
-                </Txt>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setThreeDotsOpen(false);
-                  toast({ kind: 'info', title: 'Crush removed' });
-                }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
-              >
-                <Ionicons name="remove" size={20} color={colors.danger} />
-                <Txt variant="body" color="#000">
-                  Remove crush
-                </Txt>
-              </Pressable>
-            </>
-          ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setThreeDotsOpen(false);
+              whisper();
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
+          >
+            <Ionicons name="share-social-outline" size={20} color={colors.crush} />
+            <Txt variant="body" color="#000">
+              Share to Whisper
+            </Txt>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setThreeDotsOpen(false);
+              toast({ kind: 'info', title: 'Report sent' });
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: space.md }}
+          >
+            <Ionicons name="alert-circle-outline" size={20} color={colors.danger} />
+            <Txt variant="body" color="#000">
+              Report post
+            </Txt>
+          </Pressable>
+          {post.mine ? (
             <Pressable
               accessibilityRole="button"
               onPress={deletePost}
@@ -490,7 +504,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
                 Delete post
               </Txt>
             </Pressable>
-          )}
+          ) : null}
         </View>
       </BottomSheet>
     </View>

@@ -30,6 +30,7 @@ import { fonts, radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
+import { useVideoPaused } from '../../lib/videoPlayback';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
 import { splitForUpload, emptyEdit, type VideoEdit } from '../../lib/videoEdit';
@@ -178,6 +179,7 @@ export function PostCard({ post: p }: { post: Post }) {
   const remove = useDeletePost();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
+  const videosPaused = useVideoPaused();
 
   const whisper = async () => {
     try {
@@ -280,7 +282,7 @@ return (
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {mediaKind === 'video' ? (
-              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
+              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay loop paused={videosPaused} contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
