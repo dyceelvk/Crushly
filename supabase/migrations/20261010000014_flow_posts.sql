@@ -8,7 +8,7 @@
 -- Two audiences, and the safe one is the default: a post reaches your
 -- Connections, unless you deliberately choose Everyone. Nothing here is
 -- readable by someone who is not signed in — not the text, not the photos. That
--- is not an oversight, it is the point: for men who are not out everywhere, a
+-- is not an oversight, it is the point: for anyone who prefers to stay private, a
 -- public-facing feed is a risk, not a feature.
 
 create table if not exists public.posts (

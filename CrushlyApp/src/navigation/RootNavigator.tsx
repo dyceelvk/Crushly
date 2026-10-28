@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { browserLocation } from '../lib/browser';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -33,6 +34,8 @@ import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VibeComposerScreen } from '../screens/discover/VibeComposer';
+import { VideoTrimScreen } from '../screens/common/VideoTrimScreen';
+import { CreatePostScreen } from '../screens/common/CreatePostScreen';
 import { WebPreviewScreen } from '../screens/common/WebPreview';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
@@ -83,6 +86,8 @@ function LiveNotifications() {
 }
 
 function MainTabs() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { colors } = useTheme();
   return (
     <>
       <LiveNotifications />
@@ -92,6 +97,31 @@ function MainTabs() {
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>
+
+      <Pressable
+        onPress={() => navigation.navigate('CreatePost')}
+        accessibilityLabel="Create post"
+        hitSlop={20}
+        style={{
+          position: 'absolute',
+          bottom: 100,
+          right: 24,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+          shadowColor: colors.primaryDeep,
+          shadowOpacity: 0.4,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 8,
+          zIndex: 100,
+        }}
+      >
+        <Ionicons name="add" size={26} color="#fff" />
+      </Pressable>
     </>
   );
 }
@@ -161,6 +191,8 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
             <Stack.Screen name="Filters" component={FiltersScreen} />
             <Stack.Screen name="VibeComposer" component={VibeComposerScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
+            <Stack.Screen name="VideoTrim" component={VideoTrimScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
+            <Stack.Screen name="CreatePost" component={CreatePostScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
             <Stack.Screen name="Plus" component={PlusScreen} />
           </Stack.Group>
           <Stack.Group screenOptions={{ presentation: 'transparentModal', animation: reduceMotion ? 'none' : 'fade', contentStyle: { backgroundColor: 'transparent' } }}>

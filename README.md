@@ -1,6 +1,6 @@
 # Crushly
 
-A premium dating and social app for gay, bi and queer men. *Meet men. Make connections. Follow the feeling.*
+A premium social and dating app. *Meet people. Make connections. Follow the feeling.*
 
 **Crushly is a product of Riel Inc.**
 
