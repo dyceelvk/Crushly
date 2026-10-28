@@ -210,6 +210,11 @@ export function PostCard({ post: p }: { post: Post }) {
     return typeof resolved === 'string' ? resolved : resolved.uri;
   };
 
+  // The feed RPC may not yet return mediaKind/edit on older deployments.
+  // Derive mediaKind from the file extension so a clip in the feed still
+  // renders as video even before the migration lands everywhere.
+  const mediaKind = p.mediaKind ?? (p.mediaUrl ? /\.(mp4|webm|mov|m4v)(\?|$)/i.test(p.mediaUrl) ? 'video' : 'photo' : null);
+
   return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.md, paddingTop: space.md }}>
@@ -257,9 +262,10 @@ export function PostCard({ post: p }: { post: Post }) {
         )}
       </View>
 
-      {/* Post body + media: tap to open the full post view */}
+      {/* Post body + media: tap to open the full post view. Text-only posts
+          stay in the feed — there is nothing to view full-screen. */}
       <Pressable
-        onPress={() => navigation.navigate('PostViewer', { postId: p.id })}
+        onPress={p.mediaUrl ? () => navigation.navigate('PostViewer', { postId: p.id }) : undefined}
         accessibilityRole="button"
         accessibilityLabel={`Open ${authorName}’s post`}
         style={{ marginTop: space.sm }}
@@ -272,8 +278,8 @@ export function PostCard({ post: p }: { post: Post }) {
 
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
-            {p.mediaKind === 'video' ? (
-              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
+            {mediaKind === 'video' ? (
+              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}

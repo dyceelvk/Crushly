@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  PanResponder,
   Pressable,
-  ScrollView,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -16,7 +17,7 @@ import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { Input } from '../../components/Input';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
-import { useLayout } from '../../components/Layout';
+import { BottomSheet } from '../../components/BottomSheet';
 import { useToast } from '../../components/Toast';
 import {
   useCommentOnPost,
@@ -29,10 +30,9 @@ import {
   useReactToPost,
 } from '../../api/hooks';
 import type { Post, PostComment } from '../../api/types';
-import { BottomSheet, ActionSheet } from '../../components/BottomSheet';
-import { EditedClip } from '../../components/EditedClip';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
+import { EditedClip } from '../../components/EditedClip';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
@@ -40,17 +40,23 @@ import type { RootStackParamList, ScreenProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const SWIPE_THRESHOLD = 60;
+
 /**
- * Watching one post — full screen, with comments.
+ * Watching one post — full screen, immersive.
  *
- * Spacious, single-column layout: author header, title, body, media,
- * engagement line, action bar, then comments. Nothing is cramped — every
- * section has room to breathe.
+ * Edge-to-edge media, caption overlay bottom-left, author profile tappable,
+ * right-side action column (Crush · comment · Space), vertical swipe down to
+ * close and return to the feed at its position, and a slide-up comments panel
+ * with a fixed input bar at the bottom.
+ *
+ * Posts with no media (text-only) stay in the feed — tapping them does nothing,
+ * so this screen only opens for media posts.
  */
 export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'>) {
   const { postId } = route.params;
   const insets = useSafeAreaInsets();
-  const { contentWidth, gutter } = useLayout();
+  const { width } = useWindowDimensions();
   const { colors } = useTheme();
   const toast = useToast();
   const nav = useNavigation<Nav>();
@@ -66,18 +72,11 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const remove = useDeletePost();
   const removeComment = useDeletePostComment(postId);
   const send = useCommentOnPost(postId);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [draft, setDraft] = useState('');
-  const [expanded, setExpanded] = useState(false);
-  const [showActions, setShowActions] = useState(false);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
   const comments = query.data?.items ?? [];
-
-  const bodyText = post?.body ?? '';
-  const firstPeriod = bodyText.indexOf('. ');
-  const title = firstPeriod > 0 ? bodyText.slice(0, firstPeriod + 1) : bodyText;
-  const rest = firstPeriod > 0 ? bodyText.slice(firstPeriod + 2) : '';
-  const hashtags = bodyText.match(/#\w+/g) ?? [];
 
   const close = useCallback(() => {
     navigation.goBack();
@@ -132,12 +131,21 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }
   }, [removeComment, toast]);
 
-  const share = useCallback(() => {
-    if (!post) return;
-    void (globalThis as { share?: (o: { message: string }) => Promise<void> }).share?.({
-      message: post.body ? `${post.body}\n\n— ${authorName} on Crushly` : `${authorName} on Crushly`,
-    });
-  }, [post, authorName]);
+  // Vertical swipe between posts: pan down closes the viewer and returns to
+  // the feed at its scroll position. Pan up is reserved for future next-post
+  // navigation once adjacent post IDs are exposed by the feed.
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > SWIPE_THRESHOLD,
+      onPanResponderEnd: (_, gestureState) => {
+        if (!post) return;
+        if (gestureState.dy > SWIPE_THRESHOLD) {
+          close();
+        }
+      },
+    }),
+  ).current;
 
   if (!post) {
     const loading = (flow.isLoading || postQuery.isLoading) && postQuery.data === undefined;
@@ -159,49 +167,98 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     );
   }
 
+  const mediaUri = post.mediaUrl ? resolveVideoUri(post.mediaUrl) : '';
+  const isVideo = post.mediaKind === 'video';
+  const hasMedia = !!post.mediaUrl;
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: insets.top + space.sm,
-          paddingHorizontal: gutter,
-          paddingBottom: insets.bottom + space.xxxl,
-          gap: space.xl,
-          width: '100%',
-          alignSelf: 'center',
-        }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Close + more at top */}
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      {/* PanResponder for vertical swipe — covers the whole screen. */}
+      <View {...panResponder.panHandlers} style={{ flex: 1, backgroundColor: '#000' }}>
+        {/* Close / more header, top edge-to-edge */}
         <View
           style={{
             flexDirection: 'row',
             justifyContent: 'space-between',
             paddingHorizontal: space.sm,
-            marginTop: space.xs,
+            paddingTop: Math.max(insets.top, space.sm),
           }}
         >
           <Pressable onPress={close} accessibilityLabel="Close" hitSlop={20}>
-            <Ionicons name="close" size={24} color={colors.textMuted} />
+            <Ionicons name="close" size={24} color="#fff" />
           </Pressable>
-          {post.mine ? (
-            <IconButton
-              icon="ellipsis-vertical"
-              label="More options"
-              color={colors.textMuted}
-              onPress={() => setShowActions(true)}
-            />
-          ) : (
-            <IconButton
-              icon="ellipsis-vertical"
-              label="More options"
-              color={colors.textMuted}
-            />
-          )}
+          <Pressable
+            accessibilityLabel="More options"
+            hitSlop={20}
+            onPress={() => void deletePost()}
+            style={{ padding: 10 }}
+          >
+            <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+          </Pressable>
         </View>
 
-        {/* Author */}
+        {/* Media + caption overlay — fills the screen */}
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          {hasMedia && mediaUri ? (
+            <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+              {isVideo ? (
+                <EditedClip
+                  uri={mediaUri}
+                  live={post.edit ?? null}
+                  style={{ width: '100%', height: '100%' }}
+                  autoPlay
+                  loop
+                />
+              ) : (
+                <Photo
+                  uri={mediaUrl(post.mediaUrl)}
+                  fit="contain"
+                  contentPosition="center"
+                  style={{ width: '100%', height: '100%' }}
+                  alt={`Post by ${authorName}`}
+                />
+              )}
+              {/* Caption overlay, bottom-left */}
+              {post.body ? (
+                <View
+                  style={{
+                    position: 'absolute',
+                    bottom: Math.max(insets.bottom, space.lg) + 60,
+                    left: space.md,
+                    right: space.md,
+                    maxWidth: width - space.xl,
+                  }}
+                >
+                  <Txt
+                    variant="body"
+                    style={{
+                      color: '#fff',
+                      fontSize: 18,
+                      lineHeight: 26,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowRadius: 6,
+                      shadowOpacity: 0.8,
+                    }}
+                  >
+                    <LinkText text={post.body} bare />
+                  </Txt>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Text-only post fallback */}
+          {!hasMedia && post.body ? (
+            <View style={{ paddingHorizontal: space.xl, paddingTop: Math.max(insets.top, space.xl), gap: space.lg }}>
+              <Txt variant="title" style={{ color: '#fff' }} numberOfLines={4}>
+                {post.body}
+              </Txt>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Author row, bottom-left */}
         <Pressable
           onPress={() =>
             post.mine
@@ -215,263 +272,106 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             alignItems: 'center',
             gap: 10,
             paddingHorizontal: space.sm,
-            marginTop: space.xs,
+            position: 'absolute',
+            bottom: Math.max(insets.bottom, space.sm) + 70,
+            left: space.sm,
+            right: space.sm,
           }}
         >
           <Avatar
             uri={post.author.photos[0]?.url ?? null}
             name={post.author.name}
-            size={36}
+            size={34}
             ring={post.author.verified ? 'gold' : undefined}
           />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt variant="bodyStrong" numberOfLines={1}>
+            <Txt variant="bodyStrong" numberOfLines={1} style={{ color: '#fff' }}>
               {authorName}
             </Txt>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
               {post.author.bio ? (
-                <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
                   {post.author.bio}
                 </Txt>
               ) : null}
               {post.author.bio && post.author.username ? (
-                <Txt variant="caption" color="textMuted">·</Txt>
+                <Txt variant="caption" color="#fff">·</Txt>
               ) : null}
               {post.author.username ? (
-                <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                <Txt variant="caption" color="#fff" numberOfLines={1} style={{ opacity: 0.9 }}>
                   @{post.author.username}
                 </Txt>
               ) : null}
             </View>
-            <Txt variant="caption" color="textMuted" style={{ marginTop: 2 }}>
-              {timeAgo(post.createdAt)}
-            </Txt>
-          </View>
-          <View
-            style={{
-              borderRadius: 999,
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-              backgroundColor: colors.elevated,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Txt variant="caption" color="textSecondary">
-              {post.audience === 'everyone' ? 'Everyone' : 'Connections'}
-            </Txt>
           </View>
         </Pressable>
 
-        {/* Title */}
-        {title ? (
-          <Txt
-            variant="title"
-            style={{ paddingHorizontal: space.sm, marginTop: space.sm, color: colors.text }}
-            numberOfLines={2}
-          >
-            {title}
-          </Txt>
-        ) : null}
-
-        {/* Body */}
-        {rest || (!title && bodyText) ? (
-          <View style={{ paddingHorizontal: space.sm, marginTop: space.sm }}>
-            <Txt
-              variant="body"
-              style={{ lineHeight: 24, color: colors.text }}
-              selectable
-              numberOfLines={expanded ? undefined : 4}
-            >
-              {expanded ? rest || bodyText : rest || bodyText}
-            </Txt>
-            {(rest || bodyText).length > 120 && (
-              <Pressable
-                onPress={() => setExpanded(!expanded)}
-                accessibilityLabel={expanded ? 'Read less' : 'Read more'}
-                hitSlop={12}
-                style={{ marginTop: 8 }}
-              >
-                <Txt variant="caption" color="gold">
-                  {expanded ? 'Read less' : 'Read more'}
-                </Txt>
-              </Pressable>
-            )}
-          </View>
-        ) : null}
-
-        {/* Hashtags */}
-        {hashtags.length > 0 && (
-          <View
-            style={{
-              paddingHorizontal: space.sm,
-              marginTop: space.sm,
-              flexDirection: 'row',
-              flexWrap: 'wrap',
-              gap: space.xs,
-            }}
-          >
-            {hashtags.map((tag) => (
-              <View
-                key={tag}
-                style={{
-                  backgroundColor: colors.primarySoft,
-                  borderRadius: radius.pill,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderWidth: 1,
-                  borderColor: colors.primaryLine,
-                }}
-              >
-                <Txt variant="caption" color="gold">
-                  {tag}
-                </Txt>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Media */}
-        {post.mediaUrl ? (
-          <View style={{ marginTop: space.sm }}>
-            {post.mediaKind === 'video' ? (
-              <EditedClip
-                uri={resolveVideoUri(post.mediaUrl)}
-                live={post.edit ?? null}
-                style={{ width: '100%', maxHeight: contentWidth * 1.6 }}
-                autoPlay
-                loop
-              />
-            ) : (
-              <Photo
-                uri={mediaUrl(post.mediaUrl)}
-                fit="contain"
-                contentPosition="center"
-                style={{
-                  width: '100%',
-                  maxHeight: contentWidth * 1.6,
-                  borderRadius: radius.lg,
-                }}
-                alt={`Post by ${authorName}`}
-              />
-            )}
-          </View>
-        ) : null}
-
-        {/* Engagement: Likes · Comments */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: space.sm,
-            marginTop: space.sm,
-          }}
-        >
-          <Txt variant="bodyStrong" style={{ color: colors.text }}>
-            {post.likeCount} Likes
-          </Txt>
-          <View style={{ width: 4, height: 4, backgroundColor: colors.textMuted, borderRadius: 2, marginHorizontal: 8 }} />
-          <Txt variant="bodyStrong" style={{ color: colors.text }}>
-            {post.commentCount} Comments
-          </Txt>
-        </View>
-
-        {/* Action bar: Like · Comment · Save */}
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            paddingHorizontal: space.sm,
-            marginTop: space.sm,
-          }}
-        >
+        {/* Right-side action column: Crush · comment · Space */}
+        <View style={{ position: 'absolute', right: space.sm, top: Math.max(insets.top, space.sm) + 56, gap: space.sm }}>
           <Pressable
             onPress={toggleLike}
             accessibilityRole="button"
-            accessibilityLabel={post.liked ? 'Take back your like' : 'Like'}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            accessibilityLabel={post.liked ? 'Take back your crush' : 'Crush'}
+            hitSlop={20}
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.3)',
+            }}
           >
-            <Ionicons
-              name={post.liked ? 'heart' : 'heart-outline'}
-              size={24}
-              color={post.liked ? colors.crush : colors.textMuted}
-            />
-            <Txt variant="bodyStrong" color={post.liked ? colors.crush : colors.textSecondary}>
-              Like
-            </Txt>
+            <Ionicons name={post.liked ? 'heart' : 'heart-outline'} size={24} color={post.liked ? colors.crush : '#fff'} />
           </Pressable>
-
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Comment, ${post.commentCount}`}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            hitSlop={20}
+            onPress={() => setCommentsOpen(true)}
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.3)',
+            }}
           >
-            <Ionicons name="chatbubble-outline" size={24} color={colors.textMuted} />
-            <Txt variant="bodyStrong" color={colors.textSecondary}>
-              Comment
-            </Txt>
+            <Ionicons name="chatbubble-outline" size={24} color="#fff" />
           </Pressable>
-
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Save"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-          >
-            <Ionicons name="bookmark-outline" size={24} color={colors.textMuted} />
-            <Txt variant="bodyStrong" color={colors.textSecondary}>Save</Txt>
-          </Pressable>
-        </View>
-
-        {/* Divider */}
-        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: space.sm }} />
-
-        {/* Comments section */}
-        <View style={{ paddingHorizontal: space.sm, gap: space.sm }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Txt variant="bodyStrong" style={{ color: colors.text }}>
-              Comments
-            </Txt>
-            <IconButton icon="chevron-down-outline" size={20} color={colors.textMuted} label="Collapse comments" />
-          </View>
-
-          {/* Write a comment input */}
-          <View
+            hitSlop={20}
             style={{
-              backgroundColor: colors.elevated,
-              borderRadius: radius.lg,
-              paddingHorizontal: space.md,
-              paddingVertical: space.sm,
-              flexDirection: 'row',
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              backgroundColor: 'rgba(0,0,0,0.4)',
               alignItems: 'center',
-              gap: space.sm,
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.3)',
             }}
           >
-            <Avatar
-              uri={me?.profile.photos[0]?.url ?? null}
-              size={32}
-            />
-            <Input
-              value={draft}
-              onChangeText={setDraft}
-              onSubmitEditing={submitComment}
-              returnKeyType="send"
-              placeholder="Write a comment..."
-              maxLength={1000}
-              containerStyle={{ minWidth: 0 }}
-              style={{ color: colors.text, flex: 1 }}
-            />
-            <IconButton
-              icon="arrow-up"
-              label="Send comment"
-              onPress={submitComment}
-              disabled={!draft.trim()}
-              color={colors.crush}
-              size={36}
-              variant="gold"
-            />
-          </View>
+            <Ionicons name="bookmark-outline" size={24} color="#fff" />
+          </Pressable>
+        </View>
+      </View>
 
-          {/* Comments list */}
+      {/* Slide-up comments panel */}
+      <BottomSheet
+        visible={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        title={`Comments · ${comments.length}`}
+        maxHeight={0.9}
+      >
+        <View style={{ gap: space.sm }}>
           {query.isLoading ? (
             <Skeleton style={{ height: 60 }} />
           ) : query.isError ? (
@@ -486,41 +386,65 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             ))
           )}
         </View>
-      </ScrollView>
+      </BottomSheet>
 
-      <Pressable
-        onPress={close}
-        accessibilityLabel="Close"
-        hitSlop={20}
+      {/* Fixed comment input bar at bottom, keyboard-avoiding */}
+      <View
         style={{
           position: 'absolute',
-          top: insets.top + space.sm,
-          right: space.sm,
-          width: 44,
-          height: 44,
-          borderRadius: 22,
-          backgroundColor: colors.elevated,
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
+          bottom: Math.max(insets.bottom, space.sm),
+          left: 0,
+          right: 0,
+          paddingHorizontal: space.sm,
         }}
       >
-        <Ionicons name="close" size={24} color={colors.textMuted} />
-      </Pressable>
+        <View
+          style={{
+            backgroundColor: colors.elevated,
+            borderRadius: radius.lg,
+            paddingHorizontal: space.md,
+            paddingVertical: space.sm,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: space.sm,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Avatar uri={me?.profile.photos[0]?.url ?? null} size={30} />
+          <Input
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={submitComment}
+            returnKeyType="send"
+            placeholder="Write a comment…"
+            maxLength={1000}
+            containerStyle={{ minWidth: 0 }}
+            style={{ color: colors.text, flex: 1 }}
+          />
+          <IconButton
+            icon="arrow-up"
+            label="Send comment"
+            onPress={submitComment}
+            disabled={!draft.trim()}
+            color={colors.crush}
+            size={34}
+            variant="gold"
+          />
+        </View>
+      </View>
 
-      <ActionSheet
-        visible={showActions}
-        onClose={() => setShowActions(false)}
-        title={post ? 'Your post' : undefined}
-        actions={[
-          {
-            icon: <Ionicons name="trash-outline" size={20} color={colors.danger} />,
-            label: "Delete post",
-            destructive: true,
-            onPress: deletePost,
-          },
-        ]}
-      />
+      {post.mine ? (
+        <BottomSheet
+          visible={false}
+          onClose={() => {}}
+          title="Your post"
+        >
+          <Pressable onPress={deletePost} style={{ padding: space.md }}>
+            <Ionicons name="trash-outline" size={20} color={colors.danger} />
+          </Pressable>
+        </BottomSheet>
+      ) : null}
     </View>
   );
 }
