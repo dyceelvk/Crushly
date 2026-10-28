@@ -161,6 +161,25 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                 {p.age ? <Txt variant="hero" color="rgba(255,255,255,0.86)">{`, ${p.age}`}</Txt> : null}
               </Txt>
               {p.verified ? <VerifiedBadge size={24} /> : null}
+              {p.moments.length > 0 && (
+                <Pressable
+                  onPress={() => navigation.navigate('MomentViewer', { userId: p.id })}
+                  accessibilityLabel={`View ${p.name}'s Moments`}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(0,0,0,0.6)',
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginLeft: 8,
+                  }}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
+                </Pressable>
+              )}
             </View>
             <Txt variant="body" color="rgba(255,255,255,0.86)" style={{ marginTop: 2 }}>
               {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
@@ -264,36 +283,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             </Section>
           ) : null}
 
-          {p.moments.length ? (
-            <Section title="Moments">
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                {p.moments.map((m) => (
-                  <Pressable
-                    key={m.id}
-                    onPress={() => navigation.navigate('MomentViewer', { userId: p.id })}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Moment from ${timeAgo(m.createdAt)} ago${m.body ? `: ${m.body}` : ''}`}
-                    style={{ width: 110, height: 150, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.card }}
-                  >
-                    {m.kind === 'photo' ? (
-                      <Photo uri={m.mediaUrl} style={{ width: '100%', height: '100%' }} />
-                    ) : (
-                      <LinearGradient colors={MOMENT_STYLES[m.style]?.colors || MOMENT_STYLES.noir.colors} style={{ flex: 1, padding: 10, justifyContent: 'center' }}>
-                        <Txt variant="caption" color={MOMENT_STYLES[m.style]?.ink || '#fff'} numberOfLines={5}>
-                          {m.body}
-                        </Txt>
-                      </LinearGradient>
-                    )}
-                    <View style={{ position: 'absolute', left: 8, bottom: 6 }}>
-                      <Txt variant="caption" color="#fff">
-                        {timeAgo(m.createdAt)}
-                      </Txt>
-                    </View>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </Section>
-          ) : null}
+
 
           <View style={{ marginTop: space.xxl, flexDirection: 'row', justifyContent: 'center', gap: space.lg }}>
             <Pressable onPress={() => openActions(member)} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}>

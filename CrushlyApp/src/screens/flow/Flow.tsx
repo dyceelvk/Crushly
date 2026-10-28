@@ -264,7 +264,7 @@ export function PostCard({ post: p }: { post: Post }) {
             {p.mediaKind === 'video' ? (
               <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
             ) : (
-              <Photo uri={p.mediaUrl} style={{ width: '100%', aspectRatio: 4 / 3 }} alt={`Post by ${authorName}`} />
+              <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
           </View>
         ) : null}

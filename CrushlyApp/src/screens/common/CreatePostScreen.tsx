@@ -73,6 +73,16 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
   const [editorTool, setEditorTool] = useState<'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null>(null);
+  const [fontIndex, setFontIndex] = useState(0);
+
+  const FONT_OPTIONS = [
+    fonts.regular,
+    fonts.medium,
+    fonts.semibold,
+    fonts.bold,
+    fonts.display,
+    fonts.displayItalic,
+  ] as const;
 
   const MAX_MEDIA = 10;
   const MAX_BODY = 500;
@@ -421,28 +431,47 @@ function ComposerLeft({
           placeholder="Good energy, better days. Same me, just more focused."
           maxLength={500}
           showCount
-          style={{ minHeight: 150 }}
+          style={{ minHeight: 150, fontFamily: FONT_OPTIONS[fontIndex] }}
         />
-        <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16 }}>
-          <Pressable onPress={() => insertText('**bold**')} accessibilityLabel="Text formatting" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="text-outline" size={20} color={colors.textMuted} />
+        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, flexWrap: 'wrap' }}>
+          {/* Media Settings — line up under the text bar */}
+          <Pressable onPress={() => openEditor('crop')} accessibilityLabel="Crop" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="crop-outline" size={18} color={colors.textMuted} />
           </Pressable>
-          <Pressable
-            onPress={() => {
-              const u = window.prompt?.('Enter link URL');
-              if (u) insertText(`[link](${u})`);
-            }}
-            accessibilityLabel="Add link"
-            hitSlop={12}
-            style={{ padding: 4 }}
-          >
-            <Ionicons name="link-outline" size={20} color={colors.textMuted} />
+          <Pressable onPress={() => openEditor('filters')} accessibilityLabel="Filter" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="color-wand-outline" size={18} color={colors.textMuted} />
           </Pressable>
-          <Pressable onPress={() => insertText('✨')} accessibilityLabel="Add emoji" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="happy-outline" size={20} color={colors.textMuted} />
+          <Pressable onPress={() => openEditor('adjust')} accessibilityLabel="Adjust" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
           </Pressable>
-          <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="add-outline" size={20} color={colors.textMuted} />
+          <Pressable onPress={() => openEditor('stickers')} accessibilityLabel="Draw" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => openEditor('captions')} accessibilityLabel="Text" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="text-outline" size={18} color={colors.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => openEditor('stickers')} accessibilityLabel="Stickers" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="happy-outline" size={18} color={colors.textMuted} />
+          </Pressable>
+
+          {/* Font cycle */}
+          <Pressable onPress={() => setFontIndex((i) => (i + 1) % FONT_OPTIONS.length)} accessibilityLabel="Change font" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Txt variant="caption" style={{ color: colors.text }}>Aa</Txt>
+          </Pressable>
+
+          {/* Tag people */}
+          <Pressable onPress={() => insertText('@')} accessibilityLabel="Tag someone" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Txt variant="caption" style={{ color: colors.text }}>@</Txt>
+          </Pressable>
+
+          {/* Hashtag */}
+          <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="hash" size={18} color={colors.textMuted} />
+          </Pressable>
+
+          {/* Public / private toggle */}
+          <Pressable onPress={() => setAudience(audience === 'everyone' ? 'connections' : 'everyone')} accessibilityLabel="Public or private" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name={audience === 'everyone' ? 'globe' : 'lock-closed'} size={18} color={colors.textMuted} />
           </Pressable>
         </View>
       </View>
@@ -579,16 +608,6 @@ function ComposerRight({
           )}
         </View>
       ) : null}
-
-      {/* Media Settings */}
-      <Card title="Media Settings">
-        <SettingsRow label="Crop" hint="Change the frame" icon="crop-outline" onPress={() => openEditor('crop')} />
-        <SettingsRow label="Filter" hint="Apply a look" icon="color-wand-outline" onPress={() => openEditor('filters')} />
-        <SettingsRow label="Adjust" hint="Light and colour" icon="sunny-outline" onPress={() => openEditor('adjust')} />
-        <SettingsRow label="Draw" hint="Draw on the media" icon="create-outline" onPress={() => openEditor('stickers')} />
-        <SettingsRow label="Text" hint="Add captions" icon="text-outline" onPress={() => openEditor('captions')} />
-        <SettingsRow label="Stickers" hint="Add stickers" icon="happy-outline" onPress={() => openEditor('stickers')} />
-      </Card>
 
       {/* Post Preview */}
       <Card title="Post Preview">

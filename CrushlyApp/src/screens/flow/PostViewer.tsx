@@ -81,6 +81,15 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     navigation.goBack();
   }, [navigation]);
 
+  // mediaSource() returns a plain string on web but { uri, headers } on native
+  // when the file lives behind the media Worker. Extract the URI string so
+  // EditedClip receives a usable value on every platform.
+  const resolveVideoUri = useCallback((mediaPath: string | null) => {
+    if (!mediaPath) return '';
+    const resolved = mediaSource(mediaUrl(mediaPath));
+    return typeof resolved === 'string' ? resolved : resolved.uri;
+  }, []);
+
   const toggleLike = useCallback(async () => {
     if (!post) return;
     try {
@@ -325,7 +334,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           <View style={{ marginTop: space.sm }}>
             {post.mediaKind === 'video' ? (
               <EditedClip
-                uri={mediaSource(mediaUrl(post.mediaUrl)) as string}
+                uri={resolveVideoUri(post.mediaUrl)}
                 live={post.edit ?? null}
                 style={{ width: '100%', maxHeight: contentWidth * 1.6 }}
                 autoPlay
