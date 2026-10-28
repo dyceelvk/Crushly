@@ -298,6 +298,7 @@ export function VideoEditorModal({
 
         {Platform.OS === 'web' ? <WebEditorNotice /> : null}
 
+        {/* View screen at top */}
         <View style={{ alignItems: 'center', paddingHorizontal: space.md }}>
           <VideoEditCanvas
             player={player}
@@ -346,42 +347,7 @@ export function VideoEditorModal({
           </Txt>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: 8 }}
-        >
-          {TOOLS.map((t) => {
-            const active = tool === t.id;
-            return (
-              <Pressable
-                key={t.id}
-                onPress={() => {
-                  haptic.tap();
-                  setTool(active ? null : t.id);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={t.label}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: radius.pill,
-                  backgroundColor: active ? colors.gold : 'rgba(255,255,255,0.08)',
-                }}
-              >
-                <Ionicons name={t.icon} size={16} color={active ? colors.onGold : '#e8e8ee'} />
-                <Txt variant="smallStrong" style={{ color: active ? colors.onGold : '#e8e8ee' }} maxFontSizeMultiplier={1.2}>
-                  {t.label}
-                </Txt>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
+        {/* Editors panel aligned above the tabs */}
         <View
           style={{
             flex: 1,
@@ -441,6 +407,70 @@ export function VideoEditorModal({
             </ScrollView>
           )}
         </View>
+
+        {/* Tabs below editors */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: 8 }}
+        >
+          {TOOLS.map((t) => {
+            const active = tool === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => {
+                  haptic.tap();
+                  setTool(active ? null : t.id);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={t.label}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: radius.pill,
+                  backgroundColor: active ? colors.gold : 'rgba(255,255,255,0.08)',
+                }}
+              >
+                <Ionicons name={t.icon} size={16} color={active ? colors.onGold : '#e8e8ee'} />
+                <Txt variant="smallStrong" style={{ color: active ? colors.onGold : '#e8e8ee' }} maxFontSizeMultiplier={1.2}>
+                  {t.label}
+                </Txt>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Add text bar below tabs */}
+        {tool !== 'captions' && edit.captions.length < EDIT_LIMITS[category].maxCaptions ? (
+          <View
+            style={{
+              paddingHorizontal: space.md,
+              paddingVertical: space.sm,
+              gap: 6,
+            }}
+          >
+            <Button
+              title="Add text"
+              icon="add"
+              size="sm"
+              variant="secondary"
+              onPress={() => {
+                const c = newCaption(edit, clipTime);
+                update({ ...edit, captions: [...edit.captions, c] });
+                setSelectedId(c.id);
+                setTool('captions');
+              }}
+              accessibilityLabel="Add caption text"
+            />
+          </View>
+        ) : null}
+
+        <View style={{ height: insets.bottom + space.sm }} />
       </View>
     </Modal>
   );

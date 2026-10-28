@@ -59,6 +59,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       if (result && pendingClip) {
         setClip(pendingClip);
         setPendingClip(null);
+        setMode('video');
         setClipEdit({
           ...emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0),
           trimStart: result.trimStart,
@@ -140,7 +141,10 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         value={mode}
         onChange={(m) => {
           if (m === 'photo' && !photo) return choosePhoto();
-          if (m === 'video' && !clip) return chooseClip();
+          if (m === 'video' && !clip) {
+            setMode('video');
+            return chooseClip();
+          }
           setMode(m);
         }}
         options={[
