@@ -280,7 +280,7 @@ return (
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {mediaKind === 'video' ? (
-              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay loop contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
+              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}

@@ -288,12 +288,12 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           ) : null}
         </View>
 
-        {/* Right-side action column — Like, Comment, Save (lower position) */}
+        {/* Right-side action column — Like, Comment, Save (kept low and subtle) */}
         <View
           style={{
             position: 'absolute',
             right: space.sm,
-            bottom: Math.max(insets.bottom, space.sm) + 120,
+            bottom: Math.max(insets.bottom, space.sm) + 110,
             gap: space.sm,
           }}
         >
@@ -303,17 +303,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             accessibilityLabel={post.liked ? 'Take back your crush' : 'Crush'}
             hitSlop={20}
             style={{
-              width: 52,
-              height: 52,
-              borderRadius: 26,
-              backgroundColor: 'rgba(0,0,0,0.4)',
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: 'rgba(0,0,0,0.3)',
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.3)',
+              borderColor: 'rgba(255,255,255,0.25)',
             }}
           >
-            <Ionicons name={post.liked ? 'heart' : 'heart-outline'} size={24} color={post.liked ? colors.crush : '#fff'} />
+            <Ionicons name={post.liked ? 'heart' : 'heart-outline'} size={22} color={post.liked ? colors.crush : '#fff'} />
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -321,17 +321,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             hitSlop={20}
             onPress={() => setCommentsOpen(true)}
             style={{
-              width: 52,
-              height: 52,
-              borderRadius: 26,
-              backgroundColor: 'rgba(0,0,0,0.4)',
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: 'rgba(0,0,0,0.3)',
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.3)',
+              borderColor: 'rgba(255,255,255,0.25)',
             }}
           >
-            <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+            <Ionicons name="chatbubble-outline" size={22} color="#fff" />
           </Pressable>
           <Pressable
             onPress={toggleSave}
@@ -339,17 +339,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             accessibilityLabel={isSaved ? 'Unsave post' : 'Save post'}
             hitSlop={20}
             style={{
-              width: 52,
-              height: 52,
-              borderRadius: 26,
-              backgroundColor: isSaved ? colors.crush : 'rgba(0,0,0,0.4)',
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: isSaved ? colors.crush : 'rgba(0,0,0,0.3)',
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.3)',
+              borderColor: 'rgba(255,255,255,0.25)',
             }}
           >
-            <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={24} color="#fff" />
+            <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={22} color="#fff" />
           </Pressable>
         </View>
 
@@ -371,9 +371,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
                 fontSize: 16,
                 lineHeight: 22,
                 shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowRadius: 4,
-                shadowOpacity: 0.8,
+                shadowOffset: { width: 0, height: 2 },
+                shadowRadius: 8,
+                shadowOpacity: 0.95,
               }}
             >
               <LinkText text={post.body} bare />
