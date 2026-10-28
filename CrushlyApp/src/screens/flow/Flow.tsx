@@ -262,7 +262,7 @@ export function PostCard({ post: p }: { post: Post }) {
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {p.mediaKind === 'video' ? (
-              <EditedClip uri={p.mediaUrl} live={p.edit} style={{ width: '100%', aspectRatio: 9 / 16 }} />
+              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} style={{ width: '100%', aspectRatio: 4 / 3 }} alt={`Post by ${authorName}`} />
             )}

@@ -72,6 +72,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const [pendingMedia, setPendingMedia] = useState<MediaItem | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
+  const [editorTool, setEditorTool] = useState<'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null>(null);
 
   const MAX_MEDIA = 10;
   const MAX_BODY = 500;
@@ -173,9 +174,10 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
     setMedia((prev) => prev.filter((m) => m.id !== id));
   };
 
-  const openEditor = () => {
+  const openEditor = (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => {
     if (!primaryMedia) return;
     setEditingMediaId(primaryMedia.id);
+    setEditorTool(tool ?? null);
     setEditorOpen(true);
   };
 
@@ -288,6 +290,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
                 audience={audience}
                 body={body}
                 maxBody={maxBody}
+                openEditor={openEditor}
               />
             </View>
           </View>
@@ -317,6 +320,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               audience={audience}
               body={body}
               maxBody={maxBody}
+              openEditor={openEditor}
             />
           </View>
         )}
@@ -349,6 +353,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         sourceUri={primaryMedia?.uri ?? null}
         sourceDuration={primaryMedia?.durationMs ? primaryMedia.durationMs / 1000 : 0}
         category="post"
+        initialTool={editorTool}
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           setMedia((prev) =>
@@ -356,6 +361,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
           );
           setEditorOpen(false);
           setEditingMediaId(null);
+          setEditorTool(null);
         }}
       />
     </View>
@@ -393,10 +399,15 @@ function ComposerLeft({
   removeMedia: (id: string) => void;
   pickMedia: () => void;
   primaryMedia: MediaItem | undefined;
-  openEditor: () => void;
+  openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
   editing: boolean;
 }) {
   const { colors } = useTheme();
+
+  const insertText = (text: string) => {
+    setBody((prev) => (prev.trim().endsWith(text.trim()) ? prev : prev + ' ' + text));
+  };
+
   return (
     <View style={{ gap: space.lg, minWidth: 0 }}>
       <View style={{ gap: space.sm }}>
@@ -413,16 +424,24 @@ function ComposerLeft({
           style={{ minHeight: 150 }}
         />
         <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16 }}>
-          <Pressable onPress={() => {}} accessibilityLabel="Text formatting" hitSlop={12} style={{ padding: 4 }}>
+          <Pressable onPress={() => insertText('**bold**')} accessibilityLabel="Text formatting" hitSlop={12} style={{ padding: 4 }}>
             <Ionicons name="text-outline" size={20} color={colors.textMuted} />
           </Pressable>
-          <Pressable onPress={() => {}} accessibilityLabel="Add link" hitSlop={12} style={{ padding: 4 }}>
+          <Pressable
+            onPress={() => {
+              const u = window.prompt?.('Enter link URL');
+              if (u) insertText(`[link](${u})`);
+            }}
+            accessibilityLabel="Add link"
+            hitSlop={12}
+            style={{ padding: 4 }}
+          >
             <Ionicons name="link-outline" size={20} color={colors.textMuted} />
           </Pressable>
-          <Pressable onPress={() => {}} accessibilityLabel="Add emoji" hitSlop={12} style={{ padding: 4 }}>
+          <Pressable onPress={() => insertText('✨')} accessibilityLabel="Add emoji" hitSlop={12} style={{ padding: 4 }}>
             <Ionicons name="happy-outline" size={20} color={colors.textMuted} />
           </Pressable>
-          <Pressable onPress={() => {}} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 4 }}>
+          <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 4 }}>
             <Ionicons name="add-outline" size={20} color={colors.textMuted} />
           </Pressable>
         </View>
@@ -528,6 +547,7 @@ function ComposerRight({
   audience,
   body,
   maxBody,
+  openEditor,
 }: {
   primaryMedia: MediaItem | undefined;
   media: MediaItem[];
@@ -535,8 +555,10 @@ function ComposerRight({
   audience: 'everyone' | 'connections';
   body: string;
   maxBody: number;
+  openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
 }) {
   const { colors } = useTheme();
+
   return (
     <View style={{ gap: space.lg, minWidth: 0 }}>
       {/* Media preview */}
@@ -545,10 +567,10 @@ function ComposerRight({
           {primaryMedia.type === 'video' ? (
             <View style={{ width: '100%', height: '100%', backgroundColor: '#000' }}>
               <Ionicons name="videocam-outline" size={32} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -16 }, { translateY: -16 }] }} />
-              <Pressable onPress={() => {}} accessibilityLabel="Edit media" hitSlop={12} style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable onPress={() => openEditor('filters')} accessibilityLabel="Edit media" hitSlop={12} style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="color-wand-outline" size={16} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => {}} accessibilityLabel="Close preview" hitSlop={12} style={{ position: 'absolute', top: 12, left: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable onPress={() => openEditor()} accessibilityLabel="Close preview" hitSlop={12} style={{ position: 'absolute', top: 12, left: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="close-outline" size={16} color="#fff" />
               </Pressable>
             </View>
@@ -560,12 +582,12 @@ function ComposerRight({
 
       {/* Media Settings */}
       <Card title="Media Settings">
-        <SettingsRow label="Crop" hint="Change the frame" icon="crop-outline" />
-        <SettingsRow label="Filter" hint="Apply a look" icon="color-wand-outline" />
-        <SettingsRow label="Adjust" hint="Light and colour" icon="sunny-outline" />
-        <SettingsRow label="Draw" hint="Draw on the media" icon="create-outline" />
-        <SettingsRow label="Text" hint="Add captions" icon="text-outline" />
-        <SettingsRow label="Stickers" hint="Add stickers" icon="happy-outline" />
+        <SettingsRow label="Crop" hint="Change the frame" icon="crop-outline" onPress={() => openEditor('crop')} />
+        <SettingsRow label="Filter" hint="Apply a look" icon="color-wand-outline" onPress={() => openEditor('filters')} />
+        <SettingsRow label="Adjust" hint="Light and colour" icon="sunny-outline" onPress={() => openEditor('adjust')} />
+        <SettingsRow label="Draw" hint="Draw on the media" icon="create-outline" onPress={() => openEditor('stickers')} />
+        <SettingsRow label="Text" hint="Add captions" icon="text-outline" onPress={() => openEditor('captions')} />
+        <SettingsRow label="Stickers" hint="Add stickers" icon="happy-outline" onPress={() => openEditor('stickers')} />
       </Card>
 
       {/* Post Preview */}
@@ -614,10 +636,11 @@ function ComposerRight({
 }
 
 /** Reusable setting row with chevron. */
-function SettingsRow({ label, hint, icon }: { label: string; hint: string; icon: keyof typeof Ionicons.glyphMap }) {
+function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: string; icon: keyof typeof Ionicons.glyphMap; onPress?: () => void; }) {
   const { colors } = useTheme();
   return (
     <Pressable
+      onPress={onPress}
       accessibilityRole="button"
       hitSlop={12}
       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}

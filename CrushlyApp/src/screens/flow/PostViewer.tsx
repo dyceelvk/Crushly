@@ -327,7 +327,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               <EditedClip
                 uri={mediaSource(mediaUrl(post.mediaUrl)) as string}
                 live={post.edit ?? null}
-                style={{ width: '100%', aspectRatio: 9 / 16 }}
+                style={{ width: '100%', maxHeight: contentWidth * 1.6 }}
                 autoPlay
                 loop
               />

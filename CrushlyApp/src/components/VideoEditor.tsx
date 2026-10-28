@@ -95,6 +95,7 @@ export function VideoEditorModal({
   sourceDuration,
   category = 'post',
   naturalRatio = 9 / 16,
+  initialTool,
   onCancel,
   onDone,
 }: {
@@ -104,6 +105,8 @@ export function VideoEditorModal({
   sourceDuration?: number;
   category?: EditCategory;
   naturalRatio?: number;
+  /** Tool to pre-select when the editor opens. */
+  initialTool?: ToolId | null;
   onCancel: () => void;
   onDone: (result: VideoEditorResult) => void;
 }) {
@@ -114,7 +117,7 @@ export function VideoEditorModal({
   const [edit, setEdit] = useState<VideoEdit>(() => emptyEdit(sourceDuration ?? 0));
   const [clipTime, setClipTime] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [tool, setTool] = useState<ToolId | null>(null);
+  const [tool, setTool] = useState<ToolId | null>(initialTool ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
