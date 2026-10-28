@@ -24,7 +24,7 @@ import {
 import type { Post, PostComment } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
-import { radius, space } from '../../theme/tokens';
+import { fonts, radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
@@ -427,10 +427,25 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'connections' | 'everyone' | 'circle'>('connections');
   const [circleId, setCircleId] = useState<number | null>(null);
-  const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
+  const [photo, setPhoto] = useState<{ uri: string; mimeType: string; edit?: VideoEdit | null } | null>(null);
   const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
   const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [fontIndex, setFontIndex] = useState(0);
+
+  const insertText = (text: string) => {
+    setBody((prev) => (prev.trim().endsWith(text.trim()) ? prev : prev + ' ' + text));
+  };
+
+  const FONT_OPTIONS = [
+    fonts.regular,
+    fonts.medium,
+    fonts.semibold,
+    fonts.bold,
+    fonts.display,
+    fonts.displayItalic,
+  ] as const;
+
   const [picking, setPicking] = useState(false);
 
   // What the player draws over the clip: only the words and stickers. The cut
@@ -469,6 +484,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
   const submit = async () => {
     try {
       const prepared = clip ? await preparedClip(clipEdit, clip.uri, 'post') : null;
+      const photoEdit = photo?.edit ? splitForUpload(photo.edit, 'post').live : null;
       await create.mutateAsync({
         body: body.trim(),
         audience: audience === 'circle' ? 'connections' : audience,
@@ -477,7 +493,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
         photoMime: photo?.mimeType ?? null,
         videoUri: prepared ? prepared.uri : null,
         videoMime: clip?.mimeType ?? null,
-        edit: prepared ? prepared.live : null,
+        edit: prepared ? prepared.live : photoEdit ?? null,
       });
       setBody('');
       setPhoto(null);
@@ -496,15 +512,19 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
     <>
       <VideoEditorModal
         visible={editorOpen}
-      sourceUri={clip?.uri ?? null}
-      sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
-      category="post"
-      onCancel={() => setEditorOpen(false)}
-      onDone={(r) => {
-        setClipEdit(r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0));
-        setEditorOpen(false);
-      }}
-    />
+        sourceUri={photo?.uri ?? clip?.uri ?? null}
+        sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
+        category="post"
+        onCancel={() => setEditorOpen(false)}
+        onDone={(r) => {
+          if (photo) {
+            setPhoto({ ...photo, edit: r.edit });
+          } else {
+            setClipEdit(r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0));
+          }
+          setEditorOpen(false);
+        }}
+      />
 
     <BottomSheet visible={visible} onClose={onClose} title="Share a post">
       <View style={{ gap: space.md }}>
@@ -517,7 +537,31 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
           maxLength={500}
           showCount
           hint="Posts stay until you remove them."
+          style={{ fontFamily: FONT_OPTIONS[fontIndex] }}
         />
+
+        {/* Media Settings chips + actions under text bar */}
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+          {photo || clip ? (
+            <>
+              <Pressable onPress={() => setEditorOpen(true)} accessibilityLabel="Edit media" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+                <Ionicons name="color-wand-outline" size={18} color={colors.textMuted} />
+              </Pressable>
+            </>
+          ) : null}
+          <Pressable onPress={() => setFontIndex((i) => (i + 1) % FONT_OPTIONS.length)} accessibilityLabel="Change font" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Txt variant="caption" style={{ color: colors.text }}>Aa</Txt>
+          </Pressable>
+          <Pressable onPress={() => insertText('@')} accessibilityLabel="Tag someone" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Txt variant="caption" style={{ color: colors.text }}>@</Txt>
+          </Pressable>
+          <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="hash" size={18} color={colors.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => setAudience(audience === 'everyone' ? 'connections' : 'everyone')} accessibilityLabel="Public or private" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name={audience === 'everyone' ? 'globe' : 'lock-closed'} size={18} color={colors.textMuted} />
+          </Pressable>
+        </View>
 
         {photo ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
