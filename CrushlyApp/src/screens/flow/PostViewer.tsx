@@ -41,9 +41,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 /**
  * Watching one post — full screen, with comments.
  *
- * Tapping a post in the Flow opens this instead of an inline bottom sheet, so
- * the post and its conversation get the room they deserve. The author's Space
- * is one tap away, and the post's like, comment and save all live here.
+ * Spacious, single-column layout: author header, title, body, media,
+ * engagement line, action bar, then comments. Nothing is cramped — every
+ * section has room to breathe.
  */
 export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'>) {
   const { postId } = route.params;
@@ -67,7 +67,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
   const comments = query.data?.items ?? [];
 
-  // Split the first sentence as the title-like header, rest as body.
   const bodyText = post?.body ?? '';
   const firstPeriod = bodyText.indexOf('. ');
   const title = firstPeriod > 0 ? bodyText.slice(0, firstPeriod + 1) : bodyText;
@@ -151,9 +150,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           paddingTop: insets.top + space.sm,
           paddingHorizontal: gutter,
           paddingBottom: insets.bottom + space.xxxl,
-          gap: space.lg,
+          gap: space.xl,
           width: '100%',
-          maxWidth: contentWidth,
           alignSelf: 'center',
         }}
         showsVerticalScrollIndicator={false}
@@ -196,7 +194,13 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           }
           accessibilityRole="button"
           accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.sm, marginTop: space.xs }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            paddingHorizontal: space.sm,
+            marginTop: space.xs,
+          }}
         >
           <Avatar
             uri={post.author.photos[0]?.url ?? null}
@@ -259,7 +263,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           <View style={{ paddingHorizontal: space.sm, marginTop: space.sm }}>
             <Txt
               variant="body"
-              style={{ lineHeight: 22, color: colors.text }}
+              style={{ lineHeight: 24, color: colors.text }}
               selectable
               numberOfLines={expanded ? undefined : 4}
             >
@@ -270,7 +274,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
                 onPress={() => setExpanded(!expanded)}
                 accessibilityLabel={expanded ? 'Read less' : 'Read more'}
                 hitSlop={12}
-                style={{ marginTop: 6 }}
+                style={{ marginTop: 8 }}
               >
                 <Txt variant="caption" color="gold">
                   {expanded ? 'Read less' : 'Read more'}
