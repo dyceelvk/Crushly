@@ -85,7 +85,18 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
     useCallback(() => {
       const result = takeTrimResult();
       if (result && pendingMedia) {
-        setMedia((prev) => [...prev, { ...pendingMedia, edit: { ...emptyEdit(0), trimStart: result.trimStart, trimEnd: result.trimEnd } }]);
+        // The trim was cut from the real clip, so the edit must carry its true
+        // duration — otherwise clampEdit collapses the trim window to nothing
+        // and the full, untrimmed clip is posted. (VibeComposer and
+        // MomentComposer do the same thing with pendingClip.durationMs.)
+        const sourceDuration = (pendingMedia.durationMs ?? 0) / 1000;
+        setMedia((prev) => [
+          ...prev,
+          {
+            ...pendingMedia,
+            edit: { ...emptyEdit(sourceDuration), trimStart: result.trimStart, trimEnd: result.trimEnd },
+          },
+        ]);
         setPendingMedia(null);
       } else if (!result && pendingMedia) {
         setPendingMedia(null);
