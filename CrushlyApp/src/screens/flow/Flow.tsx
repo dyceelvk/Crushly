@@ -22,6 +22,8 @@ import {
   useOpenConversation, usePostComments, useReactToPost,
 } from '../../api/hooks';
 import type { Post, PostComment } from '../../api/types';
+import { mediaUrl } from '../../api/client';
+import { mediaSource } from '../../lib/mediaHost';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
@@ -199,6 +201,15 @@ export function PostCard({ post: p }: { post: Post }) {
     }
   };
 
+  // mediaSource() returns a plain string on web but { uri, headers } on native
+  // when the file lives behind the media Worker. Extract the URI string so
+  // EditedClip receives a usable value on every platform.
+  const resolveVideoUri = (mediaPath: string | null) => {
+    if (!mediaPath) return '';
+    const resolved = mediaSource(mediaUrl(mediaPath));
+    return typeof resolved === 'string' ? resolved : resolved.uri;
+  };
+
   return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.md, paddingTop: space.md }}>
@@ -262,7 +273,7 @@ export function PostCard({ post: p }: { post: Post }) {
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {p.mediaKind === 'video' ? (
-              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
+              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
