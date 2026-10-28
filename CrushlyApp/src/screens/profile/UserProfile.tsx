@@ -132,13 +132,34 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 120 + insets.bottom }} showsVerticalScrollIndicator={false}>
-        <View style={{ width: heroW, height: heroH, alignSelf: 'center' }}>
+        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative' }}>
           <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32} accessibilityLabel={`${p.photos.length} photos`}>
             {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
               <Photo key={ph.id} uri={ph.url || null} style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
             ))}
           </ScrollView>
           <LinearGradient colors={['rgba(7,7,8,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 120 }} pointerEvents="none" />
+          {p.moments.length > 0 && (
+            <Pressable
+              onPress={() => navigation.navigate('MomentViewer', { userId: p.id, mine: route.params.id === p.id })}
+              accessibilityLabel={`View ${p.name}'s Moments`}
+              style={{
+                position: 'absolute',
+                left: gutter,
+                bottom: space.xxl,
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                borderWidth: 3,
+                borderColor: colors.cyan,
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 60,
+              }}
+            >
+              <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+            </Pressable>
+          )}
           <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.75, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} pointerEvents="none" />
           <View style={{ position: 'absolute', top: insets.top + space.sm, left: gutter, right: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <IconButton icon="chevron-back" variant="glass" label="Go back" onPress={() => navigation.goBack()} />

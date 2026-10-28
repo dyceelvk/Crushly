@@ -29,6 +29,7 @@ import {
   useReactToPost,
 } from '../../api/hooks';
 import type { Post, PostComment } from '../../api/types';
+import { BottomSheet, ActionSheet } from '../../components/BottomSheet';
 import { EditedClip } from '../../components/EditedClip';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
@@ -67,6 +68,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const send = useCommentOnPost(postId);
   const [draft, setDraft] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
   const comments = query.data?.items ?? [];
@@ -188,7 +190,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               icon="ellipsis-vertical"
               label="More options"
               color={colors.textMuted}
-              onPress={() => deletePost()}
+              onPress={() => setShowActions(true)}
             />
           ) : (
             <IconButton
@@ -505,6 +507,20 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       >
         <Ionicons name="close" size={24} color={colors.textMuted} />
       </Pressable>
+
+      <ActionSheet
+        visible={showActions}
+        onClose={() => setShowActions(false)}
+        title={post ? 'Your post' : undefined}
+        actions={[
+          {
+            icon: <Ionicons name="trash-outline" size={20} color={colors.danger} />,
+            label: "Delete post",
+            destructive: true,
+            onPress: deletePost,
+          },
+        ]}
+      />
     </View>
   );
 }
