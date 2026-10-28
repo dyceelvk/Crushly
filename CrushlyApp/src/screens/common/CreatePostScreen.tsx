@@ -41,7 +41,7 @@ type MediaItem = {
   edit?: VideoEdit | null;
 };
 
-type PostType = 'Normal' | 'Story' | 'Moment' | 'Reel';
+type PostType = 'Flows' | 'Stories' | 'Moments' | 'Vibes';
 
 /**
  * Create Post — unified composer for text, photo, and video posts.
@@ -64,7 +64,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
 
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
-  const [postType, setPostType] = useState<PostType>('Normal');
+  const [postType, setPostType] = useState<PostType>('Flows');
   const [scheduleOn, setScheduleOn] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -115,7 +115,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
     }, [pendingMedia])
   );
 
-  const maxBody = postType === 'Moment' ? 280 : MAX_BODY;
+  const maxBody = postType === 'Moments' ? 280 : MAX_BODY;
   const ready = body.trim().length > 0 || media.length > 0;
 
   const pickMedia = async () => {
@@ -409,8 +409,8 @@ function ComposerLeft({
   setBody: (v: string) => void;
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
-  postType: 'Normal' | 'Story' | 'Moment' | 'Reel';
-  setPostType: (v: 'Normal' | 'Story' | 'Moment' | 'Reel') => void;
+  postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
+  setPostType: (v: 'Flows' | 'Stories' | 'Moments' | 'Vibes') => void;
   scheduleOn: boolean;
   setScheduleOn: (v: boolean) => void;
   maxBody: number;
@@ -432,9 +432,46 @@ function ComposerLeft({
 
   return (
     <View style={{ gap: space.lg, minWidth: 0 }}>
+      {/* Main view — media grid above */}
+      <View style={{ gap: space.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Txt variant="label" color="textSecondary">
+            Add Media
+          </Txt>
+          <Txt variant="caption" color="textMuted">
+            Photos, videos or multiple files
+          </Txt>
+        </View>
+        {media.map((m) => (
+          <View key={m.id} style={{ position: 'relative', width: 88, height: 88, borderRadius: 16, overflow: 'hidden' }}>
+            {m.type === 'video' ? (
+              <View style={{ width: '100%', height: '100%', backgroundColor: '#000' }}>
+                <Ionicons name="videocam-outline" size={24} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -12 }, { translateY: -12 }] }} />
+              </View>
+            ) : (
+              <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
+            )}
+            <Pressable onPress={() => removeMedia(m.id)} accessibilityLabel="Remove media" hitSlop={8} style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="close-outline" size={16} color="#fff" />
+            </Pressable>
+            {m.type === 'video' && (
+              <Pressable onPress={openEditor} accessibilityLabel="Edit video" hitSlop={8} style={{ position: 'absolute', bottom: 4, left: 4, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="color-wand-outline" size={14} color="#fff" />
+              </Pressable>
+            )}
+          </View>
+        ))}
+        {media.length < 10 && (
+          <Pressable onPress={pickMedia} accessibilityLabel="Add media" hitSlop={12} style={{ width: 88, height: 88, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="add" size={24} color={colors.gold} />
+          </Pressable>
+        )}
+      </View>
+
+      {/* Text bar — below main view */}
       <View style={{ gap: space.sm }}>
         <Txt variant="label" color="textSecondary">
-          What’s on your mind?
+          What's on your mind?
         </Txt>
         <Input
           multiline
@@ -488,42 +525,6 @@ function ComposerLeft({
         </View>
       </View>
 
-      {/* Add Media */}
-      <View style={{ gap: space.sm }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Txt variant="label" color="textSecondary">Add Media</Txt>
-          <Txt variant="caption" color="textMuted">
-            Photos, videos or multiple files
-          </Txt>
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {media.map((m) => (
-            <View key={m.id} style={{ position: 'relative', width: 88, height: 88, borderRadius: 16, overflow: 'hidden' }}>
-              {m.type === 'video' ? (
-                <View style={{ width: '100%', height: '100%', backgroundColor: '#000' }}>
-                  <Ionicons name="videocam-outline" size={24} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -12 }, { translateY: -12 }] }} />
-                </View>
-              ) : (
-                <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
-              )}
-              <Pressable onPress={() => removeMedia(m.id)} accessibilityLabel="Remove media" hitSlop={8} style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="close-outline" size={16} color="#fff" />
-              </Pressable>
-              {m.type === 'video' && (
-                <Pressable onPress={openEditor} accessibilityLabel="Edit video" hitSlop={8} style={{ position: 'absolute', bottom: 4, left: 4, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="color-wand-outline" size={14} color="#fff" />
-                </Pressable>
-              )}
-            </View>
-          ))}
-          {media.length < 10 && (
-            <Pressable onPress={pickMedia} accessibilityLabel="Add media" hitSlop={12} style={{ width: 88, height: 88, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="add" size={24} color={colors.gold} />
-            </Pressable>
-          )}
-        </View>
-      </View>
-
       {/* Location */}
       <SettingsRow label="Location" hint="Add a location (optional)" icon="location-outline" />
 
@@ -549,12 +550,12 @@ function ComposerLeft({
       {/* Post type */}
       <View style={{ gap: space.sm }}>
         <Txt variant="label" color="textSecondary">Post type</Txt>
-        <Segmented<'Normal' | 'Story' | 'Moment' | 'Reel'>
+        <Segmented<'Flows' | 'Stories' | 'Moments' | 'Vibes'>
           options={[
-            { value: 'Normal', label: 'Normal' },
-            { value: 'Story', label: 'Story' },
-            { value: 'Moment', label: 'Moment' },
-            { value: 'Reel', label: 'Reel' },
+            { value: 'Flows', label: 'Flows' },
+            { value: 'Stories', label: 'Stories' },
+            { value: 'Moments', label: 'Moments' },
+            { value: 'Vibes', label: 'Vibes' },
           ]}
           value={postType}
           onChange={setPostType}
@@ -592,7 +593,7 @@ function ComposerRight({
 }: {
   primaryMedia: MediaItem | undefined;
   media: MediaItem[];
-  postType: 'Normal' | 'Story' | 'Moment' | 'Reel';
+  postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
   audience: 'everyone' | 'connections';
   body: string;
   maxBody: number;
