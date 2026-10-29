@@ -29,7 +29,7 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
   }, [fade, lift, tagline, reduceMotion]);
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Find your connection.">
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Create and discover your Crushes.">
       <Glow size={460} color={c.gold} opacity={0.9} style={{ position: 'absolute' }} />
       <LightSweep duration={1300} />
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
@@ -43,11 +43,12 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
         )}
         <Animated.Text
           style={{
-            fontFamily: fontsReady ? fonts.medium : undefined, fontSize: 15, color: c.textSecondary, marginTop: 8, letterSpacing: 0.4,
+            fontFamily: fontsReady ? fonts.medium : undefined, fontSize: 15, color: c.textSecondary, marginTop: 8, letterSpacing: 0.2,
+            textAlign: 'center', paddingHorizontal: 32,
             opacity: tagline,
           }}
         >
-          Find your connection.
+          Create and discover your Crushes.
         </Animated.Text>
       </Animated.View>
     </View>
