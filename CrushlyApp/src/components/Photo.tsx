@@ -55,20 +55,41 @@ type AvatarProps = {
   online?: boolean | null;
   shape?: 'circle' | 'squircle';
   ring?: 'gold' | 'muted' | 'crush' | null;
+  /**
+   * Draw the Moment ring: a blue band around the photo that means "there is a
+   * Moment here right now".
+   *
+   * It is a band rather than a border for a reason. The existing `ring` is a
+   * 1.5px border competing for the same pixels, so a member who is verified
+   * *and* has a Moment cannot show both with one border — an outer band leaves
+   * the border's job alone and both facts survive.
+   *
+   * The band is drawn only when true. `undefined` and `false` are both "no
+   * ring": the flag comes from the server, and treating "not asked" as "ring
+   * them" would put a blue circle around every face in the app.
+   */
+  ringMoment?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
-export function Avatar({ uri, name, size = 48, online, shape = 'circle', ring, style }: AvatarProps) {
+/** The blue of the Moments ring, in both palettes. */
+const MOMENT_RING = '#2E9BFF';
+
+export function Avatar({ uri, name, size = 48, online, shape = 'circle', ring, ringMoment, style }: AvatarProps) {
   const { colors } = useTheme();
   const r = shape === 'circle' ? size / 2 : size * 0.32;
   const ringColor = ring === 'gold' ? colors.gold : ring === 'crush' ? colors.crush : ring === 'muted' ? colors.borderStrong : null;
   const inset = ringColor ? 3 : 0;
   const inner = size - inset * 2 - (ringColor ? 2 : 0);
+  // The band takes room from the outside, never from the face: the photo keeps
+  // the size it was given and the whole avatar grows by the band's width.
+  const band = ringMoment ? Math.max(2, Math.round(size * 0.05)) : 0;
+  const box = size + band * 2;
   return (
     <View
       style={[
-        { width: size, height: size, borderRadius: r, alignItems: 'center', justifyContent: 'center' },
-        ringColor ? { borderWidth: 1.5, borderColor: ringColor } : null,
+        { width: box, height: box, borderRadius: r + band, alignItems: 'center', justifyContent: 'center' },
+        band ? { borderWidth: band, borderColor: MOMENT_RING } : null,
         style,
       ]}
     >
@@ -86,7 +107,7 @@ export function Avatar({ uri, name, size = 48, online, shape = 'circle', ring, s
           </Txt>
         </View>
       )}
-      {online ? <OnlineDot size={Math.max(10, size * 0.22)} style={{ position: 'absolute', right: shape === 'circle' ? size * 0.02 : -2, bottom: shape === 'circle' ? size * 0.02 : -2 }} /> : null}
+      {online ? <OnlineDot size={Math.max(10, size * 0.22)} style={{ position: 'absolute', right: band + (shape === 'circle' ? size * 0.02 : -2), bottom: band + (shape === 'circle' ? size * 0.02 : -2) }} /> : null}
     </View>
   );
 }

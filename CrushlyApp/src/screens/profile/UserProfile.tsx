@@ -13,11 +13,12 @@ import { Pill, VerifiedBadge } from '../../components/Badges';
 import { ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useOpenConversation, useUndoCrush, useUser } from '../../api/hooks';
+import { useMe, useOpenConversation, useUndoCrush, useUser } from '../../api/hooks';
 import type { FullProfile } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
+import { SpaceTabs, type SpaceTab } from './SpaceTabs';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
@@ -55,7 +56,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   const { id } = route.params;
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width, contentWidth, gutter } = useLayout();
+  const { width, height, contentWidth, gutter } = useLayout();
   const toast = useToast();
   const { data: p, isLoading, isError, error, refetch } = useUser(id);
   const { run: crushOn, pendingId } = useCrushFlow();
@@ -66,6 +67,8 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   const keepClose = useKeepClose();
   const letGo = useLetGo();
   const [index, setIndex] = useState(0);
+  const [tab, setTab] = useState<SpaceTab>('flows');
+  const { data: viewer } = useMe();
 
   const heroW = Math.min(width, contentWidth);
   const heroH = Math.min(heroW * 1.22, 640);
@@ -250,6 +253,21 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               }}
             />
           </View>
+
+          {/*
+            The tabs go above About: what somebody has shared is what a visitor
+            came to a Space to see, and it was the one thing missing.
+          */}
+          <SpaceTabs
+            userId={p.id}
+            profile={p}
+            tab={tab}
+            onChange={setTab}
+            onOpenPost={(postId) => navigation.navigate('PostViewer', { postId })}
+            onOpenVibes={(vibeId) => navigation.navigate('VibeViewer', { id: vibeId ?? 0 })}
+            onOpenMoments={() => navigation.navigate('MomentViewer', { userId: p.id, mine: viewer?.id === p.id })}
+            windowHeight={Math.round(height * 0.62)}
+          />
 
           {p.crush.note ? (
             <View style={{ marginTop: space.lg, backgroundColor: colors.goldSoft, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: colors.goldLine }}>

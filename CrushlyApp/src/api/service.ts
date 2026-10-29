@@ -127,7 +127,7 @@ function completion(profile: Record<string, any>, photos: { id: number }[]) {
 export async function getMe(): Promise<Me> {
   requireConfig();
   const id = await meId();
-  const [profileRes, photosRes, prefsRes, privacyRes, notifRes, poseRes, deepRes, email] = await Promise.all([
+  const [profileRes, photosRes, prefsRes, privacyRes, notifRes, poseRes, deepRes, email, liveMoments] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', id).single(),
     supabase.from('photos').select('id, url').eq('user_id', id).order('position').order('id'),
     supabase.from('preferences').select('*').eq('user_id', id).single(),
@@ -148,6 +148,10 @@ export async function getMe(): Promise<Me> {
       .eq('deep', true)
       .gt('created_at', Date.now() - 24 * 60 * 60 * 1000),
     myEmail(),
+    // The ring on your own Space. Counted here rather than inferred from the
+    // Moments feed, because that feed groups by person and is a heavier answer
+    // to a yes/no question.
+    supabase.from('moments').select('id', { count: 'exact', head: true }).eq('user_id', id).gt('expires_at', Date.now()),
   ]);
 
   const p = unwrap(profileRes) as Record<string, any>;
@@ -157,6 +161,7 @@ export async function getMe(): Promise<Me> {
   const notif = unwrap(notifRes) as Record<string, any>;
   const pose = poseRes.error ? null : (poseRes.data as { pose: string } | null);
   const deepUsed = deepRes.count ?? 0;
+  const hasMoment = (liveMoments.count ?? 0) > 0;
 
   return {
     id: p.id as number,
@@ -215,6 +220,7 @@ export async function getMe(): Promise<Me> {
       deepCrushesLeft: Math.max(0, FREE_DEEP_CRUSHES_PER_DAY - deepUsed),
       deepCrushesPerDay: FREE_DEEP_CRUSHES_PER_DAY,
     },
+    hasMoment,
   };
 }
 
@@ -743,6 +749,32 @@ export async function loadProfile(id: number): Promise<FullProfile> {
   const profile = await rpc<FullProfile | null>('load_profile', { p_target_id: id });
   if (!profile) throw new ApiError(404, 'This Space isn’t available.');
   return profile;
+}
+
+/**
+ * One member's posts, for their Space.
+ *
+ * The Flow is viewer-relative, so it cannot answer "what has this person
+ * shared". This asks the question directly and the server filters with the
+ * same rule the Flow uses, so the two can never disagree.
+ */
+export async function spacePosts(authorId: number, limit = 20, after?: number | null): Promise<Post[]> {
+  const page = await rpc<FlowPage>('space_posts', {
+    p_author_id: authorId,
+    p_limit: limit,
+    p_after: after ?? null,
+  });
+  return page?.items ?? [];
+}
+
+/** One member's live Vibes, for their Space. Expired ones never come back. */
+export async function spaceVibes(authorId: number, limit = 30, after?: number | null): Promise<Vibe[]> {
+  const page = await rpc<{ items: Vibe[] }>('space_vibes', {
+    p_author_id: authorId,
+    p_limit: limit,
+    p_after: after ?? null,
+  });
+  return page?.items ?? [];
 }
 
 export async function crushes(): Promise<CrushesResponse> {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Share, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -212,6 +212,18 @@ export function PostCard({ post: p }: { post: Post }) {
   // renders as video even before the migration lands everywhere.
   const mediaKind = p.mediaKind ?? (p.mediaUrl ? /\.(mp4|webm|mov|m4v)(\?|$)/i.test(p.mediaUrl) ? 'video' : 'photo' : null);
 
+  // A clip in the feed is 4:5, the same frame a portrait photo gets. It used to
+  // be `maxHeight: 400`, and that is the whole reason Flow videos never
+  // played: VideoEditCanvas absolutely positions the video inside its root and
+  // gives it no height of its own, so a root sized only by maxHeight collapses
+  // to nothing — a black bar that is not a video. PostViewer always worked
+  // because it passes an explicit height. Fixed frames also mean the feed does
+  // not jump as each clip measures itself. On a short screen 4:5 of the width
+  // can overrun the viewport, so the frame is capped and the width follows.
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  const videoW = Math.min(winWidth, 620);
+  const videoH = Math.min(videoW * 1.25, Math.round(winHeight * 0.62));
+
 
 return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
@@ -222,7 +234,13 @@ return (
           accessibilityLabel={`Open ${authorName}’s Space`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
         >
-          <Avatar uri={p.author.photos[0]?.url ?? null} name={p.author.name} size={38} ring={p.author.verified ? 'gold' : undefined} />
+          <Avatar
+            uri={p.author.photos[0]?.url ?? null}
+            name={p.author.name}
+            size={38}
+            ring={p.author.verified ? 'gold' : undefined}
+            ringMoment={p.author.hasMoment}
+          />
           <View style={{ flexShrink: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Txt variant="bodyStrong" numberOfLines={1}>
@@ -277,7 +295,15 @@ return (
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {mediaKind === 'video' ? (
-              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
+              <View style={{ width: '100%', alignItems: 'center' }}>
+                <EditedClip
+                  uri={resolveVideoUri(p.mediaUrl)}
+                  live={p.edit ?? null}
+                  autoPlay
+                  contentFit="contain"
+                  style={{ width: videoW, height: videoH }}
+                />
+              </View>
             ) : (
               <EditedPhoto uri={p.mediaUrl} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}

@@ -491,6 +491,81 @@ begin
     assert not exists (select 1 from public.circle_messages where circle_id = room), 'and its messages too';
   end;
 
+  -- ------------------------------------------------------ a Space has a feed
+  -- The tabs on a Space are only honest if they answer with the same rule the
+  -- main feeds use. A post of mine that is mine-only must be in my Space and
+  -- nowhere else; a Circle post must be in neither the Space nor the Flow.
+  declare
+    own_post bigint;
+    room_post bigint;
+  begin
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+    j := public.create_post('only I should read this', null, 'connections');
+    own_post := (j ->> 'id')::bigint;
+
+    assert exists (
+      select 1 from jsonb_array_elements(public.space_posts((select id from profiles where name = 'Daniel'), 50) -> 'items') i
+       where (i ->> 'id')::bigint = own_post
+    ), 'your own post belongs in your own Space';
+
+    -- Marcus is not connected to Daniel; connections-only is not his to read.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert not exists (
+      select 1 from jsonb_array_elements(public.space_posts((select id from profiles where name = 'Daniel'), 50) -> 'items') i
+       where (i ->> 'id')::bigint = own_post
+    ), 'a Space must not show a post the viewer could not see in the Flow';
+
+    -- A Circle post is addressed to a room, so it reaches nobody else — but a
+    -- Space is "what did this person share with me", and a room you are in with
+    -- them counts. What matters is that the room's privacy holds on both feeds.
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    j := public.create_circle('Smoke space room', '', array[]::bigint[]);
+    room := (j -> 'circle' ->> 'id')::bigint;
+    j := public.create_post('inside the room', null, 'connections', room);
+    room_post := (j ->> 'id')::bigint;
+
+    assert not exists (
+      select 1 from jsonb_array_elements(public.flow_feed(50) -> 'items') i
+       where (i ->> 'id')::bigint = room_post
+    ), 'a Circle post must never leak into the Flow';
+
+    -- Marcus is not in the room, so he sees it in neither feed — not even on
+    -- the author's own Space, which is the whole point of asking the question.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert not exists (
+      select 1 from jsonb_array_elements(public.space_posts((select id from profiles where name = 'Daniel'), 50) -> 'items') i
+       where (i ->> 'id')::bigint = room_post
+    ), 'a Space must not reveal a Circle post to someone outside the Circle';
+
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    perform public.leave_circle(room);
+  end;
+
+  -- The ring is a fact about a Moment, and it must agree with the viewer.
+  declare
+    my_moment bigint;
+    target bigint;
+  begin
+    target := (select id from profiles where name = 'Daniel');
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    j := public.create_moment('text', 'my live moment', null, 'glass', 'connections', null);
+    my_moment := (j ->> 'id')::bigint;
+
+    assert (public.load_profile(target) ->> 'hasMoment')::boolean = true,
+      'your own live Moment should ring on your own Space';
+
+    -- Marcus is not connected: he may not see it, so he must not be told it exists.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    if public.load_profile(target) is not null then
+      assert (public.load_profile(target) ->> 'hasMoment')::boolean = false,
+        'the ring must not promise a Moment the viewer cannot open';
+    end if;
+
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    perform public.delete_moment(my_moment);
+  end;
+
   delete from public.moments where body in ('connections only', 'gone', 'flood');
   delete from public.messages where media_url = 'messages/999/note.jpg';
 

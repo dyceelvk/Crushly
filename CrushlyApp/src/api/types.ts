@@ -43,6 +43,13 @@ export type Profile = {
   canMessage: boolean;
   acceptsCrushes: boolean;
   at?: number;
+  /**
+   * Whether this member has a live Moment you are allowed to open — the blue
+   * ring around their photo. Server-decided, because whether a Moment is
+   * visible depends on audience, blocks and a private profile, and a client
+   * cannot know any of that. Absent means "not asked", not "no".
+   */
+  hasMoment?: boolean;
 };
 
 /** A post in the Flow: does not expire, unlike a Moment. */
@@ -169,6 +176,8 @@ export type FullProfile = Profile & {
   lifestyle: Lifestyle;
   messageBlockReason: string | null;
   moments: MomentSummary[];
+  /** The ring, decided server-side. See `Profile.hasMoment`. */
+  hasMoment: boolean;
 };
 
 export type Privacy = {
@@ -225,6 +234,8 @@ export type Me = {
   privacy: Privacy;
   notifications: NotificationSettings;
   plus: { active: boolean; interested: boolean; deepCrushesLeft: number; deepCrushesPerDay: number };
+  /** Whether you have a live Moment — the ring on your own Space. */
+  hasMoment?: boolean;
 };
 
 export type DiscoverPage = { items: Profile[]; nextOffset: number | null; total: number; viewerHasLocation: boolean };

@@ -9,6 +9,7 @@ import {
   type ViewToken,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -332,23 +333,71 @@ function VibeClip({
     p.muted = false;
   });
 
+  // The viewer stopped this one on purpose. Scrolling away and back is a new
+  // visit, so the flag is cleared when the page stops being the active one —
+  // otherwise a clip paused three pages ago would still refuse to play.
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    if (!active) setHeld(false);
+  }, [active]);
+
   useEffect(() => {
     if (!player) return;
-    if (active) player.play();
+    if (active && !held) player.play();
     else player.pause();
-  }, [player, active]);
+  }, [player, active, held]);
 
   // Audio must not survive the page or the screen.
   useEffect(() => () => player?.pause(), [player]);
 
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player?.playing ?? false });
+  const button = (
+    <View
+      pointerEvents="none"
+      style={{
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.42)',
+      }}
+    >
+      <Ionicons name={isPlaying ? 'pause' : 'play'} size={30} color="#fff" style={{ marginLeft: isPlaying ? 0 : 4 }} />
+    </View>
+  );
+
   return (
-    <VideoView
-      player={player}
-      style={{ width: '100%', height: '100%' }}
-      contentFit="contain"
-      nativeControls={false}
-      accessibilityLabel="Vibe clip"
-      onFirstFrameRender={() => undefined}
-    />
+    <View style={{ width: '100%', height: '100%' }}>
+      <VideoView
+        player={player}
+        style={{ width: '100%', height: '100%' }}
+        contentFit="contain"
+        nativeControls={false}
+        accessibilityLabel="Vibe clip"
+        onFirstFrameRender={() => undefined}
+      />
+      {/*
+        Always drawn here, unlike the Flow, because a full-screen feed has no
+        other way out of a clip. Tapping the picture is the gesture people
+        already try; there is no chrome competing for it.
+      */}
+      <Pressable
+        onPress={() => setHeld((h) => !h)}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Pause clip' : 'Play clip'}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {isPlaying ? null : button}
+      </Pressable>
+    </View>
   );
 }

@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { StyleProp, ViewStyle } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
+import { useEvent } from 'expo';
 import { useVideoPlayer } from 'expo-video';
+import { Ionicons } from '@expo/vector-icons';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
 
@@ -25,6 +27,8 @@ export function EditedClip({
   loop = false,
   paused = false,
   contentFit = 'contain',
+  controls = true,
+  onTogglePlay,
 }: {
   uri: string;
   live: LiveEdit | null;
@@ -35,6 +39,18 @@ export function EditedClip({
   paused?: boolean;
   /** 'contain' shows the full video without cropping; 'cover' fills the frame. */
   contentFit?: 'contain' | 'cover';
+  /**
+   * Draw the play/pause button. On by default: every place a clip is shown in
+   * this app is a place somebody will want to stop it. Turn it off for an
+   * embedded thumbnail where a button would just be clutter.
+   */
+  controls?: boolean;
+  /**
+   * Called when the viewer presses play/pause, so a parent that decides what
+   * plays (the Vibe feed, which owns one clip per page) can stay the only
+   * thing that decides. Without it, the button drives the player directly.
+   */
+  onTogglePlay?: () => void;
 }) {
   const look = live?.look ?? NEUTRAL_LOOK;
 
@@ -50,6 +66,47 @@ export function EditedClip({
   });
 
   const [clipTime, setClipTime] = useState(0);
+
+  // A press and the parent's `autoPlay` fight each other unless the press wins
+  // for as long as it should. `held` is that: the viewer's choice, which the
+  // parent's props cannot overwrite on the next render.
+  const [held, setHeld] = useState<'playing' | 'paused' | null>(null);
+
+  // `playing` is the truth from the player itself, not from our own bookkeeping
+  // — a clip that ends, or that the OS stops, must show the right icon.
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player?.playing ?? false });
+
+  const [ended, setEnded] = useState(false);
+  useEffect(() => {
+    if (!player) return;
+    const sub = player.addListener('playToEnd', () => setEnded(true));
+    return () => sub.remove();
+  }, [player]);
+
+  const playing = isPlaying && !ended;
+
+  const toggle = useCallback(() => {
+    if (!player) return;
+    if (onTogglePlay) {
+      onTogglePlay();
+      return;
+    }
+    if (player.playing) {
+      player.pause();
+      musicPlayer?.pause();
+      setHeld('paused');
+    } else {
+      // Pressing play on a finished clip starts it again rather than doing
+      // nothing, which is what a viewer means by pressing play.
+      if (ended) {
+        player.currentTime = 0;
+        setEnded(false);
+      }
+      player.play();
+      if (look.music) musicPlayer?.play();
+      setHeld('playing');
+    }
+  }, [player, musicPlayer, look.music, onTogglePlay, ended]);
 
   // Only the live half is replayed here, so the edit is rebuilt from it and the
   // cut stays at its defaults — the file is already trimmed, and trimming it a
@@ -82,14 +139,19 @@ export function EditedClip({
 
   useEffect(() => {
     if (!player) return;
-    if (autoPlay && !paused) {
-      player.play();
-      if (look.music) musicPlayer?.play();
-    } else if (paused) {
+    // Being paused by the screen outranks everything: nothing should be
+    // audible behind a viewer or under a modal.
+    if (paused || held === 'paused') {
       player.pause();
       if (look.music) musicPlayer?.pause();
+      return;
     }
-  }, [player, musicPlayer, autoPlay, paused, look.music]);
+    if (held === 'playing' || autoPlay) {
+      if (ended) return;
+      player.play();
+      if (look.music) musicPlayer?.play();
+    }
+  }, [player, musicPlayer, autoPlay, paused, look.music, held, ended]);
 
   // Always pause when the component unmounts so audio never leaks
   // into another screen (e.g. feed video under a post viewer).
@@ -116,6 +178,39 @@ export function EditedClip({
   }, [player]);
 
   return (
-    <VideoEditCanvas player={player} edit={edit} clipTime={clipTime} style={style} contentFit={contentFit} />
+    <View style={style}>
+      <VideoEditCanvas player={player} edit={edit} clipTime={clipTime} style={{ flex: 1 }} contentFit={contentFit} />
+      {controls ? (
+        <Pressable
+          onPress={toggle}
+          accessibilityRole="button"
+          accessibilityLabel={playing ? 'Pause clip' : 'Play clip'}
+          // A corner button, not a sheet over the clip. In the Flow the whole
+          // video is already a button that opens the post, and a full-cover
+          // overlay here would silently win that tap — leaving people unable
+          // to open a clip's post. Small, always visible, and it never
+          // competes for the gesture the screen below already claimed.
+          hitSlop={8}
+          style={{
+            position: 'absolute',
+            right: 10,
+            bottom: 10,
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.55)',
+          }}
+        >
+          <Ionicons
+            name={playing ? 'pause' : 'play'}
+            size={19}
+            color="#fff"
+            style={playing ? undefined : { marginLeft: 2 }}
+          />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }

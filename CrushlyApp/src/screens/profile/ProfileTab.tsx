@@ -49,7 +49,11 @@ export function ProfileTabScreen() {
       </View>
 
       <View style={{ alignItems: 'center', marginTop: space.lg }}>
-        <Avatar uri={p.photos[0]?.url} name={p.name} size={116} ring="gold" />
+        {/*
+          Your own Space rings here too: a Moment of yours that is live is
+          worth seeing on your own profile, not only on everybody else's.
+        */}
+        <Avatar uri={p.photos[0]?.url} name={p.name} size={116} ring="gold" ringMoment={me.hasMoment} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.md }}>
           <Txt variant="heading">
             {p.name}

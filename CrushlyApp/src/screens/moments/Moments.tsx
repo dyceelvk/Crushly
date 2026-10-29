@@ -194,7 +194,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
             </View>
           ) : null}
           <View style={{ position: 'absolute', bottom: 10, left: 0, right: 0, alignItems: 'center' }}>
-            <Avatar uri={group.user.photo} name={group.user.name} size={Math.min(36, width * 0.3)} ring={group.user.mutual ? 'crush' : null} />
+            <Avatar uri={group.user.photo} name={group.user.name} size={Math.min(36, width * 0.3)} ring={group.user.mutual ? 'crush' : null} ringMoment />
           </View>
         </View>
       </View>

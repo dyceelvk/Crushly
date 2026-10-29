@@ -11,6 +11,8 @@ export const keys = {
   me: ['me'] as const,
   discover: ['discover'] as const,
   user: (id: number) => ['user', id] as const,
+  spacePosts: (id: number) => ['space-posts', id] as const,
+  spaceVibes: (id: number) => ['space-vibes', id] as const,
   crushes: ['crushes'] as const,
   conversations: ['conversations'] as const,
   conversation: (id: number) => ['conversation', id] as const,
@@ -43,6 +45,28 @@ export const useDiscover = () =>
 
 export const useUser = (id: number) =>
   useQuery({ queryKey: keys.user(id), queryFn: () => service.loadProfile(id), staleTime: 30_000 });
+
+/**
+ * A Space's own posts.
+ *
+ * Separate key from the Flow on purpose: posting invalidates `keys.flow`, and
+ * that must not silently blank someone else's Space — or, worse, make it look
+ * as though a post vanished from a feed that never held it.
+ */
+export const useSpacePosts = (authorId: number) =>
+  useQuery({
+    queryKey: keys.spacePosts(authorId),
+    queryFn: () => service.spacePosts(authorId),
+    staleTime: 30_000,
+  });
+
+/** A Space's live Vibes. */
+export const useSpaceVibes = (authorId: number) =>
+  useQuery({
+    queryKey: keys.spaceVibes(authorId),
+    queryFn: () => service.spaceVibes(authorId),
+    staleTime: 30_000,
+  });
 
 export const useCrushes = () =>
   useQuery({ queryKey: keys.crushes, queryFn: () => service.crushes(), staleTime: 15_000 });
