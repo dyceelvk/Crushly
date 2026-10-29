@@ -77,8 +77,16 @@ begin
   end if;
 
   perform 1 from profiles where id = me for update;
-  select count(*) into n from media_upload_reservations
-    where user_id = me and created_at > public.now_ms() - 3600 * 1000;
+  -- The ceiling counts what was actually published in the last hour, across
+  -- every kind, not the tickets handed out: a ticket that is never used to
+  -- upload should not eat into someone's hour.
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from vibes where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
   if n >= 40 then
     perform public.crushly_fail(429, '', 'That’s a lot of uploading — try again in a little while.');
   end if;
@@ -100,4 +108,17 @@ grant execute on function public.media_upload_ticket(text, text, int) to authent
 
 -- The bucket's own ceiling, so a direct-to-Storage fallback is bounded by the
 -- same number the ticket promises.
-update storage.buckets set file_size_limit = 80 * 1024 * 1024 where id = 'media';
+--
+-- Guarded: the migration test harness builds a minimal stand-in for the storage
+-- schema and has no buckets table at all, and older Supabase images have no
+-- file_size_limit column. The ticket above is the limit that actually applies
+-- to members; this line only keeps the bucket from contradicting it.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'storage' and table_name = 'buckets' and column_name = 'file_size_limit'
+  ) then
+    update storage.buckets set file_size_limit = 80 * 1024 * 1024 where id = 'media';
+  end if;
+end $$;
