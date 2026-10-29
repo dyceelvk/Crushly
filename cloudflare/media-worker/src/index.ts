@@ -671,14 +671,14 @@ export default {
       if (verdict.data.cacheable) {
         const cache = caches.default;
         const hit = await cache.match(key).catch(() => undefined);
-        if (hit) return withHeaders(hit, path);
+        if (hit) return withHeaders(hit, path, verdict.data.cacheable);
       }
 
       const auth = await b2Auth(env);
       const upstream = await b2Download(env, auth, path);
       if (!upstream.ok) return fail(404, 'That file isn’t available.', origin);
 
-      const response = withHeaders(new Response(upstream.body, upstream), path);
+      const response = withHeaders(new Response(upstream.body, upstream), path, verdict.data.cacheable);
       if (verdict.data.cacheable) {
         const cached = response.clone();
         void caches.default.put(key, cached).catch(() => undefined);
@@ -704,12 +704,22 @@ export default {
   },
 };
 
-/** Cache policy by kind: Moments are short-lived, chat media is never shared. */
-function withHeaders(response: Response, path: string): Response {
+/**
+ * Cache policy by kind: Moments are short-lived, chat media is never shared.
+ *
+ * `cacheable` comes from the database, which is the only place that knows
+ * whether every member would be given these bytes. The two must agree: a file
+ * the database refuses to share was still going out with a week of shared
+ * caching on it, which is the one combination that leaks — the Worker declines
+ * to put it in the edge cache, then a browser or a downstream proxy keeps it
+ * anyway and hands it to whoever asks next. When the database says no, nothing
+ * downstream is allowed to remember it either.
+ */
+function withHeaders(response: Response, path: string, cacheable: boolean): Response {
   const kind = path.split('/')[0];
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
-  if (kind === 'messages') headers.set('Cache-Control', 'private, no-store');
+  if (!cacheable || kind === 'messages') headers.set('Cache-Control', 'private, no-store');
   else if (kind === 'moments') headers.set('Cache-Control', 'public, max-age=3600');
   else headers.set('Cache-Control', 'public, max-age=604800');
   return new Response(response.body, { status: response.status, headers });

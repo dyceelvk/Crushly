@@ -361,8 +361,12 @@ begin
     if sqlerrm like '%oversized files must be refused%' then raise; end if;
   end;
 
-  j := public.can_view_media('photos/1/a.jpg');
-  assert (j ->> 'allowed')::bool and (j ->> 'cacheable')::bool, 'profile photos are readable by members and cacheable';
+  -- Asked about a photo that exists, because the rule is about rows now: a
+  -- path in the photos/ shape that nothing points at is not a profile photo,
+  -- and media_security stopped handing those out. Seeded faces live under
+  -- seed/, which the same branch covers.
+  j := public.can_view_media((select ph.url from photos ph where ph.user_id = me order by ph.id limit 1));
+  assert (j ->> 'allowed')::bool and (j ->> 'cacheable')::bool, 'a profile photo you own is readable and cacheable';
 
   insert into public.messages (conversation_id, sender_id, kind, media_url)
     values (conv_id, me, 'photo', 'messages/999/note.jpg');
