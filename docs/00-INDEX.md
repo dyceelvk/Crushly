@@ -78,6 +78,15 @@ the one open verification.
 All four are covered by new tests: `saves.sql`, `post_shape.sql`, and three
 cases in `videoEdit.test.ts`. Suite is green: 121 app tests, all database suites.
 
+**Where it is live, and where it is not.** The database half is deployed:
+`post_saves` and its three RPCs are in production with RLS verified, and
+`circle_feed` now returns counts — so the app people are using picks up correct
+Circle counts with no update. The *Saved* screen is **not** in anything
+published: the production web bundle contains no `save_post`, the 1.0.10 APK
+predates it, and Vercel is building this branch as STAGED previews only. It
+reaches people when the web build is promoted or `main` is merged, and when an
+APK is cut. `DEPLOYED.md` has the measurements.
+
 ## Keeping this library current
 
 These files are copied from the repository by hand after a release. When a
