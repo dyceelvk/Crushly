@@ -39,7 +39,13 @@ const LIFECYCLE = {
 
 const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account';
 const AUTH_TTL_MS = 23 * 60 * 60 * 1000; // B2 tokens last 24h; refresh early
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // matches media_upload_ticket's ceiling
+// The ceiling must be the largest one media_upload_ticket grants, or the
+// Worker rejects a file the database was willing to accept: it did, at 25 MB,
+// while clips were allowed 80. Every upload between the two sizes failed here,
+// and the app then fell back to Supabase Storage, which refuses upserts — so
+// the member saw "new row violates row-level security policy" for a file that
+// was never too large and had nothing to do with row policies.
+const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
 
 /**
  * Backblaze wants a SHA-1 with every upload, and hashing is the only real work

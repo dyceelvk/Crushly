@@ -3,7 +3,7 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,7 +18,8 @@
         "NSPhotoLibraryUsageDescription": "Crushly lets you choose photos for your profile, Moments and messages.",
         "NSMicrophoneUsageDescription": "Crushly uses your microphone for voice calls and voice messages.",
         "NSLocationWhenInUseUsageDescription": "Crushly uses your approximate location to show distance. Your exact location is never shared."
-      }
+      },
+      "buildNumber": "9"
     },
     "android": {
       "package": "app.crushly",
@@ -38,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 8
+      "versionCode": 9
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -62,12 +63,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#070708",
           "image": "./assets/splash-mark.png",
-          "imageWidth": 140,
+          "imageWidth": 150,
+          "resizeMode": "contain",
+          "backgroundColor": "#070708",
           "dark": {
-            "backgroundColor": "#070708",
-            "image": "./assets/splash-mark.png"
+            "image": "./assets/splash-mark.png",
+            "backgroundColor": "#070708"
           }
         }
       ],

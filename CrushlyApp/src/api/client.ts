@@ -245,17 +245,42 @@ export async function uploadMediaFile(
 ): Promise<string> {
   requireConfig();
   const blob = await uriToBlob(uri);
+  // One content type for both destinations, derived from the extension we are
+  // actually going to store. A picker that reports `video/quicktime` alongside
+  // a `.mp4` path used to be sent through verbatim, and the server rejected the
+  // file as an unsupported type — which the app then reported as a row-policy
+  // failure on the post.
+  const ext = (path.split('.').pop() ?? '').toLowerCase();
+  const type = uploadContentType(contentType, ext);
   const kind = bucket === 'media' ? mediaKind(path) : null;
   if (kind && moved(kind)) {
     try {
-      return await uploadToMediaStore(kind, blob, contentType);
+      return await uploadToMediaStore(kind, blob, type);
     } catch (e) {
-      // A member must never lose a photo because the object store hiccuped —
-      // fall back to Supabase Storage for this upload and carry on.
-      console.warn('object store upload failed, using Supabase Storage:', (e as Error).message);
+      // There used to be a silent fallback here: write the same bytes into the
+      // Supabase bucket and carry on. It never worked. That bucket is private
+      // and holds none of the moved kinds, so `mediaUrl()` rewrote the stored
+      // path back to the object store and the clip came out missing — a post
+      // that looked successful and displayed nothing. Worse, the write it did
+      // attempt failed on its own, and the message a member saw was "new row
+      // violates row-level security policy", which sent everybody looking at
+      // the post insert instead of at a 25 MB ceiling and a file-extension bug.
+      //
+      // So: no fallback. Say what happened, keep the draft in the composer, and
+      // let them try again.
+      console.warn('object store upload failed:', (e as Error).message);
+      const message = (e as Error)?.message;
+      throw new ApiError(
+        (e as { status?: number })?.status ?? 0,
+        message && !/^\s*$/.test(message) ? message : 'We couldn’t upload that file. Try again.',
+      );
     }
   }
-  const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType, upsert: true });
+  // `upsert: false`, deliberately. Turned on, Storage answers an upload with an
+  // UPDATE against storage.objects first, and that write is refused with "new
+  // row violates row-level security policy" even for a file the member owns.
+  // Every path here is minted from a timestamp, so there is nothing to replace.
+  const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false });
   if (error) throw toApiError(error);
   return path;
 }
@@ -275,11 +300,37 @@ export async function removeMediaFile(path?: string | null): Promise<void> {
 /** File extension for a mime type, with sensible fallbacks. */
 export function extensionFor(mimeType: string | undefined, fallback = 'jpg'): string {
   const type = (mimeType ?? '').toLowerCase();
+  // Video first, and by its own branch: `video/mp4` also contains "mp4", so a
+  // clip used to fall through to the audio case and be stored as `.m4a`. The
+  // database then refused it as "not a supported file type" and the app blamed
+  // row policies for the failure.
+  if (type.startsWith('video/')) {
+    if (type.includes('webm')) return 'webm';
+    if (type.includes('quicktime')) return 'mov';
+    return 'mp4';
+  }
   if (type.includes('jpeg')) return 'jpg';
   if (type.includes('webm')) return 'webm';
   if (type.includes('mpeg') || type.includes('mp3')) return 'mp3';
   if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'm4a';
+  if (type.includes('heic') || type.includes('heif')) return 'heic';
   if (type.includes('png')) return 'png';
   const fromType = type.split('/')[1];
   return fromType && fromType.length <= 5 ? fromType : fallback;
+}
+
+/**
+ * The content type to send for a file, given what the picker claimed and the
+ * extension we are actually going to store. Phone cameras hand back
+ * `video/quicktime` and an untouched `.MOV`; the server accepts neither, and a
+ * member should not lose a clip to a container name.
+ */
+export function uploadContentType(mimeType: string | undefined, ext: string): string {
+  const type = (mimeType ?? '').toLowerCase();
+  if (ext === 'mp4' || ext === 'm4a') return type.startsWith('video/') || ext === 'mp4' ? 'video/mp4' : 'audio/mp4';
+  if (ext === 'webm') return type.startsWith('audio/') ? 'audio/webm' : 'video/webm';
+  if (ext === 'jpg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  return type || 'application/octet-stream';
 }
