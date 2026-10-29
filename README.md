@@ -11,6 +11,7 @@ A premium social and dating app. *Meet people. Make connections. Follow the feel
 | [`CrushlyApp/`](CrushlyApp/) | The app. Expo (React Native) for iOS, Android and web, written in TypeScript. |
 | [`supabase/`](supabase/) | The backend. Supabase: Postgres schema + row-level security, RPC functions, Auth, Storage and an optional demo seed. |
 | [`netlify.toml`](netlify.toml) | Web deployment: builds the Expo web export on Netlify. |
+| [`docs/`](docs/README.md) | Documentation: architecture, media pipeline, database, viewer spec, bug reports. |
 
 There is no server to run — the app talks to Supabase directly.
 
