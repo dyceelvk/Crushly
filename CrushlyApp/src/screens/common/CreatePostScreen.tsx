@@ -20,7 +20,7 @@ import { Input } from '../../components/Input';
 import { Segmented } from '../../components/Segmented';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { attachToPost, createPost } from '../../api/service';
+import { createPost } from '../../api/service';
 import { keys } from '../../api/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { VideoEditorModal } from '../../components/VideoEditor';
@@ -30,7 +30,6 @@ import { preparedClip } from '../../lib/videoEncode';
 import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
-import type { Post } from '../../api/types';
 import type { ScreenProps } from '../../navigation/types';
 
 type MediaItem = {
@@ -86,14 +85,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const MAX_MEDIA = 10;
   const MAX_VIDEO_SECONDS = 60;
 
-  /**
-   * Attachments are uploaded in sequence, so this is the one upload in flight.
-   * It drives the status line under the spinner: "Sharing your post…" when
-   * there is nothing to upload, "Uploading 2 of 4…" when there is. On a slow
-   * connection a multi-file post takes a while, and a spinner with no number
-   * looks hung.
-   */
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const primaryMedia = media[0];
 
@@ -172,8 +163,11 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         videoMaxDuration: MAX_VIDEO_SECONDS,
         quality: 0.8,
-        allowsMultipleSelection: true,
-        selectionLimit: MAX_MEDIA - media.length,
+        // `posts` stores a single media_url, so this offers a single file.
+        // It used to allow ten and quietly post the first — see the note in
+        // post() for what that cost.
+        allowsMultipleSelection: false,
+        selectionLimit: 1,
       });
       if (result.canceled || !result.assets?.length) return;
 
@@ -241,84 +235,53 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
 
   const post = async () => {
     setBusy(true);
-    const uploads = media.length;
-    setProgress(uploads > 1 ? { done: 0, total: uploads } : null);
-
-    // One attachment goes through createPost, which owns the upload. Anything
-    // after it is uploaded as an extra and attached to the same post.
-    //
-    // This used to read `const first = primaryMedia` and send nothing else, so
-    // picking eight photos posted one of them and dropped the rest without a
-    // word. The grid rendered all eight, which made it look done.
-    let posted: Post | null = null;
-    const failed: string[] = [];
-
     try {
-      for (let i = 0; i < media.length || i === 0; i += 1) {
-        const item = media[i];
-        const first = i === 0;
+      const first = primaryMedia;
+      let photoUri: string | undefined;
+      let photoMime: string | undefined;
+      let videoUri: string | undefined;
+      let videoMime: string | undefined;
+      let edit: LiveEdit | null = null;
 
-        let photoUri: string | undefined;
-        let photoMime: string | undefined;
-        let videoUri: string | undefined;
-        let videoMime: string | undefined;
-        let edit: LiveEdit | null = null;
-
-        if (item?.type === 'video') {
-          const prepared = await preparedClip(item.edit ?? emptyEdit(0), item.uri, 'post');
-          videoUri = prepared.uri ?? item.uri;
-          videoMime = item.mimeType;
-          edit = prepared.live;
-        } else if (item?.type === 'photo') {
-          photoUri = item.uri;
-          photoMime = item.mimeType;
-          edit = item.edit ? splitForUpload(item.edit, 'post').live : null;
-        }
-
-        try {
-          if (first) {
-            posted = await createPost({
-              body: body.trim(),
-              audience,
-              photoUri,
-              photoMime,
-              videoUri,
-              videoMime,
-              edit,
-            });
-          } else if (posted) {
-            await attachToPost(posted.id, { photoUri, photoMime, videoUri, videoMime, edit });
-          }
-        } catch (e) {
-          // A post that is already live must not disappear from the screen
-          // because attachment four failed. Keep going and say what was lost.
-          if (first) throw e;
-          failed.push(`#${i + 1}`);
-          console.warn('attachment failed:', (e as Error).message);
-        }
-
-        if (uploads > 1) setProgress({ done: i + 1, total: uploads });
+      if (first?.type === 'video') {
+        const prepared = await preparedClip(first.edit ?? emptyEdit(0), first.uri, 'post');
+        videoUri = prepared.uri ?? first.uri;
+        videoMime = first.mimeType;
+        edit = prepared.live;
+      } else if (first?.type === 'photo') {
+        photoUri = first.uri;
+        photoMime = first.mimeType;
+        edit = first.edit ? splitForUpload(first.edit, 'post').live : null;
       }
+
+      // One attachment per post, deliberately.
+      //
+      // The first version of this fix uploaded the extras as follow-up posts in
+      // the same thread. That does not work: `posts` has no reply_to column and
+      // create_post() takes no such parameter, so the call would have failed at
+      // runtime on the second file. Typecheck cannot see it because rpc() is
+      // handed a string. Real multi-image needs a post_media table; until that
+      // migration exists, the picker offers one file rather than accepting ten
+      // and dropping nine without a word.
+      const created = await createPost({
+        body: body.trim(),
+        audience,
+        photoUri,
+        photoMime,
+        videoUri,
+        videoMime,
+        edit,
+      });
 
       qc.invalidateQueries({ queryKey: keys.flow });
       qc.invalidateQueries({ queryKey: keys.me });
-      if (posted) void qc.invalidateQueries({ queryKey: keys.post(posted.id) });
-
-      if (failed.length > 0) {
-        toast({
-          kind: 'error',
-          title: `Posted, without ${failed.join(', ')}`,
-          message: 'Your post is live. The rest can be added again from the post.',
-        });
-      } else {
-        toast({ kind: 'success', title: 'Post shared' });
-      }
+      void qc.invalidateQueries({ queryKey: keys.post(created.id) });
+      toast({ kind: 'success', title: 'Post shared' });
       navigation.goBack();
     } catch (e) {
       toast({ kind: 'error', title: 'Post not shared', message: (e as Error).message });
     } finally {
       setBusy(false);
-      setProgress(null);
     }
   };
 
@@ -433,7 +396,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
           <View style={{ alignItems: 'center', paddingVertical: space.lg }}>
             <ActivityIndicator size="large" color={colors.gold} />
             <Txt variant="small" color="textSecondary" style={{ marginTop: 10 }}>
-              {progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Sharing your post…'}
+              Sharing your post…
             </Txt>
           </View>
         ) : (
@@ -520,7 +483,7 @@ function ComposerLeft({
             Add Media
           </Txt>
           <Txt variant="caption" color="textMuted">
-            Photos, videos or multiple files
+            One photo or one video per post
           </Txt>
         </View>
         {media.map((m) => (
