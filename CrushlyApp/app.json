@@ -10,6 +10,7 @@
     "backgroundColor": "#070708",
     "primaryColor": "#00C6FF",
     "description": "Crushly \u2014 a private, modern social space to meet people and make connections.",
+    "owner": "Odoh chiagoziem isreal",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",

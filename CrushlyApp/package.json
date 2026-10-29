@@ -1,6 +1,8 @@
 {
   "name": "crushly-app",
   "version": "1.0.0",
+  "author": "Odoh chiagoziem isreal",
+  "license": "UNLICENSED",
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/fraunces": "^0.4.1",
