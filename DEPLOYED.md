@@ -9,16 +9,41 @@ copied from a build log.
 |---|---|
 | Web app | https://mecrushly.vercel.app — 200 |
 | Download page | https://mecrushly.vercel.app/download — 200 |
-| Android | **1.0.7** · versionCode **100018** |
-| APK | `Crushly-1.0.7-Android9plus.apk` · **94,990,451** bytes |
-| SHA-256 | `12d4e944d1d4d69dda3368a79b67c414f37a1fd1a68fedc5267112a2384571bb` |
-| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.7 |
-| Branch | `app/space-tabs-and-playback` @ `cef4a0a` |
+| Android | **1.0.8** · versionCode **8** |
+| APK | `Crushly-1.0.8-Android9plus.apk` · **93,215,151** bytes |
+| SHA-256 | `bf3fb2934fb91e755aa0552dcc9899fa18fabd9d8c108625b9261399fc59ea71` |
+| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.8 |
+| Worker | https://crushly-media.dyceelvk.workers.dev |
+| Branch | `app/space-tabs-and-playback` @ `03c625c` |
 
 Verified by downloading `/apk/latest` and hashing it: the bytes on disk match
 the size and fingerprint the Worker advertises, and the bundle inside carries
 the comments work (`keyboardDidShow`, `This comment was deleted`,
 `View comments, `). Both ABIs present (`armeabi-v7a`, `arm64-v8a`).
+
+## What is in 1.0.8
+
+- **Video posts actually post.** The upload path was refusing every ticket with
+  `new row violates row-level security policy`. `media_insert_own` is restored,
+  the per-kind ceilings are 80 MB for clips, and the ticket writes to the
+  reservations table it has always referenced — a table that existed only in
+  the live database and is now a migration, so a fresh environment can upload.
+- **The first screen is the brand.** The app used to open on the platform's own
+  splash. It now opens on the Crushly mark with "Create and discover your
+  Crushes.", and holds it for 1.2 seconds rather than flashing past.
+- **"Find your connection" is gone** — that copy is now "Create and discover
+  your Crushes." everywhere it appeared.
+- **3.7 MB smaller.** 19 icon fonts reduced to the one the app actually uses,
+  plus 3.1 MB of unreferenced images and a dead component removed.
+- **Update checking works again.** The version code published to phones is now
+  read out of the APK rather than invented from the version string — 1.0.7
+  shipped as code 7 while the Worker advertised 100018, so every installed
+  phone was told forever that an update was waiting.
+
+Verified the same way as before: `/apk/latest` downloaded here is 93,215,151
+bytes with the published SHA-256, and the manifest inside reports
+`versionName='1.0.8' versionCode='8'`. The download page names the same file,
+size and fingerprint.
 
 ## What is in 1.0.7
 
