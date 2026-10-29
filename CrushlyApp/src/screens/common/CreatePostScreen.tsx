@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Txt } from '../../components/Txt';
@@ -19,7 +20,6 @@ import { Input } from '../../components/Input';
 import { Segmented } from '../../components/Segmented';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useCreatePost } from '../../api/hooks';
 import { createPost } from '../../api/service';
 import { keys } from '../../api/hooks';
 import { useQueryClient } from '@tanstack/react-query';
@@ -27,7 +27,7 @@ import { VideoEditorModal } from '../../components/VideoEditor';
 import type { LiveEdit, VideoEdit } from '../../lib/videoEdit';
 import { emptyEdit, splitForUpload } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
-import { setTrimResult, takeTrimResult, TrimResult } from './VideoTrimScreen';
+import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -41,7 +41,8 @@ type MediaItem = {
   edit?: VideoEdit | null;
 };
 
-type PostType = 'Flows' | 'Stories' | 'Moments' | 'Vibes';
+/** One ceiling, stated once — the database truncates at the same 500. */
+const MAX_BODY = 500;
 
 /**
  * Create Post — unified composer for text, photo, and video posts.
@@ -57,15 +58,11 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const { contentWidth, gutter } = useLayout();
   const toast = useToast();
   const qc = useQueryClient();
-  const create = useCreatePost();
 
-  const isTablet = width >= 700;
   const twoCol = width >= 600;
 
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
-  const [postType, setPostType] = useState<PostType>('Flows');
-  const [scheduleOn, setScheduleOn] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
@@ -74,6 +71,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
   const [editorTool, setEditorTool] = useState<'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null>(null);
   const [fontIndex, setFontIndex] = useState(0);
+  const [locating, setLocating] = useState(false);
 
   const FONT_OPTIONS = [
     fonts.regular,
@@ -85,11 +83,10 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   ] as const;
 
   const MAX_MEDIA = 10;
-  const MAX_BODY = 500;
   const MAX_VIDEO_SECONDS = 60;
 
+
   const primaryMedia = media[0];
-  const videoMedia = media.find((m) => m.type === 'video');
 
   // When returning from the dedicated trim screen, apply the chosen trim.
   useFocusEffect(
@@ -115,8 +112,50 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
     }, [pendingMedia])
   );
 
-  const maxBody = postType === 'Moments' ? 280 : MAX_BODY;
   const ready = body.trim().length > 0 || media.length > 0;
+
+  /**
+   * Ask the device for the current place and append it to the post.
+   *
+   * The composer has no location column to write to, so the place becomes part
+   * of the post's words — which is also what everybody already reads. The
+   * permission prompt appears on tap, never at launch: a location request
+   * before someone has done anything is the kind of thing that gets an app
+   * deleted.
+   */
+  const addLocation = async () => {
+    if (locating) return;
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        toast({
+          kind: 'error',
+          title: 'Location is off',
+          message: 'Allow location for Crushly in Settings to add a place.',
+        });
+        return;
+      }
+      const at = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [place] = await Location.reverseGeocodeAsync({
+        latitude: at.coords.latitude,
+        longitude: at.coords.longitude,
+      });
+      const label = [place?.city, place?.region].filter(Boolean).join(', ') || place?.country || null;
+      if (!label) {
+        toast({ kind: 'error', title: 'No place found', message: 'Try again in a moment.' });
+        return;
+      }
+      setBody((prev) => {
+        const line = `📍 ${label}`;
+        return prev.includes(line) ? prev : prev.trim() ? `${prev.trim()}\n\n${line}` : line;
+      });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Could not get your place', message: (e as Error).message });
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const pickMedia = async () => {
     try {
@@ -124,8 +163,11 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         videoMaxDuration: MAX_VIDEO_SECONDS,
         quality: 0.8,
-        allowsMultipleSelection: true,
-        selectionLimit: MAX_MEDIA - media.length,
+        // `posts` stores a single media_url, so this offers a single file.
+        // It used to allow ten and quietly post the first — see the note in
+        // post() for what that cost.
+        allowsMultipleSelection: false,
+        selectionLimit: 1,
       });
       if (result.canceled || !result.assets?.length) return;
 
@@ -195,8 +237,10 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
     setBusy(true);
     try {
       const first = primaryMedia;
-      let videoUri: string | undefined = undefined;
-      let videoMime: string | undefined = undefined;
+      let photoUri: string | undefined;
+      let photoMime: string | undefined;
+      let videoUri: string | undefined;
+      let videoMime: string | undefined;
       let edit: LiveEdit | null = null;
 
       if (first?.type === 'video') {
@@ -205,14 +249,25 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         videoMime = first.mimeType;
         edit = prepared.live;
       } else if (first?.type === 'photo') {
+        photoUri = first.uri;
+        photoMime = first.mimeType;
         edit = first.edit ? splitForUpload(first.edit, 'post').live : null;
       }
 
-      await createPost({
+      // One attachment per post, deliberately.
+      //
+      // The first version of this fix uploaded the extras as follow-up posts in
+      // the same thread. That does not work: `posts` has no reply_to column and
+      // create_post() takes no such parameter, so the call would have failed at
+      // runtime on the second file. Typecheck cannot see it because rpc() is
+      // handed a string. Real multi-image needs a post_media table; until that
+      // migration exists, the picker offers one file rather than accepting ten
+      // and dropping nine without a word.
+      const created = await createPost({
         body: body.trim(),
         audience,
-        photoUri: first?.type === 'photo' ? first.uri : undefined,
-        photoMime: first?.type === 'photo' ? first.mimeType : undefined,
+        photoUri,
+        photoMime,
         videoUri,
         videoMime,
         edit,
@@ -220,6 +275,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
 
       qc.invalidateQueries({ queryKey: keys.flow });
       qc.invalidateQueries({ queryKey: keys.me });
+      void qc.invalidateQueries({ queryKey: keys.post(created.id) });
       toast({ kind: 'success', title: 'Post shared' });
       navigation.goBack();
     } catch (e) {
@@ -231,7 +287,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
 
   const canPost = !busy && ready;
 
-  const headerHeight = 60;
   const rightPanelWidth = 340;
 
   return (
@@ -253,7 +308,13 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         <Txt variant="title" style={{ flex: 1 }} accessibilityRole="header">
           Create Post
         </Txt>
-        <Button title="Draft" size="sm" variant="ghost" onPress={() => {}} accessibilityLabel="Save as draft" />
+        <Button
+          title="Cancel"
+          size="sm"
+          variant="ghost"
+          onPress={() => navigation.goBack()}
+          accessibilityLabel="Discard this post"
+        />
       </View>
 
       <ScrollView
@@ -277,11 +338,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               setBody={setBody}
               audience={audience}
               setAudience={setAudience}
-              postType={postType}
-              setPostType={setPostType}
-              scheduleOn={scheduleOn}
-              setScheduleOn={setScheduleOn}
-              maxBody={maxBody}
               media={media}
               removeMedia={removeMedia}
               pickMedia={pickMedia}
@@ -291,6 +347,8 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               fontIndex={fontIndex}
               setFontIndex={setFontIndex}
               fontOptions={FONT_OPTIONS}
+              addLocation={addLocation}
+              locating={locating}
             />
             </View>
 
@@ -299,10 +357,8 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               <ComposerRight
                 primaryMedia={primaryMedia}
                 media={media}
-                postType={postType}
                 audience={audience}
                 body={body}
-                maxBody={maxBody}
                 openEditor={openEditor}
               />
             </View>
@@ -314,11 +370,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               setBody={setBody}
               audience={audience}
               setAudience={setAudience}
-              postType={postType}
-              setPostType={setPostType}
-              scheduleOn={scheduleOn}
-              setScheduleOn={setScheduleOn}
-              maxBody={maxBody}
               media={media}
               removeMedia={removeMedia}
               pickMedia={pickMedia}
@@ -328,14 +379,14 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               fontIndex={fontIndex}
               setFontIndex={setFontIndex}
               fontOptions={FONT_OPTIONS}
+              addLocation={addLocation}
+              locating={locating}
             />
             <ComposerRight
               primaryMedia={primaryMedia}
               media={media}
-              postType={postType}
               audience={audience}
               body={body}
-              maxBody={maxBody}
               openEditor={openEditor}
             />
           </View>
@@ -350,7 +401,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
           </View>
         ) : (
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, paddingHorizontal: gutter }}>
-            <Button title="Reset" size="sm" variant="ghost" onPress={() => {}} accessibilityLabel="Reset post" />
             <Button
               title="Post"
               icon="paper-plane"
@@ -390,11 +440,6 @@ function ComposerLeft({
   setBody,
   audience,
   setAudience,
-  postType,
-  setPostType,
-  scheduleOn,
-  setScheduleOn,
-  maxBody,
   media,
   removeMedia,
   pickMedia,
@@ -404,16 +449,13 @@ function ComposerLeft({
   fontIndex,
   setFontIndex,
   fontOptions,
+  addLocation,
+  locating,
 }: {
   body: string;
   setBody: (v: string) => void;
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
-  postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
-  setPostType: (v: 'Flows' | 'Stories' | 'Moments' | 'Vibes') => void;
-  scheduleOn: boolean;
-  setScheduleOn: (v: boolean) => void;
-  maxBody: number;
   media: MediaItem[];
   removeMedia: (id: string) => void;
   pickMedia: () => void;
@@ -423,6 +465,8 @@ function ComposerLeft({
   fontIndex: number;
   setFontIndex: (v: number) => void;
   fontOptions: readonly string[];
+  addLocation: () => void;
+  locating: boolean;
 }) {
   const { colors } = useTheme();
 
@@ -439,7 +483,7 @@ function ComposerLeft({
             Add Media
           </Txt>
           <Txt variant="caption" color="textMuted">
-            Photos, videos or multiple files
+            One photo or one video per post
           </Txt>
         </View>
         {media.map((m) => (
@@ -478,7 +522,7 @@ function ComposerLeft({
           value={body}
           onChangeText={setBody}
           placeholder="Good energy, better days. Same me, just more focused."
-          maxLength={500}
+          maxLength={MAX_BODY}
           showCount
           style={{ minHeight: 150, fontFamily: fontOptions[fontIndex] }}
         />
@@ -525,8 +569,16 @@ function ComposerLeft({
         </View>
       </View>
 
-      {/* Location */}
-      <SettingsRow label="Location" hint="Add a location (optional)" icon="location-outline" />
+      {/* Location — the one settings row wired to something real: it asks the
+          device for a place and appends it to the post, which is what the
+          database stores. Permission is requested on tap, never at launch. */}
+      <SettingsRow
+        label="Location"
+        hint={locating ? 'Finding you…' : 'Add a place to this post'}
+        icon="location-outline"
+        onPress={addLocation}
+        disabled={locating}
+      />
 
       {/* Audience */}
       <View style={{ gap: space.sm }}>
@@ -544,39 +596,16 @@ function ComposerLeft({
         />
       </View>
 
-      {/* Tag people */}
-      <SettingsRow label="Tag people" hint="Mention friends or creators" icon="person-outline" />
-
-      {/* Post type */}
-      <View style={{ gap: space.sm }}>
-        <Txt variant="label" color="textSecondary">Post type</Txt>
-        <Segmented<'Flows' | 'Stories' | 'Moments' | 'Vibes'>
-          options={[
-            { value: 'Flows', label: 'Flows' },
-            { value: 'Stories', label: 'Stories' },
-            { value: 'Moments', label: 'Moments' },
-            { value: 'Vibes', label: 'Vibes' },
-          ]}
-          value={postType}
-          onChange={setPostType}
-        />
-      </View>
-
-      {/* Advanced options */}
-      <SettingsRow label="Advanced options" hint="Allow comments, remix, etc." icon="settings-outline" />
-
-      {/* Schedule post */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <View style={{ gap: 2 }}>
-          <Txt variant="label" color="textSecondary">Schedule post</Txt>
-          <Txt variant="caption" color="textMuted">Post later (optional)</Txt>
-        </View>
-        <Pressable onPress={() => setScheduleOn(!scheduleOn)} accessibilityRole="switch" accessibilityState={{ checked: scheduleOn }} hitSlop={12} style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: scheduleOn ? colors.primary : colors.elevated, alignItems: scheduleOn ? 'flex-end' : 'flex-start', justifyContent: 'center', paddingHorizontal: 4 }}>
-          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', marginHorizontal: 3 }} />
-        </Pressable>
-      </View>
-
-      <Button title="Reset" size="sm" variant="ghost" onPress={() => {}} accessibilityLabel="Reset post" />
+      {/*
+        What used to sit here — Post type (Flows/Stories/Moments/Vibes),
+        "Tag people", "Advanced options", a Schedule toggle and a Reset button —
+        is gone on purpose. Every one of them was UI with no path to the
+        database: the segmented control never reached createPost, the toggles
+        held local state nothing read, and three SettingsRows had no onPress.
+        A control that looks live and does nothing is worse than absent: it
+        reads as a bug in the app, not a missing feature.
+        These come back when they are wired, not before.
+      */}
     </View>
   );
 }
@@ -585,18 +614,14 @@ function ComposerLeft({
 function ComposerRight({
   primaryMedia,
   media,
-  postType,
   audience,
   body,
-  maxBody,
   openEditor,
 }: {
   primaryMedia: MediaItem | undefined;
   media: MediaItem[];
-  postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
   audience: 'everyone' | 'connections';
   body: string;
-  maxBody: number;
   openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
 }) {
   const { colors } = useTheme();
@@ -668,12 +693,14 @@ function ComposerRight({
 }
 
 /** Reusable setting row with chevron. */
-function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: string; icon: keyof typeof Ionicons.glyphMap; onPress?: () => void; }) {
+function SettingsRow({ label, hint, icon, onPress, disabled }: { label: string; hint: string; icon: keyof typeof Ionicons.glyphMap; onPress?: () => void; disabled?: boolean; }) {
   const { colors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled || !onPress}
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
       hitSlop={12}
       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}
     >

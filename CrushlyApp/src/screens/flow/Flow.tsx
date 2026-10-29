@@ -31,6 +31,7 @@ import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
+import { EditedPhoto } from '../../components/EditedPhoto';
 import { splitForUpload, emptyEdit, type VideoEdit } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import type { RootStackParamList } from '../../navigation/types';
@@ -278,7 +279,7 @@ return (
             {mediaKind === 'video' ? (
               <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
             ) : (
-              <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
+              <EditedPhoto uri={p.mediaUrl} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
           </View>
         ) : null}
