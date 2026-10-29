@@ -3,7 +3,6 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { Txt } from './Txt';
 import { Photo, Avatar } from './Photo';
 import { VerifiedBadge } from './Badges';
@@ -32,13 +31,15 @@ type Props = {
   onLongPress: (m: Message) => void;
   onDoubleTap: (m: Message) => void;
   onOpenPhoto: (uri: string) => void;
+  /** Opens the full-screen player for a clip someone whispered. */
+  onOpenVideo?: (uri: string) => void;
   onOpenProfile: (id: number) => void;
   onRetry: (m: Message) => void;
   /** Tapping the quoted original — jumps back to it in the conversation. */
   onOpenReply?: (id: number) => void;
 };
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onRetry, onOpenReply }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenVideo, onOpenProfile, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
   const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile';
@@ -75,7 +76,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
         {m.meta?.replyTo ? <ReplyQuote quote={m.meta.replyTo as ReplyQuote} onPress={onOpenReply} /> : null}
         {m.kind === 'moment_reply' ? <MomentQuote m={m} /> : null}
         {bare ? (
-          <BareContent m={m} />
+          <BareContent m={m} peerName={peerName} onOpenVideo={onOpenVideo} />
         ) : (
           <View
             style={{
@@ -116,7 +117,15 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
   );
 });
 
-function BareContent({ m }: { m: Message }) {
+function BareContent({
+  m,
+  peerName,
+  onOpenVideo,
+}: {
+  m: Message;
+  peerName: string;
+  onOpenVideo?: (uri: string) => void;
+}) {
   const { colors } = useTheme();
   if (m.kind === 'sticker') {
     const s = STICKERS.find((x) => x.key === m.meta.sticker);
@@ -141,7 +150,7 @@ function BareContent({ m }: { m: Message }) {
     );
   }
   if (m.kind === 'video') {
-    return <VideoNoteBubble m={m} />;
+    return <VideoNoteBubble m={m} peerName={peerName} onOpen={() => m.mediaUrl && onOpenVideo?.(mediaUrl(m.mediaUrl) ?? m.mediaUrl!)} />;
   }
   // shared profile
   return (
@@ -230,22 +239,93 @@ function MomentQuote({ m }: { m: Message }) {
   );
 }
 
-function VideoNoteBubble({ m }: { m: Message }) {
+/**
+ * A clip somebody whispered.
+ *
+ * It used to be a 220x280 player with native controls, sitting in the thread
+ * like a photo. That is the wrong shape for a message: it is a whole video
+ * player in the middle of a conversation, and it started itself.
+ *
+ * A whisper is a small window instead — a wide, short rectangle with a still
+ * frame, the sender's name, and what it is. Nothing plays until it is opened,
+ * which is what you want in a list of messages: one tap opens the clip full
+ * screen, and the conversation never makes a sound on its own.
+ */
+function VideoNoteBubble({
+  m,
+  peerName,
+  onOpen,
+}: {
+  m: Message;
+  peerName: string;
+  onOpen: () => void;
+}) {
   const { colors } = useTheme();
-  const player = useVideoPlayer(m.mediaUrl ? mediaSource(mediaUrl(m.mediaUrl)) : null, (p) => {
-    p.loop = false;
-  });
+  const seconds = Math.round(Number(m.meta.duration) || 0);
+  const sender = m.mine ? 'You' : peerName || 'Someone';
+
   return (
-    <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000', width: 220 }}>
-      <VideoView
-        player={player}
-        style={{ width: 220, height: 280 }}
-        contentFit="cover"
-        nativeControls
-        accessibilityLabel={`Video note, ${durationLabel(Number(m.meta.duration) || 0)}`}
-      />
-      {m.pending ? <ActivityIndicator size="small" color={colors.gold} style={{ position: 'absolute', top: 8, right: 8 }} /> : null}
-    </View>
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${sender} sent you a video, ${durationLabel(seconds)}. Open it.`}
+      style={{
+        width: 236,
+        borderRadius: radius.lg,
+        overflow: 'hidden',
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.goldLine,
+      }}
+    >
+      {/* The window: a wide rectangle, not a portrait player. The play mark and
+          the length are all it needs to say; the picture comes when it opens. */}
+      <View style={{ height: 118, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.elevated }}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.28)',
+          }}
+        >
+          <Ionicons name="play" size={22} color="#fff" style={{ marginLeft: 3 }} />
+        </View>
+        <View
+          style={{
+            position: 'absolute',
+            right: 8,
+            bottom: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            borderRadius: 6,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+          }}
+        >
+          <Ionicons name="videocam" size={10} color="#fff" />
+          <Txt variant="caption" color="#FFFFFF">
+            {durationLabel(seconds)}
+          </Txt>
+        </View>
+        {m.pending ? (
+          <ActivityIndicator size="small" color={colors.gold} style={{ position: 'absolute', top: 8, right: 8 }} />
+        ) : null}
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10 }}>
+        <Txt variant="smallStrong" numberOfLines={2} style={{ flex: 1 }}>
+          {`${sender} sent you a video`}
+        </Txt>
+        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+      </View>
+    </Pressable>
   );
 }
 

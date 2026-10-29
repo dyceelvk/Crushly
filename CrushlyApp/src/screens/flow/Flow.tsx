@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, View, useWindowDimensions } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, Share, View, useWindowDimensions, type ViewToken } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -54,14 +54,116 @@ export function FlowScreen() {
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
-  const toast = useToast();
   const { data: me } = useMe();
   const flow = useFlow();
   const [composer, setComposer] = useState(false);
 
+  /**
+   * Which clip is allowed to play. Only one, ever.
+   *
+   * Every clip in the Flow used to call `play()` on mount and loop, so scrolling
+   * past three clips left all three audible at once, looping over each other.
+   * Two independent rules stop that:
+   *
+   *  - `focused` is false whenever this tab is not the one in front, so a clip
+   *    cannot keep playing behind another tab.
+   *  - `visible` is the single post whose clip is actually on screen, decided
+   *    by the platform's own viewability pass rather than a scroll handler
+   *    guessing at offsets. Everything else is paused.
+   */
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+
+  const [visible, setVisible] = useState<number | null>(null);
+  // RN throws if either of these changes between renders, so both live in refs.
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const first = viewableItems[0];
+    setVisible(first?.item ? (first.item as Post).id : null);
+  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 55 }).current;
+
+  const header = (
+    <>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flex: 1 }}>
+          <Txt variant="display" accessibilityRole="header">
+            Flows
+          </Txt>
+          <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
+            What people are sharing. Posts stay until they’re removed.
+          </Txt>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
+          <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
+        </View>
+      </View>
+
+      <Pressable
+        onPress={() => setComposer(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Share a post"
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.lg,
+          backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+          paddingHorizontal: 14, paddingVertical: 12,
+        }}
+      >
+        <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={36} />
+        <Txt variant="body" color="textMuted" style={{ flex: 1 }}>
+          Share something…
+        </Txt>
+        <Ionicons name="create-outline" size={18} color={colors.gold} />
+      </Pressable>
+
+      {/* Discover is not a tab: it is one door, here, that opens into a
+          single screen holding People, Moments and Vibes as sections. */}
+      <Pressable
+        onPress={() => navigation.navigate('Discover')}
+        accessibilityRole="button"
+        accessibilityLabel="Discover. Vibes, Moments and public posts"
+        style={{
+          marginTop: space.lg,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          backgroundColor: colors.goldSoft,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.gold,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+        }}
+      >
+        <Ionicons name="compass-outline" size={18} color={colors.gold} />
+        <Txt variant="bodyStrong" style={{ flex: 1 }}>
+          Discover
+        </Txt>
+        <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
+          Vibes, Moments and public posts
+        </Txt>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </Pressable>
+    </>
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView
+      {/*
+        A list, not a ScrollView, for one reason: only a virtualised list can
+        report which rows are on screen, and that report is what stops a clip
+        below the fold from playing. Everything above the posts is the header,
+        so the screen looks exactly as it did.
+      */}
+      <FlatList
+        data={flow.posts}
+        keyExtractor={(p) => String(p.id)}
+        ListHeaderComponent={header}
         contentContainerStyle={{
           paddingTop: insets.top + space.sm,
           paddingHorizontal: gutter,
@@ -74,100 +176,54 @@ export function FlowScreen() {
           <RefreshControl refreshing={flow.isRefetching} onRefresh={flow.refresh} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
         }
         showsVerticalScrollIndicator={false}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1 }}>
-            <Txt variant="display" accessibilityRole="header">
-              Flows
-            </Txt>
-            <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-              What people are sharing. Posts stay until they’re removed.
-            </Txt>
+        onViewableItemsChanged={onViewable}
+        viewabilityConfig={viewabilityConfig}
+        renderItem={({ item }) => (
+          <View style={{ marginTop: space.md }}>
+            <PostCard post={item} playing={focused && visible === item.id} />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
-            <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
-          </View>
-        </View>
-
-        {/* Home opens on the rooms you belong to, not on a list of strangers. */}
-
-        <Pressable
-          onPress={() => setComposer(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Share a post"
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.lg,
-            backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
-            paddingHorizontal: 14, paddingVertical: 12,
-          }}
-        >
-          <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={36} />
-          <Txt variant="body" color="textMuted" style={{ flex: 1 }}>
-            Share something…
-          </Txt>
-          <Ionicons name="create-outline" size={18} color={colors.gold} />
-        </Pressable>
-
-        {/* Discover is not a tab: it is one door, here, that opens into a
-            single screen holding People, Moments and Vibes as sections. */}
-        <Pressable
-          onPress={() => navigation.navigate('Discover')}
-          accessibilityRole="button"
-          accessibilityLabel="Discover. Vibes, Moments and public posts"
-          style={{
-            marginTop: space.lg,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            backgroundColor: colors.goldSoft,
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.gold,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-          }}
-        >
-          <Ionicons name="compass-outline" size={18} color={colors.gold} />
-          <Txt variant="bodyStrong" style={{ flex: 1 }}>
-            Discover
-          </Txt>
-          <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
-            Vibes, Moments and public posts
-          </Txt>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </Pressable>
-
-        <View style={{ marginTop: space.xl, gap: space.md }}>
-          {flow.isLoading ? (
-            <Skeleton style={{ height: 120 }} />
+        )}
+        ListFooterComponent={
+          flow.posts.length ? (
+            <View style={{ marginTop: space.md }}>
+              <Button title="Show older posts" variant="secondary" size="md" onPress={flow.loadOlder} loading={flow.isFetching} />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          flow.isLoading ? (
+            <Skeleton style={{ height: 120, marginTop: space.xl }} />
           ) : flow.isError ? (
             <ErrorState message={flow.error instanceof Error ? flow.error.message : 'Your Flows didn’t load.'} onRetry={flow.refresh} />
-          ) : flow.posts.length ? (
-            <>
-              {flow.posts.map((p) => (
-                <PostCard key={p.id} post={p} />
-              ))}
-              <Button title="Show older posts" variant="secondary" size="md" onPress={flow.loadOlder} loading={flow.isFetching} />
-            </>
           ) : (
-            <EmptyState
-              icon="chatbubbles-outline"
-              title="Your Flows are quiet"
-              message="Posts from people you’re connected with show up here. Share something and it will."
-              action={{ label: 'Share a post', onPress: () => setComposer(true) }}
-            />
-          )}
-        </View>
-      </ScrollView>
+            <View style={{ marginTop: space.xl }}>
+              <EmptyState
+                icon="chatbubbles-outline"
+                title="Your Flows are quiet"
+                message="Posts from people you’re connected with show up here. Share something and it will."
+                action={{ label: 'Share a post', onPress: () => setComposer(true) }}
+              />
+            </View>
+          )
+        }
+      />
 
       <Composer visible={composer} onClose={() => setComposer(false)} onPosted={flow.refresh} />
     </View>
   );
 }
 
-/** One post. Also used inside a Circle, where the audience is the room. */
-export function PostCard({ post: p }: { post: Post }) {
+/**
+ * One post. Also used inside a Circle and in Discover, where the audience is
+ * the room or the public feed.
+ *
+ * `playing` is the screen's answer to "is this the one on screen". A post that
+ * is not playing still shows its clip — paused on its first frame — because a
+ * feed you have to press play on is not a feed. Defaults to true so the screens
+ * that do not track viewability (Discover, Circles) keep working as before
+ * rather than silently going mute.
+ */
+export function PostCard({ post: p, playing = true }: { post: Post; playing?: boolean }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
@@ -299,7 +355,12 @@ return (
                 <EditedClip
                   uri={resolveVideoUri(p.mediaUrl)}
                   live={p.edit ?? null}
-                  autoPlay
+                  autoPlay={playing}
+                  // Sound never starts on its own in a feed. The clip plays
+                  // muted with a "Tap for sound" mark; unmuting is the viewer's
+                  // decision, made by tapping the clip they are looking at.
+                  muted
+                  showSoundHint
                   contentFit="contain"
                   style={{ width: videoW, height: videoH }}
                 />

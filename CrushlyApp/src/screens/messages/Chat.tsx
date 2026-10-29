@@ -11,6 +11,7 @@ import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
+import { EditedClip } from '../../components/EditedClip';
 import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
@@ -57,6 +58,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
+  // The clip somebody whispered, open full screen. Separate from the photo
+  // viewer because a clip needs a player and a photo needs an image.
+  const [clipViewer, setClipViewer] = useState<string | null>(null);
+  // Nothing in a thread makes a sound on its own, so the viewer opens silent
+  // and the sound is one deliberate tap away.
+  const [clipSound, setClipSound] = useState(false);
   const [recording, setRecording] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
@@ -427,6 +434,10 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       onLongPress={setActionFor}
                       onDoubleTap={react}
                       onOpenPhoto={setViewer}
+                      onOpenVideo={(uri) => {
+                        setClipSound(false);
+                        setClipViewer(uri);
+                      }}
                       onOpenProfile={openProfile}
                       onRetry={retry}
                       onOpenReply={jumpTo}
@@ -641,6 +652,9 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         }))}
       />
 
+      {/* Clip viewer — what the little window in the thread opens into. */}
+      <ClipViewer uri={clipViewer} sound={clipSound} onToggleSound={() => setClipSound((v) => !v)} onClose={() => setClipViewer(null)} insetsTop={insets.top} />
+
       {/* Photo viewer */}
       <Modal visible={!!viewer} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)', justifyContent: 'center' }}>
@@ -666,5 +680,54 @@ function TrayButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyp
         {label}
       </Txt>
     </Pressable>
+  );
+}
+
+/**
+ * A whispered clip, full screen.
+ *
+ * Shares EditedClip so it measures the clip and fits the frame to its real
+ * shape, and gives the same tap-to-pause control as everywhere else. Sound is
+ * off until asked for: opening somebody's clip should not be a noise the room
+ * hears.
+ */
+function ClipViewer({
+  uri,
+  sound,
+  onToggleSound,
+  onClose,
+  insetsTop,
+}: {
+  uri: string | null;
+  sound: boolean;
+  onToggleSound: () => void;
+  onClose: () => void;
+  insetsTop: number;
+}) {
+  return (
+    <Modal visible={!!uri} animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
+        {uri ? (
+          <EditedClip
+            uri={uri}
+            live={null}
+            style={{ width: '100%', height: '100%' }}
+            autoPlay
+            loop
+            muted={!sound}
+            contentFit="contain"
+          />
+        ) : null}
+        <View style={{ position: 'absolute', top: insetsTop + 12, right: 16, flexDirection: 'row', gap: 8 }}>
+          <IconButton
+            icon={sound ? 'volume-high' : 'volume-mute'}
+            variant="glass"
+            label={sound ? 'Mute clip' : 'Play clip with sound'}
+            onPress={onToggleSound}
+          />
+          <IconButton icon="close" variant="glass" label="Close clip" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
   );
 }

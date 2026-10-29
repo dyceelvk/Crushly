@@ -251,7 +251,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           </Pressable>
         </View>
 
-        {/* Media — always shrinks to fit the whole screen, nothing cut off */}
+        {/* Media — always shrinks to fit the whole screen, nothing cut off.
+            EditedClip measures the track and rebuilds the frame to its real
+            ratio, so a portrait clip fills the phone instead of sitting in a
+            letterbox, and a tap anywhere on it pauses it. */}
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           {hasMedia && mediaUri ? (
             <EditedClip
@@ -259,6 +262,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               live={post.edit ?? null}
               style={{ width: '100%', height: '100%' }}
               autoPlay
+              // A viewer opened on purpose is the one place a loop belongs:
+              // it is the only clip on screen and the viewer asked for it.
               loop
               contentFit="contain"
             />
