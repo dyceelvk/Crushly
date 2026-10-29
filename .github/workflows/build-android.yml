@@ -100,6 +100,12 @@ jobs:
           cd android
           # Expo's generated debug certificate signs this internal test build,
           # NOT a Play Store release. JS is embedded; no Expo Go/Metro required.
+          #
+          # The version code comes from app.json and is what a phone compares
+          # against when it asks whether an update exists. It must only ever go
+          # up: a reused number makes a build invisible to anyone who already
+          # installed it.
+          echo "::notice::Building versionCode $(python3 -c "import json; print(json.load(open('../app.json'))['expo']['android']['versionCode'])") from app.json."
           ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=armeabi-v7a,arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || {
             tail -n 200 "$RUNNER_TEMP/crushly-gradle.log"
             python3 - <<'PYLOG'
@@ -230,7 +236,10 @@ jobs:
           # page can tell people exactly what they should be checking.
           bytes=$(wc -c < "apk/${file}")
           sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
-          out=$(python3 ../.github/scripts/update-worker-release.py --bytes "$bytes" --sha256 "$sha")
+          # The version code is read out of this file, not written by hand:
+          # the number a phone compares against has to be the one inside the
+          # APK it installed.
+          out=$(python3 ../.github/scripts/update-worker-release.py --apk "apk/${file}" --bytes "$bytes" --sha256 "$sha")
           printf '%s\n' "$out"
           if printf '%s' "$out" | grep -q 'changed=true'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
