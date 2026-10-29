@@ -249,7 +249,24 @@ jobs:
           # Pushing this file is what redeploys the Worker, so the build that
           # was just published is the one /version points at. The push cannot
           # retrigger this workflow: it only watches CrushlyApp/**.
-          git push
+          # The branch can move while the emulator boots (~20 minutes), and a
+          # rejected push here loses the release facts even though the APK is
+          # already published: the Worker keeps answering with the previous
+          # version while a newer file sits on the release. That happened, so
+          # rebase onto whatever arrived and push again rather than giving up.
+          for attempt in 1 2 3; do
+            if git pull --rebase --autostash && git push; then
+              break
+            fi
+            echo "note: push attempt ${attempt} lost the race; retrying after a rebase."
+            sleep $((attempt * 15))
+          done
+          # Fail loudly if it still has not landed - silent loss is the bug.
+          git fetch origin
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/$(git rev-parse --abbrev-ref HEAD))" ]; then
+            echo "::error::Could not publish release.json - the Worker will still offer the previous build."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
