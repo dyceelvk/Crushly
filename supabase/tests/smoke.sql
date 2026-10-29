@@ -544,6 +544,8 @@ begin
   end;
 
   -- The ring is a fact about a Moment, and it must agree with the viewer.
+  -- The earlier Keep Close block leaves Daniel and Marcus connected, so ask
+  -- the question while it is still a question.
   declare
     my_moment bigint;
     target bigint;
@@ -556,12 +558,17 @@ begin
     assert (public.load_profile(target) ->> 'hasMoment')::boolean = true,
       'your own live Moment should ring on your own Space';
 
-    -- Marcus is not connected: he may not see it, so he must not be told it exists.
-    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    -- A stranger who may not open it must not be told it exists.
+    perform set_config('request.jwt.claim.sub', jayden::text, false);
     if public.load_profile(target) is not null then
       assert (public.load_profile(target) ->> 'hasMoment')::boolean = false,
         'the ring must not promise a Moment the viewer cannot open';
     end if;
+
+    -- But a member Daniel is close to does open it, so the ring belongs there.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert (public.load_profile(target) ->> 'hasMoment')::boolean = true,
+      'a member you are close to still sees the ring on your Space';
 
     perform set_config('request.jwt.claim.sub', daniel::text, false);
     perform public.delete_moment(my_moment);
