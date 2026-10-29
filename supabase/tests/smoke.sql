@@ -544,14 +544,21 @@ begin
   end;
 
   -- The ring is a fact about a Moment, and it must agree with the viewer.
-  -- The earlier Keep Close block leaves Daniel and Marcus connected, so ask
-  -- the question while it is still a question.
+  -- Earlier blocks leave Daniel with a pile of live Moments, so the ring test
+  -- clears them first: a `connections` Moment is only interesting when it is
+  -- the only thing on the Space.
   declare
     my_moment bigint;
     target bigint;
+    stale bigint;
   begin
     target := (select id from profiles where name = 'Daniel');
     perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+    for stale in select id from public.moments where user_id = target loop
+      perform public.delete_moment(stale);
+    end loop;
+
     j := public.create_moment('text', 'my live moment', null, 'glass', 'connections', null);
     my_moment := (j ->> 'id')::bigint;
 
