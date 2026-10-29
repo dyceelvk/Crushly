@@ -9,17 +9,46 @@ copied from a build log.
 |---|---|
 | Web app | https://mecrushly.vercel.app — 200 |
 | Download page | https://mecrushly.vercel.app/download — 200 |
-| Android | **1.0.8** · versionCode **8** |
-| APK | `Crushly-1.0.8-Android9plus.apk` · **93,215,151** bytes |
-| SHA-256 | `bf3fb2934fb91e755aa0552dcc9899fa18fabd9d8c108625b9261399fc59ea71` |
-| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.8 |
+| Android | **1.0.9** · versionCode **9** |
+| APK | `Crushly-1.0.9-Android9plus.apk` · **92,960,171** bytes |
+| SHA-256 | `eac1f0180b55dac72cd0113195ab80c3aae3b4c2a2f451427bc9047dfc4cb45d` |
+| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.9 |
 | Worker | https://crushly-media.dyceelvk.workers.dev |
-| Branch | `app/space-tabs-and-playback` @ `03c625c` |
+| Branch | `app/space-tabs-and-playback` @ `22f159b` |
 
 Verified by downloading `/apk/latest` and hashing it: the bytes on disk match
 the size and fingerprint the Worker advertises, and the bundle inside carries
 the comments work (`keyboardDidShow`, `This comment was deleted`,
 `View comments, `). Both ABIs present (`armeabi-v7a`, `arm64-v8a`).
+
+## What is in 1.0.9
+
+- **Video posts work, for the first time on a phone.** Three defects were
+  stacked, and each one alone was enough to block a clip:
+
+  1. `extensionFor('video/mp4')` returned `m4a`, because the mp4 test sat in the
+     audio branch. Every clip was filed as an audio file and refused as an
+     unsupported type.
+  2. The media Worker buffered the whole upload into an `ArrayBuffer` to weigh
+     it. Anything past roughly 25 MB died there — while the database had been
+     raised to 80 MB for exactly those files.
+  3. The rejected upload fell back to Supabase Storage, where an `upsert` is
+     refused with `new row violates row-level security policy`. That message is
+     what everybody read as a blocked post. The fallback is gone: it also wrote
+     to a private bucket the app rewrites on read, so a "successful" fallback
+     would have produced a post showing nothing.
+
+  The Worker now streams to storage with the ceiling enforced from
+  `Content-Length`, and the extension and content type are decided in one place
+  with tests over the types a phone actually hands over.
+- **Nothing precedes the branded screen.** The native splash was a bare gradient
+  C that no screen in the app draws. `assets/splash-mark.png` is now the
+  CrushlyMark ribbon itself, generated from the same geometry as `Logo.tsx`,
+  with real transparency; verified through Expo's own prebuild, which writes it
+  into `splashscreen_logo.png` for every density plus the night variants, on
+  `#070708`.
+- **A 60 MB clip uploads.** Measured against the live Worker: 60 MB accepted,
+  where 26 MB used to fail.
 
 ## What is in 1.0.8
 
