@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
 import { useEvent } from 'expo';
 import { useVideoPlayer } from 'expo-video';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Txt } from './Txt';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';

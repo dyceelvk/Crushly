@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useRef } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { Txt } from './Txt';

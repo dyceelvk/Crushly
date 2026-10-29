@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEvent } from 'expo';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';

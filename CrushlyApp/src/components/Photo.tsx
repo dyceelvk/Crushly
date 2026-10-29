@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, type StyleProp, type ImageStyle, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { mediaUrl } from '../api/client';
 import { mediaSource } from '../lib/mediaHost';
 import { useTheme } from '../theme/ThemeProvider';

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { FlatList, Pressable, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Txt } from '../../components/Txt';
 import { Photo } from '../../components/Photo';
 import { EditedClip } from '../../components/EditedClip';

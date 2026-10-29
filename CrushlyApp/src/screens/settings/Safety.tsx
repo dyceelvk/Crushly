@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen, Header } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { ListRow, Group } from '../../components/ListRow';

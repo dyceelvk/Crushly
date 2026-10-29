@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { Pressable, Share, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActionSheet, BottomSheet, ConfirmSheet, type SheetAction } from '../components/BottomSheet';
 import { Txt } from '../components/Txt';
 import { Input } from '../components/Input';

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Txt } from './Txt';
 import { Button } from './Button';
 import { Avatar } from './Photo';

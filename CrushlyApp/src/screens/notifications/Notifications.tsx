@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { FlatList, Pressable, RefreshControl, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { Avatar } from '../../components/Photo';

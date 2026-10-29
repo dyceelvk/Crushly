@@ -1,7 +1,7 @@
 import React from 'react';
 import { Platform, Pressable, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Txt } from '../components/Txt';

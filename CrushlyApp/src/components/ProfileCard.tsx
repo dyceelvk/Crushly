@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Pressable, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { Profile } from '../api/types';
 import { Photo, OnlineDot } from './Photo';
 import { Txt } from './Txt';
