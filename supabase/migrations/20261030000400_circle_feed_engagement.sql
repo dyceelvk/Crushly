@@ -27,7 +27,7 @@ begin
   end if;
 
   if not public.is_circle_member(p_circle_id, me) then
-    perform public.crushly_fail(403, '', 'You’re not in that Circle.');
+    perform public.crushly_fail(404, '', 'Circle not found.');
   end if;
 
   for r in
