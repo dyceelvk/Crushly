@@ -162,7 +162,7 @@ will be offered a build it already has — or never offered one it needs.
 ## 8. Database
 
 **39** migrations in `supabase/migrations/`, all applied. Next migration must
-sort after `20261030000400`.
+sort after `20261030000046`.
 
 Core tables — this list is checked against the migrations, not remembered:
 `profiles`, `preferences`, `privacy`, `photos`, `posts`, `post_comments`,
@@ -221,6 +221,9 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
      measured off `/apk/latest`.
 2. Post a real `.mov` from an iPhone/Samsung gallery and confirm it posts and
    plays. **This is the one thing that has not been tested on a device.**
+**Released as 1.0.11 (version code 11).** The four fixes below, the repaired
+migration history and the renumbered files all ship together.
+
 3. ~~**Make Bookmark real, or remove it.**~~ **Done 2026-10-30.** `post_saves`
    (RLS: own rows only, no SELECT for anybody else), `save_post`,
    `post_saved` and `saved_posts`, a `SavedPosts` screen, a bookmark in the
@@ -237,7 +240,7 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
 - **`circle_feed` returned posts with no like or comment count.** It was the
   only function that builds a post by hand without merging
   `post_engagement`. Every post inside a Circle showed blank where the counts
-  go. Fixed in `20261030000400_circle_feed_engagement.sql`, and
+  go. Fixed in `20261030000046_circle_feed_engagement.sql`, and
   `supabase/tests/post_shape.sql` now asserts the shape for *every*
   post-returning function so the next hand-written feed cannot repeat it.
 - **Every Vibe in the full-screen feed played without its captions.** `Vibe.edit`

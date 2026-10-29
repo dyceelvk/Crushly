@@ -61,7 +61,7 @@ them hides an error or weakens a policy:
 
 | Layer | File | What it does now |
 |---|---|---|
-| Server accepts the container | `supabase/migrations/20261030000200_video_container_support.sql` | `media_extension()` gains `video/quicktime → mov` and `video/x-m4v → mp4`. The four duplicated per-kind sentences collapse into one `media_kind_allows()` function. Ceilings, rate limit and path booking are untouched. No executable or document type was added. |
+| Server accepts the container | `supabase/migrations/20261029195516_video_container_support.sql` | `media_extension()` gains `video/quicktime → mov` and `video/x-m4v → mp4`. The four duplicated per-kind sentences collapse into one `media_kind_allows()` function. Ceilings, rate limit and path booking are untouched. No executable or document type was added. |
 | Client converts first | `CrushlyApp/src/lib/nativeTrim.ts`, `src/api/service.ts` | `createPost()` remuxes any non-MP4/WebM clip to MP4 on the device. Stream copy through the platform muxer: frames are unchanged, it is near-instant, and **no encoder is added to the APK**. |
 | Worker stops leaking internals | `cloudflare/media-worker/src/index.ts` | Unwraps `__CRUSHLY__<status>__<code>__<message>` into a real HTTP status and a plain sentence. |
 | Worker serves a real type | same | `withHeaders()` sets `Content-Type` from the file extension and advertises `Accept-Ranges: bytes`. Previously storage metadata decided the type; with `X-Content-Type-Options: nosniff`, a clip could arrive as `application/octet-stream` and download instead of play. |

@@ -64,7 +64,7 @@ loosens a policy.
 
 ### 4.1 The database accepts the container
 
-`supabase/migrations/20261030000200_video_container_support.sql`
+`supabase/migrations/20261029195516_video_container_support.sql`
 
 ```sql
 when 'video/mp4'       then 'mp4'

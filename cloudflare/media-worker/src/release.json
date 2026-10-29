@@ -3,7 +3,7 @@
   "versionCode": 10,
   "minVersionCode": 3,
   "file": "Crushly-1.0.10-Android9plus.apk",
-  "notes": "The first release you can update from inside the app.",
+  "notes": "Save posts for later, and Vibes play with the captions their author drew.",
   "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.10/Crushly-1.0.10-Android9plus.apk",
   "bytes": 92987427,
   "sha256": "0f123f02774e51b0b5ea12ec748d59467d4faab51d9b36f6184a0adda7dc37ff"

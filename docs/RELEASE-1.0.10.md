@@ -56,7 +56,7 @@ and `video/webm`. `video/quicktime` mapped to `NULL`, and
 `media_upload_ticket()` raised 415 before a byte was written. Fixed in four
 layers:
 
-1. `supabase/migrations/20261030000200_video_container_support.sql` —
+1. `supabase/migrations/20261029195516_video_container_support.sql` —
    `video/quicktime → mov`, `video/x-m4v → mp4`, and the per-kind rules
    consolidated into one `media_kind_allows()`.
 2. `createPost()` remuxes non-MP4/WebM clips to MP4 on the device — a stream

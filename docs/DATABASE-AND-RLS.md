@@ -1,7 +1,8 @@
 # Crushly — database and RLS
 
 **Owner and official credit: Odoh chiagoziem isreal.**
-Schema state after 1.0.10. 39 migrations under `supabase/migrations/`.
+Schema state for 1.0.11. 39 migrations under `supabase/migrations/`, and the
+`version` stamp of every one of them matches what the live database recorded.
 
 ---
 
@@ -104,6 +105,30 @@ There is no `upsert` on the media bucket — `upsert: true` is refused by policy
 An earlier bug hid here: a failed upload used to fall back to a Supabase Storage
 write, which was rejected by RLS, and that rejection is what members saw as a
 blocked post. The fallback is gone.
+
+## 5a. Migration history, and why the filenames moved
+
+The live database is the authority on what has run, and for a while the
+repository disagreed with it. Three defects were found and fixed on 2026-10-29
+before 1.0.11 shipped:
+
+| Repository said | Database recorded | Fixed by |
+|---|---|---|
+| `20261030000200_video_container_support.sql` | `20261029195516` | renamed to match |
+| `20261030000300_post_saves.sql` | `20261029205829` | renamed to match |
+| `20261030000100_storage_upsert_policy.sql` | nothing | deleted — no such policy exists in production |
+
+None of this changed a single byte of schema. It is a bookkeeping repair, and
+it matters because of what it prevented: `supabase db push` compares **version
+numbers**, not file contents. With a file numbered `20261030000200` against a
+database that had already recorded `20261029195516`, the next `db push` would
+have re-run `video_container_support` **out of order, after** the migrations
+that came later — and `supabase_migrations.schema_migrations` has a primary key
+on `version`, so it would then have failed half-applied.
+
+The rule that follows: **a migration's version is whatever the database
+recorded, forever.** Renumbering a file that has already run is how a history
+becomes unreproducible. New migrations take the next free stamp.
 
 ## 6. Testing the database
 

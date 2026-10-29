@@ -6,7 +6,14 @@ Owner and official credit: **Odoh chiagoziem isreal**.
 
 ---
 
-## Unreleased — after 1.0.10
+## 1.0.11 — 2026-10-29
+
+**Version code 11.** This is the release that puts the four fixes below into
+people's hands: it is the first build carrying Save, drawn Vibe captions,
+correct Circle counts and the Android keyboard fix.
+
+Upgrading from 1.0.10 is an in-app update — Settings → About → Check for
+updates compares version code 11 against the 10 already installed.
 
 Four things that were quietly wrong. None is a new feature; all four are
 controls or numbers that did not do what they said.
@@ -37,7 +44,7 @@ moment the viewer closed. There was no table to write to.
 `circle_feed` was the only function that hand-builds a post without merging
 `post_engagement`, so every post in every Circle rendered a blank where the
 counts go. The Feed and the Circle disagreed about the same post. Fixed in
-`20261030000400_circle_feed_engagement.sql`.
+`20261030000046_circle_feed_engagement.sql`.
 
 `supabase/tests/post_shape.sql` now asserts the shape for every function that
 returns a post (`flow_feed`, `public_flow`, `space_posts`, `circle_feed`,
@@ -96,7 +103,7 @@ by the media Worker.
 **Fixes, four of them, at four different layers.**
 
 1. **Server accepts the container.**
-   `supabase/migrations/20261030000200_video_container_support.sql` extends
+   `supabase/migrations/20261029195516_video_container_support.sql` extends
    `media_extension()` with `video/quicktime` → `mov` and `video/x-m4v` → `mp4`,
    and moves the per-kind rules into one `media_kind_allows()` function instead
    of four copies of the same sentence. `media_upload_ticket()` is rewritten to
@@ -121,7 +128,7 @@ by the media Worker.
 
 | File | Why |
 |---|---|
-| `supabase/migrations/20261030000200_video_container_support.sql` | new — MIME map, per-kind rule, rewritten ticket |
+| `supabase/migrations/20261029195516_video_container_support.sql` | new — MIME map, per-kind rule, rewritten ticket |
 | `CrushlyApp/src/lib/upload.ts` | `clipContainer`, `clipContentType`, `containerIsStorable` |
 | `CrushlyApp/src/lib/nativeTrim.ts` | `remuxToMp4()` |
 | `CrushlyApp/src/api/service.ts` | `createPost` normalises a clip before upload |
