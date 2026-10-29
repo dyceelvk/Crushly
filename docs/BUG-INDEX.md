@@ -48,6 +48,14 @@ matter most:
 
 - **No `.mov` from a real phone has been tested on a device.** The pipeline is
   proven over HTTP; hardware is not.
+- **Bookmark on the post viewer writes nothing.** `toggleSave` in
+  `PostViewer.tsx` flips local state and toasts "Post saved". No request is
+  made; there is no `post_saves` table and no RPC. The rail order (Like,
+  Comment, Bookmark) is correct, but the third control lies about what it did.
+  Fix by adding the table + policy + RPC, or remove the control.
+- **`Deploy web app` is red on every commit.** Steps 1–6 pass; step 7,
+  `Deploy to Vercel`, fails. Confirmed on `1a73d1f`, `535034a`, `8ace805`,
+  `55bf392`, `22f159b`. The live site serves 1.0.9. Needs `VERCEL_TOKEN`.
 - `Chat.tsx` keyboard avoidance.
 - `post_media` and `circle_feed` engagement counts.
 - Comment invalidation after posting a comment.

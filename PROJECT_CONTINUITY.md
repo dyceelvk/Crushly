@@ -1,9 +1,14 @@
 # Crushly — project continuity
 
 **Last updated:** 2026-10-29
-**Current version:** 1.0.10 (versionCode 10) — building at the time of writing
-**Branch:** `app/space-tabs-and-playback`
+**Current version:** 1.0.10 (versionCode 10) — committed, APK building
+**Branch:** `app/space-tabs-and-playback` @ `1a73d1f`
 **Owner:** Odoh chiagoziem isreal
+
+**Where the docs live.** This file, `CHANGELOG.md` and the rest of the library
+are in [`docs/`](docs/README.md) in this repo — that is the canonical copy, and
+it moves with the code. Google Drive and Dropbox hold reading copies and a
+source archive; see `docs/BACKUP-LOG.md`.
 
 This document is the handover. Read it first, in a new session, before touching
 anything. It says what the project is, where everything lives, what is finished,
@@ -151,18 +156,27 @@ will be offered a build it already has — or never offered one it needs.
 | `VibeFeed` ignores `vibe.edit` | Open |
 | `VibeAuthor` has no `hasMoment` | Open |
 | No persistent E2E seed account | Open |
-| `VERCEL_TOKEN` secret missing → `deploy-web` job red | Open — deploy Vercel by hand |
+| **Bookmark on the post viewer is client-only.** `toggleSave` flips local state and toasts "Post saved" — nothing is written. There is no `post_saves` table and no RPC. The button lies. | Open |
+| `VERCEL_TOKEN` secret missing → `deploy-web` job red on **every** commit, including `535034a`. Steps 1–6 pass; step 7 `Deploy to Vercel` fails. The live site therefore still serves 1.0.9. | Open — deploy Vercel by hand |
 
 ## 8. Database
 
-38 migrations in `supabase/migrations/`, all applied. Next migration must sort
-after `20261030000200`.
+**37** migrations in `supabase/migrations/`, all applied. Next migration must
+sort after `20261030000200`.
 
-Core tables: `profiles`, `photos`, `posts`, `post_comments`, `post_likes`,
-`post_bookmarks`, `comments`, `crushes`, `conversations`, `messages`,
-`moments`, `moment_views`, `vibes`, `circles`, `circle_messages`, `blocks`,
-`reports`, `notifications`, `verification_requests`,
-`media_upload_reservations`.
+Core tables — this list is checked against the migrations, not remembered:
+`profiles`, `preferences`, `privacy`, `photos`, `posts`, `post_comments`,
+`post_comment_likes`, `post_reactions`, `crushes`, `passes`, `connections`,
+`keeps`, `conversations`, `messages`, `message_reactions`, `call_rooms`,
+`moments`, `moment_views`, `moment_reactions`, `vibes`, `vibe_views`,
+`circles`, `circle_members`, `circle_messages`, `blocks`, `reports`,
+`notifications`, `notification_settings`, `verification_requests`,
+`reserved_usernames`, `didit_events`, `media_upload_reservations`,
+`media_cleanup_log`. Every one has RLS enabled.
+
+There is **no** `post_likes`, `post_bookmarks` or `comments` table. A post like
+is a row in `post_reactions`; a post comment is `post_comments`. **A saved
+post has no table at all** — see the open defect in item 7.
 
 Two storage buckets, both private: `media` (80 MB ceiling) and `verification`.
 
@@ -186,11 +200,21 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
 ## 10. Next steps, in order
 
 1. Confirm 1.0.10 builds, publishes and announces itself; verify the heart icon
-   on a real phone after a fresh install.
+   on a real phone after a fresh install. As of `1a73d1f` the release workflow
+   had compiled the APK, verified install compatibility, packaged it, built the
+   Android 9 emulator image and started the cold-start/relaunch test. Publish,
+   the Worker announcement and the `release.json` commit were still pending —
+   **do not describe 1.0.10 as released until `release.json` names it**.
 2. Post a real `.mov` from an iPhone/Samsung gallery and confirm it posts and
    plays. **This is the one thing that has not been tested on a device.**
-3. `post_media` migration, so a post can carry more than one image.
-4. `Chat.tsx` keyboard fix.
-5. Add `VERCEL_TOKEN` so the web deploy stops needing a manual step.
-6. Persistent E2E seed account, so the browser tests stop depending on a
+3. **Make Bookmark real, or remove it.** The viewer's Bookmark button currently
+   toasts "Post saved" and writes nothing. Either add a `post_saves` table, an
+   RLS policy and a `toggle_post_save` RPC, or take the button out until it can
+   keep the promise. A control that lies is worse than a missing one.
+4. `post_media` migration, so a post can carry more than one image.
+5. `Chat.tsx` keyboard fix.
+6. Add `VERCEL_TOKEN` so the web deploy stops needing a manual step. Until then
+   **every** push leaves `Deploy web app` red and the live site on the previous
+   build, which is how a member ends up on 1.0.9 after a 1.0.10 release.
+7. Persistent E2E seed account, so the browser tests stop depending on a
    throwaway signup.

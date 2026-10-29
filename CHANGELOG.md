@@ -103,6 +103,20 @@ prebuild: `ic_launcher.webp` at 48/72/96/144/192 px and
 `PROJECT_CONTINUITY.md`, and in the Google Drive and Dropbox project libraries.
 It is held in one constant, `APP_AUTHOR` in `src/lib/company.ts`.
 
+### Known, not fixed in this release
+
+- **Bookmark on the post viewer is decorative.** `toggleSave` in
+  `PostViewer.tsx` flips a local `useState` and toasts "Post saved"; it makes no
+  request, and there is no `post_saves` table or RPC behind it. The rail is
+  correct — Like, Comment, Bookmark in that order — but the third control
+  promises something it does not do. Recorded rather than quietly removed,
+  because removing it would change a layout that was explicitly signed off.
+- **The web deploy has been red for several releases.** `Deploy web app` fails
+  at step 7, `Deploy to Vercel`, on `1a73d1f`, `535034a`, `8ace805`, `55bf392`
+  and `22f159b` alike — steps 1–6 pass, the secret is missing or rejected. The
+  live site is still 1.0.9. Nothing in this release fixes that; it needs the
+  `VERCEL_TOKEN` secret.
+
 ---
 
 ## 1.0.9 — 2026-10-29
