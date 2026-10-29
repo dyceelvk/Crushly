@@ -395,6 +395,55 @@ export async function createPost(input: {
   });
 }
 
+/**
+ * Attach one more photo or clip to a post that already exists.
+ *
+ * `posts` carries a single `media_url`, so a post with several attachments is a
+ * post plus follow-up posts in the same thread: `reply_to` points at the head
+ * and the feed drops the visibility test for rows only the head's audience
+ * could see. Nothing is invented here — this is the shape the schema already
+ * has, used deliberately instead of silently discarding the extra files.
+ *
+ * The caller keeps the head post and sends the rest through this.
+ */
+export async function attachToPost(
+  postId: number,
+  input: {
+    photoUri?: string | null;
+    photoMime?: string | null;
+    videoUri?: string | null;
+    videoMime?: string | null;
+    edit?: LiveEdit | null;
+  },
+): Promise<Post> {
+  const id = await meId();
+  let media: string | null = null;
+
+  if (input.photoUri) {
+    const type = input.photoMime || 'image/jpeg';
+    media = await uploadMediaFile('media', `posts/${id}/${Date.now()}.${extensionFor(type)}`, input.photoUri, type);
+  } else if (input.videoUri) {
+    const type = (input.videoMime || 'video/mp4').toLowerCase();
+    media = await uploadMediaFile(
+      'media',
+      `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`,
+      input.videoUri,
+      type,
+    );
+  }
+
+  if (!media) throw new ApiError(400, 'That attachment was empty — pick it again.');
+
+  return rpc<Post>('create_post', {
+    p_body: '',
+    p_media_url: media,
+    p_audience: 'connections',
+    p_circle_id: null,
+    p_reply_to: postId,
+    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
+  });
+}
+
 export async function deletePost(postId: number): Promise<void> {
   await rpc<boolean>('delete_post', { p_post_id: postId });
 }
