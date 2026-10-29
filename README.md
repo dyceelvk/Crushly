@@ -4,6 +4,8 @@ A premium social and dating app. *Meet people. Make connections. Follow the feel
 
 **Crushly is a product of Riel Inc.**
 
+**Designed and built by Odoh chiagoziem isreal.**
+
 | Folder | What it is |
 | --- | --- |
 | [`CrushlyApp/`](CrushlyApp/) | The app. Expo (React Native) for iOS, Android and web, written in TypeScript. |

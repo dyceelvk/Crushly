@@ -115,9 +115,19 @@ begin
     perform public.crushly_fail(413, '', 'That file is too large to send.');
   end if;
 
+  -- The ceiling counts what was actually published in the last hour, across
+  -- every kind — not just the ones that reached this function. Counting
+  -- reservations alone let a member publish 40 moments and then keep uploading,
+  -- because a moment created without a file books no reservation. This is the
+  -- rule the ticket has always enforced and it is reproduced here unchanged.
   perform 1 from profiles where id = me for update;
-  select count(*) into n from media_upload_reservations
-    where user_id = me and created_at > public.now_ms() - 3600 * 1000;
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from vibes where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
   if n >= 40 then
     perform public.crushly_fail(429, '', 'That is a lot of uploading - try again in a little while.');
   end if;
