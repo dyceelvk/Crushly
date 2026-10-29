@@ -13,6 +13,11 @@ import {
 } from '../lib/mediaHost';
 import type { MediaKind } from '../lib/mediaHost';
 import { storage } from '../lib/storage';
+import { extensionFor, uploadContentType } from '../lib/upload';
+
+// Re-exported from here because every caller has imported the extension helper
+// from this module since long before it moved.
+export { extensionFor, uploadContentType };
 
 /**
  * Supabase client and shared transport helpers.
@@ -297,40 +302,3 @@ export async function removeMediaFile(path?: string | null): Promise<void> {
   });
 }
 
-/** File extension for a mime type, with sensible fallbacks. */
-export function extensionFor(mimeType: string | undefined, fallback = 'jpg'): string {
-  const type = (mimeType ?? '').toLowerCase();
-  // Video first, and by its own branch: `video/mp4` also contains "mp4", so a
-  // clip used to fall through to the audio case and be stored as `.m4a`. The
-  // database then refused it as "not a supported file type" and the app blamed
-  // row policies for the failure.
-  if (type.startsWith('video/')) {
-    if (type.includes('webm')) return 'webm';
-    if (type.includes('quicktime')) return 'mov';
-    return 'mp4';
-  }
-  if (type.includes('jpeg')) return 'jpg';
-  if (type.includes('webm')) return 'webm';
-  if (type.includes('mpeg') || type.includes('mp3')) return 'mp3';
-  if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'm4a';
-  if (type.includes('heic') || type.includes('heif')) return 'heic';
-  if (type.includes('png')) return 'png';
-  const fromType = type.split('/')[1];
-  return fromType && fromType.length <= 5 ? fromType : fallback;
-}
-
-/**
- * The content type to send for a file, given what the picker claimed and the
- * extension we are actually going to store. Phone cameras hand back
- * `video/quicktime` and an untouched `.MOV`; the server accepts neither, and a
- * member should not lose a clip to a container name.
- */
-export function uploadContentType(mimeType: string | undefined, ext: string): string {
-  const type = (mimeType ?? '').toLowerCase();
-  if (ext === 'mp4' || ext === 'm4a') return type.startsWith('video/') || ext === 'mp4' ? 'video/mp4' : 'audio/mp4';
-  if (ext === 'webm') return type.startsWith('audio/') ? 'audio/webm' : 'video/webm';
-  if (ext === 'jpg') return 'image/jpeg';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'webp') return 'image/webp';
-  return type || 'application/octet-stream';
-}

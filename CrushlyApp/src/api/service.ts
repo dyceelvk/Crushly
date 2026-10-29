@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
-import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { supabase, ApiError, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { extensionFor } from '../lib/upload';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
