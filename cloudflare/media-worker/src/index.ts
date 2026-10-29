@@ -538,7 +538,13 @@ const BUILD_HEADERS = [
 async function apkBuild(
   request: Request, url: URL, ctx: ExecutionContext, origin: string | null,
 ): Promise<Response> {
-  const name = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
+  const asked = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
+  /* `/apk/latest` is a stable door onto the current build. The download page
+     can point at it in plain HTML, before any JavaScript has run, and it keeps
+     working release after release — a hardcoded filename is stale the morning
+     after the next build, and if the file behind it is ever cleared the page
+     offers a 404. */
+  const name = asked === 'latest' ? RELEASE.file : asked;
   const release = Object.prototype.hasOwnProperty.call(BUILDS, name) ? BUILDS[name] : null;
   if (!release) return fail(404, 'That build isn’t available.', origin);
 

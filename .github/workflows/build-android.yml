@@ -191,10 +191,34 @@ jobs:
               --title "Crushly ${version} — Android 9+ testing" \
               --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM."
           fi
-          # Never silently replace a published APK at a version that already exists.
-          if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "$file"; then
-            gh release upload "$tag" "apk/${file}" apk/SHA256SUMS.txt apk/SECURITY-CHECK.txt apk/COMPATIBILITY.txt
+          # The file on the release must be the file this job just built.
+          #
+          # This used to skip the upload whenever the name already existed, then
+          # measure the local file and announce those numbers as if they
+          # described what was published. When a previous run had already put an
+          # APK at this version, the release kept the old build while /version
+          # advertised the new one — a download page confidently offering a file
+          # that was a day out of date. Overwrite, then check the result.
+          gh release upload "$tag" --clobber \
+            "apk/${file}" apk/SHA256SUMS.txt apk/SECURITY-CHECK.txt apk/COMPATIBILITY.txt
+
+          built_bytes=$(wc -c < "apk/${file}")
+          built_sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
+          asset_bytes=$(gh release view "$tag" --json assets \
+            --jq ".assets[] | select(.name == \"$file\") | .size")
+          asset_digest=$(gh release view "$tag" --json assets \
+            --jq ".assets[] | select(.name == \"$file\") | .digest" | sed 's/^sha256://')
+
+          if [ "$asset_bytes" != "$built_bytes" ]; then
+            echo "::error::${file} on ${tag} is ${asset_bytes} bytes but this build produced ${built_bytes}."
+            exit 1
           fi
+          if [ -n "$asset_digest" ] && [ "$asset_digest" != "$built_sha" ]; then
+            echo "::error::${file} on ${tag} has sha256 ${asset_digest} but this build produced ${built_sha}."
+            exit 1
+          fi
+          echo "::notice::Published ${file} (${built_bytes} bytes, sha256 ${built_sha}) — verified against the release."
+
 
       - name: Tell the media Worker which build is current
         id: announce
