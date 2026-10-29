@@ -1,73 +1,57 @@
 # Crushly — deployed state
 
-Last verified: 2026-10-29 (all figures below were fetched, not assumed).
+Updated 2026-10-29. Every number below was fetched from the running system, not
+copied from a build log.
 
-## The app
+## Live
 
 | | |
 |---|---|
 | Web app | https://mecrushly.vercel.app — 200 |
-| Bundle | `_expo/static/js/web/index-695320e56b1fa4820ba61c6744c16e7f.js` (2,393,277 B) |
-| Branch | `app/space-tabs-and-playback` @ `b56ac73` |
-| CI | green on `b56ac73` (all four jobs) |
+| Download page | https://mecrushly.vercel.app/download — 200 |
+| Android | **1.0.7** · versionCode **100018** |
+| APK | `Crushly-1.0.7-Android9plus.apk` · **94,990,451** bytes |
+| SHA-256 | `12d4e944d1d4d69dda3368a79b67c414f37a1fd1a68fedc5267112a2384571bb` |
+| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.7 |
+| Branch | `app/space-tabs-and-playback` @ `cef4a0a` |
 
-## The Android download
+Verified by downloading `/apk/latest` and hashing it: the bytes on disk match
+the size and fingerprint the Worker advertises, and the bundle inside carries
+the comments work (`keyboardDidShow`, `This comment was deleted`,
+`View comments, `). Both ABIs present (`armeabi-v7a`, `arm64-v8a`).
 
-| | |
-|---|---|
-| Page | https://mecrushly.vercel.app/download |
-| Link | `https://crushly-media.dyceelvk.workers.dev/apk/latest` |
-| Version | **1.0.6** · versionCode 6 · Worker code 100014 |
-| File | `Crushly-1.0.6-Android9plus.apk` |
-| Size | 94,980,255 bytes |
-| SHA-256 | `da4ca63339390b968032551a585e1ab78d444bef326d13a41d26ada3913eafbb` |
-| ABIs | `armeabi-v7a`, `arm64-v8a` |
-| minSdk / targetSdk | 28 / 36 |
+## What is in 1.0.7
 
-Verified by downloading the file end to end and matching the checksum, then
-reading the bundle inside the APK: `controlPlacement`, `showSoundHint`,
-`hasMoment`, `space_posts`, `Pause clip`, `No follower/Flow` strings all present.
+- **Threaded comments, with likes** — `post_comment_threads` migration:
+  `post_comments.parent_id`, `post_comment_likes` + RLS, `post_comments_feed`,
+  `react_to_post_comment`. Deleting a comment that has answers empties it
+  rather than taking somebody else's reply down with it.
+- **One comments sheet** for the whole app (`CommentsSheet`), replacing the two
+  divergent copies that PostViewer and the Flow card each had.
+- **The composer stays inside the sheet and above the keyboard** — the sheet is
+  measured from the top of the visible area and lifted by the measured keyboard
+  height, because Android 16 with edge-to-edge no longer resizes the window.
+  Its arithmetic lives in `src/lib/comments.ts` with 10 tests behind it.
+- **`comment_on_post` overload removed** — the old two-argument function was
+  left beside the new three-argument one, so PostgREST answered every call from
+  a not-yet-updated app with `PGRST203`. Fixed in migration
+  `20261029000040_fix_comment_on_post_overload`.
 
-## How a release reaches the page
+## Guards that exist now
 
-```
-build-android.yml        compile + verify + emulator smoke + secret audit
-        |                (universal ARM, both ABIs)
-        v
-GitHub release           android-test-<version>  <-- uploaded with --clobber,
-        |                                              then re-read and compared
-        v
-update-worker-release.py release.json (bytes + sha measured from the real file)
-        |
-        v
-deploy-worker.yml        Worker /version and /apk/latest
-        |
-        v
-/download                reads /version on load; HTML fallback points at
-                         /apk/latest and prints the same numbers
-```
+- `CrushlyApp/scripts/check-download-page.mjs` — fails when the page's version,
+  filename, size or fingerprint disagree with what is actually published.
+- `CrushlyApp/e2e/verify-comments-ui.mjs` — 18 acceptance checks against the
+  running app: no composer on the closed viewer, composer pinned inside the
+  sheet, list scrolls under it, keyboard does not bury it, closing removes all
+  of it. Run at 402x874 and 360x640.
+- `.github/scripts/update-worker-release.py` — never reuses a versionCode.
 
-`deploy-worker.yml` only listens on `main` and `arena/**`, so a release cut on
-an `app/**` branch needs it dispatched by hand:
-`POST /actions/workflows/deploy-worker.yml/dispatches {"ref": "<branch>"}`.
+## Known, unfixed
 
-## Two defects fixed this round
-
-1. **The release kept yesterday's APK.** The publish step skipped its upload
-   when an asset of that name already existed, then measured the local file and
-   advertised those numbers. 1.0.5 was already on the release, so the page
-   offered a day-old build under a fresh checksum. It now uses `--clobber` and
-   re-reads the release, failing if size or digest disagree with what it built.
-
-2. **The page's no-JavaScript link rotted into a 404.** A filename baked into
-   the HTML goes stale every release. The Worker now answers `/apk/latest`, and
-   `scripts/check-download-page.mjs` runs inside `npm test` so the baked-in
-   version/size/sha can no longer drift from `release.json` unnoticed.
-
-## Also fixed: the DB smoke suite was red
-
-`supabase/tests/smoke.sql` had two faults of its own — a variable declared in a
-block it was not used in, and a ring assertion that ran after earlier blocks had
-left the Space crowded with live Moments, so the ring was correctly lit and the
-test was wrong. Both fixed; the suite now clears the Space before asking, and
-checks the owner, a stranger, and somebody close.
+- The Android job commits `release.json` and then pushes; if the branch has moved
+  while the emulator was booting, that push is rejected and the release facts are
+  lost even though the APK published. It happened on this release (100017 was
+  written and dropped; 100018 was committed by hand from the published asset).
+  The fix is a fetch-and-rebase before the push.
+- `deploy-web.yml` does not trigger on `app/**`, so web deploys are manual.
