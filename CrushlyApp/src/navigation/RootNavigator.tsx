@@ -34,7 +34,7 @@ import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
 import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
-import { VibeViewerScreen } from '../screens/discover/VibeViewer';
+import { VibeViewerScreen } from '../screens/discover/VibeFeed';
 import { PostViewerScreen } from '../screens/flow/PostViewer';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VibeComposerScreen } from '../screens/discover/VibeComposer';
