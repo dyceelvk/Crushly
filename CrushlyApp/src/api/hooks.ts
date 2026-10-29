@@ -5,6 +5,7 @@ import * as service from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
+  PostComment,
 } from './types';
 
 export const keys = {
@@ -310,10 +311,60 @@ export function usePostComments(postId: number | null) {
 export function useCommentOnPost(postId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) => service.commentOnPost(postId, body),
+    // `parentId` turns a comment into an answer to another comment.
+    mutationFn: ({ body, parentId = null }: { body: string; parentId?: number | null }) =>
+      service.commentOnPost(postId, body, parentId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
       void qc.invalidateQueries({ queryKey: keys.flow });
+    },
+  });
+}
+
+/**
+ * Liking a comment, shown before the server has answered.
+ *
+ * A heart that waits for a round trip feels broken on a slow connection, and
+ * tapping it twice while it waits used to send two conflicting writes. The
+ * count is nudged by one in the right direction straight away, thrown away if
+ * the write fails, and replaced by the server's own count when it succeeds —
+ * so a double tap settles on the truth rather than on two guesses.
+ */
+export function useReactToPostComment(postId: number) {
+  const qc = useQueryClient();
+  const key = keys.postComments(postId);
+  return useMutation({
+    mutationFn: ({ commentId, liked }: { commentId: number; liked: boolean }) =>
+      service.reactToPostComment(commentId, liked),
+    onMutate: async ({ commentId, liked }) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<{ items: PostComment[] }>(key);
+      qc.setQueryData<{ items: PostComment[] }>(key, (current) =>
+        current
+          ? {
+              items: current.items.map((c) =>
+                c.id === commentId
+                  ? { ...c, liked, likeCount: Math.max(0, c.likeCount + (liked ? 1 : -1)) }
+                  : c,
+              ),
+            }
+          : current,
+      );
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) qc.setQueryData(key, context.previous);
+    },
+    onSuccess: (result, { commentId }) => {
+      qc.setQueryData<{ items: PostComment[] }>(key, (current) =>
+        current
+          ? {
+              items: current.items.map((c) =>
+                c.id === commentId ? { ...c, liked: result.liked, likeCount: result.likeCount } : c,
+              ),
+            }
+          : current,
+      );
     },
   });
 }

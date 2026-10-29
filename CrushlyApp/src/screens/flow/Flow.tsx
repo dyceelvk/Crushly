@@ -13,14 +13,15 @@ import { Button } from '../../components/Button';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { BottomSheet } from '../../components/BottomSheet';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
+import { CommentsSheet } from '../../components/CommentsSheet';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/Toast';
 import {
-  useCommentOnPost, useCreatePost, useDeletePost, useDeletePostComment, useFlow, useMe, useMyCircles,
-  useOpenConversation, usePostComments, useReactToPost,
+  useCreatePost, useDeletePost, useFlow, useMe, useMyCircles,
+  useOpenConversation, useReactToPost,
 } from '../../api/hooks';
-import type { Post, PostComment } from '../../api/types';
+import type { Post } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useMemberActions } from '../../state/memberActions';
@@ -227,7 +228,6 @@ export function PostCard({ post: p, playing = true }: { post: Post; playing?: bo
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
-  const { data: me } = useMe();
   const remove = useDeletePost();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
@@ -403,7 +403,12 @@ return (
         <View style={{ height: space.sm }} />
       )}
 
-      <PostComments postId={p.id} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      <CommentsSheet
+        postId={p.id}
+        visible={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        commentCount={p.commentCount}
+      />
     </View>
   );
 }
@@ -423,6 +428,9 @@ function PostAction({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      // The tap target stays comfortable even when the count is hidden, so a
+      // post with no comments yet is still easy to open.
+      hitSlop={8}
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -436,81 +444,6 @@ function PostAction({
           {String(count)}
         </Txt>
       )}
-    </Pressable>
-  );
-}
-
-/** The comments under one post, read and written in place. */
-function PostComments({ postId, visible, onClose }: { postId: number; visible: boolean; onClose: () => void }) {
-  const { colors } = useTheme();
-  const toast = useToast();
-  const query = usePostComments(visible ? postId : null);
-  const send = useCommentOnPost(postId);
-  const remove = useDeletePostComment(postId);
-  const [draft, setDraft] = useState('');
-
-  const submit = async () => {
-    const body = draft.trim();
-    if (!body) return;
-    setDraft('');
-    try {
-      await send.mutateAsync(body);
-    } catch (e) {
-      setDraft(body);
-      toast({ kind: 'error', title: 'Comment not added', message: (e as Error).message });
-    }
-  };
-
-  return (
-    <BottomSheet visible={visible} onClose={onClose} title="Comments">
-      <View style={{ maxHeight: 380 }}>
-        {query.isLoading ? <Skeleton style={{ height: 60 }} /> : null}
-        {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : null}
-        {query.data?.items?.length === 0 ? (
-          <Txt variant="body" color="textMuted" style={{ paddingVertical: space.lg, textAlign: 'center' }}>
-            No comments yet. Be the first.
-          </Txt>
-        ) : null}
-        {(query.data?.items ?? []).map((c) => (
-          <CommentRow key={c.id} comment={c} onDelete={() => remove.mutate(c.id)} />
-        ))}
-      </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingTop: space.sm, borderTopWidth: 1, borderColor: colors.border }}>
-        <View style={{ flex: 1 }}>
-          <Input
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Write a comment"
-            maxLength={1000}
-            multiline
-            containerStyle={{ minWidth: 0 }}
-          />
-        </View>
-        <Button title="Send" size="sm" onPress={submit} loading={send.isPending} disabled={!draft.trim()} />
-      </View>
-    </BottomSheet>
-  );
-}
-
-function CommentRow({ comment: c, onDelete }: { comment: PostComment; onDelete: () => void }) {
-  const navigation = useNavigation<Nav>();
-  return (
-    <Pressable
-      onPress={() => (c.mine ? navigation.navigate('Main', { screen: 'Profile' }) : navigation.navigate('UserProfile', { id: c.author.id }))}
-      accessibilityRole="button"
-      style={{ flexDirection: 'row', gap: 10, paddingVertical: space.sm }}
-    >
-      <Avatar uri={c.author.photos[0]?.url ?? null} name={c.author.name} size={32} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="caption" color="textMuted">
-          {c.mine ? 'You' : c.author.name} · {timeAgo(c.createdAt)}
-        </Txt>
-        <Txt variant="body" selectable>
-          {c.body}
-        </Txt>
-      </View>
-      {c.mine ? <IconButton icon="trash-outline" label="Delete comment" onPress={onDelete} color="textMuted" /> : null}
     </Pressable>
   );
 }

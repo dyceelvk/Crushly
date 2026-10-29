@@ -75,12 +75,29 @@ export type Post = {
   commentCount: number;
 };
 
-/** One comment left on a post. */
+/**
+ * One comment left on a post, or one answer to a comment.
+ *
+ * Replies go one level deep. A comment with answers that is deleted is not
+ * removed: its `body` becomes null and `hidden` turns true, so the answers keep
+ * the question they were answering.
+ */
 export type PostComment = {
   id: number;
-  body: string;
+  /** Null once a comment with answers has been deleted. */
+  body: string | null;
+  /** The comment this answers, or null when it is a comment on the post. */
+  parentId: number | null;
+  /** Deleted, but kept because somebody answered it. */
+  hidden: boolean;
   createdAt: number;
   mine: boolean;
+  /** Yours to remove: your own, or any left on a post you wrote. */
+  canDelete: boolean;
+  likeCount: number;
+  liked: boolean;
+  /** How many answers this comment has, for the "View N replies" line. */
+  replyCount: number;
   author: Profile;
 };
 

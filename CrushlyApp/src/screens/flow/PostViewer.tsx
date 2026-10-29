@@ -12,25 +12,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
-import { Avatar, Photo } from '../../components/Photo';
-import { VerifiedBadge } from '../../components/Badges';
-import { IconButton } from '../../components/IconButton';
-import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
-import { EmptyState, ErrorState, Skeleton } from '../../components/States';
+import { Avatar } from '../../components/Photo';
+import { EmptyState } from '../../components/States';
 import { BottomSheet } from '../../components/BottomSheet';
+import { CommentsSheet } from '../../components/CommentsSheet';
 import { useToast } from '../../components/Toast';
-import {
-  useCommentOnPost,
-  useDeletePost,
-  useDeletePostComment,
-  useFlow,
-  useMe,
-  usePost,
-  usePostComments,
-  useReactToPost,
-} from '../../api/hooks';
-import type { Post, PostComment } from '../../api/types';
+import { useDeletePost, useFlow, usePost, useReactToPost } from '../../api/hooks';
+import type { Post } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { setVideosPaused } from '../../lib/videoPlayback';
@@ -63,17 +51,12 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const toast = useToast();
   const nav = useNavigation<Nav>();
 
-  const { data: me } = useMe();
   const flow = useFlow();
   const postQuery = usePost(postId);
   const post = postQuery.data ?? flow.data?.items.find((p) => p.id === postId) ?? null;
-  const query = usePostComments(postId);
   const like = useReactToPost();
   const remove = useDeletePost();
-  const removeComment = useDeletePostComment(postId);
-  const send = useCommentOnPost(postId);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [draft, setDraft] = useState('');
   const [threeDotsOpen, setThreeDotsOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
@@ -92,7 +75,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   }, []);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
-  const comments = query.data?.items ?? [];
 
   const close = useCallback(() => {
     navigation.goBack();
@@ -131,26 +113,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       toast({ kind: 'error', title: 'Not deleted', message: (e as Error).message });
     }
   }, [post, remove, close, toast]);
-
-  const submitComment = useCallback(async () => {
-    const body = draft.trim();
-    if (!body) return;
-    setDraft('');
-    try {
-      await send.mutateAsync(body);
-    } catch (e) {
-      setDraft(body);
-      toast({ kind: 'error', title: 'Comment not added', message: (e as Error).message });
-    }
-  }, [draft, send, toast]);
-
-  const deleteComment = useCallback(async (id: number) => {
-    try {
-      await removeComment.mutateAsync(id);
-    } catch (e) {
-      toast({ kind: 'error', title: 'Comment not removed', message: (e as Error).message });
-    }
-  }, [removeComment, toast]);
 
   const openThreeDots = useCallback(() => {
     setThreeDotsOpen(true);
@@ -356,6 +318,37 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           </Pressable>
         </View>
 
+        {/* Reopening the thread after closing it. It sits bottom-right, on the
+            caption line, so it never covers the middle of the clip — that tap
+            belongs to pause. */}
+        {!commentsOpen ? (
+          <Pressable
+            onPress={() => setCommentsOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`View comments, ${post.commentCount}`}
+            hitSlop={10}
+            style={{
+              position: 'absolute',
+              right: space.sm,
+              bottom: Math.max(insets.bottom, space.sm) + (post.body ? 56 : 8),
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 7,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: 24,
+              backgroundColor: 'rgba(0,0,0,0.55)',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.22)',
+            }}
+          >
+            <Ionicons name="chatbubble-outline" size={16} color="#fff" />
+            <Txt variant="caption" style={{ color: '#fff', fontWeight: '600' }}>
+              {post.commentCount > 0 ? `View ${post.commentCount} comments` : 'View comments'}
+            </Txt>
+          </Pressable>
+        ) : null}
+
         {/* Caption — bottom-left */}
         {post.body ? (
           <View
@@ -385,65 +378,14 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         ) : null}
       </View>
 
-      {/* Slide-up comments panel */}
-      <BottomSheet
+      {/* One comments surface for the whole app — the same sheet the Flow
+          opens, so a like or a reply behaves identically wherever it is done. */}
+      <CommentsSheet
+        postId={post.id}
         visible={commentsOpen}
         onClose={() => setCommentsOpen(false)}
-        title={`Comments · ${comments.length}`}
-        maxHeight={0.9}
-      >
-        <View style={{ gap: space.sm }}>
-          {query.isLoading ? (
-            <Skeleton style={{ height: 60 }} />
-          ) : query.isError ? (
-            <ErrorState onRetry={() => void query.refetch()} />
-          ) : comments.length === 0 ? (
-            <Txt variant="body" color="textMuted" style={{ paddingVertical: space.lg, textAlign: 'center' }}>
-              No comments yet. Be the first.
-            </Txt>
-          ) : (
-            comments.map((c) => (
-              <CommentRow key={c.id} comment={c} onDelete={() => deleteComment(c.id)} />
-            ))
-          )}
-        </View>
-        {/* Fixed comment input bar at bottom of sheet */}
-        <View
-          style={{
-            backgroundColor: colors.elevated,
-            borderRadius: radius.lg,
-            paddingHorizontal: space.md,
-            paddingVertical: space.sm,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: space.sm,
-            borderWidth: 1,
-            borderColor: colors.border,
-            marginTop: space.sm,
-          }}
-        >
-          <Avatar uri={me?.profile.photos[0]?.url ?? null} size={30} />
-          <Input
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={submitComment}
-            returnKeyType="send"
-            placeholder="Write a comment…"
-            maxLength={1000}
-            containerStyle={{ minWidth: 0 }}
-            style={{ color: colors.text, flex: 1 }}
-          />
-          <IconButton
-            icon="arrow-up"
-            label="Send comment"
-            onPress={submitComment}
-            disabled={!draft.trim()}
-            color={colors.crush}
-            size={34}
-            variant="gold"
-          />
-        </View>
-      </BottomSheet>
+        commentCount={post.commentCount}
+      />
 
       {/* Three dots action sheet: Share (whisper), Report, Delete (author only) */}
       <BottomSheet
@@ -491,35 +433,5 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         </View>
       </BottomSheet>
     </View>
-  );
-}
-
-function CommentRow({ comment: c, onDelete }: { comment: PostComment; onDelete: () => void }) {
-  const nav = useNavigation<Nav>();
-  const { colors } = useTheme();
-
-  return (
-    <Pressable
-      onPress={() =>
-        c.mine
-          ? nav.navigate('Main', { screen: 'Profile' })
-          : nav.navigate('UserProfile', { id: c.author.id })
-      }
-      accessibilityRole="button"
-      style={{ flexDirection: 'row', gap: 10, paddingVertical: space.sm }}
-    >
-      <Avatar uri={c.author.photos[0]?.url ?? null} name={c.author.name} size={32} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="bodyStrong" style={{ color: colors.text }} numberOfLines={1}>
-          {c.mine ? 'You' : c.author.name}
-        </Txt>
-        <Txt variant="body" style={{ color: colors.text, lineHeight: 20 }} selectable>
-          {c.body}
-        </Txt>
-      </View>
-      {c.mine ? (
-        <IconButton icon="trash-outline" label="Delete comment" onPress={onDelete} color="textMuted" />
-      ) : null}
-    </Pressable>
   );
 }

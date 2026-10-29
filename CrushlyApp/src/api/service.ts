@@ -422,13 +422,30 @@ export async function loadPost(postId: number): Promise<Post> {
   return rpc<Post>('load_post', { p_post_id: postId });
 }
 
-export async function postComments(postId: number, limit = 50): Promise<{ items: PostComment[] }> {
+/**
+ * The whole thread in one call: comments and their answers, with like counts,
+ * so opening the sheet does not cost one request per comment.
+ */
+export async function postComments(postId: number, limit = 200): Promise<{ items: PostComment[] }> {
   const page = await rpc<{ items: PostComment[] }>('post_comments_feed', { p_post_id: postId, p_limit: limit });
   return { items: page?.items ?? [] };
 }
 
-export async function commentOnPost(postId: number, body: string): Promise<PostComment> {
-  return rpc<PostComment>('comment_on_post', { p_post_id: postId, p_body: str(body, 'Comment', { max: 1000 }) });
+/** A comment on the post, or an answer to one when `parentId` is given. */
+export async function commentOnPost(postId: number, body: string, parentId: number | null = null): Promise<void> {
+  await rpc<{ id: number }>('comment_on_post', {
+    p_post_id: postId,
+    p_body: str(body, 'Comment', { max: 1000 }),
+    p_parent_id: parentId,
+  });
+}
+
+/** Like or unlike a comment. The answer is the real count, not a guess. */
+export async function reactToPostComment(commentId: number, liked: boolean): Promise<{ liked: boolean; likeCount: number }> {
+  return rpc<{ liked: boolean; likeCount: number }>('react_to_post_comment', {
+    p_comment_id: commentId,
+    p_liked: liked,
+  });
 }
 
 /** Yours to remove, or the post is yours and the comment was left on it. */

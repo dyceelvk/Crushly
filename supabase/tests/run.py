@@ -69,6 +69,10 @@ def main() -> int:
             print(f'  {table}: {cur.fetchone()[0]}')
         if not run_file(ROOT / 'smoke.sql'):
             return 1
+        # Comments are a conversation now: likes, one level of replies, and a
+        # delete that cannot take somebody else's words with it.
+        if not run_file(ROOT / 'comments.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:
