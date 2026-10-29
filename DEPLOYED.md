@@ -1,6 +1,6 @@
 # Crushly — deployed state
 
-Updated 2026-10-29. Every number below was fetched from the running system, not
+Updated 2026-10-29 20:30 UTC. Every number below was fetched from the running system, not
 copied from a build log.
 
 ## Live
@@ -9,19 +9,25 @@ copied from a build log.
 |---|---|
 | Web app | https://mecrushly.vercel.app — 200 |
 | Download page | https://mecrushly.vercel.app/download — 200 |
-| Android | **1.0.9** · versionCode **9** |
-| APK | `Crushly-1.0.9-Android9plus.apk` · **92,960,171** bytes |
-| SHA-256 | `eac1f0180b55dac72cd0113195ab80c3aae3b4c2a2f451427bc9047dfc4cb45d` |
-| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.9 |
-| Worker | https://crushly-media.dyceelvk.workers.dev |
-| Branch | `app/space-tabs-and-playback` @ `22f159b` |
+| Android | **1.0.10** · versionCode **10** |
+| APK | `Crushly-1.0.10-Android9plus.apk` · **92,987,427** bytes |
+| SHA-256 | `0f123f02774e51b0b5ea12ec748d59467d4faab51d9b36f6184a0adda7dc37ff` |
+| Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.10 |
+| Worker | https://crushly-media.dyceelvk.workers.dev — `/version` reports 1.0.10 |
+| Branch | `app/space-tabs-and-playback` @ `aac4084` |
 
-Verified by downloading `/apk/latest` and hashing it: the bytes on disk match
-the size and fingerprint the Worker advertises, and the bundle inside carries
-the comments work (`keyboardDidShow`, `This comment was deleted`,
-`View comments, `). Both ABIs present (`armeabi-v7a`, `arm64-v8a`).
+Verified 2026-10-29 20:30 UTC by downloading `/apk/latest` and hashing the
+bytes that arrive: 92,987,427 bytes,
+`0f123f02…d7dc37ff`, matching what `/version` advertises and what the download
+page quotes. The launcher icon was extracted from that same APK
+(`res/sK.webp`, 192², fully opaque) and inspected: it is the official
+gold-to-pink Crushly heart ribbon on `#070708`, not the C monogram.
 
-## What is in 1.0.9
+The three surfaces a phone consults now agree with each other — download page,
+`/version`, and the bytes actually served. They drifted apart once before, and
+that is the failure this table exists to catch.
+
+## What was in 1.0.9
 
 - **Video posts work, for the first time on a phone.** Three defects were
   stacked, and each one alone was enough to block a clip:
@@ -108,4 +114,9 @@ size and fingerprint.
   lost even though the APK published. It happened on this release (100017 was
   written and dropped; 100018 was committed by hand from the published asset).
   The fix is a fetch-and-rebase before the push.
-- `deploy-web.yml` does not trigger on `app/**`, so web deploys are manual.
+- `deploy-web.yml` triggers on `app/**` now, but its **Deploy to Vercel** step
+  fails on every push because the `VERCEL_TOKEN` secret is not set. Production is
+  therefore deployed through Vercel's own Git integration or through the Vercel
+  connector, not through that workflow. Either add the secret or delete the step
+  so a red workflow stops implying the site is stale — right now it is the only
+  red check on an otherwise green branch, and it trains people to ignore it.

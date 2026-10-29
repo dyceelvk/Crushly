@@ -1,8 +1,8 @@
 # Crushly — project continuity
 
 **Last updated:** 2026-10-29
-**Current version:** 1.0.10 (versionCode 10) — committed, APK building
-**Branch:** `app/space-tabs-and-playback` @ `1a73d1f`
+**Current version:** 1.0.10 (versionCode 10) — **built, published, live**
+**Branch:** `app/space-tabs-and-playback` @ `aac4084`
 **Owner:** Odoh chiagoziem isreal
 
 **Where the docs live.** This file, `CHANGELOG.md` and the rest of the library
@@ -199,12 +199,25 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
 
 ## 10. Next steps, in order
 
-1. Confirm 1.0.10 builds, publishes and announces itself; verify the heart icon
-   on a real phone after a fresh install. As of `1a73d1f` the release workflow
-   had compiled the APK, verified install compatibility, packaged it, built the
-   Android 9 emulator image and started the cold-start/relaunch test. Publish,
-   the Worker announcement and the `release.json` commit were still pending —
-   **do not describe 1.0.10 as released until `release.json` names it**.
+1. ~~Confirm 1.0.10 builds, publishes and announces itself.~~ **Done.** The APK
+   published to `android-test-1.0.10` (92,987,427 bytes), the Worker advertises
+   it at `/version`, and the download page quotes the same size and hash. The
+   heart icon was verified by extracting `res/sK.webp` from the served APK.
+   Still outstanding: seeing it on a real launcher after a fresh install.
+
+   Two things had to be done by hand to close this release, and the second one
+   is a real defect in the process rather than a one-off:
+
+   - **The Worker did not pick up `release.json` on its own.** The Android job
+     commits `release.json` with the release bot's token, and a push made with
+     that token does not trigger workflows. `/version` kept advertising 1.0.9
+     for a published 1.0.10 until `deploy-worker.yml` was dispatched manually.
+     `release.json` naming a version is **not** the same as the Worker serving
+     it — always check `/version` after a release.
+   - **The download page quoted the previous build's size and hash.** It said
+     1.0.10 but carried 1.0.9's numbers, so its own integrity check would have
+     contradicted the file a member downloaded. Fixed in `aac4084` from values
+     measured off `/apk/latest`.
 2. Post a real `.mov` from an iPhone/Samsung gallery and confirm it posts and
    plays. **This is the one thing that has not been tested on a device.**
 3. **Make Bookmark real, or remove it.** The viewer's Bookmark button currently

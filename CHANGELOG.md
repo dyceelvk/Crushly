@@ -96,6 +96,30 @@ circle every launcher mask keeps, on `#070708`. Verified through Expo's own
 prebuild: `ic_launcher.webp` at 48/72/96/144/192 px and
 `ic_launcher_foreground.webp` at 108/162/216/324/432 px.
 
+### Released — and two things that were only true after a manual step
+
+The APK published: `android-test-1.0.10`, **92,987,427 bytes**, sha256
+`0f123f02…d7dc37ff`. Verified by downloading `/apk/latest` and hashing the bytes
+that arrive, then extracting the launcher icon from that same file
+(`res/sK.webp`, 192²) and confirming it is the heart.
+
+Two things did **not** happen on their own:
+
+1. **The Worker kept advertising 1.0.9.** The Android job commits `release.json`
+   with the release bot's token, and a push made with that token does not trigger
+   workflows — so `deploy-worker.yml` never ran for the commit that bumped the
+   version. `/version` served a published 1.0.10 as 1.0.9 until the deploy was
+   dispatched by hand. *A `release.json` commit is not a deployment.*
+2. **The download page described the previous file.** It named
+   `Crushly-1.0.10-Android9plus.apk` but still carried 1.0.9's `92,960,171`
+   bytes and `eac1f018…` hash, so the page's own integrity check would have
+   contradicted the download. Fixed in `aac4084` with values measured from
+   `/apk/latest`, not copied from a build log.
+
+Both are now noted in `PROJECT_CONTINUITY.md` §10 so the next release checks
+`/version` and the page's numbers rather than assuming the pipeline closed the
+loop.
+
 ### Added — official credit
 
 **Odoh chiagoziem isreal** is the official attribution. It appears in
@@ -111,11 +135,14 @@ It is held in one constant, `APP_AUTHOR` in `src/lib/company.ts`.
   correct — Like, Comment, Bookmark in that order — but the third control
   promises something it does not do. Recorded rather than quietly removed,
   because removing it would change a layout that was explicitly signed off.
-- **The web deploy has been red for several releases.** `Deploy web app` fails
-  at step 7, `Deploy to Vercel`, on `1a73d1f`, `535034a`, `8ace805`, `55bf392`
-  and `22f159b` alike — steps 1–6 pass, the secret is missing or rejected. The
-  live site is still 1.0.9. Nothing in this release fixes that; it needs the
-  `VERCEL_TOKEN` secret.
+- **The `Deploy web app` workflow is still red, and now misleadingly so.** It
+  fails at step 7, `Deploy to Vercel`, on `1a73d1f`, `535034a`, `8ace805`,
+  `55bf392` and `22f159b` alike — steps 1–6 pass, so the cause is the
+  `VERCEL_TOKEN` secret, not the build. Production was deployed this release
+  through Vercel's Git integration instead, and the site now serves 1.0.10. But
+  the workflow stays red, which on a branch whose every other check is green
+  teaches people to ignore the one check that would catch a real deploy
+  breakage. Add the secret, or remove the step.
 
 ---
 
