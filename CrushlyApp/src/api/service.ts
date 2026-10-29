@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { supabase, ApiError, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
-import { extensionFor } from '../lib/upload';
+import { clipContainer, clipContentType, containerIsStorable, extensionFor } from '../lib/upload';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
@@ -370,6 +370,8 @@ export async function createPost(input: {
   photoMime?: string | null;
   videoUri?: string | null;
   videoMime?: string | null;
+  /** Length of the clip in milliseconds, from the picker. Needed to remux. */
+  videoDurationMs?: number | null;
   edit?: LiveEdit | null;
   /** When set, the post belongs to that Circle and its audience is the Circle. */
   circleId?: number | null;
@@ -383,14 +385,40 @@ export async function createPost(input: {
   }
   if (input.videoUri) {
     const id = await meId();
-    const type = (input.videoMime || 'video/mp4').toLowerCase();
-    // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
-    // for a clip, so the container is chosen here instead.
+    const clip = input.videoUri;
+    const container = clipContainer(input.videoMime, clip);
+
+    // The server accepts MP4 and WebM. A `.mov` — what an iPhone or a Samsung
+    // gallery hands over, and what a phone reports as `video/quicktime` — is
+    // refused with 415 before a byte is stored, which is what "That file type
+    // is not supported." was. Its frames are ordinary H.264, so they are
+    // remuxed into an MP4 container on the phone rather than re-encoded here:
+    // same pixels, a container the pipeline reads, no encoder in the APK.
+    let upload = clip;
+    let uploadMime = input.videoMime;
+    if (!containerIsStorable(container)) {
+      const { remuxToMp4 } = await import('../lib/nativeTrim');
+      const remuxed = await remuxToMp4(clip, input.videoDurationMs ?? 0);
+      if (!remuxed) {
+        throw new ApiError(
+          415,
+          container === 'mov'
+            ? 'This clip is saved in a format Crushly can’t publish. Record a video in the app, or export it as MP4, and try again.'
+            : 'That file isn’t a video Crushly can publish. Pick an MP4 or WebM clip and try again.',
+        );
+      }
+      upload = remuxed;
+      uploadMime = 'video/mp4';
+    }
+
+    // The extension and the header are decided together, from the file that is
+    // actually being sent, so a picker's mislabel can never reach the server.
+    const ext = clipContainer(uploadMime, upload) === 'webm' ? 'webm' : 'mp4';
     media = await uploadMediaFile(
       'media',
-      `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`,
-      input.videoUri,
-      type,
+      `posts/${id}/${Date.now()}.${ext}`,
+      upload,
+      clipContentType(uploadMime, upload),
     );
   }
   return rpc<Post>('create_post', {

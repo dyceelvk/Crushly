@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
@@ -22,7 +22,7 @@ import { useAuth } from '../../state/auth';
 import { useTheme, type Appearance } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
-import { COMPANY_NAME } from '../../lib/company';
+import { APP_AUTHOR, APP_CREDIT_LINE, COMPANY_NAME } from '../../lib/company';
 import type { ScreenProps } from '../../navigation/types';
 
 /* ------------------------------------------------------------------ hub */
@@ -33,11 +33,40 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const { appearance } = useTheme();
   const [confirmOut, setConfirmOut] = useState(false);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const qc = useQueryClient();
   const version = Constants.expoConfig?.version ?? '1.0.0';
   const versionCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
   // Asked against our own Worker, never against GitHub: a member should never
   // be handed a link into the machinery.
   const update = useAppUpdate(versionCode);
+
+  /**
+   * Asking again has to clear the cached answer first, or the button appears to
+   * do nothing for the six hours the query considers its result fresh.
+   */
+  const checkAgain = useCallback(() => {
+    // `refetch` keeps the cached answer; a member pressing "Check for updates"
+    // is asking for a fresh one, so the query is dropped and re-run.
+    void qc.invalidateQueries({ queryKey: keys.update }).then(() => update.refetch());
+  }, [qc, update]);
+
+  /**
+   * Hand the download to the browser rather than to an in-app viewer.
+   * `/apk/latest` answers with an APK, and Android's package installer takes
+   * over from there. A failed launch is reported instead of swallowed, because
+   * a button that does nothing reads as a broken feature.
+   */
+  const openUpdate = useCallback(() => {
+    const url = update.data?.apkUrl;
+    if (!url) {
+      toast({ kind: 'error', title: 'No download yet', message: 'That build isn’t ready to fetch. Try again shortly.' });
+      return;
+    }
+    Linking.openURL(url).catch(() =>
+      toast({ kind: 'error', title: 'Couldn’t open the download', message: 'Check your connection and try again.' }),
+    );
+  }, [update.data?.apkUrl, toast]);
 
   return (
     <Screen>
@@ -70,6 +99,18 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} last />
       </Group>
 
+      {/* Credits. The official attribution for the app, kept in one constant so
+          it cannot drift between the app, the store copy and the docs. */}
+      <Group title="About Crushly">
+        <ListRow title="Credits" subtitle={APP_AUTHOR} icon="heart-outline" iconTone="crush" />
+        <ListRow
+          title="Design & development"
+          subtitle={APP_CREDIT_LINE}
+          icon="code-slash-outline"
+          last
+        />
+      </Group>
+
       <Group title="Support">
         <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
         <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
@@ -79,26 +120,53 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       </Group>
 
       <Group title="App">
-        <ListRow title="App version" value={version} icon="information-circle-outline" />
+        <ListRow
+          title="App version"
+          value={update.data?.available ? `${version} → ${update.data.version}` : version}
+          subtitle={
+            update.data?.available
+              ? 'A newer build is ready to install.'
+              : undefined
+          }
+          icon="information-circle-outline"
+        />
         {update.data?.available ? (
           <ListRow
             title={update.data.required ? 'Update needed' : 'Update available'}
             subtitle={update.data.notes || `Version ${update.data.version} is ready to install.`}
             value={update.data.version}
             icon="download-outline"
-            onPress={() => {
-              if (update.data?.apkUrl) Linking.openURL(update.data.apkUrl).catch(() => undefined);
-            }}
+            onPress={openUpdate}
             last
           />
         ) : (
           <ListRow
             title="You’re up to date"
-            subtitle="Crushly checks every few hours."
-            icon="checkmark-circle-outline"
+            subtitle={
+              update.isFetching
+                ? 'Checking…'
+                : update.isError
+                  ? 'Couldn’t check just now — tap to try again.'
+                  : `Crushly ${version} is the newest build.`
+            }
+            icon={update.isError ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            onPress={checkAgain}
             last
           />
         )}
+        {/* A way to ask, whenever a member wants to.
+            The check used to run only on mount and then sit on a six-hour
+            cache, so somebody who had just been told a new build exists had no
+            control to ask again — the row read "You're up to date" and looked
+            like the feature was missing. */}
+        <Button
+          title={update.isFetching ? 'Checking for updates…' : 'Check for updates'}
+          variant="secondary"
+          loading={update.isFetching}
+          disabled={update.isFetching}
+          onPress={checkAgain}
+          style={{ marginTop: space.sm }}
+        />
       </Group>
 
       <Button title="Sign out" variant="secondary" onPress={() => setConfirmOut(true)} style={{ marginTop: space.xl }} />
@@ -106,6 +174,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <Wordmark size={18} />
         <Txt variant="caption" color="textMuted">
           Version {version}
+          {versionCode ? ` (build ${versionCode})` : ''}
         </Txt>
         <Txt variant="caption" color="textMuted">
           A {COMPANY_NAME} product

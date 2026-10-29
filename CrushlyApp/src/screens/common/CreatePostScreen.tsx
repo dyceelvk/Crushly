@@ -241,12 +241,15 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
       let photoMime: string | undefined;
       let videoUri: string | undefined;
       let videoMime: string | undefined;
+      let videoDurationMs: number | undefined;
       let edit: LiveEdit | null = null;
 
       if (first?.type === 'video') {
         const prepared = await preparedClip(first.edit ?? emptyEdit(0), first.uri, 'post');
         videoUri = prepared.uri ?? first.uri;
         videoMime = first.mimeType;
+        // Needed so a `.mov` can be remuxed into MP4 before upload.
+        videoDurationMs = first.durationMs;
         edit = prepared.live;
       } else if (first?.type === 'photo') {
         photoUri = first.uri;
@@ -270,6 +273,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         photoMime,
         videoUri,
         videoMime,
+        videoDurationMs,
         edit,
       });
 

@@ -51,3 +51,46 @@ export function uploadContentType(mimeType: string | undefined, ext: string): st
   if (ext === 'webp') return 'image/webp';
   return type || 'application/octet-stream';
 }
+
+/**
+ * What kind of file a clip is, from the name the picker gave it.
+ *
+ * Phones label a video three ways depending on where it came from: an mp4 from
+ * a download or a recorded clip, a `.mov` from an iPhone or a Samsung gallery,
+ * and sometimes no type at all. The label decides how the bytes are treated, so
+ * it is read from the extension wherever there is one and only falls back to
+ * the picker's claim.
+ */
+export type ClipContainer = 'mp4' | 'webm' | 'mov' | 'unknown';
+
+export function clipContainer(mimeType: string | null | undefined, uri: string): ClipContainer {
+  const ext = (uri.split('?')[0].split('.').pop() ?? '').toLowerCase();
+  if (ext === 'mp4' || ext === 'm4v') return 'mp4';
+  if (ext === 'webm') return 'webm';
+  if (ext === 'mov' || ext === 'qt') return 'mov';
+
+  const type = (mimeType ?? '').toLowerCase();
+  if (type.includes('webm')) return 'webm';
+  if (type.includes('quicktime') || type.includes('video/mov')) return 'mov';
+  if (type.includes('mp4') || type.includes('m4v')) return 'mp4';
+  return 'unknown';
+}
+
+/** True when the server will accept the container as it stands. */
+export function containerIsStorable(c: ClipContainer): boolean {
+  return c === 'mp4' || c === 'webm';
+}
+
+/**
+ * The content type to send for a clip, given what is actually being uploaded.
+ *
+ * This is deliberately not a copy of the picker's claim: a phone that reports
+ * `video/quicktime` for a path that ends `.mp4` would otherwise have its file
+ * refused by a server that reads the header, not the name.
+ */
+export function clipContentType(mimeType: string | null | undefined, uri: string): string {
+  const c = clipContainer(mimeType, uri);
+  if (c === 'webm') return 'video/webm';
+  if (c === 'mov') return 'video/quicktime';
+  return 'video/mp4';
+}

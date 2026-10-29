@@ -141,6 +141,13 @@ async function rpc<T>(env: Env, token: string, fn: string, body: unknown): Promi
     } catch {
       /* keep the default */
     }
+    // The database raises `__CRUSHLY__<status>__<code>__<message>` so the app
+    // can recover a real status from a PostgREST error. Relaying that string
+    // verbatim put the marker itself into a toast a member reads:
+    // "__CRUSHLY__415____That file type is not supported." Take the status and
+    // the sentence out of it here, so the Worker answers like an HTTP service.
+    const marked = /^__CRUSHLY__(\d+)__([a-z0-9_]*)__([\s\S]*)$/.exec(message);
+    if (marked) return { ok: false, status: Number(marked[1]) || res.status, message: marked[3] || 'Not allowed.' };
     return { ok: false, status: res.status, message };
   }
   return { ok: true, data: (text ? JSON.parse(text) : null) as T };
@@ -743,10 +750,44 @@ export default {
  * anyway and hands it to whoever asks next. When the database says no, nothing
  * downstream is allowed to remember it either.
  */
+/**
+ * The type a stored path should be served as.
+ *
+ * The bucket stores bytes and remembers the Content-Type it was given, but a
+ * response that arrives with none is treated by every browser as
+ * `application/octet-stream`, and the `nosniff` header below then forbids it
+ * from guessing — a clip downloaded instead of played. The extension is the
+ * last word, because that is what the upload was required to match.
+ */
+function mediaType(path: string): string | null {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return (
+    {
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      m4a: 'audio/mp4',
+      mp3: 'audio/mpeg',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      heic: 'image/heic',
+      mov: 'video/quicktime',
+    } as Record<string, string>
+  )[ext] ?? null;
+}
+
 function withHeaders(response: Response, path: string, cacheable: boolean): Response {
   const kind = path.split('/')[0];
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
+  // Say what this is, rather than letting storage metadata decide. A clip must
+  // arrive as `video/*` or a phone will offer to save it instead of playing it.
+  const type = mediaType(path);
+  if (type) headers.set('Content-Type', type);
+  // Range requests are what a video player uses to start before the file has
+  // finished arriving, and to seek. Advertise the capability honestly.
+  if (!headers.has('Accept-Ranges')) headers.set('Accept-Ranges', 'bytes');
   if (!cacheable || kind === 'messages') headers.set('Cache-Control', 'private, no-store');
   else if (kind === 'moments') headers.set('Cache-Control', 'public, max-age=3600');
   else headers.set('Cache-Control', 'public, max-age=604800');

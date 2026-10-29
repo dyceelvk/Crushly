@@ -534,6 +534,8 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
         photoMime: photo?.mimeType ?? null,
         videoUri: prepared ? prepared.uri : null,
         videoMime: clip?.mimeType ?? null,
+        // The remux needs to know how much to copy; the picker measured it.
+        videoDurationMs: clip?.durationMs ?? null,
         edit: prepared ? prepared.live : photoEdit ?? null,
       });
       setBody('');
