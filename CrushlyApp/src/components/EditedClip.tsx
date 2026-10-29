@@ -32,6 +32,7 @@ export function EditedClip({
   paused = false,
   contentFit = 'contain',
   controls = true,
+  controlPlacement = 'center',
   showSoundHint = false,
   muted = false,
   onTogglePlay,
@@ -50,6 +51,19 @@ export function EditedClip({
    * place somebody will want to stop it.
    */
   controls?: boolean;
+  /**
+   * Where the control lives.
+   *
+   * `center` — the whole clip is the tap target and the mark is drawn dead
+   * centre. This is for a clip that is the point of the screen: the Post
+   * Viewer, where nothing else competes for the tap.
+   *
+   * `corner` — a small button in the bottom corner. This is for a feed, where
+   * the clip sits inside something that is already a button; a sheet over it
+   * would silently swallow the tap that is supposed to open the post. It is
+   * also where every feed puts it, for exactly that reason.
+   */
+  controlPlacement?: 'center' | 'corner';
   /**
    * Show a small "no sound" mark while playing. Only the feed wants this — it
    * is where a clip starts without being asked for, and there is otherwise no
@@ -264,15 +278,13 @@ export function EditedClip({
         />
       </View>
 
-      {controls ? (
+      {controls && controlPlacement === 'center' ? (
+        // Whole-clip target, mark dead centre. Only where the clip is the
+        // point of the screen — see `controlPlacement`.
         <Pressable
           onPress={toggle}
           accessibilityRole="button"
           accessibilityLabel={playing ? 'Pause clip' : 'Play clip'}
-          // The tap target is the whole clip, which is what "tap the screen and
-          // it pauses" means. It is transparent unless there is something to
-          // say: a pause mark is shown only while stopped, and it is drawn dead
-          // centre because that is where the eye already is.
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}
         >
           {!playing ? (
@@ -293,6 +305,37 @@ export function EditedClip({
         </Pressable>
       ) : null}
 
+      {controls && controlPlacement === 'corner' ? (
+        // A small button that never covers the middle of the clip, so a tap on
+        // the picture still means "open this post".
+        <Pressable
+          onPress={toggle}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={playing ? 'Pause clip' : 'Play clip'}
+          style={{
+            position: 'absolute',
+            right: 10,
+            bottom: 10,
+            width: 34,
+            height: 34,
+            borderRadius: 17,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.22)',
+          }}
+        >
+          <Ionicons
+            name={playing ? 'pause' : 'play'}
+            size={16}
+            color="#fff"
+            style={playing ? undefined : { marginLeft: 2 }}
+          />
+        </Pressable>
+      ) : null}
+
       {/*
         Whether a clip has sound is not something the viewer can infer, and a
         clip that starts playing unmuted in a feed is a jump scare. The mark
@@ -304,7 +347,7 @@ export function EditedClip({
           style={{
             position: 'absolute',
             right: 10,
-            bottom: 10,
+            bottom: controlPlacement === 'corner' ? 52 : 10,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 4,

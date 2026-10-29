@@ -356,9 +356,15 @@ return (
                   uri={resolveVideoUri(p.mediaUrl)}
                   live={p.edit ?? null}
                   autoPlay={playing}
+                  // Small button in the corner, never a sheet over the clip:
+                  // the whole video sits inside a Pressable that opens the
+                  // post, and a centred overlay swallowed that tap and made the
+                  // Post Viewer impossible to reach.
+                  controlPlacement="corner"
                   // Sound never starts on its own in a feed. The clip plays
                   // muted with a "Tap for sound" mark; unmuting is the viewer's
-                  // decision, made by tapping the clip they are looking at.
+                  // decision, made by tapping the button on the clip they are
+                  // looking at.
                   muted
                   showSoundHint
                   contentFit="contain"

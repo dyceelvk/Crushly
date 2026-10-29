@@ -265,6 +265,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               // A viewer opened on purpose is the one place a loop belongs:
               // it is the only clip on screen and the viewer asked for it.
               loop
+              // Here the clip IS the screen, so the whole of it is the tap
+              // target and the mark sits dead centre.
+              controlPlacement="center"
               contentFit="contain"
             />
           ) : null}
