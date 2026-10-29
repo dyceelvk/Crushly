@@ -55,8 +55,12 @@ if (!href.endsWith('/apk/latest')) {
 const served = release.version === app.expo.version ? release : null;
 
 const shownFile = text('filename');
-if (shownFile && served && shownFile !== served.file) {
-  problems.push(`the page names "${shownFile}" but the served build is "${served.file}"`);
+const expectedFile = `Crushly-${app.expo.version}-Android9plus.apk`;
+// The filename follows app.json even before the build exists — the file it
+// names is the one this release will publish. Size and fingerprint cannot be
+// known until then, so those are only checked against a build that exists.
+if (shownFile && shownFile !== expectedFile) {
+  problems.push(`the page names "${shownFile}" but ${app.expo.version} publishes "${expectedFile}"`);
 }
 
 const shownBytes = text('bytes');
