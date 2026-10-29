@@ -35,6 +35,7 @@ import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { setVideosPaused } from '../../lib/videoPlayback';
 import { EditedClip } from '../../components/EditedClip';
+import { EditedPhoto } from '../../components/EditedPhoto';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
@@ -204,10 +205,19 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
-            paddingHorizontal: space.sm,
+            paddingHorizontal: space.xs,
             paddingTop: Math.max(insets.top, space.sm),
           }}
         >
+          <Pressable
+            onPress={close}
+            accessibilityRole="button"
+            accessibilityLabel="Close post"
+            hitSlop={20}
+            style={{ padding: 10, marginRight: 2 }}
+          >
+            <Ionicons name="chevron-down" size={26} color="#fff" />
+          </Pressable>
           <Pressable
             onPress={() =>
               post.mine
@@ -217,7 +227,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             accessibilityRole="button"
             accessibilityLabel={post.mine ? 'Your Space' : `${authorName}’s Space`}
             hitSlop={20}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
           >
             <Avatar
               uri={post.author.photos[0]?.url ?? null}
@@ -254,10 +264,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             />
           ) : null}
           {hasMedia && !isVideo ? (
-            <Photo
+            <EditedPhoto
               uri={mediaUrl(post.mediaUrl)}
-              fit="contain"
-              contentPosition="center"
+              live={post.edit ?? null}
+              contentFit="contain"
               style={{ width: '100%', height: '100%' }}
               alt={`Post by ${authorName}`}
             />

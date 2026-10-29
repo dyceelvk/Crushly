@@ -55,7 +55,11 @@ export function VibesRow() {
 
   return (
     <View>
-      <SectionLabel title="Vibes" hint="Gone in two weeks" />
+      <SectionLabel
+        title="Vibes"
+        hint={items.length > 1 ? 'Swipe through them' : 'Gone in two weeks'}
+        action={items.length > 0 ? { label: 'Watch', onPress: () => navigation.navigate('VibeViewer', { id: items[0].id }) } : undefined}
+      />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -116,7 +120,15 @@ function AddTile({ onPress }: { onPress: () => void }) {
 }
 
 /** One section's heading inside Discover. */
-function SectionLabel({ title, hint }: { title: string; hint?: string }) {
+function SectionLabel({
+  title,
+  hint,
+  action,
+}: {
+  title: string;
+  hint?: string;
+  action?: { label: string; onPress: () => void };
+}) {
   return (
     <View
       style={{
@@ -130,7 +142,13 @@ function SectionLabel({ title, hint }: { title: string; hint?: string }) {
       <Txt variant="title" accessibilityRole="header">
         {title}
       </Txt>
-      {hint ? (
+      {action ? (
+        <Pressable onPress={action.onPress} accessibilityRole="button" hitSlop={12}>
+          <Txt variant="smallStrong" color="gold">
+            {action.label}
+          </Txt>
+        </Pressable>
+      ) : hint ? (
         <Txt variant="small" color="textMuted">
           {hint}
         </Txt>
