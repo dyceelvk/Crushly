@@ -550,10 +550,22 @@ async function apkBuild(
 
   const range = request.headers.get('Range');
 
+  /* The edge cache is keyed by the *build*, not by the URL that asked for it.
+   *
+   * `/apk/latest` is one URL whose meaning changes with every release. Keyed by
+   * the URL, a cached 1.0.6 body kept being handed out under a name that now
+   * meant 1.0.7: the Worker said one version, `/version` said the same, and the
+   * file that actually arrived was the old one. Anyone installed from the
+   * download page in that window got the previous build and no way to tell.
+   *
+   * Keying by the release file makes a new release a different cache entry, so
+   * a stale body cannot outlive the version it belonged to. */
+  const cacheKey = new URL(`${url.origin}/apk/${encodeURIComponent(name)}`).toString();
+
   // A whole download is worth keeping at the edge for a while — it is the same
   // bytes for everybody, and the phone may well ask twice.
   if (!range) {
-    const hit = await caches.default.match(url.toString()).catch(() => undefined);
+    const hit = await caches.default.match(cacheKey).catch(() => undefined);
     if (hit) return hit;
   }
 
@@ -578,7 +590,7 @@ async function apkBuild(
     headers,
   });
   if (!range && upstream.status === 200 && request.method === 'GET') {
-    ctx.waitUntil(caches.default.put(url.toString(), out.clone()).catch(() => undefined));
+    ctx.waitUntil(caches.default.put(cacheKey, out.clone()).catch(() => undefined));
   }
   return out;
 }
