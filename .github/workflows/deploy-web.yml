@@ -15,8 +15,13 @@ name: Deploy web app
 
 on:
   workflow_dispatch:
+  # `app/**` is included deliberately: the web app and the Worker are deployed
+  # from this branch, and while only `main` and `arena/**` were listed a push
+  # here silently deployed nothing. A release that publishes an APK while the
+  # download page and the Worker that serves it still describe the previous one
+  # is exactly the state that costs an hour of "why is it still 1.0.7".
   push:
-    branches: [main, arena/**]
+    branches: [main, 'arena/**', 'app/**']
 
 concurrency:
   group: deploy-web-${{ github.ref }}
@@ -47,13 +52,14 @@ jobs:
             exit 1
           fi
 
-      - name: Apply load_post migration
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set -euo pipefail
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261028000027_load_post.sql
-          echo "::notice::Migration 20261028000027_load_post.sql applied successfully."
+      # This step used to hand-apply one migration by filename. That filename
+      # has since been renumbered to match what the database recorded, which
+      # broke the deploy on a file that had already been applied years of
+      # migrations ago. `Deploy database migrations` owns this now — it pushes
+      # everything, in order, and knows what has run. A web deploy should not
+      # be the thing that decides which migration matters.
+      - name: Confirm this deploy needs no migration of its own
+        run: echo "::notice::Schema is applied by the Deploy database migrations workflow; nothing to hand-apply here."
 
   deploy:
     name: Build & deploy to Vercel
