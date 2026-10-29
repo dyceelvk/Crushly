@@ -361,22 +361,30 @@ begin
     if sqlerrm like '%oversized files must be refused%' then raise; end if;
   end;
 
-  -- Asked about a photo that exists, because the rule is about rows now: a
-  -- path in the photos/ shape that nothing points at is not a profile photo,
-  -- and media_security stopped handing those out. Seeded faces live under
-  -- seed/, which the same branch covers.
+  -- Asked about a photo that exists, because the rule follows rows now: a path
+  -- in the photos/ shape that nothing points at is not a profile photo, and
+  -- media_security stopped handing those out.
   j := public.can_view_media((select ph.url from photos ph where ph.user_id = me order by ph.id limit 1));
-  assert (j ->> 'allowed')::bool and (j ->> 'cacheable')::bool, 'a profile photo you own is readable and cacheable';
+  assert (j ->> 'allowed')::bool, 'you can read your own profile photo';
+  -- Readable, but never handed to the shared cache. Who may see a face depends
+  -- on visibility, incognito and blocks, so two members asking for the same
+  -- path can deserve different answers; anything cached under one key would
+  -- answer for both. This assertion is the one that catches it if the rule is
+  -- ever loosened, and the Worker's Cache-Control is driven by the same value.
+  assert not (j ->> 'cacheable')::bool, 'profile photos are readable but never cached under a shared key';
 
+  -- The folder is the sender's id, not a placeholder: media_security ties a
+  -- chat file to the person who sent it, so a path with someone else's number
+  -- in it is refused no matter who is asking.
   insert into public.messages (conversation_id, sender_id, kind, media_url)
-    values (conv_id, me, 'photo', 'messages/999/note.jpg');
-  j := public.can_view_media('messages/999/note.jpg');
+    values (conv_id, me, 'photo', 'messages/' || me || '/note.jpg');
+  j := public.can_view_media('messages/' || me || '/note.jpg');
   assert (j ->> 'allowed')::bool, 'you can read your own chat media';
   assert not (j ->> 'cacheable')::bool, 'chat media is never cached under a shared key';
   perform set_config('request.jwt.claim.sub', marcus::text, false);
-  assert (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
+  assert (public.can_view_media('messages/' || me || '/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000000', false);
-  assert not (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
+  assert not (public.can_view_media('messages/' || me || '/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
   assert not (public.can_view_media('photos/1/a.jpg') ->> 'allowed')::bool, 'signed-out callers get nothing at all';
   perform set_config('request.jwt.claim.sub', daniel::text, false);
 
@@ -586,7 +594,7 @@ begin
   end;
 
   delete from public.moments where body in ('connections only', 'gone', 'flood');
-  delete from public.messages where media_url = 'messages/999/note.jpg';
+  delete from public.messages where media_url like 'messages/%/note.jpg';
 
   reset role;
   raise notice 'smoke tests passed';
