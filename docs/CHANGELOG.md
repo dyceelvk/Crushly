@@ -68,6 +68,44 @@ once the app draws edge to edge. The composer was hidden behind the keyboard
 while you typed. Now `height` on Android and `padding` on iOS, and opening the
 attachment tray dismisses the keyboard first.
 
+### Fixed — a release could be published and never offered
+
+The Android job publishes the APK, rewrites `release.json` from measurements of
+that file, and commits it. It then relied on the push to redeploy the Worker.
+It does not: **a push made with the workflow's own `GITHUB_TOKEN` starts no
+workflows**, so `Deploy media Worker` never ran, and `/version` went on
+answering with the previous build. This happened on 1.0.9 and again on 1.0.10 —
+both had to be finished by manually dispatching the Worker deploy, and the
+comment in the job claimed the opposite of what GitHub does, which is why nobody
+had looked.
+
+`build-android.yml` now deploys the Worker itself and then asks `/version` what
+version it is offering, failing the release if the answer is not the build that
+was just published. A release that cannot be offered is no longer reported as
+green.
+
+### Fixed — the download page carried the previous build's numbers
+
+The page rewrites itself from the Worker when its script runs, but it also
+carries a filename, a byte count and a fingerprint in the HTML for readers
+whose phone does not run scripts. Those were updated by hand, and were one
+release behind on both 1.0.10 and 1.0.11.
+
+`CrushlyApp/scripts/write-download-page.mjs` now writes them from the APK that
+was just put on the release, in the same commit as `release.json`. The page is
+excluded from the Android workflow's `paths`, so that write cannot start a
+second build at the same version.
+
+### Fixed — a missing token made a healthy branch look broken
+
+`deploy-web.yml` failed on **every** push with `Error: You defined "--token",
+but it's missing a value` — `VERCEL_TOKEN` was never added, while the site was
+being deployed another way. A permanently red check teaches everyone to scroll
+past the one run that would have caught a real failure. The step now reports
+the missing token and skips; when a token is present it deploys and then
+confirms that `mecrushly.vercel.app` is serving a bundle containing this
+release's controls.
+
 ### Changed
 
 - `supabase/tests/run.py` no longer imports `pgserver` at module level, so a
@@ -75,6 +113,24 @@ attachment tray dismisses the keyboard first.
   where that package has no wheel.
 - Database inventory corrected: **39** migrations, **34** tables, **41**
   policies.
+- `ci.yml` and `build-android.yml` now run on `app/**`. The branch every release
+  is cut from had no CI of its own and did not build an APK on push; green
+  checks on a release commit came from its pull request.
+
+### The build
+
+`android-test-1.0.11`, **92,994,875 bytes**, sha256
+`550710bd8f7b6a162ee2c9524dbf8ef4845756716b9450953c2a43177aa90e2f`.
+Verified by downloading `/apk/latest` and hashing the bytes that arrive, then
+reading the manifest back out of the served file: `versionName='1.0.11'`,
+`versionCode='11'`, `package='app.crushly'`.
+
+1.0.11 was built twice, and both files were published under the same name. The
+first build (`cb55b519…`) went to `android-test-1.0.11`; adding the workflow
+trigger in the second commit started a second build, which clobbered the release
+with different bytes at the same version. The release, `release.json` and the
+download page now all describe the second one, and the Worker's edge cache is
+keyed on the fingerprint so it cannot serve the first one again.
 
 ---
 

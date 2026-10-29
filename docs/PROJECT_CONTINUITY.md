@@ -1,8 +1,8 @@
 # Crushly — project continuity
 
 **Last updated:** 2026-10-29
-**Current version:** 1.0.10 (versionCode 10) — **built, published, live**
-**Branch:** `app/space-tabs-and-playback` @ `aac4084`
+**Current version:** 1.0.11 (versionCode 11) — **built, published, live**
+**Branch:** `app/space-tabs-and-playback` @ `a656dbe`
 **Owner:** Odoh chiagoziem isreal
 
 **Where the docs live.** This file, `CHANGELOG.md` and the rest of the library
@@ -157,7 +157,7 @@ will be offered a build it already has — or never offered one it needs.
 | `VibeAuthor` has no `hasMoment` | Open |
 | No persistent E2E seed account | Open |
 | **Bookmark on the post viewer is client-only.** `toggleSave` flips local state and toasts "Post saved" — nothing is written. There is no `post_saves` table and no RPC. The button lies. | Open |
-| `VERCEL_TOKEN` secret missing → `deploy-web` job red on **every** commit, including `535034a`. Steps 1–6 pass; step 7 `Deploy to Vercel` fails. The live site therefore still serves 1.0.9. | Open — deploy Vercel by hand |
+| `VERCEL_TOKEN` secret missing → `deploy-web` could not publish, and failed red on **every** commit. Steps 1–6 pass; step 7 `Deploy to Vercel` failed with `--token` missing a value. | **Half open.** The step now skips with a warning instead of failing red, so the check is honest. The token is still not set, so web deploys are done explicitly. |
 
 ## 8. Database
 
@@ -200,25 +200,26 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
 
 ## 10. Next steps, in order
 
-1. ~~Confirm 1.0.10 builds, publishes and announces itself.~~ **Done.** The APK
-   published to `android-test-1.0.10` (92,987,427 bytes), the Worker advertises
-   it at `/version`, and the download page quotes the same size and hash. The
-   heart icon was verified by extracting `res/sK.webp` from the served APK.
-   Still outstanding: seeing it on a real launcher after a fresh install.
+1. ~~Confirm a build publishes and announces itself.~~ **Done for 1.0.11.**
+   The APK published to `android-test-1.0.11` (92,994,875 bytes,
+   `550710bd…aa90e2f`), `/apk/latest` serves exactly those bytes, `/version`
+   advertises 1.0.11 / code 11, and the manifest inside the served file reads
+   back `1.0.11` / `11` / `app.crushly`. The production web build carries
+   `save_post` and `saved_posts`. Still outstanding: seeing it on a real
+   launcher after a fresh install.
 
-   Two things had to be done by hand to close this release, and the second one
-   is a real defect in the process rather than a one-off:
-
-   - **The Worker did not pick up `release.json` on its own.** The Android job
+   **The two things that used to have to be done by hand are now automated,
+   and this was a real defect rather than a one-off — it cost three releases:**
+   - *The Worker did not pick up `release.json` on its own.* The Android job
      commits `release.json` with the release bot's token, and a push made with
-     that token does not trigger workflows. `/version` kept advertising 1.0.9
-     for a published 1.0.10 until `deploy-worker.yml` was dispatched manually.
-     `release.json` naming a version is **not** the same as the Worker serving
-     it — always check `/version` after a release.
-   - **The download page quoted the previous build's size and hash.** It said
-     1.0.10 but carried 1.0.9's numbers, so its own integrity check would have
-     contradicted the file a member downloaded. Fixed in `aac4084` from values
-     measured off `/apk/latest`.
+     that token starts no workflows, so `Deploy media Worker` never ran and
+     `/version` kept advertising the previous build for hours. The Android job
+     now deploys the Worker itself and then asks `/version` what it says,
+     failing the release if the answer is not the build just published.
+   - *The download page quoted the previous build's size and hash.* It now gets
+     them written into it by `CrushlyApp/scripts/write-download-page.mjs`, from
+     the APK on the release, in the same commit as `release.json`.
+
 2. Post a real `.mov` from an iPhone/Samsung gallery and confirm it posts and
    plays. **This is the one thing that has not been tested on a device.**
 **Released as 1.0.11 (version code 11).** The four fixes below, the repaired
@@ -248,7 +249,10 @@ migration history and the renumbered files all ship together.
   read it; the filter survived by accident of naming. The player now draws
   through `VideoEditCanvas`. Pinned by three tests in `videoEdit.test.ts`.
 6. Add `VERCEL_TOKEN` so the web deploy stops needing a manual step. Until then
-   **every** push leaves `Deploy web app` red and the live site on the previous
-   build, which is how a member ends up on 1.0.9 after a 1.0.10 release.
+   `Deploy web app` cannot publish the site; it now says so and skips rather
+   than failing red on every push, and web deploys are done explicitly. Create a
+   token at https://vercel.com/account/tokens and add it as a repository secret
+   named `VERCEL_TOKEN`; the workflow then deploys and confirms the live bundle
+   itself.
 7. Persistent E2E seed account, so the browser tests stop depending on a
    throwaway signup.

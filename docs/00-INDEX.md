@@ -44,11 +44,12 @@ It is not the source of truth.
 
 ## The one-paragraph state of the project
 
-Version **1.0.10 (versionCode 10)** is **built, published and live** at
-`8681320` on `app/space-tabs-and-playback`. The APK is 92,987,427 bytes,
-`0f123f02…d7dc37ff`; the Worker advertises it at `/version`; the download page
-quotes the same numbers; the release is `android-test-1.0.10`. All three surfaces
-a phone consults agree with each other.
+Version **1.0.11 (versionCode 11)** is **built, published and live** at
+`a656dbe` on `app/space-tabs-and-playback`. The APK is 92,994,875 bytes,
+`550710bd…aa90e2f`; the Worker serves it at `/apk/latest` and advertises it at
+`/version`; the download page quotes the same numbers; the release is
+`android-test-1.0.11`. All three surfaces a phone consults agree with each
+other, and the manifest inside the served APK reads back `1.0.11` / code `11`.
 
 Video uploads no longer fail — the 415 came from the database's MIME map, not
 from the client, and is fixed at four layers. The launcher icon is the official
@@ -57,12 +58,7 @@ actually served. Settings has a working **Check for updates** control and shows
 the installed build. Credit reads **Odoh chiagoziem isreal** in
 Settings → About Crushly.
 
-**Not yet proven:** a `.mov` recorded on a real iPhone or Samsung has never been
-published and played back on a physical device. Everything is proven over HTTP
-against production and inside the emulator; the camera-roll path on hardware is
-the one open verification.
-
-**Since then, four controls were made honest** (unreleased, after 1.0.10):
+**1.0.11 carries four controls that used to lie:**
 
 - **Save** writes a row. It used to flip a local flag, say "Post saved" and
   forget. There is now a `post_saves` table, three RPCs, a `SavedPosts` screen,
@@ -76,16 +72,29 @@ the one open verification.
 - **The Whisper keyboard no longer covers the composer on Android.**
 
 All four are covered by new tests: `saves.sql`, `post_shape.sql`, and three
-cases in `videoEdit.test.ts`. Suite is green: 121 app tests, all database suites.
+cases in `videoEdit.test.ts`.
 
-**Where it is live, and where it is not.** The database half is deployed:
-`post_saves` and its three RPCs are in production with RLS verified, and
-`circle_feed` now returns counts — so the app people are using picks up correct
-Circle counts with no update. The *Saved* screen is **not** in anything
-published: the production web bundle contains no `save_post`, the 1.0.10 APK
-predates it, and Vercel is building this branch as STAGED previews only. It
-reaches people when the web build is promoted or `main` is merged, and when an
-APK is cut. `DEPLOYED.md` has the measurements.
+**Where it is live.** Everywhere that matters: the production web build at
+`mecrushly.vercel.app` serves a bundle containing `save_post` and `saved_posts`,
+and `android-test-1.0.11` is the APK `/version` offers. There is no Play Store
+listing; the APK is the distribution channel. `DEPLOYED.md` has the
+measurements and the method.
+
+**The release process was the actual risk, and it is fixed.** Three releases in
+a row had to be finished by hand because the Worker never learned about the new
+build: the Android job commits `release.json` with the bot's token, and GitHub
+does not start workflows for a push made with that token, so `Deploy media
+Worker` never ran. `/version` would keep advertising the previous build for
+hours while a newer file sat on the release. The Android job now deploys the
+Worker itself, then asks `/version` what it is offering and fails the release if
+the answer is not the build it just published. The download page's baked-in
+size and fingerprint are written from that APK by
+`CrushlyApp/scripts/write-download-page.mjs` instead of by hand.
+
+**Not yet proven:** a `.mov` recorded on a real iPhone or Samsung has never been
+published and played back on a physical device. Everything else is proven over
+HTTP against production and inside an Android 9 emulator; the camera-roll path
+on hardware is the one open verification.
 
 ## Keeping this library current
 
