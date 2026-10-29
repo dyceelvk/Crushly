@@ -272,7 +272,7 @@ function b2Auth(env: Env): Promise<B2Auth> {
     });
 }
 
-async function b2Upload(env: Env, path: string, contentType: string, bytes: ArrayBuffer) {
+async function b2Upload(env: Env, path: string, contentType: string, bytes: ArrayBuffer | ReadableStream) {
   const auth = await b2Auth(env);
   const slot = await fetch(`${auth.apiUrl}/b2api/v2/b2_get_upload_url`, {
     method: 'POST',
@@ -291,8 +291,10 @@ async function b2Upload(env: Env, path: string, contentType: string, bytes: Arra
       Authorization: authorizationToken,
       'X-Bz-File-Name': encodeURIComponent(path),
       'Content-Type': contentType,
+      // A stream has no digest to take and no length to weigh, so it goes
+      // unverified; Backblaze still stores its own checksum of what arrives.
       'X-Bz-Content-Sha1':
-        bytes.byteLength <= VERIFIED_SHA1_MAX_BYTES
+        bytes instanceof ArrayBuffer && bytes.byteLength <= VERIFIED_SHA1_MAX_BYTES
           ? hex(await crypto.subtle.digest('SHA-1', bytes))
           : 'do_not_verify',
     },
@@ -637,18 +639,38 @@ export default {
     if (request.method === 'POST') {
       const kind = request.headers.get('X-Media-Kind') ?? '';
       const contentType = request.headers.get('Content-Type') ?? 'application/octet-stream';
-      const bytes = await request.arrayBuffer();
-      if (bytes.byteLength > MAX_UPLOAD_BYTES) return fail(413, 'That file is too large.', origin);
+      // Weighed, not read. Buffering the body into an ArrayBuffer is what made
+      // anything past ~25 MB fail here: the isolate copies the whole file once
+      // to measure it and again to forward it, and a clip the database had
+      // already agreed to accept died between the two. The length is declared
+      // by the client, so the ceiling can still be enforced before a byte is
+      // forwarded, and the body streams straight through to storage.
+      const declared = Number(request.headers.get('Content-Length') ?? '0');
+      let bytes: ArrayBuffer | ReadableStream | null = null;
+      let size = declared;
+      if (!Number.isFinite(size) || size <= 0) {
+        // No length offered: this is the one case that must read the body, and
+        // it keeps it, since there is nothing left to stream afterwards.
+        bytes = await request.arrayBuffer();
+        size = bytes.byteLength;
+      }
+      if (size > MAX_UPLOAD_BYTES) return fail(413, 'That file is too large.', origin);
+      if (size <= 0) return fail(400, 'That file looks empty - try picking it again.', origin);
 
       const ticket = await rpc<{ path: string }>(env, token, 'media_upload_ticket', {
         p_kind: kind,
         p_content_type: contentType,
-        p_bytes: bytes.byteLength,
+        p_bytes: size,
       });
       if (!ticket.ok) return fail(ticket.status, ticket.message, origin);
 
       try {
-        await b2Upload(env, ticket.data.path, contentType, bytes);
+        await b2Upload(
+          env,
+          ticket.data.path,
+          contentType,
+          bytes ?? (request.body as ReadableStream),
+        );
       } catch (e) {
         // Credentials and bucket details never reach the client.
         console.error('upload failed:', (e as Error).message);
