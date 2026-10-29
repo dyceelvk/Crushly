@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View, useWindowDimensions,
+  Animated, FlatList, Keyboard, Modal, Platform, Pressable, TextInput, View, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -13,12 +13,18 @@ import { radius, space } from '../theme/tokens';
 import { timeAgo } from '../lib/format';
 import { useMe, useCommentOnPost, useDeletePostComment, usePostComments, useReactToPostComment } from '../api/hooks';
 import type { PostComment } from '../api/types';
+import { canSendComment, composerOffset, sheetPlacement } from '../lib/comments';
 import type { RootStackParamList } from '../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-/** How tall the sheet stands at rest, as a share of the window. */
-const SHEET_HEIGHT = 0.78;
+/**
+ * The sheet's height and the keyboard's effect on it come from lib/comments,
+ * where they are covered by tests. In short: the sheet is measured from the
+ * top of the *visible* area and ends exactly at its bottom edge, so when a
+ * keyboard takes part of the screen the sheet — and the composer pinned to its
+ * floor — moves up rather than being drawn underneath.
+ */
 
 type Props = {
   postId: number;
@@ -51,6 +57,34 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const nav = useNavigation<Nav>();
+
+  /**
+   * How much of the window the keyboard is covering.
+   *
+   * Measured rather than assumed, because the platforms disagree: iOS reports
+   * it in `endCoordinates`, Android only reliably reports whether it is up.
+   * When all we know is "up", the sheet gets the 45% that a phone keyboard
+   * typically takes — better to make room for a keyboard that turned out to be
+   * smaller than to hide the composer behind one that is bigger.
+   */
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
+      const reported = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(reported > 0 ? reported : Math.round(height * 0.45));
+    });
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [visible, height]);
 
   const query = usePostComments(visible ? postId : null);
   const { data: me } = useMe();
@@ -113,6 +147,9 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
   // the heading never contradicts the "View N replies" line under a comment.
   const total = items.length || commentCount || 0;
 
+  // Where the sheet stands right now, with any keyboard taken off the bottom.
+  const placement = sheetPlacement({ viewportHeight: height, keyboardHeight });
+
   const submit = useCallback(async () => {
     const body = draft.trim();
     if (!body) return;
@@ -149,7 +186,7 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={{ flex: 1 }}>
         <Animated.View
           style={{
             flex: 1,
@@ -166,13 +203,15 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 0,
+            // Sits on the floor of what is visible — which is the top of the
+            // keyboard once it is up, not the bottom of the window.
+            top: placement.top,
             transform: [{ translateY: y.interpolate({ inputRange: [0, 1], outputRange: [0, height * 0.6] }) }],
           }}
         >
           <View
             style={{
-              height: Math.min(height * SHEET_HEIGHT, 720),
+              height: placement.height,
               backgroundColor: colors.bgSecondary,
               borderTopLeftRadius: 28,
               borderTopRightRadius: 28,
@@ -300,7 +339,7 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
                 gap: space.sm,
                 paddingHorizontal: space.lg,
                 paddingTop: space.sm,
-                paddingBottom: Math.max(insets.bottom, space.sm),
+                paddingBottom: composerOffset(insets.bottom),
                 borderTopWidth: 1,
                 borderTopColor: colors.border,
               }}
@@ -344,7 +383,7 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
               </View>
               <Pressable
                 onPress={submit}
-                disabled={!draft.trim() || send.isPending}
+                disabled={!canSendComment(draft, send.isPending)}
                 accessibilityRole="button"
                 accessibilityLabel="Send comment"
                 hitSlop={8}
@@ -356,7 +395,7 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
                   justifyContent: 'center',
                   // The one place the accent is a filled surface: sending.
                   backgroundColor: colors.crush,
-                  opacity: !draft.trim() || send.isPending ? 0.45 : 1,
+                  opacity: canSendComment(draft, send.isPending) ? 1 : 0.45,
                 }}
               >
                 <Ionicons name="arrow-up" size={21} color={colors.onCrush} />
@@ -364,7 +403,7 @@ export function CommentsSheet({ postId, visible, onClose, commentCount }: Props)
             </View>
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
