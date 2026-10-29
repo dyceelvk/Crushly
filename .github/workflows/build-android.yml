@@ -310,13 +310,16 @@ jobs:
       # answer is not the build that was just published, the release stops here
       # rather than telling every phone an update that is not there.
       - name: Point the Worker at this build
+        # Names matter here: wrangler reads CLOUDFLARE_API_TOKEN and
+        # CLOUDFLARE_ACCOUNT_ID out of the environment by itself. A tidy local
+        # alias would deploy nothing and report success.
         env:
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          if [ -z "${CF_TOKEN:-}" ] || [ -z "${CF_ACCOUNT:-}" ]; then
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
             echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are not set, so the published APK cannot be offered to phones. Add them under Settings → Secrets and variables → Actions (cloudflare/media-worker/README.md has the steps)."
             exit 1
           fi
