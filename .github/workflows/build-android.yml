@@ -1,8 +1,12 @@
 name: Build Android test APK
 on:
   workflow_dispatch:
+  # `app/**` is the main line. It was absent, so a release cut from this branch
+  # only ever built when somebody remembered to press Run — and the ARENA branch
+  # that is the actual release branch got no automatic APK at all. The `app/**`
+  # push is what turns "version bumped in app.json" into "phones are offered it".
   push:
-    branches: [arena/**]
+    branches: [arena/**, 'app/**']
     paths:
       - 'CrushlyApp/**'
       - '.github/workflows/build-android.yml'
