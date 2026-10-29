@@ -17,7 +17,7 @@ import { EmptyState } from '../../components/States';
 import { BottomSheet } from '../../components/BottomSheet';
 import { CommentsSheet } from '../../components/CommentsSheet';
 import { useToast } from '../../components/Toast';
-import { useDeletePost, useFlow, usePost, useReactToPost } from '../../api/hooks';
+import { useDeletePost, useFlow, usePost, usePostSaved, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
@@ -58,7 +58,11 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const remove = useDeletePost();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [threeDotsOpen, setThreeDotsOpen] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const savedQuery = usePostSaved(postId);
+  const save = useSavePost();
+  // The answer from the database, falling back to whatever the feed row
+  // already knew while the real question is in flight.
+  const isSaved = savedQuery.data ?? post?.saved ?? false;
 
   // Share to Whisper: pick a connection to send this post to — never whisper
   // to yourself, so open your Close Ones list and let you choose.
@@ -95,13 +99,23 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }
   }, [post, like, toast]);
 
-  const toggleSave = useCallback(() => {
-    setIsSaved((prev) => {
-      const next = !prev;
-      toast({ kind: next ? 'success' : 'info', title: next ? 'Post saved' : 'Post unsaved' });
-      return next;
-    });
-  }, []);
+  /**
+   * Save is a row now, not a local flag. The icon moves on the tap, the write
+   * goes out, and a failure puts the icon back and says so — the old version
+   * told you "Post saved" whether or not anything was saved, then forgot it
+   * the moment you closed the viewer.
+   */
+  const toggleSave = useCallback(async () => {
+    if (!post) return;
+    const next = !isSaved;
+    try {
+      const result = await save.mutateAsync({ postId: post.id, saved: next });
+      const savedNow = result?.saved ?? next;
+      toast({ kind: savedNow ? 'success' : 'info', title: savedNow ? 'Post saved' : 'Post unsaved' });
+    } catch (e) {
+      toast({ kind: 'error', title: next ? 'Not saved' : 'Still saved', message: (e as Error).message });
+    }
+  }, [post, isSaved, save, toast]);
 
   const deletePost = useCallback(async () => {
     if (!post) return;

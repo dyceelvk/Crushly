@@ -27,6 +27,8 @@ export const keys = {
   circleFeed: (id: number) => ['circle-feed', id] as const,
   circleMessages: (id: number) => ['circle-messages', id] as const,
   post: (id: number) => ['post', id] as const,
+  postSaved: (id: number) => ['post-saved', id] as const,
+  savedPosts: ['saved-posts'] as const,
   postComments: (id: number) => ['post-comments', id] as const,
   closeOnes: ['close-ones'] as const,
   vibes: ['vibes'] as const,
@@ -286,8 +288,75 @@ export function useReactToPost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ postId, liked }: { postId: number; liked: boolean }) => service.reactToPost(postId, liked),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.savedPosts });
+    },
   });
+}
+
+/**
+ * Is this post in my drawer? Asked when the viewer opens, so the bookmark icon
+ * shows the truth even when the feed that opened it pre-dates the save.
+ */
+export function usePostSaved(postId: number | null) {
+  return useQuery({
+    queryKey: keys.postSaved(postId ?? 0),
+    queryFn: () => service.postSaved(postId as number),
+    enabled: postId !== null,
+  });
+}
+
+/**
+ * Save and unsave, optimistic and reversible.
+ *
+ * The old button was a `useState` that said "Post saved" and forgot. This one
+ * answers instantly, then rolls back if the write fails — so the icon is never
+ * ahead of the database for longer than a request. `onError` puts the previous
+ * value back and the screen tells you it did not stick.
+ */
+export function useSavePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ postId, saved }: { postId: number; saved: boolean }) =>
+      service.savePost(postId, saved),
+    onMutate: async ({ postId, saved }) => {
+      const key = keys.postSaved(postId);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<boolean>(key);
+      qc.setQueryData<boolean>(key, saved);
+      return { previous, key };
+    },
+    onError: (_error, _vars, context) => {
+      if (context) qc.setQueryData<boolean>(context.key, context.previous);
+    },
+    onSettled: (_data, _error, vars) => {
+      void qc.invalidateQueries({ queryKey: keys.postSaved(vars.postId) });
+      void qc.invalidateQueries({ queryKey: keys.savedPosts });
+    },
+  });
+}
+
+/** The saved drawer, newest save first. */
+export function useSavedPosts(limit = 20) {
+  const [after, setAfter] = useState<number | null>(null);
+  const query = useQuery({
+    queryKey: [...keys.savedPosts, limit, after],
+    queryFn: () => service.savedPosts(limit, after),
+  });
+  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      const oldest = posts[posts.length - 1];
+      if (oldest && !query.isFetching) setAfter(oldest.id);
+    },
+    refresh: () => {
+      setAfter(null);
+      return query.refetch();
+    },
+  };
 }
 
 /** One post, fetched directly so a post view never depends on the post

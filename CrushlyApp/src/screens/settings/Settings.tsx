@@ -95,6 +95,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       </Group>
 
       <Group title="App">
+        <ListRow title="Saved posts" subtitle="Only you can see this" icon="bookmark-outline" onPress={() => navigation.navigate('SavedPosts')} />
         <ListRow title="Crush Alerts" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} last />
       </Group>

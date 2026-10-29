@@ -81,3 +81,23 @@ close sheet → composer absent
 - Dark palette and magenta accent confirmed against the theme constants.
 - No screenshot of a real device was taken for this pass — see
   PROJECT_CONTINUITY §7 for what that leaves unproven.
+
+## 6. The Bookmark, since 1.0.10
+
+At 1.0.10 the Bookmark was the one control on the rail that did not keep its
+promise: it flipped a local `useState` and toasted "Post saved" without writing
+anything, so the save was gone when the viewer closed. That is now a row.
+
+- **Table.** `post_saves (user_id, post_id, created_at)`, primary key on the
+  pair, cascade on both sides. RLS allows select/insert/delete on your own rows
+  and nothing else — no policy exists by which a post's author could learn who
+  saved it.
+- **Calls.** `save_post(post, saved)` returns the resulting `{saved}`;
+  `post_saved(post)` is what the icon asks on open; `saved_posts()` is the
+  drawer, shaped like `flow_feed` and filtered by `can_view_post`.
+- **Screen.** `SavedPosts`, reachable from the bookmark in the Flow header and
+  "Saved posts" in Settings, reusing `PostCard` so a saved post behaves like any
+  other.
+- **What it is not.** Not a count, not a signal, not something the author sees.
+  A save is closer to a browser bookmark than to a like, and the schema is
+  shaped so it cannot become anything else by accident.

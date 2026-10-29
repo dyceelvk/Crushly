@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
@@ -43,6 +43,22 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const { conversationId } = route.params;
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+
+  /*
+   * Android needs a behaviour, not `undefined`.
+   *
+   * `behavior={undefined}` turns the component into a plain View and relies on
+   * the OS resizing the window for the keyboard. On Android 15 and later the
+   * app draws edge to edge — the same change that made `CommentsSheet` measure
+   * the keyboard instead of trusting a resize — so the window does not shrink,
+   * this tree keeps its full height, and the composer sits underneath the
+   * keyboard. You type a Whisper and cannot see what you are typing.
+   *
+   * `height` shrinks the tree by exactly the keyboard's height, which keeps the
+   * list and the composer above it. `softwareKeyboardLayoutMode: 'resize'` in
+   * app.json is what older Android versions honour; this is the modern one.
+   */
+  const kavBehavior = Platform.OS === 'ios' ? 'padding' : 'height';
   const toast = useToast();
   const { contentWidth, width } = useLayout();
   const { data: conv, error: convError, refetch: refetchConv } = useConversation(conversationId);
@@ -352,7 +368,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         </View>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={kavBehavior}>
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />
         ) : chat.error ? (
@@ -520,7 +536,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 <>
                   <View style={{ flex: 1, minWidth: 0, minHeight: 44, maxHeight: 130, borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'flex-end' }}>
                     <Pressable
-                      onPress={() => setTray((t) => !t)}
+                      onPress={() => {
+                        // The tray and the keyboard compete for the same space;
+                        // the tray wins, so close the keyboard first.
+                        Keyboard.dismiss();
+                        setTray((t) => !t);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={tray ? 'Close attachments' : 'Add photo, sticker or Space'}
                       hitSlop={4}

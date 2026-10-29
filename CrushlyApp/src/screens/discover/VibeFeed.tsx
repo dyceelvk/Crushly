@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   type ViewToken,
 } from 'react-native';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { useVideoPlayer } from 'expo-video';
 import { useEvent } from 'expo';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +18,8 @@ import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState } from '../../components/States';
+import { VideoEditCanvas } from '../../components/VideoEditCanvas';
+import { editFromLive, type LiveEdit } from '../../lib/videoEdit';
 import { useLayout } from '../../components/Layout';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
@@ -256,7 +258,7 @@ function VibePage({
             </Txt>
           </View>
         ) : (
-          <VibeClip source={source} active={active} onError={() => setFailed(true)} />
+          <VibeClip source={source} live={vibe.edit ?? null} active={active} onError={() => setFailed(true)} />
         )}
       </View>
 
@@ -321,10 +323,13 @@ function VibePage({
  */
 function VibeClip({
   source,
+  live,
   active,
   onError,
 }: {
   source: ReturnType<typeof mediaSource>;
+  /** The author's edit: words, stickers and look, drawn over the file. */
+  live: LiveEdit | null;
   active: boolean;
   onError: () => void;
 }) {
@@ -332,6 +337,24 @@ function VibeClip({
     p.loop = true;
     p.muted = false;
   });
+
+  // The canvas is what actually draws the picture: it owns the VideoView, the
+  // look, and the overlays. Playing the file directly in a bare VideoView is
+  // how the full-screen Vibe feed ended up showing a clip with none of its
+  // captions — the edit was in the row and nothing read it.
+  //
+  // Full-screen playback is for watching, not scrubbing, so the canvas is not
+  // `interactive`; the tap target below still owns play/pause.
+  const edit = useMemo(() => editFromLive(live, 0), [live]);
+  const [clipTime, setClipTime] = useState(0);
+  useEffect(() => {
+    if (!player) return;
+    const sub = player.addListener('timeUpdate', (e: { currentTime: number }) => {
+      setClipTime(e.currentTime);
+    });
+    player.timeUpdateEventInterval = 0.1;
+    return () => sub.remove();
+  }, [player]);
 
   // The viewer stopped this one on purpose. Scrolling away and back is a new
   // visit, so the flag is cleared when the page stops being the active one —
@@ -369,13 +392,12 @@ function VibeClip({
 
   return (
     <View style={{ width: '100%', height: '100%' }}>
-      <VideoView
+      <VideoEditCanvas
         player={player}
-        style={{ width: '100%', height: '100%' }}
+        edit={edit}
+        clipTime={clipTime}
         contentFit="contain"
-        nativeControls={false}
-        accessibilityLabel="Vibe clip"
-        onFirstFrameRender={() => undefined}
+        style={{ width: '100%', height: '100%' }}
       />
       {/*
         Always drawn here, unlike the Flow, because a full-screen feed has no

@@ -73,6 +73,11 @@ export type Post = {
   likeCount: number;
   liked: boolean;
   commentCount: number;
+  /**
+   * Whether this post is in your saved drawer. Absent from feeds that do not
+   * fill it in; the post viewer asks `post_saved` for the truth on open.
+   */
+  saved?: boolean;
 };
 
 /**
@@ -366,8 +371,15 @@ export type Vibe = {
   coverUrl: string | null;
   durationMs: number | null;
   audience: 'connections' | 'everyone';
-  /** The editor's recipe, or null when the clip is untouched. */
-  edit: VideoEdit | null;
+  /**
+   * The editor's recipe, or null when the clip is untouched.
+   *
+   * A `LiveEdit`, not a `VideoEdit`: the server stores the drawable half —
+   * captions, stickers, look — because the file itself is never re-encoded.
+   * Declared as `VideoEdit` it type-checked while nothing could read it, and
+   * the full-screen feed played every Vibe without its captions.
+   */
+  edit: LiveEdit | null;
   createdAt: number;
   expiresAt: number;
   author: VibeAuthor;

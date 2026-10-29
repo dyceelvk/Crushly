@@ -362,6 +362,27 @@ export async function flowFeed(limit = 20, after?: number | null): Promise<FlowP
   return { items: page?.items ?? [] };
 }
 
+/**
+ * Save or unsave a post. A save is a private row, not a signal: the author is
+ * never told, nothing is counted, and only you can read the drawer back. The
+ * database returns the resulting state rather than echoing the request, so a
+ * double tap cannot leave the icon ahead of the truth.
+ */
+export async function savePost(postId: number, saved = true): Promise<{ saved: boolean }> {
+  return rpc<{ saved: boolean }>('save_post', { p_post_id: postId, p_saved: saved });
+}
+
+/** Whether one post is in your drawer — asked when the viewer opens. */
+export async function postSaved(postId: number): Promise<boolean> {
+  return rpc<boolean>('post_saved', { p_post_id: postId });
+}
+
+/** The drawer itself, newest save first, in the same shape as the Flow feed. */
+export async function savedPosts(limit = 20, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('saved_posts', { p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
 /** Shares a post. Photos and clips go to the object store like any other media. */
 export async function createPost(input: {
   body: string;

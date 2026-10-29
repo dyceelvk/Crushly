@@ -62,6 +62,22 @@ published and played back on a physical device. Everything is proven over HTTP
 against production and inside the emulator; the camera-roll path on hardware is
 the one open verification.
 
+**Since then, four controls were made honest** (unreleased, after 1.0.10):
+
+- **Save** writes a row. It used to flip a local flag, say "Post saved" and
+  forget. There is now a `post_saves` table, three RPCs, a `SavedPosts` screen,
+  a bookmark in the Flow header and a row in Settings — and it is private: no
+  count, no notification, nobody but the owner can read it.
+- **Circle posts have their counts.** `circle_feed` was the one function that
+  built a post without merging `post_engagement`, so likes and comments came
+  back blank inside every Circle.
+- **Vibes keep their captions.** `Vibe.edit` was typed as the wrong shape, so
+  the full-screen feed played every clip bare.
+- **The Whisper keyboard no longer covers the composer on Android.**
+
+All four are covered by new tests: `saves.sql`, `post_shape.sql`, and three
+cases in `videoEdit.test.ts`. Suite is green: 121 app tests, all database suites.
+
 ## Keeping this library current
 
 These files are copied from the repository by hand after a release. When a

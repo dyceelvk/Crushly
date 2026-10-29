@@ -1,7 +1,7 @@
 # Crushly — database and RLS
 
 **Owner and official credit: Odoh chiagoziem isreal.**
-Schema state at 1.0.10. 37 migrations under `supabase/migrations/`.
+Schema state after 1.0.10. 39 migrations under `supabase/migrations/`.
 
 ---
 
@@ -16,7 +16,7 @@ whole authorization model.** A modified client can call anything.
 
 ## 2. Tables
 
-35 tables, every one of them with RLS enabled:
+34 tables, every one of them with RLS enabled (41 policies):
 
 ```
 profiles  preferences  privacy  reserved_usernames  verification_requests
@@ -26,7 +26,7 @@ crushes  passes  connections  keeps  blocks  reports
 
 photos  moments  moment_views  moment_reactions
 vibes  vibe_views
-posts  post_comments  post_comment_likes  post_reactions
+posts  post_comments  post_comment_likes  post_reactions  post_saves
 
 circles  circle_members  circle_messages
 conversations  messages  message_reactions  call_rooms
@@ -110,7 +110,8 @@ blocked post. The fallback is gone.
 The suite runs an ephemeral Postgres and applies, in order:
 
 ```
-stubs.sql → all migrations → all migrations again → seed.sql → comments.sql → smoke.sql
+stubs.sql → all migrations → all migrations again → seed.sql → smoke.sql →
+comments.sql → saves.sql → post_shape.sql
 ```
 
 Applying migrations **twice** is intentional: it proves every migration is

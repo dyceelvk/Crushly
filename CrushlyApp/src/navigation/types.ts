@@ -44,6 +44,7 @@ export type RootStackParamList = {
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle' };
   CreatePost: undefined;
   PostViewer: { postId: number };
+  SavedPosts: undefined;
   WebPreview: { url: string };
   Safety: undefined;
   Privacy: undefined;

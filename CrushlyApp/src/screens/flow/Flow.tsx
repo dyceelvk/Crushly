@@ -101,6 +101,7 @@ export function FlowScreen() {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
+          <IconButton icon="bookmark-outline" label="Saved posts" onPress={() => navigation.navigate('SavedPosts')} />
           <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
         </View>
       </View>

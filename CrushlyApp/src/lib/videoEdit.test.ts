@@ -20,6 +20,8 @@ import {
   toLiveEdit,
   looksNeutral,
   editFromLive,
+  lookOf,
+  NEUTRAL_LOOK,
 } from './videoEdit';
 
 const d = 60;
@@ -186,4 +188,42 @@ test('reopening a posted clip does not reset how it looks', () => {
   const reopened = editFromLive({ version: 2, captions: [], stickers: [], look }, d);
   assert.equal(reopened.filter, 'noir');
   assert.equal(reopened.speed, 2);
+});
+
+/*
+ * A Vibe played in the full-screen feed used a bare VideoView, so the stored
+ * edit was never drawn: the filter survived by accident of naming, and every
+ * caption and sticker vanished. These pin the conversion the player relies on.
+ */
+test('a stored Vibe edit reaches the canvas with its words intact', () => {
+  const live = {
+    version: 2 as const,
+    captions: [{ id: 'c1', text: 'say it again', x: 0.5, y: 0.8, start: 0, end: 6, size: 0.06, color: '#ffffff', style: 'none' as const, animation: 'none' as const, bold: true }],
+    stickers: [],
+    look: { ...NEUTRAL_LOOK, filter: 'sunset' as const },
+  };
+  const drawn = editFromLive(live, 0);
+  assert.equal(drawn.captions.length, 1, 'the caption is there to draw');
+  assert.equal(drawn.captions[0].text, 'say it again');
+  assert.equal(drawn.filter, 'sunset', 'the look survives too');
+});
+
+test('an untouched Vibe draws a neutral, empty edit instead of null', () => {
+  const drawn = editFromLive(null, 0);
+  assert.equal(drawn.captions.length, 0);
+  assert.equal(drawn.stickers.length, 0);
+  assert.equal(looksNeutral(lookOf(drawn)), true);
+});
+
+test('overlays only show inside their own window', () => {
+  const live = {
+    version: 2 as const,
+    captions: [{ id: 'c1', text: 'late', x: 0.5, y: 0.8, start: 4, end: 6, size: 0.06, color: '#ffffff', style: 'none' as const, animation: 'none' as const, bold: false }],
+    stickers: [],
+    look: NEUTRAL_LOOK,
+  };
+  const drawn = editFromLive(live, 0);
+  assert.equal(overlaysAt(drawn, 1).captions.length, 0, 'not before it starts');
+  assert.equal(overlaysAt(drawn, 5).captions.length, 1, 'while it is on screen');
+  assert.equal(overlaysAt(drawn, 7).captions.length, 0, 'not after it ends');
 });
