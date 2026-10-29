@@ -498,6 +498,7 @@ begin
   declare
     own_post bigint;
     room_post bigint;
+    room bigint;
   begin
     perform set_config('request.jwt.claim.sub', daniel::text, false);
 
