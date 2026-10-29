@@ -575,7 +575,22 @@ async function apkBuild(
    *
    * Keying by the release file makes a new release a different cache entry, so
    * a stale body cannot outlive the version it belonged to. */
-  const cacheKey = new URL(`${url.origin}/apk/${encodeURIComponent(name)}`).toString();
+  /* …but the *filename* is not what changes when a build is replaced. Two
+   * different builds can carry the same `Crushly-1.0.11-Android9plus.apk`, and
+   * both did: a rebuilt APK has a new fingerprint and the same name, because
+   * the name is the version. Keyed on the name alone, the edge went on serving
+   * the first body to anyone who asked — `release.json` said
+   * `sha256 cb55b5…`, the phone downloaded `550710bd…`, and the integrity check
+   * on an otherwise perfect page told a member the file was not ours.
+   *
+   * So the key carries the fingerprint the Worker is publishing. A rebuilt
+   * same-version file is a different key, which is the whole point: the bytes
+   * and the checksum a member is told to verify are always the same bytes.
+   * Older entries simply stop being looked up. */
+  const fingerprint = (release === RELEASE && release.sha256) || '';
+  const cacheKey = new URL(
+    `${url.origin}/apk/${encodeURIComponent(name)}?${fingerprint.slice(0, 16)}`,
+  ).toString();
 
   // A whole download is worth keeping at the edge for a while — it is the same
   // bytes for everybody, and the phone may well ask twice.

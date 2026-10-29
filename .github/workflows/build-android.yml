@@ -318,8 +318,19 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
+          # The account id is a repository *variable* somebody pasted into a
+          # form. It arrived with a trailing carriage return, which wrangler
+          # rejected with "Account IDs may only contain alphanumeric
+          # characters, hyphens, and underscores" and failed the release after
+          # the APK had already been published. Trim it here rather than
+          # trusting what a form stored, and check the shape wrangler checks.
+          CLOUDFLARE_ACCOUNT_ID=$(printf '%s' "${CLOUDFLARE_ACCOUNT_ID:-}" | tr -d '[:space:]')
+          export CLOUDFLARE_ACCOUNT_ID
           version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+          case "$CLOUDFLARE_ACCOUNT_ID" in
+            *[!A-Za-z0-9_-]*|'') echo "::error::CLOUDFLARE_ACCOUNT_ID is unset or holds characters an account id cannot contain."; exit 1 ;;
+          esac
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
             echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are not set, so the published APK cannot be offered to phones. Add them under Settings → Secrets and variables → Actions (cloudflare/media-worker/README.md has the steps)."
             exit 1
           fi
