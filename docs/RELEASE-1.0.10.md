@@ -99,21 +99,51 @@ to press. Now: a real button, a re-fetch that invalidates the cache, an installe
 | Unsupported type in production | `application/octet-stream` → **415**, marker gone |
 | `.mov` end to end | upload 201 → `create_post` 200 → `GET` 200 `video/quicktime`, `accept-ranges: bytes` |
 | `.mp4` end to end | upload → post → `GET` 200 `video/mp4`, `accept-ranges: bytes` |
-| Worker deployed | `deploy-worker.yml` success on `535034a` |
+| Worker deployed | `deploy-worker.yml` success on `535034a`, and again on the release commit |
 | Typecheck | `tsc --noEmit` exit 0 |
 | Icon densities | 5 tile + 5 foreground densities emitted, art 62–63% of tile |
+| Icon in the shipped APK | `res/sK.webp` extracted from the served file and inspected — the heart |
+| APK served == APK published | sha256 of `/apk/latest` matches the release asset exactly |
+| Android 9 emulator | cold start and relaunch passed |
+| Branch CI | `8681320`, success |
 
-## Not proven — read this before claiming the release is done
+## The build is out
 
-- **No `.mov` from a real phone has been published and played back on a physical
-  device.** Everything above was proven over HTTP against production, plus a
-  real MP4 end to end. The camera-roll path on hardware is the one remaining
-  test.
-- The **1.0.10 APK build** was still compiling when these notes were written.
-  Until the release asset exists and the download page shows 1.0.10, the APK a
-  member downloads is still 1.0.9.
-- `/version` still advertises **1.0.9 / versionCode 9** for the same reason. The
-  in-app update offer cannot point at 1.0.10 until the build publishes.
+| | |
+|---|---|
+| Release | `android-test-1.0.10` — published 2026-10-29 20:15 UTC |
+| APK | `Crushly-1.0.10-Android9plus.apk` · **92,987,427** bytes |
+| SHA-256 | `0f123f02774e51b0b5ea12ec748d59467d4faab51d9b36f6184a0adda7dc37ff` |
+| `/version` | reports 1.0.10 / versionCode 10 / 92,987,427 bytes |
+| `/apk/latest` | serves the same file, `206` on a range request |
+| Download page | names 1.0.10 and quotes the same size and hash |
+
+The emulator job also passed: install compatibility, cold start, relaunch, and
+the packaged-APK secret audit.
+
+### Two things needed a hand to close
+
+Neither was automatic, and both would have left the release looking done while
+one surface disagreed with another:
+
+1. **The Worker kept advertising 1.0.9.** The Android job commits `release.json`
+   with the release bot's token, and a push made with that token does not
+   trigger workflows, so `deploy-worker.yml` never ran for the version bump. The
+   deploy was dispatched manually. *A `release.json` commit is not a deployment.*
+2. **The download page quoted 1.0.9's numbers** under the 1.0.10 filename — its
+   own integrity check would have contradicted the download. Corrected in
+   `aac4084` from values measured off `/apk/latest`.
+
+## Not proven — read this before calling the release finished
+
+- **No `.mov` from a real iPhone or Samsung has been published and played back
+  on a physical device.** Everything above is proven over HTTP against
+  production, plus a real MP4 end to end and the Android 9 emulator pass. The
+  camera-roll path on hardware is the one remaining test, and it is the exact
+  thing a member complained about.
+- The launcher icon was verified by extracting `res/sK.webp` from the served
+  APK and inspecting it — that proves the pixels shipped. It does not show what
+  a particular launcher's mask does to them on a particular phone.
 
 ## Known open defects (not in this release)
 

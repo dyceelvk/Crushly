@@ -44,14 +44,23 @@ It is not the source of truth.
 
 ## The one-paragraph state of the project
 
-Version **1.0.10 (versionCode 10)** is committed on `app/space-tabs-and-playback`
-at `535034a` and the media Worker is deployed and verified against production.
+Version **1.0.10 (versionCode 10)** is **built, published and live** at
+`8681320` on `app/space-tabs-and-playback`. The APK is 92,987,427 bytes,
+`0f123f02…d7dc37ff`; the Worker advertises it at `/version`; the download page
+quotes the same numbers; the release is `android-test-1.0.10`. All three surfaces
+a phone consults agree with each other.
+
 Video uploads no longer fail — the 415 came from the database's MIME map, not
 from the client, and is fixed at four layers. The launcher icon is the official
-Crushly heart again. Settings has a working **Check for updates** control and
-shows the installed build. **Not yet proven:** a `.mov` recorded on a real phone
-has never been published and played on a physical device, and the 1.0.10 APK
-build was still compiling when these documents were written.
+Crushly heart, confirmed by extracting `res/sK.webp` from the APK that is
+actually served. Settings has a working **Check for updates** control and shows
+the installed build. Credit reads **Odoh chiagoziem isreal** in
+Settings → About Crushly.
+
+**Not yet proven:** a `.mov` recorded on a real iPhone or Samsung has never been
+published and played back on a physical device. Everything is proven over HTTP
+against production and inside the emulator; the camera-roll path on hardware is
+the one open verification.
 
 ## Keeping this library current
 
