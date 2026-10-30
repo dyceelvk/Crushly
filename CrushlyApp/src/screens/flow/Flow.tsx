@@ -595,7 +595,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
             <Txt variant="caption" style={{ color: colors.text }}>@</Txt>
           </Pressable>
           <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
-            <Ionicons name="hash" size={18} color={colors.textMuted} />
+            <Txt variant="caption" style={{ color: colors.text }}>#</Txt>
           </Pressable>
           <Pressable onPress={() => setAudience(audience === 'everyone' ? 'connections' : 'everyone')} accessibilityLabel="Public or private" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Ionicons name={audience === 'everyone' ? 'globe' : 'lock-closed'} size={18} color={colors.textMuted} />
