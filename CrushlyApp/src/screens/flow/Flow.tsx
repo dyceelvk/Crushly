@@ -184,7 +184,7 @@ export function FlowScreen() {
         viewabilityConfig={viewabilityConfig}
         renderItem={({ item }) => (
           <View style={{ marginTop: space.md }}>
-            <PostCard post={item} playing={focused && visible === item.id} />
+            <PostCard post={item} playing={focused && visible === item.id} restrictPlayback />
           </View>
         )}
         ListFooterComponent={
@@ -223,11 +223,11 @@ export function FlowScreen() {
  *
  * `playing` is the screen's answer to "is this the one on screen". A post that
  * is not playing still shows its clip — paused on its first frame — because a
- * feed you have to press play on is not a feed. Defaults to true so the screens
- * that do not track viewability (Discover, Circles) keep working as before
- * rather than silently going mute.
+ * feed you have to press play on is not a feed. In untracked lists (Discover,
+ * Circles, Saved), clips start paused but can be played manually instead of
+ * starting every clip in the list at once.
  */
-export function PostCard({ post: p, playing = true }: { post: Post; playing?: boolean }) {
+export function PostCard({ post: p, playing = false, restrictPlayback = false }: { post: Post; playing?: boolean; restrictPlayback?: boolean }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
@@ -382,6 +382,7 @@ return (
                   uri={resolveVideoUri(p.mediaUrl)}
                   live={p.edit ?? null}
                   autoPlay={playing}
+                  paused={restrictPlayback && !playing}
                   // Small button in the corner, never a sheet over the clip:
                   // the whole video sits inside a Pressable that opens the
                   // post, and a centred overlay swallowed that tap and made the
@@ -421,7 +422,10 @@ return (
           count={p.likeCount}
           label={p.liked ? 'Take back your like' : 'Like'}
           active={p.liked}
-          onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
+          onPress={() => {
+            if (like.isPending) return;
+            like.mutate({ postId: p.id, liked: !p.liked }, { onError: (e) => toast({ kind: 'error', title: 'Like not sent', message: (e as Error).message }) });
+          }}
         />
         <PostAction icon="share-social-outline" label="Share this post" onPress={share} />
       </View>

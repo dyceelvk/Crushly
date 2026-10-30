@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   View,
   useWindowDimensions,
@@ -370,8 +371,8 @@ function VibeClip({
     else player.pause();
   }, [player, active, held]);
 
-  // Audio must not survive the page or the screen.
-  useEffect(() => () => player?.pause(), [player]);
+  // Native players are automatically released; only web needs an explicit pause.
+  useEffect(() => () => { if (Platform.OS === 'web') player?.pause(); }, [player]);
 
   const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player?.playing ?? false });
   const button = (

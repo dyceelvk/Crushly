@@ -1,6 +1,7 @@
 import { mediaSource } from '../lib/mediaHost';
+import { playbackAction } from '../lib/playbackPolicy';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleProp, View, ViewStyle } from 'react-native';
 import { useEvent } from 'expo';
 import { useVideoPlayer } from 'expo-video';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -241,24 +242,27 @@ export function EditedClip({
     if (!player) return;
     // Being paused by the screen outranks everything: nothing should be
     // audible behind a viewer or under a modal.
-    if (paused || held === 'paused') {
+    const action = playbackAction(paused, held, autoPlay, ended);
+    if (action === 'pause') {
       player.pause();
       if (look.music) musicPlayer?.pause();
       return;
     }
-    if (held === 'playing' || autoPlay) {
-      if (ended) return;
+    if (action === 'play') {
       player.play();
       if (look.music) musicPlayer?.play();
     }
   }, [player, musicPlayer, autoPlay, paused, look.music, held, ended]);
 
-  // Always pause when the component unmounts so audio never leaks into another
-  // screen (e.g. feed video under a post viewer).
+  // Native useVideoPlayer owns and releases its shared object on unmount.
+  // Calling pause in a later cleanup can touch an already released object.
+  // Web's useVideoPlayer does not release automatically, so stop it there.
   useEffect(() => {
     return () => {
-      if (player) player.pause();
-      if (musicPlayer) musicPlayer.pause();
+      if (Platform.OS === 'web') {
+        player?.pause();
+        musicPlayer?.pause();
+      }
     };
   }, [player, musicPlayer]);
 

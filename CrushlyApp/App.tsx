@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ExpoSplash from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
@@ -62,7 +62,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function Shell() {
-  const { status } = useAuth();
+  const { status, retryRestore } = useAuth();
   const { colors } = useTheme();
   const [fontsLoaded, fontError] = useFonts({
     Fraunces_600SemiBold, Fraunces_500Medium_Italic,
@@ -108,6 +108,15 @@ function Shell() {
     },
   };
 
+  if (status === 'restoreError') return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: 28 }}>
+      <Text style={{ color: colors.text, fontSize: 20, textAlign: 'center' }}>Couldn’t restore your session</Text>
+      <Text style={{ color: colors.textSecondary, marginTop: 12, textAlign: 'center' }}>Check your connection and try again. Your saved session has not been deleted.</Text>
+      <Pressable accessibilityRole="button" onPress={retryRestore} style={{ marginTop: 20, padding: 14, borderRadius: 10, backgroundColor: colors.gold }}>
+        <Text style={{ color: colors.bg }}>Try again</Text>
+      </Pressable>
+    </View>
+  );
   if (status === 'restoring' || !fontsReady || !introDone) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
 
   return (

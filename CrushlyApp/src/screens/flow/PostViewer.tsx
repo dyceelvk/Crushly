@@ -93,7 +93,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const toggleLike = useCallback(async () => {
     if (!post) return;
     try {
-      await like.mutate({ postId: post.id, liked: !post.liked });
+      if (like.isPending) return;
+      await like.mutateAsync({ postId: post.id, liked: !post.liked });
     } catch (e) {
       toast({ kind: 'error', title: 'Like not sent', message: (e as Error).message });
     }
@@ -135,10 +136,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   // Vertical swipe down closes the viewer and returns to feed at scroll position.
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > SWIPE_THRESHOLD,
       onPanResponderEnd: (_, gestureState) => {
-        if (!post) return;
         if (gestureState.dy > SWIPE_THRESHOLD) {
           close();
         }

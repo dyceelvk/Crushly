@@ -288,9 +288,16 @@ export function useReactToPost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ postId, liked }: { postId: number; liked: boolean }) => service.reactToPost(postId, liked),
-    onSuccess: () => {
+    onSuccess: (result, { postId }) => {
+      qc.setQueryData<import('./types').Post>(keys.post(postId), (post) =>
+        post ? { ...post, liked: result.liked, likeCount: result.likeCount } : post,
+      );
+      void qc.invalidateQueries({ queryKey: keys.post(postId) });
       void qc.invalidateQueries({ queryKey: keys.flow });
       void qc.invalidateQueries({ queryKey: keys.savedPosts });
+      void qc.invalidateQueries({ queryKey: keys.publicFlow });
+      void qc.invalidateQueries({ queryKey: ['space-posts'] });
+      void qc.invalidateQueries({ queryKey: ['circle-feed'] });
     },
   });
 }

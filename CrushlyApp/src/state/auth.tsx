@@ -8,7 +8,7 @@ import { keys } from '../api/hooks';
 import { getMe } from '../api/service';
 import type { Me } from '../api/types';
 
-export type AuthStatus = 'restoring' | 'signedOut' | 'onboarding' | 'resetting' | 'ready';
+export type AuthStatus = 'restoring' | 'restoreError' | 'signedOut' | 'onboarding' | 'resetting' | 'ready';
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -20,6 +20,8 @@ type AuthContextValue = {
   /** Sets a new password while holding a recovery session (link or code path). */
   setNewPassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Retry a stalled session restore without deleting local credentials. */
+  retryRestore: () => void;
   /** Re-reads the member after onboarding/account changes. */
   refresh: () => Promise<Me | null>;
   /** Local-only sign out after account deletion (session already gone server-side). */
@@ -37,6 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [signedIn, setSignedIn] = useState(false);
   const [mustSetPassword, setMustSetPassword] = useState(false);
   const [restoring, setRestoring] = useState(true);
+  const [restoreError, setRestoreError] = useState(false);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const retryRestore = useCallback(() => { setRestoreError(false); setRestoring(true); setRestoreAttempt((n) => n + 1); }, []);
   const [me, setMeState] = useState<Me | null>(null);
 
   // Keep local `me` in sync with the query cache, so any mutation that updates ['me'] re-routes correctly.
@@ -84,8 +89,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase.auth.getSession();
-        if (data.session && !cancelled) await adoptSession();
+        const { data, error } = await withDeadline(supabase.auth.getSession(), 15000, 'Session restore timed out.');
+        if (error) throw error;
+        if (data.session && !cancelled) {
+          const current = await withDeadline(getMe(), 15000, 'Profile restore timed out.');
+          if (!cancelled) {
+            qc.setQueryData(keys.me, current);
+            setMeState(current);
+            setSignedIn(true);
+          }
+        }
+        if (!cancelled) setRestoreError(false);
+      } catch {
+        if (!cancelled) setRestoreError(true);
       } finally {
         if (!cancelled) setRestoring(false);
       }
@@ -110,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [qc, forget, adoptSession]);
+  }, [qc, forget, adoptSession, restoreAttempt]);
 
   const afterAuth = useCallback(
     async () => {
@@ -220,11 +236,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [qc]);
 
-  const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : mustSetPassword ? 'resetting' : me && !me.onboarded ? 'onboarding' : 'ready';
+  const status: AuthStatus = restoring ? 'restoring' : restoreError ? 'restoreError' : !signedIn ? 'signedOut' : mustSetPassword ? 'resetting' : me && !me.onboarded ? 'onboarding' : 'ready';
 
   const value = useMemo(
-    () => ({ status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget }),
-    [status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget],
+    () => ({ status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget, retryRestore }),
+    [status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget, retryRestore],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
