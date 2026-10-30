@@ -44,9 +44,9 @@ export const MEDIA_KINDS: MediaKind[] = (() => {
   // Same shape as the base URL: unset means "use the default", set to ''
   // means "none of them", so a kind can be pulled back without editing code.
   const configured = process.env.EXPO_PUBLIC_MEDIA_KINDS;
-  const raw = configured === undefined ? 'photos,moments,messages,posts,circles' : cleanEnvValue(configured);
+  const raw = configured === undefined ? 'photos,moments,messages,posts,circles,vibes' : cleanEnvValue(configured);
   return raw.split(',').map((k) => k.trim()).filter((k): k is MediaKind =>
-    k === 'photos' || k === 'moments' || k === 'messages' || k === 'posts' || k === 'circles',
+    k === 'photos' || k === 'moments' || k === 'messages' || k === 'posts' || k === 'circles' || k === 'vibes',
   );
 })();
 
@@ -66,12 +66,12 @@ export function setMediaTokenTransport(web: boolean): void {
   tokenInQuery = web;
 }
 
-export type MediaKind = 'photos' | 'moments' | 'messages' | 'posts' | 'circles';
+export type MediaKind = 'photos' | 'moments' | 'messages' | 'posts' | 'circles' | 'vibes';
 
 /** The kind of a stored path (`moments/12/a.jpg` → `moments`). */
 export function mediaKind(path: string): MediaKind | null {
   const kind = path.replace(/^\/+/, '').split('/')[0];
-  return kind === 'photos' || kind === 'moments' || kind === 'messages' || kind === 'posts' || kind === 'circles'
+  return kind === 'photos' || kind === 'moments' || kind === 'messages' || kind === 'posts' || kind === 'circles' || kind === 'vibes'
     ? kind
     : null;
 }

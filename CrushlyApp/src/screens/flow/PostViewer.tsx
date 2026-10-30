@@ -232,7 +232,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             ratio, so a portrait clip fills the phone instead of sitting in a
             letterbox, and a tap anywhere on it pauses it. */}
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          {hasMedia && mediaUri ? (
+          {hasMedia && isVideo && mediaUri ? (
             <EditedClip
               uri={mediaUri}
               live={post.edit ?? null}

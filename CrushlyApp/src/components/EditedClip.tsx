@@ -1,3 +1,4 @@
+import { mediaSource } from '../lib/mediaHost';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
 import { useEvent } from 'expo';
@@ -110,7 +111,7 @@ export function EditedClip({
 }) {
   const look = live?.look ?? NEUTRAL_LOOK;
 
-  const player = useVideoPlayer(uri, (p) => {
+  const player = useVideoPlayer(mediaSource(uri), (p) => {
     p.loop = loop ?? false;
   });
 

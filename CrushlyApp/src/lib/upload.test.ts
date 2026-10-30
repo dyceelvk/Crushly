@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clipContainer, clipContentType, containerIsStorable, extensionFor, uploadContentType } from './upload';
+import { clipContainer, clipContentType, containerIsStorable, extensionFor, uploadContentType, integerDurationMs, pickerDurationMs, pickerImageMime } from './upload';
 
 /**
  * A clip shared from the Flow went through extensionFor() and came out as an
@@ -65,10 +65,10 @@ test('the extension wins when a picker mislabels the type', () => {
   assert.equal(clipContentType('video/quicktime', 'file:///a/clip.mp4'), 'video/mp4');
 });
 
-test('only mp4 and webm go up as they are', () => {
+test('supported video containers go up as they are', () => {
   assert.equal(containerIsStorable('mp4'), true);
   assert.equal(containerIsStorable('webm'), true);
-  assert.equal(containerIsStorable('mov'), false);
+  assert.equal(containerIsStorable('mov'), true);
   assert.equal(containerIsStorable('unknown'), false);
 });
 
@@ -77,4 +77,24 @@ test('the header always matches the container being sent', () => {
   assert.equal(clipContentType('video/quicktime', 'file:///x.webm'), 'video/webm');
   assert.equal(clipContentType('application/octet-stream', 'file:///x.mp4'), 'video/mp4');
   assert.equal(clipContentType(undefined, 'file:///x'), 'video/mp4');
+});
+
+
+test('duration from web seconds and native milliseconds reaches integer RPC milliseconds', () => {
+  assert.equal(pickerDurationMs(19.36667, true), 19367);
+  assert.equal(pickerDurationMs(19366.67, false), 19367);
+  assert.equal(integerDurationMs(19366.67), 19367);
+  assert.equal(integerDurationMs(NaN), null);
+  assert.equal(integerDurationMs(-1), null);
+  assert.equal(integerDurationMs(120001), null);
+});
+test('picker image labels use real MIME or filename and never invent JPEG', () => {
+  assert.equal(pickerImageMime('image/jpeg', 'x'), 'image/jpeg');
+  assert.equal(pickerImageMime('image/jpg', ''), 'image/jpeg');
+  assert.equal(pickerImageMime(null, 'PHOTO.HEIC'), 'image/heic');
+  assert.equal(pickerImageMime('', 'photo.png'), 'image/png');
+  assert.equal(pickerImageMime(null, 'content://image/123'), '');
+});
+test('QuickTime bytes retain their true upload content type', () => {
+  assert.equal(uploadContentType('video/quicktime', 'mov'), 'video/quicktime');
 });

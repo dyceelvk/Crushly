@@ -1,3 +1,7 @@
+import { pickerDurationMs, pickerImageMime } from '../../lib/upload';
+import { Image } from 'expo-image';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { EditedClip } from '../../components/EditedClip';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -172,9 +176,9 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
       if (result.canceled || !result.assets?.length) return;
 
       for (const asset of result.assets) {
-        const isVideo = asset.mimeType?.startsWith('video/') ?? false;
+        const isVideo = asset.type === 'video' || (asset.mimeType?.startsWith('video/') ?? false);
         const sizeBytes = asset.fileSize ?? 0;
-        const durationMs = asset.duration ?? 0;
+        const durationMs = pickerDurationMs(asset.duration, Platform.OS === 'web');
 
         if (isVideo && durationMs > MAX_VIDEO_SECONDS * 1000) {
           toast({ kind: 'error', title: 'That clip is too long', message: 'Posts can carry up to one minute of video.' });
@@ -184,10 +188,21 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
         const item: MediaItem = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           uri: asset.uri,
-          mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+          mimeType: isVideo ? (asset.mimeType || 'video/mp4') : pickerImageMime(asset.mimeType, asset.fileName || asset.uri),
           type: isVideo ? 'video' : 'photo',
           durationMs,
         };
+
+        // HEIC/HEIF and other unsupported stills are converted, not relabelled.
+        if (!isVideo && !['image/jpeg', 'image/png', 'image/webp'].includes(item.mimeType.toLowerCase())) {
+          try {
+            const converted = await manipulateAsync(item.uri, [], { format: SaveFormat.JPEG, compress: 0.9 });
+            item.uri = converted.uri;
+            item.mimeType = 'image/jpeg';
+          } catch {
+            throw new Error('This image could not be converted. Please choose a JPEG or PNG.');
+          }
+        }
 
         // On web, expo-image-picker's blob: URIs can be revoked when the picker
         // closes or when navigating to/from the trim screen. Pin the file by
@@ -208,7 +223,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
           // Videos go trim-first before anything else.
           setPendingMedia(item);
           navigation.navigate('VideoTrim', {
-            sourceUri: asset.uri,
+            sourceUri: item.uri,
             sourceDuration: durationMs / 1000,
             category: 'post',
           });
@@ -497,7 +512,7 @@ function ComposerLeft({
                 <Ionicons name="videocam-outline" size={24} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -12 }, { translateY: -12 }] }} />
               </View>
             ) : (
-              <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
+              <Image source={{ uri: m.uri }} contentFit="contain" style={{ width: '100%', height: '100%' }} accessibilityLabel="Selected photo preview" />
             )}
             <Pressable onPress={() => removeMedia(m.id)} accessibilityLabel="Remove media" hitSlop={8} style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="close-outline" size={16} color="#fff" />
@@ -637,7 +652,7 @@ function ComposerRight({
         <View style={{ borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#000', aspectRatio: primaryMedia.type === 'video' ? 9 / 16 : 1 }}>
           {primaryMedia.type === 'video' ? (
             <View style={{ width: '100%', height: '100%', backgroundColor: '#000' }}>
-              <Ionicons name="videocam-outline" size={32} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -16 }, { translateY: -16 }] }} />
+              <EditedClip uri={primaryMedia.uri} live={null} style={{ width: '100%', height: '100%' }} contentFit="contain" muted loop autoPlay />
               <Pressable onPress={() => openEditor('filters')} accessibilityLabel="Edit media" hitSlop={12} style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="color-wand-outline" size={16} color="#fff" />
               </Pressable>
@@ -646,7 +661,7 @@ function ComposerRight({
               </Pressable>
             </View>
           ) : (
-            <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
+            <Image source={{ uri: primaryMedia.uri }} contentFit="contain" style={{ width: '100%', height: '100%' }} accessibilityLabel="Selected photo preview" />
           )}
         </View>
       ) : null}
@@ -672,7 +687,7 @@ function ComposerRight({
           ) : null}
           {media.length > 0 && (
             <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', aspectRatio: 1 }}>
-              <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
+              {primaryMedia?.type === 'photo' ? <Image source={{ uri: primaryMedia.uri }} contentFit="contain" style={{ width: '100%', height: '100%' }} accessibilityLabel="Post photo preview" /> : <Txt color="textSecondary" style={{ padding: space.md }}>Video attached — preview above</Txt>}
             </View>
           )}
         </View>

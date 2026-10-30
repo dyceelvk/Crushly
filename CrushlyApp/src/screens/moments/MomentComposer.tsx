@@ -1,3 +1,4 @@
+import { pickerDurationMs } from '../../lib/upload';
 import React, { useCallback, useState } from 'react';
 import { Pressable, TextInput, View, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -95,11 +96,11 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       setPendingClip({
         uri: asset.uri,
         mimeType: asset.mimeType || 'video/mp4',
-        durationMs: asset.duration ?? 0,
+        durationMs: pickerDurationMs(asset.duration, Platform.OS === 'web'),
       });
       navigation.navigate('VideoTrim', {
         sourceUri: asset.uri,
-        sourceDuration: (asset.duration ?? 0) / 1000,
+        sourceDuration: (pickerDurationMs(asset.duration, Platform.OS === 'web')) / 1000,
         category: 'moment',
       });
     } catch (e) {

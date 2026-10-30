@@ -143,7 +143,8 @@ export function mediaUrl(path?: string | null): string | undefined {
   const clean = path.replace(/^\//, '');
   // The object store mints its own paths, so rows store the URL it handed back.
   const kind = mediaKind(clean);
-  if (kind && moved(kind)) return mediaStoreUrl(clean);
+  // Older Vibe rows contain Supabase storage paths; new Worker uploads store absolute URLs.
+  if (kind && kind !== 'vibes' && moved(kind)) return mediaStoreUrl(clean);
   if (!SUPABASE_URL) return `/${clean}`;
   return supabase.storage.from('media').getPublicUrl(clean).data.publicUrl;
 }

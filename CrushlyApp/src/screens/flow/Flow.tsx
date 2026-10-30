@@ -1,3 +1,5 @@
+import { pickerDurationMs } from '../../lib/upload';
+import { Platform } from 'react-native';
 import React, { useCallback, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Share, View, useWindowDimensions, type ViewToken } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -401,7 +403,7 @@ return (
                 />
               </View>
             ) : (
-              <EditedPhoto uri={p.mediaUrl} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
+              <EditedPhoto uri={p.mediaUrl} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', aspectRatio: 4 / 5, maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
           </View>
         ) : null}
@@ -543,7 +545,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
       const asset = result.assets[0];
       setPhoto(null);
       setClipEdit(null);
-      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: asset.duration ?? 0 });
+      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: pickerDurationMs(asset.duration, Platform.OS === 'web') });
     } catch (e) {
       toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
     } finally {

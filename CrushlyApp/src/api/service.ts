@@ -1,3 +1,4 @@
+import { integerDurationMs } from '../lib/upload';
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { supabase, ApiError, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
@@ -434,7 +435,7 @@ export async function createPost(input: {
 
     // The extension and the header are decided together, from the file that is
     // actually being sent, so a picker's mislabel can never reach the server.
-    const ext = clipContainer(uploadMime, upload) === 'webm' ? 'webm' : 'mp4';
+    const ext = clipContainer(uploadMime, upload) === 'webm' ? 'webm' : clipContainer(uploadMime, upload) === 'mov' ? 'mov' : 'mp4';
     media = await uploadMediaFile(
       'media',
       `posts/${id}/${Date.now()}.${ext}`,
@@ -1139,7 +1140,7 @@ export async function createVibe(input: {
   const mime = (input.videoMime || 'video/mp4').toLowerCase();
   const media = await uploadMediaFile(
     'media',
-    `vibes/${id}/${Date.now()}.${mime.includes('webm') ? 'webm' : 'mp4'}`,
+    `vibes/${id}/${Date.now()}.${clipContainer(mime, input.videoUri) === 'webm' ? 'webm' : clipContainer(mime, input.videoUri) === 'mov' ? 'mov' : 'mp4'}`,
     input.videoUri,
     mime,
   );
@@ -1160,7 +1161,8 @@ export async function createVibe(input: {
     p_media_url: media,
     p_cover_url: cover,
     p_audience: input.audience,
-    p_duration_ms: input.durationMs ?? null,
+    p_duration_ms: integerDurationMs(input.durationMs),
+    p_edit: input.edit ?? null,
   });
 }
 

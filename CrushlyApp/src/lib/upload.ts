@@ -44,6 +44,7 @@ export function extensionFor(mimeType: string | undefined, fallback = 'jpg'): st
 export function uploadContentType(mimeType: string | undefined, ext: string): string {
   const type = (mimeType ?? '').toLowerCase();
   if (ext === 'mp4') return 'video/mp4';
+  if (ext === 'mov') return 'video/quicktime';
   if (ext === 'm4a') return 'audio/mp4';
   if (ext === 'webm') return type.startsWith('audio/') ? 'audio/webm' : 'video/webm';
   if (ext === 'jpg') return 'image/jpeg';
@@ -78,7 +79,7 @@ export function clipContainer(mimeType: string | null | undefined, uri: string):
 
 /** True when the server will accept the container as it stands. */
 export function containerIsStorable(c: ClipContainer): boolean {
-  return c === 'mp4' || c === 'webm';
+  return c === 'mp4' || c === 'webm' || c === 'mov';
 }
 
 /**
@@ -93,4 +94,29 @@ export function clipContentType(mimeType: string | null | undefined, uri: string
   if (c === 'webm') return 'video/webm';
   if (c === 'mov') return 'video/quicktime';
   return 'video/mp4';
+}
+
+/** Milliseconds are stored as an integer by the create_vibe RPC. */
+export function integerDurationMs(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0 || value > 120000) return null;
+  return Math.round(value);
+}
+
+/** Expo's web picker exposes HTML video duration in seconds; native uses ms. */
+export function pickerDurationMs(value: number | null | undefined, isWeb: boolean): number {
+  return value == null || !Number.isFinite(value) || value < 0 ? 0 : Math.round(value * (isWeb ? 1000 : 1));
+}
+
+/** Recognise picker image labels without changing or pretending to convert bytes. */
+export function pickerImageMime(mime: string | null | undefined, name: string | null | undefined): string {
+  const type = (mime ?? '').toLowerCase().split(';')[0].trim();
+  if (type === 'image/jpg') return 'image/jpeg';
+  if (type.startsWith('image/')) return type;
+  const ext = (name ?? '').split('?')[0].split('.').pop()?.toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'heic') return 'image/heic';
+  if (ext === 'heif') return 'image/heif';
+  return '';
 }

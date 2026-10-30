@@ -1,3 +1,5 @@
+import { pickerDurationMs } from '../../lib/upload';
+import { Platform } from 'react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -192,7 +194,7 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
       const asset = result.assets[0];
       setPhoto(null);
       setClipEdit(null);
-      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: asset.duration ?? 0 });
+      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: pickerDurationMs(asset.duration, Platform.OS === 'web') });
     } catch (e) {
       toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
     } finally {

@@ -1,3 +1,4 @@
+import { mediaSource } from '../lib/mediaHost';
 import React, { useMemo, useRef } from 'react';
 import { LayoutChangeEvent, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import type { ImageStyle } from 'expo-image';
@@ -96,7 +97,7 @@ export function VideoEditCanvas({
     >
       {stillUri ? (
         <Image
-          source={{ uri: stillUri }}
+          source={mediaSource(stillUri)}
           style={videoStyle as StyleProp<ImageStyle>}
           contentFit={contentFit}
           pointerEvents="none"
