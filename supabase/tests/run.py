@@ -91,6 +91,8 @@ def main() -> int:
         # Vibe reactions must persist without exposing their private rows.
         if not run_file(ROOT / 'vibe_reactions.sql'):
             return 1
+        if not run_file(ROOT / 'shared_post.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

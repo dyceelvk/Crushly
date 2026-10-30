@@ -181,13 +181,14 @@ async function mediaErrorMessage(res: Response): Promise<string> {
  * URL, which is what the row stores.
  */
 async function uploadToMediaStore(kind: MediaKind, blob: Blob, contentType: string): Promise<string> {
+  if (blob.size > 80 * 1024 * 1024) throw new ApiError(413, 'This file is larger than the 80 MB upload limit. Choose a smaller file.');
   const token = await mediaAccessToken();
   const res = await fetch(`${MEDIA_BASE_URL}/m`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType, 'X-Media-Kind': kind },
     body: blob,
   }).catch(() => null);
-  if (!res) throw new ApiError(0, 'You seem to be offline. Check your connection and try again.');
+  if (!res) throw new ApiError(0, 'Couldn’t reach the media upload service. Check your connection and try again; your draft is still here.');
   if (!res.ok) throw new ApiError(res.status, await mediaErrorMessage(res));
   const data = (await res.json().catch(() => null)) as { url?: string } | null;
   if (!data?.url) throw new ApiError(500, 'We couldn’t save that file. Try again.');

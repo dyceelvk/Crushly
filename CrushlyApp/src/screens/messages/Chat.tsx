@@ -455,6 +455,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                         setClipViewer(uri);
                       }}
                       onOpenProfile={openProfile}
+                      onOpenPost={(postId) => navigation.navigate('PostViewer', { postId })}
                       onRetry={retry}
                       onOpenReply={jumpTo}
                     />

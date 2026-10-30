@@ -17,8 +17,9 @@ import { EmptyState } from '../../components/States';
 import { BottomSheet } from '../../components/BottomSheet';
 import { CommentsSheet } from '../../components/CommentsSheet';
 import { useToast } from '../../components/Toast';
-import { useDeletePost, useFlow, usePost, usePostSaved, useReactToPost, useSavePost } from '../../api/hooks';
+import { useCrushes, useDeletePost, useFlow, usePost, usePostSaved, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
+import { openConversation, sharePost } from '../../api/service';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { setVideosPaused } from '../../lib/videoPlayback';
@@ -60,15 +61,35 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const [threeDotsOpen, setThreeDotsOpen] = useState(false);
   const savedQuery = usePostSaved(postId);
   const save = useSavePost();
+  const connections = useCrushes();
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sendingTo, setSendingTo] = useState<number | null>(null);
+  const sendingLock = useRef(false);
+  const [sentTo, setSentTo] = useState<number[]>([]);
   // The answer from the database, falling back to whatever the feed row
   // already knew while the real question is in flight.
   const isSaved = savedQuery.data ?? post?.saved ?? false;
 
-  // Share to Whisper: pick a connection to send this post to — never whisper
-  // to yourself, so open your Close Ones list and let you choose.
+  // Send only a reference to the post, not the original media file.
   const shareToWhisper = () => {
     setThreeDotsOpen(false);
-    nav.navigate('CloseOnes');
+    setTimeout(() => setShareOpen(true), 250);
+  };
+  const sendPost = async (memberId: number, name: string) => {
+    if (!post || sendingLock.current || sentTo.includes(memberId)) return;
+    sendingLock.current = true;
+    setSendingTo(memberId);
+    try {
+      const conversation = await openConversation(memberId);
+      await sharePost(conversation.id, post.id);
+      setSentTo((ids) => [...ids, memberId]);
+      toast({ kind: 'success', title: `Sent to ${name}` });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t send post', message: (e as Error).message });
+    } finally {
+      sendingLock.current = false;
+      setSendingTo(null);
+    }
   };
 
   // When the viewer opens, pause every feed video so only this viewer plays.
@@ -157,8 +178,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         ) : (
           <EmptyState
             icon="prism-outline"
-            title="This post is gone"
-            message="The post has been removed."
+            title="This post isn’t available"
+            message="It may have been removed or may not be shared with you."
             action={{ label: 'Close', onPress: close }}
           />
         )}
@@ -400,6 +421,20 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         onClose={() => setCommentsOpen(false)}
         commentCount={post.commentCount}
       />
+
+      <BottomSheet visible={shareOpen} onClose={() => setShareOpen(false)} title="Share to Whisper" subtitle="Choose who receives a link to this post.">
+        {connections.isLoading ? <ActivityIndicator color={colors.crush} /> : connections.isError ? (
+          <Pressable onPress={() => connections.refetch()} accessibilityRole="button"><Txt>Couldn’t load connections. Tap to retry.</Txt></Pressable>
+        ) : !connections.data?.mutual.length ? <Txt color="textSecondary">You have no connections to share with yet.</Txt> : connections.data.mutual.map((person) => (
+          <View key={person.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}>
+            <Avatar uri={person.photos?.[0]?.url ?? null} name={person.name} size={44} />
+            <Txt variant="bodyStrong" style={{ flex: 1 }} numberOfLines={1}>{person.name}</Txt>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Send post to ${person.name}`} disabled={sendingTo !== null || sentTo.includes(person.id)} onPress={() => sendPost(person.id, person.name)} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18, backgroundColor: colors.crush, opacity: sentTo.includes(person.id) ? 0.6 : 1 }}>
+              <Txt color="#fff">{sendingTo === person.id ? 'Sending…' : sentTo.includes(person.id) ? 'Sent' : 'Send'}</Txt>
+            </Pressable>
+          </View>
+        ))}
+      </BottomSheet>
 
       {/* Three dots action sheet: Share (whisper), Report, Delete (author only) */}
       <BottomSheet

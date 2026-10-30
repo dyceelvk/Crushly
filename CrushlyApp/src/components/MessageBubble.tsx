@@ -34,12 +34,13 @@ type Props = {
   /** Opens the full-screen player for a clip someone whispered. */
   onOpenVideo?: (uri: string) => void;
   onOpenProfile: (id: number) => void;
+  onOpenPost?: (id: number) => void;
   onRetry: (m: Message) => void;
   /** Tapping the quoted original — jumps back to it in the conversation. */
   onOpenReply?: (id: number) => void;
 };
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenVideo, onOpenProfile, onRetry, onOpenReply }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenVideo, onOpenProfile, onOpenPost, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
   const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile';
@@ -56,6 +57,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
       lastTap.current = now;
       if (m.kind === 'photo' && m.mediaUrl) setTimeout(() => lastTap.current && onOpenPhoto(m.mediaUrl!), 290);
       if (m.kind === 'profile' && m.meta.profileId) onOpenProfile(m.meta.profileId);
+      if (m.kind === 'text' && Number.isSafeInteger(m.meta?.postId) && m.meta.postId > 0) onOpenPost?.(m.meta.postId);
     }
   };
 
@@ -85,7 +87,12 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
               borderWidth: m.mine ? 0 : 1, borderColor: colors.border,
             }}
           >
-            {m.kind === 'voice' ? <VoiceNote m={m} ink={ink} /> : <Txt variant="body" color={ink} style={{ fontSize: 16, lineHeight: 22 }} selectable>{m.body}</Txt>}
+            {m.kind === 'voice' ? <VoiceNote m={m} ink={ink} /> : m.kind === 'text' && Number.isSafeInteger(m.meta?.postId) && m.meta.postId > 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 180, paddingVertical: 4 }}>
+                <Ionicons name="play-circle-outline" size={30} color={ink} />
+                <View><Txt variant="bodyStrong" color={ink}>Shared Flow post</Txt><Txt variant="caption" color={ink}>Tap to open in Crushly</Txt></View>
+              </View>
+            ) : <Txt variant="body" color={ink} style={{ fontSize: 16, lineHeight: 22 }} selectable>{m.body}</Txt>}
           </View>
         )}
         {reactionSummary.length ? (

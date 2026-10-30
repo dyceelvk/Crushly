@@ -927,6 +927,15 @@ export async function getMessages(
   });
 }
 
+/** Send a reference only; the recipient's normal post access rules still apply. */
+export async function sharePost(conversationId: number, postId: number): Promise<Message> {
+  if (!Number.isSafeInteger(postId) || postId <= 0) throw new Error('That post cannot be shared.');
+  return rpc<Message>('send_message', {
+    p_conversation_id: conversationId, p_kind: 'text',
+    p_body: 'Shared a Flow post — tap to open', p_media_url: null, p_meta: { postId },
+  });
+}
+
 export async function sendMessage(conversationId: number, draft: SendDraft): Promise<Message> {
   let mediaPath: string | null = null;
   let meta: Record<string, unknown> = {};

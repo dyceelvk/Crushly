@@ -1,5 +1,5 @@
 import { withDeadline } from '../lib/auth';
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
+  const profileLoaded = useRef(false);
   const [mustSetPassword, setMustSetPassword] = useState(false);
   const [restoring, setRestoring] = useState(true);
   const [restoreError, setRestoreError] = useState(false);
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [qc]);
 
   const forget = useCallback(async () => {
+    profileLoaded.current = false;
     setSignedIn(false);
     setMeState(null);
     setMustSetPassword(false);
@@ -75,8 +77,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSignedIn(true);
     try {
       const current = await getMe();
+      profileLoaded.current = true;
       qc.setQueryData(keys.me, current);
       setMeState(current);
+      setRestoreError(false);
+      setRestoring(false);
     } catch (e) {
       // Offline: keep the session and let screens show their own retry states.
       if (!(e instanceof ApiError && e.isNetwork)) {
@@ -94,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.session && !cancelled) {
           const current = await withDeadline(getMe(), 15000, 'Profile restore timed out.');
           if (!cancelled) {
+            profileLoaded.current = true;
             qc.setQueryData(keys.me, current);
             setMeState(current);
             setSignedIn(true);
@@ -101,7 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (!cancelled) setRestoreError(false);
       } catch {
-        if (!cancelled) setRestoreError(true);
+        // An auth event may have loaded the profile while this attempt timed
+        // out. Never leave a successfully restored member behind an error.
+        if (!cancelled && !profileLoaded.current) setRestoreError(true);
       } finally {
         if (!cancelled) setRestoring(false);
       }
