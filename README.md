@@ -4,7 +4,7 @@ A premium social and dating app. *Meet people. Make connections. Follow the feel
 
 **Crushly is a product of Riel Inc.**
 
-**Designed and built by Odoh chiagoziem isreal.**
+**Designed and built by Odoh chiagoziem isreal.** The app also credits the author in its Terms of Service, Privacy Policy and Credits page (Settings → Support).
 
 | Folder | What it is |
 | --- | --- |

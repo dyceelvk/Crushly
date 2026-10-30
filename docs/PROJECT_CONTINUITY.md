@@ -36,8 +36,7 @@ the Worker for media and for the update announcement.
 **Odoh chiagoziem isreal** is the official attribution for the Crushly
 application. It appears in:
 
-- the app: **Settings → About Crushly → Credits** (`src/lib/company.ts`,
-  `APP_AUTHOR`; rendered in `src/screens/settings/Settings.tsx`);
+- the app: **Terms of Service §20, Privacy Policy §15, and Credits** (under Settings → Support), rendered from `APP_AUTHOR` in `src/lib/company.ts`;
 - `README.md`;
 - this document;
 - the Google Drive project library and the Dropbox backup snapshot.
@@ -201,10 +200,10 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
 ## 10. Next steps, in order
 
 1. ~~Confirm a build publishes and announces itself.~~ **Done for 1.0.11.**
-   The APK published to `android-test-1.0.11` (92,994,875 bytes,
-   `30a7f7e1…2d28ea04`), `/apk/latest` serves exactly those bytes, `/version`
-   advertises 1.0.11 / code 11, and the manifest inside the served file reads
-   back `1.0.11` / `11` / `app.crushly`. The production web build carries
+   The APK published to `android-test-1.0.11` (92,997,339 bytes,
+   `7df683a6…ba60d490`), `/apk/latest` serves exactly those bytes, `/version`
+   advertises 1.0.11 / code 11, and the manifest inside the served file contains
+   `1.0.11` and `app.crushly`. The production web build carries
    `save_post` and `saved_posts`. Still outstanding: seeing it on a real
    launcher after a fresh install.
 
@@ -234,9 +233,8 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
      rewrites `release.json` and the download page from its own measurements and
      commits them with the bot's token, which starts no workflows — so the APK
      surfaces follow automatically and the web page does not. 1.0.11 was built
-     three times (`cb55b519…`, `550710bd…`, `30a7f7e1…`); the third build is
-     what every surface now describes, but the live page quoted the second until
-     a production deploy was made by hand from `d94886c`.
+     four times (`cb55b519…`, `550710bd…`, `30a7f7e1…`, `7df683a6…`); the fourth build is
+     what the surfaces now describe after a manual production deploy from `59490fd`.
 
 2. Post a real `.mov` from an iPhone/Samsung gallery and confirm it posts and
    plays. **This is the one thing that has not been tested on a device.**

@@ -119,15 +119,12 @@ release's controls.
 
 ### The build
 
-`android-test-1.0.11`, **92,994,875 bytes**, sha256
-`30a7f7e19ce3798e8538551cb38979ff0cbacb62362ef1c357c8ba9c2d28ea04`.
+`android-test-1.0.11`, **92,997,339 bytes**, sha256
+`7df683a681bb759bbe6e1d8ff3796f432d6a4f0fc79eaf36133222e2ba60d490`.
 Verified by downloading `/apk/latest` and hashing the bytes that arrive, then
-reading the manifest back out of the served file: `versionName='1.0.11'`,
-`versionCode='11'`, `package='app.crushly'`. The GitHub release asset and
-`/apk/latest` compare byte-identical, and `SHA256SUMS.txt` on the release
-carries the same digest.
+checking that the served manifest contains `1.0.11` and `app.crushly`.
 
-1.0.11 was built **three** times, each published under the same version and the
+1.0.11 was built **four** times, each published under the same version and the
 same filename, each with a different fingerprint:
 
 | # | Fingerprint | Run | Why it ran |
@@ -135,9 +132,10 @@ same filename, each with a different fingerprint:
 | 1 | `cb55b519…` | `40955928947` | The original build |
 | 2 | `550710bd…` | — | `app/**` added to the build trigger |
 | 3 | `30a7f7e1…` | `40963634899` | The docs commit `42f4eaa` also touched `CrushlyApp/` |
+| 4 | `7df683a6…` | `41020137036` | Clip sizing and credit relocation |
 
 Gradle is not reproducible here, so the same source produced different bytes
-every time. The third build is what every surface now describes.
+every time. The fourth build is what every surface now describes.
 
 **What made three builds survivable.** The Worker's edge cache is keyed on the
 published fingerprint instead of the filename, so the third APK was served the
@@ -152,6 +150,57 @@ token, which starts no workflows. The APK surfaces followed automatically; the
 redeployed by hand from `d94886c` (`dpl_D1EXjpmq48p3Ap3NCi2iBU5MpXe5`). The same
 bot-token hole documented for the Worker, one layer down, and it recurs on every
 rebuild.
+
+### Fixed — a feed clip was drawn in a box that was 40pt too wide
+
+**Symptom, in the member's words.** "The videos still don't render in normal
+dimensions. It zooms to the screen and doesn't show as uploaded."
+
+**What was not wrong.** The file. `EditedClip` and `VideoEditCanvas` both fit
+with `contentFit="contain"`, and the Post Viewer renders the same clip correctly
+— the two disagreeing was the clue.
+
+**Root cause.** `PostCard` sized its clip from the window:
+`width: min(winWidth, 620)`. The card it sits in never gets the window: the Flow
+list pads itself by `gutter` (20pt) on each side, so the card is 40pt narrower
+than the phone on every device. The box therefore hung over the card's rounded
+edge, `overflow: 'hidden'` clipped it, and a 9:16 clip — whose frame was
+`min(w × 1.25, 62% of the screen)` — was scaled by its height and had its sides
+cut off. That is the zoom.
+
+The fixed 4:5 frame supplied the other half. A 9:16 clip in a 4:5 slot
+letterboxes, 117pt of bars per side at 393pt wide, unless the slot is filled by
+scaling up — which is precisely what crops it.
+
+**The fix.** `fitFrame()` in `lib/videoEdit.ts` is the rule, stated once and
+tested five ways: keep the whole picture, keep the source's ratio, never exceed
+the column, and when the natural height would overrun the screen cap, narrow the
+frame rather than crop the picture.
+
+- `EditedClip` takes `fitToClip`, `maxHeight` and `fallbackRatio`, reads the
+  ratio from `player.videoTrack`, and sizes itself.
+- `PostCard` measures its own media slot in `onLayout` and passes only a width,
+  so the clip is right in the Flow, in Saved, in Discover and in a Circle — each
+  of which pads itself differently — and on a tablet, where the column is capped.
+- Before the first measure the box is a 4:5 slot at full width, so there is no
+  jump on the way in.
+
+Measured at 393pt wide (card 353): 9:16 draws 297×528 whole, 4:5 draws 353×441
+edge to edge, 16:9 draws 353×199. No bars, no overflow, at every ratio.
+
+### Changed — the credit moved out of Settings
+
+The old About credit block was removed from Settings. A Credits link remains under Support. The attribution is now stated where a credit is a matter of record:
+
+- **Terms of service §20, "Authorship and credit"** — the name as part of the
+  agreement.
+- **Privacy policy §15, "Who builds Crushly"** — the name beside the data
+  controller, which is where someone looking for who runs the service looks.
+- **A Credits page**, reachable from Settings → Support, carrying the design and
+  development statement, the official attribution, the publisher, the
+  third-party licences Crushly relies on, and the mark.
+
+All three render `APP_AUTHOR` from `lib/company.ts`. The name is typed once.
 
 ### Fixed — the web app has no automated production path
 

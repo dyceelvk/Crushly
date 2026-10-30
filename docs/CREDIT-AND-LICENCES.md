@@ -13,8 +13,8 @@ third-party component.
 | Where | Wording |
 |---|---|
 | README.md | "Designed and built by Odoh chiagoziem isreal." |
-| Settings → About Crushly → Credits | "Odoh chiagoziem isreal" |
-| Settings → About Crushly → Design & development | "Odoh chiagoziem isreal" |
+| Terms of Service §20 and Privacy Policy §15 | "Odoh chiagoziem isreal" |
+| Credits page (Settings → Support → Credits) | "Odoh chiagoziem isreal" |
 | PROJECT_CONTINUITY.md | **Owner:** Odoh chiagoziem isreal |
 | CHANGELOG.md | Owner and official credit: **Odoh chiagoziem isreal** |
 | Google Drive project library | every document is described with the credit |
@@ -30,7 +30,7 @@ an empty site value renders no link.
 ## 2. The product
 
 **Crushly is a product of Riel Inc.** The app states this in the README and in
-Settings → About Crushly.
+the Credits page.
 
 ## 3. Third-party components
 

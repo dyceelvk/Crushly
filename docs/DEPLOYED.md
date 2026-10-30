@@ -1,6 +1,6 @@
 # Crushly — deployed state
 
-Updated 2026-10-30 00:55 UTC. Every number below was fetched from the running
+Updated 2026-10-30 08:05 UTC. Every number below was fetched from the running
 system, not copied from a build log.
 
 ## Live
@@ -10,14 +10,14 @@ system, not copied from a build log.
 | Web app | https://mecrushly.vercel.app |
 | Download page | https://mecrushly.vercel.app/download |
 | Android | **1.0.11** · versionCode **11** |
-| APK | `Crushly-1.0.11-Android9plus.apk` · **92,994,875** bytes |
-| SHA-256 | `30a7f7e19ce3798e8538551cb38979ff0cbacb62362ef1c357c8ba9c2d28ea04` |
+| APK | `Crushly-1.0.11-Android9plus.apk` · **92,997,339** bytes |
+| SHA-256 | `7df683a681bb759bbe6e1d8ff3796f432d6a4f0fc79eaf36133222e2ba60d490` |
 | Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.11 |
 | Worker | https://crushly-media.dyceelvk.workers.dev — `/version` reports 1.0.11 |
 | Branch | `app/space-tabs-and-playback` @ `d94886c` |
 
 **Verified by downloading `/apk/latest` and hashing the bytes that arrived** —
-92,994,875 bytes, `30a7f7e1…2d28ea04` — matching what `/version` advertises,
+92,997,339 bytes, `7df683a6…ba60d490` — matching what `/version` advertises,
 what the download page quotes, and what `SHA256SUMS.txt` on the release says.
 The GitHub release asset and the Worker's `/apk/latest` are byte-identical. The manifest inside that file was read back out
 of the APK: `versionName='1.0.11' versionCode='11' package='app.crushly'`, so
@@ -37,6 +37,14 @@ Four controls that did not do what they said, in one build:
 | **Circle counts** | `circle_feed` now merges `post_engagement`, so a post inside a Circle shows its like and comment counts. |
 | **Vibe captions** | `Vibe.edit` was typed `VideoEdit` but the server stores a `LiveEdit`; the full-screen feed played every clip bare. Now drawn through `VideoEditCanvas`. |
 | **Whisper keyboard** | Android's composer sat under the keyboard — `behavior={undefined}` does nothing once the app draws edge to edge. Now `height` on Android, `padding` on iOS. |
+
+**Build 4 carries two more changes**, both fixes to things that were wrong
+rather than new features:
+
+| | |
+|---|---|
+| **Feed clip sizing** | A Flow clip was sized from the window while the card it sits in is 40pt narrower, so the picture hung past the card's edge and read as zoomed and cropped. The frame now comes from the clip's own ratio, measured against the card. |
+| **The credit** | The old About credit block is gone from Settings; a Credits link remains under Support. The attribution now appears in the Terms of service (§20), the Privacy policy (§15) and a Credits page. |
 
 The database half went live ahead of the build and is backwards compatible, so
 an installed 1.0.10 gained correct Circle counts immediately and gained nothing
@@ -84,44 +92,37 @@ much larger piece of work.
   serves and checks that the live JavaScript contains the controls of the
   release, when it is given a token to deploy with.
 
-## Three builds of 1.0.11 were made, and the third is the one offered
+## Four builds of 1.0.11 were made, and the fourth is the one offered
 
-1.0.11 was built three times under the same version and the same filename. This
-is not a process that failed to stop them; it is what the pipeline does when a
-commit touching `CrushlyApp/**` lands on the branch, and the docs commit did
-exactly that.
+Every build so far has been published under the same version and the same
+filename, with a different fingerprint:
 
-| Build | Fingerprint | What it was |
+| # | Fingerprint | Why it ran |
 |---|---|---|
-| First | `cb55b519…` | The original build, run `40955928947` |
-| Second | `550710bd…` | Clobbered the release asset once `app/**` was added to the build trigger |
-| Third | `30a7f7e1…` | Run `40963634899`, after the docs commit `42f4eaa` |
+| 1 | `cb55b519…` | The original build |
+| 2 | `550710bd…` | `app/**` added to the build trigger |
+| 3 | `30a7f7e1…` | The docs commit `42f4eaa` also touched `CrushlyApp/` |
+| 4 | `7df683a6…` | `680e05e` — the clip-sizing and credit fix |
 
-The third build is the one every surface now describes. It is not the one this
-document described an hour ago, and that is the honest way to write it: the
-number moved because the build ran again, not because anyone mistyped.
+The fourth build is the one every surface describes. It is 2,464 bytes larger than the third.
 
-**Why a third build happened at all.** `docs/` does not match the build filter,
-but `42f4eaa` also touched `CrushlyApp/` — so the push satisfied `paths`, Gradle
-produced a fresh APK with a new fingerprint, and the job did exactly what it was
-fixed to do: published it, rewrote `release.json` and the download page from its
-measurements, and committed `d94886c`. Gradle is not reproducible here, so the
-same source yields different bytes.
+**One 1.0.11 build is missing from this list.** It ran alongside build 3 and
+failed at the step that commits `release.json`; the reason was the release bot's
+commit racing a human push to the same branch. `ci.yml` was green for it and no
+artifact was published, so no member ever saw it. Recorded because a `skipped`
+conclusion on the build list looks like a process fault long after the reason
+has been forgotten.
 
-**What the fingerprint-keyed cache bought.** Because the edge cache key now
-carries the checksum, the Worker served the third build the moment it was
-published — no stale body, no second hand-fix. That fix paid for itself on its
-first real use.
+**What the fingerprint-keyed cache bought.** The edge cache key carries the
+published checksum, so each rebuild was served the moment it was published — no
+stale body, no hand-fix, four times running. That fix has now earned itself on
+every use it has had.
 
-**What it did not cover.** Everything downstream of the APK. The download page
-and `release.json` were corrected automatically by the job, but the *web deploy*
-was not: `d94886c` was committed with the bot's token, which starts no
-workflows, so `Deploy web app` never ran for it. The live page quoted
-`550710bd…` for a file whose bytes were `30a7f7e1…` until a production deploy
-was made by hand. This is the same bot-token hole documented above for the
-Worker, one layer down — and it will recur on every rebuild until the Android
-job deploys the web app too, or until the page is served dynamically rather
-than baked.
+**What is still not covered.** The build job rewrites `release.json` and the
+download page and commits them with the bot's token, which starts no workflows.
+The APK surfaces follow automatically; the **web deploy** does not. Both build 3
+and build 4 needed a production web deploy by hand after the fact for exactly
+this reason — see below.
 
 ## The web app's real deploy path
 
