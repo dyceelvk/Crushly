@@ -1,3 +1,4 @@
+import { PLUS_VISIBLE } from '../../lib/featureVisibility';
 import React, { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -80,8 +81,9 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           icon="shield-checkmark-outline"
           iconTone="gold"
           onPress={() => navigation.navigate('Verification')}
+          last={!PLUS_VISIBLE}
         />
-        <ListRow title="Crushly Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
+        {PLUS_VISIBLE ? <ListRow title="Crushly Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last /> : null}
       </Group>
 
       <Group title="Discovery & privacy">

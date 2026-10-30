@@ -1,3 +1,4 @@
+import { PLUS_VISIBLE } from '../lib/featureVisibility';
 import React, { useEffect, useRef } from 'react';
 import {
   Platform,
@@ -200,7 +201,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
             <Stack.Screen name="VideoTrim" component={VideoTrimScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
             <Stack.Screen name="CreatePost" component={CreatePostScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
-            <Stack.Screen name="Plus" component={PlusScreen} />
+            {PLUS_VISIBLE ? <Stack.Screen name="Plus" component={PlusScreen} /> : null}
           </Stack.Group>
           <Stack.Group screenOptions={{ presentation: 'transparentModal', animation: reduceMotion ? 'none' : 'fade', contentStyle: { backgroundColor: 'transparent' } }}>
             <Stack.Screen name="MutualCrush" component={MutualCrushScreen} />

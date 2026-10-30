@@ -1,3 +1,4 @@
+import { PLUS_VISIBLE } from '../../lib/featureVisibility';
 import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -121,7 +122,7 @@ export function ProfileTabScreen() {
         </Group>
       ) : null}
 
-      <Pressable onPress={() => navigation.navigate('Plus', {})} accessibilityRole="button" accessibilityLabel="Crushly Plus. Learn more">
+      {PLUS_VISIBLE ? <Pressable onPress={() => navigation.navigate('Plus', {})} accessibilityRole="button" accessibilityLabel="Crushly Plus. Learn more">
         <LinearGradient
           colors={[colors.goldSoft, 'transparent']}
           start={{ x: 0, y: 0 }}
@@ -137,7 +138,7 @@ export function ProfileTabScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.gold} />
         </LinearGradient>
-      </Pressable>
+      </Pressable> : null}
 
       <Group title="Your people" style={{ marginTop: space.xl }}>
         <ListRow

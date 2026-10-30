@@ -1,3 +1,4 @@
+import { PLUS_VISIBLE, showIncognitoControl } from '../../lib/featureVisibility';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -106,7 +107,8 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
     update.mutate(patch, {
       onError: (e) => {
         if (e instanceof ApiError && e.code === 'plus_required') {
-          toast({ kind: 'info', title: 'Part of Crushly Plus', message: e.message, onPress: () => navigation.navigate('Plus', { feature: 'Incognito' }), duration: 5000 });
+          if (PLUS_VISIBLE) toast({ kind: 'info', title: 'Part of Crushly Plus', message: e.message, onPress: () => navigation.navigate('Plus', { feature: 'Incognito' }), duration: 5000 });
+          else toast({ kind: 'info', title: 'Not available', message: 'You can hide your Space from Discover instead.', duration: 5000 });
         } else toast({ kind: 'error', title: 'Not saved', message: (e as Error).message });
       },
     });
@@ -116,8 +118,8 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
       <Header title="Privacy & visibility" back />
 
       <Group title="Discovery" footer="When hidden, you won’t appear in Discover, but people you’ve crushed on can still see your Space.">
-        <ListRow title="Show me in Discover" icon="compass-outline" toggle={{ value: p.discoverable, onChange: (v) => set({ discoverable: v }) }} />
-        <ListRow title="Incognito" subtitle="Only people you Crush on can see you" icon="glasses-outline" iconTone="gold" value="Plus" toggle={{ value: p.incognito, onChange: (v) => set({ incognito: v }) }} last />
+        <ListRow title="Show me in Discover" icon="compass-outline" toggle={{ value: p.discoverable, onChange: (v) => set({ discoverable: v }) }} last={!showIncognitoControl(PLUS_VISIBLE, p.incognito)} />
+        {showIncognitoControl(PLUS_VISIBLE, p.incognito) ? <ListRow title="Incognito" subtitle="Only people you Crush on can see you" icon="glasses-outline" iconTone="gold" value={PLUS_VISIBLE ? 'Plus' : undefined} toggle={{ value: p.incognito, onChange: (v) => set({ incognito: v }) }} last /> : null}
       </Group>
 
       <Group title="What others see" footer="Your exact location is never shown. Distance is always rounded.">
