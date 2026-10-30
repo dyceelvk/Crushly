@@ -1113,6 +1113,10 @@ export async function vibesFeed(): Promise<Vibe[]> {
 }
 
 /** Marks one watched. Only ever counted for somebody else's Vibe. */
+export async function reactToVibe(id: number, liked: boolean): Promise<{ liked: boolean; likeCount: number }> {
+  return rpc('react_to_vibe', { p_vibe_id: id, p_liked: liked });
+}
+
 export async function viewVibe(id: number): Promise<void> {
   await rpc<boolean>('view_vibe', { p_vibe_id: id });
 }

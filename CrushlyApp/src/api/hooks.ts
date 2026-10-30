@@ -898,6 +898,20 @@ export const useViewVibe = () => {
   });
 };
 
+/** Persist a Vibe reaction; display the server result and refresh other views. */
+export const useReactToVibe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ vibeId, liked }: { vibeId: number; liked: boolean }) => service.reactToVibe(vibeId, liked),
+    onSuccess: (result, { vibeId }) => {
+      qc.setQueryData<import('./types').Vibe[]>(keys.vibes, (vibes) => vibes?.map((v) =>
+        v.id === vibeId ? { ...v, liked: result.liked, likeCount: result.likeCount } : v));
+      void qc.invalidateQueries({ queryKey: keys.vibes });
+      void qc.invalidateQueries({ queryKey: ['space-vibes'] });
+    },
+  });
+};
+
 /** Posts a Vibe. */
 export const useCreateVibe = () => {
   const qc = useQueryClient();

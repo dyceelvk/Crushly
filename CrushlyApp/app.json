@@ -3,13 +3,13 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#070708",
     "primaryColor": "#00C6FF",
-    "description": "Crushly \u2014 a private, modern social space to meet people and make connections.",
+    "description": "Crushly — a private, modern social space to meet people and make connections.",
     "owner": "Odoh chiagoziem isreal",
     "ios": {
       "supportsTablet": true,
@@ -40,7 +40,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 16
+      "versionCode": 17
     },
     "web": {
       "favicon": "./assets/favicon.png",

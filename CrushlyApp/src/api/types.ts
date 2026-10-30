@@ -386,6 +386,8 @@ export type Vibe = {
   mine: boolean;
   seen: boolean;
   viewCount: number | null;
+  liked?: boolean;
+  likeCount?: number;
 };
 
 /* ----------------------------------------------------------------- search */

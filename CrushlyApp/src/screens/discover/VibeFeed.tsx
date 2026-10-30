@@ -21,10 +21,12 @@ import { IconButton } from '../../components/IconButton';
 import { EmptyState } from '../../components/States';
 import { VideoEditCanvas } from '../../components/VideoEditCanvas';
 import { editFromLive, type LiveEdit } from '../../lib/videoEdit';
+import { visiblePageIndex } from '../../lib/playbackPolicy';
+import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
-import { useVibes, useViewVibe } from '../../api/hooks';
+import { useVibes, useViewVibe, useReactToVibe } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
@@ -87,10 +89,8 @@ export function VibeViewerScreen({ route, navigation }: ScreenProps<'VibeViewer'
   const items = useMemo(() => vibes.data ?? [], [vibes.data]);
 
   // Open on the clip that was tapped, not on the first one in the feed.
-  const [index, setIndex] = useState(() => {
-    const at = items.findIndex((v) => v.id === id);
-    return at >= 0 ? at : 0;
-  });
+  // Never keep playing a page when none meets the visibility threshold.
+  const [index, setIndex] = useState<number | null>(null);
 
   // One clip per viewport. The header and the author block float above the
   // list rather than taking height from it, so a page is exactly the screen —
@@ -113,8 +113,7 @@ export function VibeViewerScreen({ route, navigation }: ScreenProps<'VibeViewer'
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const first = viewableItems[0];
-      if (first?.index != null) setIndex(first.index);
+      setIndex(visiblePageIndex(viewableItems));
     },
     [],
   );
@@ -124,7 +123,7 @@ export function VibeViewerScreen({ route, navigation }: ScreenProps<'VibeViewer'
   // Count a watch once per clip, and never for your own.
   const counted = useRef(new Set<number>());
   useEffect(() => {
-    const current = items[index];
+    const current = index === null ? undefined : items[index];
     if (!current || current.mine || counted.current.has(current.id)) return;
     counted.current.add(current.id);
     view.mutate(current.id);
@@ -204,7 +203,7 @@ export function VibeViewerScreen({ route, navigation }: ScreenProps<'VibeViewer'
                 }}
               >
                 <Txt variant="caption" style={{ color: '#fff' }}>
-                  {index + 1} / {items.length}
+                  {index === null ? '–' : index + 1} / {items.length}
                 </Txt>
               </View>
             ) : null}
@@ -245,6 +244,8 @@ function VibePage({
   const source = useMemo(() => mediaSource(mediaUrl(vibe.mediaUrl)), [vibe.mediaUrl]);
   const { colors } = useTheme();
   const [failed, setFailed] = useState(false);
+  const react = useReactToVibe();
+  const toast = useToast();
 
   return (
     <View style={{ height: pageHeight, width: '100%', backgroundColor: '#000' }}>
@@ -262,6 +263,23 @@ function VibePage({
           <VibeClip source={source} live={vibe.edit ?? null} active={active} onError={() => setFailed(true)} />
         )}
       </View>
+
+      {!vibe.mine ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={vibe.liked ? 'Unlike Vibe' : 'Like Vibe'}
+          accessibilityState={{ disabled: react.isPending, selected: !!vibe.liked }}
+          disabled={react.isPending}
+          onPress={() => react.mutate({ vibeId: vibe.id, liked: !vibe.liked }, {
+            onError: (e) => toast({ kind: 'error', title: 'Like not sent', message: (e as Error).message }),
+          })}
+          style={{ position: 'absolute', right: space.lg, bottom: insets.bottom + 150,
+            alignItems: 'center', padding: 12, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.5)' }}
+        >
+          <Ionicons name={vibe.liked ? 'heart' : 'heart-outline'} size={28} color={vibe.liked ? colors.crush : '#fff'} />
+          <Txt variant="caption" style={{ color: '#fff' }}>{String(vibe.likeCount ?? 0)}</Txt>
+        </Pressable>
+      ) : null}
 
       {/* Author + words, over the bottom of the clip. */}
       <View
