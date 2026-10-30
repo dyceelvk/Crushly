@@ -22,6 +22,7 @@ import {
   editFromLive,
   lookOf,
   NEUTRAL_LOOK,
+  fitFrame,
 } from './videoEdit';
 
 const d = 60;
@@ -226,4 +227,44 @@ test('overlays only show inside their own window', () => {
   assert.equal(overlaysAt(drawn, 1).captions.length, 0, 'not before it starts');
   assert.equal(overlaysAt(drawn, 5).captions.length, 1, 'while it is on screen');
   assert.equal(overlaysAt(drawn, 7).captions.length, 0, 'not after it ends');
+});
+
+/**
+ * The clip frame: the bug this pins is a feed clip that overflowed its card and
+ * looked zoomed, because the box was sized from the window instead of the card.
+ */
+test('a 9:16 clip keeps its ratio inside the column and is never widened past it', () => {
+  // A 393pt phone, with the Flow list padding 20pt each side: the card is 353.
+  const f = fitFrame(353, 9 / 16, 528);
+  assert.ok(f.width <= 353, `frame ${f.width} must not exceed the column`);
+  assert.ok(Math.abs(f.width / f.height - 9 / 16) < 0.01, 'the picture keeps its shape');
+  assert.equal(f.height, 528, 'a tall clip is capped at the height ceiling');
+});
+
+test('a 4:5 clip fills the column edge to edge', () => {
+  const f = fitFrame(353, 4 / 5);
+  assert.equal(f.width, 353, 'no side bars in the common case');
+  assert.equal(f.height, 441);
+});
+
+test('a landscape clip is full width and short, not letterboxed', () => {
+  const f = fitFrame(353, 16 / 9, 528);
+  assert.equal(f.width, 353);
+  assert.equal(f.height, 199);
+});
+
+test('the frame never overflows the column, whatever the source', () => {
+  // The regression: window width (393) used as the box for a 353 card.
+  for (const ratio of [9 / 16, 4 / 5, 1, 16 / 9, 3 / 4]) {
+    const f = fitFrame(353, ratio, 528);
+    assert.ok(f.width <= 353, `ratio ${ratio.toFixed(2)} gave width ${f.width}`);
+    assert.ok(f.height > 0);
+  }
+});
+
+test('a nonsense ratio falls back to 4:5 rather than dividing by zero', () => {
+  assert.deepEqual(fitFrame(0, 9 / 16), { width: 0, height: 0 });
+  const f = fitFrame(300, 0);
+  assert.equal(f.width, 300);
+  assert.equal(f.height, 375, '0 ratio is treated as 4:5');
 });

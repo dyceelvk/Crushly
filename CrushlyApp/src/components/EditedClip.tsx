@@ -5,7 +5,7 @@ import { useVideoPlayer } from 'expo-video';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Txt } from './Txt';
 import { VideoEditCanvas } from './VideoEditCanvas';
-import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
+import { NEUTRAL_LOOK, emptyEdit, fitFrame, type LiveEdit } from '../lib/videoEdit';
 
 /** What the clip team reports about itself once it has loaded. */
 type Track = { width: number; height: number };
@@ -31,6 +31,9 @@ export function EditedClip({
   loop = false,
   paused = false,
   contentFit = 'contain',
+  fitToClip = false,
+  maxHeight,
+  fallbackRatio = 4 / 5,
   controls = true,
   controlPlacement = 'center',
   showSoundHint = false,
@@ -46,6 +49,22 @@ export function EditedClip({
   paused?: boolean;
   /** 'contain' shows the full video without cropping; 'cover' fills the frame. */
   contentFit?: 'contain' | 'cover';
+  /**
+   * Let the clip decide its own frame instead of being squeezed into a box the
+   * caller guessed.
+   *
+   * With this on, the caller supplies a WIDTH and nothing else and the frame is
+   * built from the source's real ratio: a 4:5 clip fills the column edge to
+   * edge, and a 9:16 clip is narrowed until it fits inside `maxHeight` rather
+   * than being cropped or letterboxed into someone's idea of a photo frame.
+   * This is what "show it at the size I uploaded" actually requires, and it can
+   * only be done after the track has been measured.
+   */
+  fitToClip?: boolean;
+  /** Height ceiling for `fitToClip`, in points. Ignored otherwise. */
+  maxHeight?: number;
+  /** The ratio used before the track arrives, as width / height. */
+  fallbackRatio?: number;
   /**
    * Tap control. On by default: every place a clip is shown in this app is a
    * place somebody will want to stop it.
@@ -260,9 +279,32 @@ export function EditedClip({
     return () => cancelAnimationFrame(raf);
   }, [player]);
 
+  /**
+   * When the caller asked the clip to size itself, the frame follows the
+   * source's own ratio instead of the 4:5 slot a feed usually reserves.
+   *
+   * This is the difference between "the video is in a frame" and "the video is
+   * the size it was uploaded at". A 9:16 clip inside a 4:5 slot either loses a
+   * fifth of its height to bars, or — if the slot is filled by scaling up, which
+   * is what a `cover` fit does — has its sides cut off and reads as zoomed.
+   * Neither is what the member posted. `width × width / ratio` is.
+   *
+   * `maxHeight` is the one thing that may override the ratio: a tall clip on a
+   * short screen is narrowed rather than allowed to run past the viewport.
+   */
+  const ratio = track && track.height > 0 ? track.width / track.height : fallbackRatio;
+  const selfSized = useMemo<ViewStyle | null>(() => {
+    if (!fitToClip) return null;
+    // Before the first measurement there is no width to aspect against, so the
+    // box is left at the caller's width and the canvas letterboxes for one pass.
+    if (!box.width) return { width: '100%', aspectRatio: fallbackRatio };
+    const frame = fitFrame(box.width, ratio, maxHeight);
+    return { width: frame.width, height: frame.height };
+  }, [fitToClip, box.width, ratio, maxHeight, fallbackRatio]);
+
   return (
     <View
-      style={[{ alignItems: 'center', justifyContent: 'center' }, style]}
+      style={[{ alignItems: 'center', justifyContent: 'center' }, selfSized, style]}
       onLayout={(e) => {
         const { width, height } = e.nativeEvent.layout;
         setBox((b) => (b.width === width && b.height === height ? b : { width, height }));

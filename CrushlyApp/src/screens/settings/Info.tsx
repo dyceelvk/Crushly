@@ -7,6 +7,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { InfoPage, ScreenProps } from '../../navigation/types';
 import {
+  APP_AUTHOR,
   COMPANY_NAME,
   LEGAL_EMAIL,
   PRIVACY_EMAIL,
@@ -29,7 +30,7 @@ const LEGAL_PATHS: Partial<Record<InfoPage, string>> = {
   guidelines: 'legal/guidelines',
   'safety-tips': 'legal/safety',
 };
-const LEGAL_PAGES: InfoPage[] = ['terms', 'privacy', 'guidelines'];
+const LEGAL_PAGES: InfoPage[] = ['terms', 'privacy', 'guidelines', 'credits'];
 
 const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }> = {
   guidelines: {
@@ -63,7 +64,8 @@ const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }>
       { h: '12. Cookies and local storage', p: 'On the web we use browser storage and similar technologies to keep you signed in and to remember your settings. You can clear this in your browser at any time, though it will sign you out.' },
       { h: '13. Children', p: 'Crushly is for adults. We do not knowingly collect data from anyone under 18, and we remove accounts we believe belong to a minor.' },
       { h: '14. Changes to this policy', p: 'We may update this policy. The current version is always available in the app, and material changes will be communicated in the app or by email.' },
-      { h: '15. Contact and complaints', p: `Privacy questions and rights requests: ${PRIVACY_EMAIL}. General support: ${SUPPORT_EMAIL}. You may also contact the data protection authority where you live if you are unhappy with how we have handled your data.` },
+      { h: '15. Who builds Crushly', p: `Crushly is designed and built by ${APP_AUTHOR}, and is published by ${ENTITY}. Questions about this policy, or about the application itself, can be addressed to either: ${PRIVACY_EMAIL} reaches the team that runs the service.` },
+      { h: '16. Contact and complaints', p: `Privacy questions and rights requests: ${PRIVACY_EMAIL}. General support: ${SUPPORT_EMAIL}. You may also contact the data protection authority where you live if you are unhappy with how we have handled your data.` },
     ],
   },
   terms: {
@@ -89,8 +91,41 @@ const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }>
       { h: '17. Costs of proceedings in the wrong forum', p: 'If you commence proceedings in a forum other than the one agreed in clause 15 and those proceedings are dismissed, stayed or transferred, you agree to bear Riel Inc.’s reasonable legal costs of responding, without prejudice to any other remedy available to us.' },
       { h: '18. Injunctive relief', p: 'You acknowledge that a breach of these terms affecting intellectual property, safety or confidentiality may cause irreparable harm for which damages alone are inadequate, and that Riel Inc. may seek injunctive or other equitable relief in addition to any other remedy.' },
       { h: '19. Changes to these terms', p: 'We may update these terms. The current version is always in the app. Continuing to use Crushly after a change means you accept the updated terms.' },
-      { h: '20. General', p: 'If any clause is held unenforceable, the rest remain in force. A failure to enforce a clause is not a waiver of it. These terms, the Community Guidelines and the Privacy Policy are the entire agreement between you and Riel Inc. regarding Crushly.' },
-      { h: '21. Contact', p: `Questions about these terms: ${LEGAL_EMAIL}. General support: ${SUPPORT_EMAIL}.` },
+      { h: '20. Authorship and credit', p: `Crushly is designed and built by ${APP_AUTHOR}. That is the official attribution for the application, and it is made as part of these terms so that it is a matter of record rather than a line in a settings screen. ${ENTITY} publishes Crushly; ${APP_AUTHOR} is credited as its designer and developer. See the Credits page for the full statement and the third-party licences Crushly relies on.` },
+      { h: '21. General', p: 'If any clause is held unenforceable, the rest remain in force. A failure to enforce a clause is not a waiver of it. These terms, the Community Guidelines and the Privacy Policy are the entire agreement between you and Riel Inc. regarding Crushly.' },
+      { h: '22. Contact', p: `Questions about these terms: ${LEGAL_EMAIL}. General support: ${SUPPORT_EMAIL}.` },
+    ],
+  },
+  /**
+   * The official attribution, on its own page.
+   *
+   * It used to be two rows in Settings; a settings list is not where a credit
+   * belongs. The name itself is never typed here — it comes from `APP_AUTHOR`
+   * in `lib/company.ts`, the same constant the Terms and the Privacy Policy use,
+   * so the three pages cannot drift apart.
+   */
+  credits: {
+    title: 'Credits',
+    intro: `Crushly is designed and built by ${APP_AUTHOR}.`,
+    blocks: [
+      {
+        h: 'Design and development',
+        p: `The Crushly application, its interface, its backend and its release process are designed and built by ${APP_AUTHOR}.`,
+      },
+      {
+        h: 'Official attribution',
+        p: `Where Crushly names an author, the name is ${APP_AUTHOR}. It appears here, in the Terms of service, in the Privacy policy and in the project documentation, and it is reproduced exactly.`,
+      },
+      { h: 'Published by', p: `${ENTITY}, the company that operates Crushly.` },
+      {
+        h: 'Third-party work',
+        p: 'Crushly is built on open-source software. Expo and React Native are used under the MIT licence, Supabase under the Apache 2.0 licence, and the icon set is Ionicons from the Ionic project, also under MIT. Those licences and their copyright notices remain with their authors.',
+      },
+      {
+        h: 'The artwork',
+        p: 'The Crushly heart is the official mark of Crushly and is not licensed for reuse.',
+      },
+      { h: 'Questions', p: `Contact ${SUPPORT_EMAIL}.` },
     ],
   },
   help: {

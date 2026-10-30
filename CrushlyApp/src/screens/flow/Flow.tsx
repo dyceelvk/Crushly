@@ -274,12 +274,29 @@ export function PostCard({ post: p, playing = true }: { post: Post; playing?: bo
   // played: VideoEditCanvas absolutely positions the video inside its root and
   // gives it no height of its own, so a root sized only by maxHeight collapses
   // to nothing — a black bar that is not a video. PostViewer always worked
-  // because it passes an explicit height. Fixed frames also mean the feed does
-  // not jump as each clip measures itself. On a short screen 4:5 of the width
-  // can overrun the viewport, so the frame is capped and the width follows.
-  const { width: winWidth, height: winHeight } = useWindowDimensions();
-  const videoW = Math.min(winWidth, 620);
-  const videoH = Math.min(videoW * 1.25, Math.round(winHeight * 0.62));
+  // because it passes an explicit height.
+  //
+  // The width used to come from the WINDOW, and that is what made a clip look
+  // zoomed and run off the card. This card never gets the window: the list
+  // around it pads itself by `gutter` on each side, so the card is narrower
+  // than the phone by 2 × gutter — 40px on every phone. A 9:16 clip in a box
+  // 40px too wide is fitted by its height, so the picture is scaled up by
+  // 393/353 ≈ 1.11 and the left and right of the frame are cut off: the clip
+  // reads as zoomed in, cropped, and "not the size I uploaded". Nothing about
+  // the file was wrong — the box was.
+  //
+  // So the box is measured from the card itself rather than guessed. `boxW`
+  // stays 0 until the first layout pass, and until then the clip draws at its
+  // own ratio inside the card's width, so there is no 40px-wide flicker on the
+  // way in. This also makes the card correct wherever it is rendered — the
+  // Flow, Saved, Discover, or a Circle — each of which pads itself
+  // differently, and on a tablet where the column is capped.
+  const { height: winHeight } = useWindowDimensions();
+  const [boxW, setBoxW] = useState(0);
+  const videoW = boxW > 0 ? boxW : undefined;
+  // How tall a clip may get in the feed: it must not fill the phone, or the
+  // post underneath it is never seen without scrolling.
+  const clipMaxH = Math.round(winHeight * 0.62);
 
 
 return (
@@ -350,7 +367,13 @@ return (
         ) : null}
 
         {p.mediaUrl ? (
-          <View style={{ marginTop: space.sm }}>
+          <View
+            style={{ marginTop: space.sm }}
+            onLayout={(e) => {
+              const w = Math.round(e.nativeEvent.layout.width);
+              if (w > 0) setBoxW((b) => (b === w ? b : w));
+            }}
+          >
             {mediaKind === 'video' ? (
               <View style={{ width: '100%', alignItems: 'center' }}>
                 <EditedClip
@@ -369,7 +392,13 @@ return (
                   muted
                   showSoundHint
                   contentFit="contain"
-                  style={{ width: videoW, height: videoH }}
+                  // The frame is the clip's own ratio, measured from the source
+                  // and no wider than the card. A 4:5 clip fills the column; a
+                  // 9:16 clip is narrowed until it fits under `maxHeight`
+                  // instead of being scaled up until its sides are gone.
+                  fitToClip
+                  maxHeight={clipMaxH}
+                  style={videoW ? { width: videoW } : { width: '100%' }}
                 />
               </View>
             ) : (

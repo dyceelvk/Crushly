@@ -22,7 +22,7 @@ import { useAuth } from '../../state/auth';
 import { useTheme, type Appearance } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
-import { APP_AUTHOR, APP_CREDIT_LINE, COMPANY_NAME } from '../../lib/company';
+import { COMPANY_NAME } from '../../lib/company';
 import type { ScreenProps } from '../../navigation/types';
 
 /* ------------------------------------------------------------------ hub */
@@ -100,23 +100,13 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} last />
       </Group>
 
-      {/* Credits. The official attribution for the app, kept in one constant so
-          it cannot drift between the app, the store copy and the docs. */}
-      <Group title="About Crushly">
-        <ListRow title="Credits" subtitle={APP_AUTHOR} icon="heart-outline" iconTone="crush" />
-        <ListRow
-          title="Design & development"
-          subtitle={APP_CREDIT_LINE}
-          icon="code-slash-outline"
-          last
-        />
-      </Group>
 
       <Group title="Support">
         <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
         <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
         <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
         <ListRow title="Privacy policy" icon="lock-closed-outline" onPress={() => navigation.navigate('Info', { page: 'privacy' })} />
+        <ListRow title="Credits" icon="heart-outline" iconTone="crush" onPress={() => navigation.navigate('Info', { page: 'credits' })} />
         <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
       </Group>
 

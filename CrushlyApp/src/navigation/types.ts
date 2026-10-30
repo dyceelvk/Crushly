@@ -8,7 +8,7 @@ export type TabParamList = {
   Profile: undefined;
 };
 
-export type InfoPage = 'guidelines' | 'privacy' | 'terms' | 'help' | 'safety-tips' | 'contact';
+export type InfoPage = 'guidelines' | 'privacy' | 'terms' | 'credits' | 'help' | 'safety-tips' | 'contact';
 
 export type RootStackParamList = {
   Welcome: undefined;
