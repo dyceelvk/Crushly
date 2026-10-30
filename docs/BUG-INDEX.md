@@ -54,6 +54,14 @@ matter most:
 - `VibeFeed` reads a `vibe.edit` field that the feed does not send.
 - `VibeAuthor.hasMoment` is always false from the feed.
 - No seeded E2E account.
+- **The web app has no automated production deploy.** `mecrushly` builds with
+  `productionBranch: main`, which is stale on purpose, so pushes to the release
+  branch only ever make previews. Production needs an explicit API call against
+  a commit SHA, or `VERCEL_TOKEN` set so `Deploy web app` can publish.
+- **A rebuild leaves the live download page one build behind.** The APK job
+  commits with the bot's token, which starts no workflows, so `release.json` and
+  the page follow the build automatically and the web deploy does not. Seen on
+  the third build of 1.0.11.
 
 ## How to write one of these
 

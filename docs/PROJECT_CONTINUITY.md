@@ -1,8 +1,8 @@
 # Crushly — project continuity
 
-**Last updated:** 2026-10-29
+**Last updated:** 2026-10-30
 **Current version:** 1.0.11 (versionCode 11) — **built, published, live**
-**Branch:** `app/space-tabs-and-playback` @ `a656dbe`
+**Branch:** `app/space-tabs-and-playback` @ `d94886c`
 **Owner:** Odoh chiagoziem isreal
 
 **Where the docs live.** This file, `CHANGELOG.md` and the rest of the library
@@ -202,7 +202,7 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
 
 1. ~~Confirm a build publishes and announces itself.~~ **Done for 1.0.11.**
    The APK published to `android-test-1.0.11` (92,994,875 bytes,
-   `550710bd…aa90e2f`), `/apk/latest` serves exactly those bytes, `/version`
+   `30a7f7e1…2d28ea04`), `/apk/latest` serves exactly those bytes, `/version`
    advertises 1.0.11 / code 11, and the manifest inside the served file reads
    back `1.0.11` / `11` / `app.crushly`. The production web build carries
    `save_post` and `saved_posts`. Still outstanding: seeing it on a real
@@ -219,6 +219,24 @@ Everything a client writes goes through an RPC. `posts` has a SELECT policy and
    - *The download page quoted the previous build's size and hash.* It now gets
      them written into it by `CrushlyApp/scripts/write-download-page.mjs`, from
      the APK on the release, in the same commit as `release.json`.
+
+   **Two further gaps found on 2026-10-30, both downstream of the APK and both
+   still open:**
+   - *The web app has no automated production path.* `mecrushly` builds with
+     `productionBranch: main`, and `main` is stale on purpose, so every push to
+     the release branch produces a **preview** and never a production deploy.
+     Production is published by an explicit API call against a commit SHA. This
+     is why the web app has needed a manual deploy after each of the last four
+     releases. Fix either way: set `VERCEL_TOKEN` so `Deploy web app` runs
+     `vercel deploy --prod`, or point the project's production branch at the
+     branch releases are cut from.
+   - *A rebuild still leaves the web page one build behind.* The build job
+     rewrites `release.json` and the download page from its own measurements and
+     commits them with the bot's token, which starts no workflows — so the APK
+     surfaces follow automatically and the web page does not. 1.0.11 was built
+     three times (`cb55b519…`, `550710bd…`, `30a7f7e1…`); the third build is
+     what every surface now describes, but the live page quoted the second until
+     a production deploy was made by hand from `d94886c`.
 
 2. Post a real `.mov` from an iPhone/Samsung gallery and confirm it posts and
    plays. **This is the one thing that has not been tested on a device.**

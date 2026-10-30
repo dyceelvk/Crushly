@@ -45,8 +45,8 @@ It is not the source of truth.
 ## The one-paragraph state of the project
 
 Version **1.0.11 (versionCode 11)** is **built, published and live** at
-`a656dbe` on `app/space-tabs-and-playback`. The APK is 92,994,875 bytes,
-`550710bd…aa90e2f`; the Worker serves it at `/apk/latest` and advertises it at
+`d94886c` on `app/space-tabs-and-playback`. The APK is 92,994,875 bytes,
+`30a7f7e1…2d28ea04`; the Worker serves it at `/apk/latest` and advertises it at
 `/version`; the download page quotes the same numbers; the release is
 `android-test-1.0.11`. All three surfaces a phone consults agree with each
 other, and the manifest inside the served APK reads back `1.0.11` / code `11`.

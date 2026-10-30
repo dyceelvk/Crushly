@@ -1,6 +1,6 @@
 # Crushly — deployed state
 
-Updated 2026-10-29 21:55 UTC. Every number below was fetched from the running
+Updated 2026-10-30 00:55 UTC. Every number below was fetched from the running
 system, not copied from a build log.
 
 ## Live
@@ -11,14 +11,15 @@ system, not copied from a build log.
 | Download page | https://mecrushly.vercel.app/download |
 | Android | **1.0.11** · versionCode **11** |
 | APK | `Crushly-1.0.11-Android9plus.apk` · **92,994,875** bytes |
-| SHA-256 | `550710bd8f7b6a162ee2c9524dbf8ef4845756716b9450953c2a43177aa90e2f` |
+| SHA-256 | `30a7f7e19ce3798e8538551cb38979ff0cbacb62362ef1c357c8ba9c2d28ea04` |
 | Release | https://github.com/dyceelvk/Crushly/releases/tag/android-test-1.0.11 |
 | Worker | https://crushly-media.dyceelvk.workers.dev — `/version` reports 1.0.11 |
-| Branch | `app/space-tabs-and-playback` @ `a656dbe` |
+| Branch | `app/space-tabs-and-playback` @ `d94886c` |
 
 **Verified by downloading `/apk/latest` and hashing the bytes that arrived** —
-92,994,875 bytes, `550710bd…aa90e2f` — matching what `/version` advertises and
-what the download page quotes. The manifest inside that file was read back out
+92,994,875 bytes, `30a7f7e1…2d28ea04` — matching what `/version` advertises,
+what the download page quotes, and what `SHA256SUMS.txt` on the release says.
+The GitHub release asset and the Worker's `/apk/latest` are byte-identical. The manifest inside that file was read back out
 of the APK: `versionName='1.0.11' versionCode='11' package='app.crushly'`, so
 the number a phone compares against is the one inside the file it installs.
 
@@ -59,7 +60,7 @@ the answer is not the build just published.
 
 | Surface | Carries 1.0.11? |
 |---|---|
-| `mecrushly.vercel.app` (production web) | **Yes** — deployed from `a656dbe`, bundle carries `save_post` / `saved_posts` |
+| `mecrushly.vercel.app` (production web) | **Yes** — deployed from `d94886c` (`dpl_D1EXjpmq48p3Ap3NCi2iBU5MpXe5`), bundle carries `save_post`, `saved_posts`, `circle_feed` |
 | APK 1.0.11 (`android-test-1.0.11`, prerelease) | **Yes** — this is the build described above |
 | Play Store / any store | **No** — there is no store listing; distribution is the APK |
 
@@ -83,27 +84,64 @@ much larger piece of work.
   serves and checks that the live JavaScript contains the controls of the
   release, when it is given a token to deploy with.
 
-## Two builds of 1.0.11 exist, and only one is offered
+## Three builds of 1.0.11 were made, and the third is the one offered
 
-The first build went to `android-test-1.0.11` at `cb55b519…`. Adding the
-workflow trigger then started a second build, which clobbered the release asset
-with different bytes at the same version — same filename, new fingerprint. The
-release, `release.json` and the download page all describe the second build
-(`550710bd…`), and `/apk/latest` serves it.
+1.0.11 was built three times under the same version and the same filename. This
+is not a process that failed to stop them; it is what the pipeline does when a
+commit touching `CrushlyApp/**` lands on the branch, and the docs commit did
+exactly that.
 
-This exposed a cache bug worth knowing about: the Worker's edge cache was keyed
-on the APK's **filename**, which does not change when a build is replaced, so it
-kept handing out the first body while `/version` advertised the second one's
-checksum. The key now carries the published fingerprint. Anyone who downloaded
-in that window got a valid 1.0.11 with a checksum that did not match the page —
-harmless in itself, since both files are this release, but exactly the kind of
-thing an integrity check exists to catch.
+| Build | Fingerprint | What it was |
+|---|---|---|
+| First | `cb55b519…` | The original build, run `40955928947` |
+| Second | `550710bd…` | Clobbered the release asset once `app/**` was added to the build trigger |
+| Third | `30a7f7e1…` | Run `40963634899`, after the docs commit `42f4eaa` |
+
+The third build is the one every surface now describes. It is not the one this
+document described an hour ago, and that is the honest way to write it: the
+number moved because the build ran again, not because anyone mistyped.
+
+**Why a third build happened at all.** `docs/` does not match the build filter,
+but `42f4eaa` also touched `CrushlyApp/` — so the push satisfied `paths`, Gradle
+produced a fresh APK with a new fingerprint, and the job did exactly what it was
+fixed to do: published it, rewrote `release.json` and the download page from its
+measurements, and committed `d94886c`. Gradle is not reproducible here, so the
+same source yields different bytes.
+
+**What the fingerprint-keyed cache bought.** Because the edge cache key now
+carries the checksum, the Worker served the third build the moment it was
+published — no stale body, no second hand-fix. That fix paid for itself on its
+first real use.
+
+**What it did not cover.** Everything downstream of the APK. The download page
+and `release.json` were corrected automatically by the job, but the *web deploy*
+was not: `d94886c` was committed with the bot's token, which starts no
+workflows, so `Deploy web app` never ran for it. The live page quoted
+`550710bd…` for a file whose bytes were `30a7f7e1…` until a production deploy
+was made by hand. This is the same bot-token hole documented above for the
+Worker, one layer down — and it will recur on every rebuild until the Android
+job deploys the web app too, or until the page is served dynamically rather
+than baked.
+
+## The web app's real deploy path
+
+There is no Git integration covering this, whatever the comment in
+`deploy-web.yml` says. `mecrushly`'s Vercel project has
+`productionBranch: main`, and `main` is stale on purpose. Every push to
+`app/space-tabs-and-playback` produces a **preview** deployment — `d94886c` got
+`dpl_izv8bAEY…` within seconds — and never a production one. Production is
+published by an explicit API call against a commit SHA.
+
+That is why the web app has needed a manual deploy after each of the last four
+releases: the automated path that appears to exist only ever builds previews.
 
 ## Known, unfixed
 
-- **`VERCEL_TOKEN` is still not set.** `Deploy web app` therefore cannot publish
-  the site; it now says so and skips instead of failing red on every push. Web
-  deploys are done explicitly. Add the token and the workflow takes over.
+- **`VERCEL_TOKEN` is still not set**, and setting it is the whole fix for the
+  manual-web-deploy problem above. `Deploy web app` cannot publish without it;
+  it now says so and skips instead of failing red on every push. Add the token
+  and the workflow takes over, including the step that checks the live bundle
+  for this release's controls.
 - **A `.mov` recorded on a real iPhone or Samsung has never been published and
   played back on a physical device.** Everything else is proven over HTTP
   against production and inside an Android 9 emulator; the camera-roll path on

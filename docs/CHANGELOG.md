@@ -120,17 +120,52 @@ release's controls.
 ### The build
 
 `android-test-1.0.11`, **92,994,875 bytes**, sha256
-`550710bd8f7b6a162ee2c9524dbf8ef4845756716b9450953c2a43177aa90e2f`.
+`30a7f7e19ce3798e8538551cb38979ff0cbacb62362ef1c357c8ba9c2d28ea04`.
 Verified by downloading `/apk/latest` and hashing the bytes that arrive, then
 reading the manifest back out of the served file: `versionName='1.0.11'`,
-`versionCode='11'`, `package='app.crushly'`.
+`versionCode='11'`, `package='app.crushly'`. The GitHub release asset and
+`/apk/latest` compare byte-identical, and `SHA256SUMS.txt` on the release
+carries the same digest.
 
-1.0.11 was built twice, and both files were published under the same name. The
-first build (`cb55b519…`) went to `android-test-1.0.11`; adding the workflow
-trigger in the second commit started a second build, which clobbered the release
-with different bytes at the same version. The release, `release.json` and the
-download page now all describe the second one, and the Worker's edge cache is
-keyed on the fingerprint so it cannot serve the first one again.
+1.0.11 was built **three** times, each published under the same version and the
+same filename, each with a different fingerprint:
+
+| # | Fingerprint | Run | Why it ran |
+|---|---|---|---|
+| 1 | `cb55b519…` | `40955928947` | The original build |
+| 2 | `550710bd…` | — | `app/**` added to the build trigger |
+| 3 | `30a7f7e1…` | `40963634899` | The docs commit `42f4eaa` also touched `CrushlyApp/` |
+
+Gradle is not reproducible here, so the same source produced different bytes
+every time. The third build is what every surface now describes.
+
+**What made three builds survivable.** The Worker's edge cache is keyed on the
+published fingerprint instead of the filename, so the third APK was served the
+moment the job published it — no stale body, no hand-fix. That change earned
+itself on its first use.
+
+**What it did not cover.** The build job rewrote `release.json` and the download
+page from its own measurements and committed them as `d94886c` — with the bot's
+token, which starts no workflows. The APK surfaces followed automatically; the
+**web deploy** did not. `mecrushly.vercel.app/download` went on quoting
+`550710bd…` for a file whose bytes were `30a7f7e1…` until production was
+redeployed by hand from `d94886c` (`dpl_D1EXjpmq48p3Ap3NCi2iBU5MpXe5`). The same
+bot-token hole documented for the Worker, one layer down, and it recurs on every
+rebuild.
+
+### Fixed — the web app has no automated production path
+
+`mecrushly`'s Vercel project builds with `productionBranch: main`, and `main` is
+stale on purpose. Every push to the release branch therefore produces a
+**preview** and never a production deployment: `d94886c` got
+`dpl_izv8bAEY…` within seconds, and production still needed an explicit API
+call against a commit SHA. That is the fourth release in a row with a manual web
+step, and the reason is not a missing token alone — it is that no configured
+path ever promoted this branch to production.
+
+Two ways out, neither taken yet: set `VERCEL_TOKEN` so `Deploy web app` publishes
+with `vercel deploy --prod`, or point the project's production branch at the
+branch releases are cut from.
 
 ---
 
