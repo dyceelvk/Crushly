@@ -1,10 +1,10 @@
 {
-  "version": "1.0.17",
-  "versionCode": 17,
+  "version": "1.0.18",
+  "versionCode": 18,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.17-Android9plus.apk",
+  "file": "Crushly-1.0.18-Android9plus.apk",
   "notes": "Save posts for later, and Vibes play with the captions their author drew.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.17/Crushly-1.0.17-Android9plus.apk",
-  "bytes": 93016399,
-  "sha256": "c175bad6cd94cf7a814d639ed8b915d8d86e81367144941a092e2b7db38ce1dd"
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.18/Crushly-1.0.18-Android9plus.apk",
+  "bytes": 93020995,
+  "sha256": "c299a0b8ccae92dbabebc2cacefb9d0b7114ec426b6be714eb6d8879924e2164"
 }
