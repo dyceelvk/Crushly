@@ -1,4 +1,5 @@
 import { mediaSource } from '../lib/mediaHost';
+import { VIDEO_FRAME_FILL } from '../lib/videoFrame';
 import React, { useMemo, useRef } from 'react';
 import { LayoutChangeEvent, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import type { ImageStyle } from 'expo-image';
@@ -69,7 +70,7 @@ export function VideoEditCanvas({
   // translucent colour over it instead — the only grading available without a
   // GPU pipeline.
   const videoStyle = useMemo(() => {
-    const base: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
+    const base: ViewStyle = { ...VIDEO_FRAME_FILL };
     if (Platform.OS === 'web' && css !== 'none') {
       (base as unknown as Record<string, unknown>).filter = css;
     }

@@ -56,3 +56,10 @@ test('drawPosePair works for a pair and rejects a single pose', () => {
   assert.deepEqual(drawPosePair(['only', 'two'], () => 0.99), ['two', 'only']);
   assert.throws(() => drawPosePair(['solo']), /at least 2/);
 });
+
+
+test('sign-in deadline returns a useful error instead of an endless wait', async () => {
+  const { withDeadline } = await import('./auth');
+  await assert.rejects(withDeadline(new Promise(() => {}), 10, 'Try again'), /Try again/);
+  assert.equal(await withDeadline(Promise.resolve('ok'), 50, 'timeout'), 'ok');
+});

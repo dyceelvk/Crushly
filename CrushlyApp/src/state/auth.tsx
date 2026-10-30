@@ -1,3 +1,4 @@
+import { withDeadline } from '../lib/auth';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
@@ -124,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string) => {
       requireConfig();
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      const { error } = await withDeadline(supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password }), 20000, 'Sign in is taking too long. Check your connection and try again.');
       if (error) {
         const msg = String(error.message ?? '');
         if (/invalid login credentials/i.test(msg)) throw new ApiError(401, 'That email and password don’t match.');
@@ -132,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!msg) throw new ApiError(400, 'Enter your email and password.');
         throw new ApiError(error.status ?? 400, msg);
       }
-      await afterAuth();
+      await withDeadline(afterAuth(), 20000, 'Signed in, but your profile did not load. Check your connection and try again.');
     },
     [afterAuth],
   );

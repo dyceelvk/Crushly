@@ -77,6 +77,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
       await signIn(e.trim(), p);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
       setLoading(false);
     }
   };
