@@ -108,6 +108,7 @@ export function VideoEditCanvas({
           style={videoStyle}
           contentFit={contentFit}
           nativeControls={false}
+          surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
           pointerEvents="none"
         />
       ) : null}

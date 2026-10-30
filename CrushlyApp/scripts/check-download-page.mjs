@@ -52,15 +52,13 @@ if (!href.endsWith('/apk/latest')) {
 // Whichever build the Worker is currently serving is the one the page should
 // describe. Between a version bump and the build that publishes it, the two
 // legitimately differ, so accept either and name the one to update.
-const served = release.version === app.expo.version ? release : null;
+const served = release;
 
 const shownFile = text('filename');
-const expectedFile = `Crushly-${app.expo.version}-Android9plus.apk`;
-// The filename follows app.json even before the build exists — the file it
-// names is the one this release will publish. Size and fingerprint cannot be
-// known until then, so those are only checked against a build that exists.
+const expectedFile = `Crushly-${release.version}-Android9plus.apk`;
+// The page describes the published release, even while the next build is pending.
 if (shownFile && shownFile !== expectedFile) {
-  problems.push(`the page names "${shownFile}" but ${app.expo.version} publishes "${expectedFile}"`);
+  problems.push(`the page names "${shownFile}" but the published ${release.version} build uses "${expectedFile}"`);
 }
 
 const shownBytes = text('bytes');

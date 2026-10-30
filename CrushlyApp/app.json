@@ -3,7 +3,7 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -20,7 +20,7 @@
         "NSMicrophoneUsageDescription": "Crushly uses your microphone for voice calls and voice messages.",
         "NSLocationWhenInUseUsageDescription": "Crushly uses your approximate location to show distance. Your exact location is never shared."
       },
-      "buildNumber": "11"
+      "buildNumber": "12"
     },
     "android": {
       "package": "app.crushly",
@@ -40,7 +40,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 11
+      "versionCode": 12
     },
     "web": {
       "favicon": "./assets/favicon.png",

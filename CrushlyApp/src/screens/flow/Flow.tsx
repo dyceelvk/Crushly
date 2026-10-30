@@ -387,8 +387,7 @@ return (
                   controlPlacement="corner"
                   // Sound never starts on its own in a feed. The clip plays
                   // muted with a "Tap for sound" mark; unmuting is the viewer's
-                  // decision, made by tapping the button on the clip they are
-                  // looking at.
+                  // decision, made by tapping the sound button on the clip.
                   muted
                   showSoundHint
                   contentFit="contain"
@@ -398,7 +397,7 @@ return (
                   // instead of being scaled up until its sides are gone.
                   fitToClip
                   maxHeight={clipMaxH}
-                  style={videoW ? { width: videoW } : { width: '100%' }}
+                  frameWidth={videoW}
                 />
               </View>
             ) : (

@@ -33,6 +33,7 @@ export function EditedClip({
   contentFit = 'contain',
   fitToClip = false,
   maxHeight,
+  frameWidth,
   fallbackRatio = 4 / 5,
   controls = true,
   controlPlacement = 'center',
@@ -63,6 +64,8 @@ export function EditedClip({
   fitToClip?: boolean;
   /** Height ceiling for `fitToClip`, in points. Ignored otherwise. */
   maxHeight?: number;
+  /** Measured available width of the parent, not the clip itself. */
+  frameWidth?: number;
   /** The ratio used before the track arrives, as width / height. */
   fallbackRatio?: number;
   /**
@@ -186,13 +189,7 @@ export function EditedClip({
       onTogglePlay();
       return;
     }
-    // The first tap on a muted clip brings the sound up rather than stopping
-    // it: that is the thing the viewer is reaching for, and it is what the
-    // "Tap for sound" mark just told them to do.
-    if (muted && !soundOn) {
-      setSoundOn(true);
-      return;
-    }
+    // Play/pause always does what its icon says. Sound has a separate button.
     if (player.playing) {
       player.pause();
       musicPlayer?.pause();
@@ -295,16 +292,15 @@ export function EditedClip({
   const ratio = track && track.height > 0 ? track.width / track.height : fallbackRatio;
   const selfSized = useMemo<ViewStyle | null>(() => {
     if (!fitToClip) return null;
-    // Before the first measurement there is no width to aspect against, so the
-    // box is left at the caller's width and the canvas letterboxes for one pass.
-    if (!box.width) return { width: '100%', aspectRatio: fallbackRatio };
-    const frame = fitFrame(box.width, ratio, maxHeight);
+    // Use the parent measurement, never the clip's changing own width.
+    if (!frameWidth) return { width: '100%', aspectRatio: fallbackRatio };
+    const frame = fitFrame(frameWidth, ratio, maxHeight);
     return { width: frame.width, height: frame.height };
-  }, [fitToClip, box.width, ratio, maxHeight, fallbackRatio]);
+  }, [fitToClip, frameWidth, ratio, maxHeight, fallbackRatio]);
 
   return (
     <View
-      style={[{ alignItems: 'center', justifyContent: 'center' }, selfSized, style]}
+      style={[{ alignItems: 'center', justifyContent: 'center' }, style, selfSized]}
       onLayout={(e) => {
         const { width, height } = e.nativeEvent.layout;
         setBox((b) => (b.width === width && b.height === height ? b : { width, height }));
@@ -381,11 +377,13 @@ export function EditedClip({
       {/*
         Whether a clip has sound is not something the viewer can infer, and a
         clip that starts playing unmuted in a feed is a jump scare. The mark
-        says which it is. It sits above the tap target and never takes a press.
+        says which it is and provides a separate sound control.
       */}
       {showSoundHint && !soundOn ? (
-        <View
-          pointerEvents="none"
+        <Pressable
+          onPress={() => setSoundOn(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Turn sound on"
           style={{
             position: 'absolute',
             right: 10,
@@ -403,7 +401,7 @@ export function EditedClip({
           <Txt variant="caption" color="#FFFFFF">
             Tap for sound
           </Txt>
-        </View>
+        </Pressable>
       ) : null}
     </View>
   );
