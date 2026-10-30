@@ -5,6 +5,7 @@ import * as service from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
+  ReactionKind,
 } from './types';
 
 export const keys = {
@@ -260,8 +261,35 @@ export function useDeletePost() {
 export function useReactToPost() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ postId, liked }: { postId: number; liked: boolean }) => service.reactToPost(postId, liked),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+    mutationFn: ({ postId, liked, kind }: { postId: number; liked: boolean; kind?: ReactionKind }) =>
+      service.reactToPost(postId, liked, kind),
+    onSuccess: (_r, vars) => {
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
+    },
+  });
+}
+
+/** Keep a post for later. Silent: the author is never told. */
+export function useSavePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ postId, saved }: { postId: number; saved: boolean }) => service.savePost(postId, saved),
+    onSuccess: (_r, vars) => {
+      void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
+    },
+  });
+}
+
+/** Like a comment. The count and the heart come back from the same call. */
+export function useLikePostComment(postId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ commentId, liked }: { commentId: number; liked: boolean }) =>
+      service.likePostComment(commentId, liked),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
+    },
   });
 }
 
@@ -283,10 +311,17 @@ export function usePostComments(postId: number | null) {
   });
 }
 
+/** A comment on the post, or a reply when `parentId` is given. */
+export type CommentInput = string | { body: string; parentId?: number | null };
+
 export function useCommentOnPost(postId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) => service.commentOnPost(postId, body),
+    mutationFn: (input: CommentInput) => {
+      const body = typeof input === 'string' ? input : input.body;
+      const parentId = typeof input === 'string' ? null : input.parentId ?? null;
+      return service.commentOnPost(postId, body, parentId);
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
       void qc.invalidateQueries({ queryKey: keys.flow });

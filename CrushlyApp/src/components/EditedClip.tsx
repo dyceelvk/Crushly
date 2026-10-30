@@ -3,6 +3,7 @@ import { StyleProp, ViewStyle } from 'react-native';
 import { useVideoPlayer } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
+import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
 
 /**
  * A clip with its live half drawn on top.
@@ -78,10 +79,24 @@ export function EditedClip({
   useEffect(() => {
     if (!player) return;
     if (autoPlay) {
+      // One clip holds the sound. Claiming it pauses every other clip that is
+      // already playing, so a feed cannot talk over itself.
+      takeFocus(player);
       player.play();
       if (look.music) musicPlayer?.play();
+    } else {
+      releaseFocus(player);
     }
   }, [player, musicPlayer, autoPlay, look.music]);
+
+  // A player that leaves the screen stops being a candidate for the sound.
+  useEffect(() => {
+    if (!player) return;
+    const unregister = registerPlayer(player);
+    return () => {
+      unregister();
+    };
+  }, [player]);
 
   useEffect(() => {
     let raf = 0;

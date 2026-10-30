@@ -12,7 +12,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type { AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, MomentStyle, SearchResults, Vibe } from './types';
+import type { AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe } from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -400,12 +400,54 @@ export async function deletePost(postId: number): Promise<void> {
 }
 
 /**
- * Liking is one-way news: the author hears about the first like and not about
- * anybody changing their mind afterwards.
+ * Liking is one-way news: the author hears about the first reaction and not
+ * about anybody changing their mind afterwards.
+ *
+ * A reaction carries what it is — crush, fire, laugh, wow, clap — so a post
+ * answers the same way a Moment already did. `liked: false` withdraws it, and
+ * the kind is ignored in that case.
  */
-export async function reactToPost(postId: number, liked = true): Promise<{ liked: boolean; likeCount: number }> {
-  const r = await rpc<{ liked: boolean; likeCount: number }>('react_to_post', {
+export async function reactToPost(
+  postId: number,
+  liked = true,
+  kind: ReactionKind = 'crush',
+): Promise<{
+  liked: boolean;
+  likeCount: number;
+  myReaction: ReactionKind | null;
+  reactionKinds: Partial<Record<ReactionKind, number>>;
+}> {
+  const r = await rpc<{
+    liked: boolean;
+    likeCount: number;
+    myReaction: ReactionKind | null;
+    reactionKinds: Partial<Record<ReactionKind, number>>;
+  }>('react_to_post', {
     p_post_id: postId,
+    p_liked: liked,
+    p_kind: kind,
+  });
+  return {
+    liked: r?.liked ?? liked,
+    likeCount: r?.likeCount ?? 0,
+    myReaction: r?.myReaction ?? (liked ? kind : null),
+    reactionKinds: r?.reactionKinds ?? {},
+  };
+}
+
+/** Keep a post for later, or let it go. Silent either way — the author is not told. */
+export async function savePost(postId: number, saved = true): Promise<{ saved: boolean }> {
+  const r = await rpc<{ saved: boolean }>('save_post', { p_post_id: postId, p_saved: saved });
+  return { saved: r?.saved ?? saved };
+}
+
+/** Say you liked a comment — the table existed, nothing wrote to it. */
+export async function likePostComment(
+  commentId: number,
+  liked = true,
+): Promise<{ liked: boolean; likeCount: number }> {
+  const r = await rpc<{ liked: boolean; likeCount: number }>('like_post_comment', {
+    p_comment_id: commentId,
     p_liked: liked,
   });
   return { liked: r?.liked ?? liked, likeCount: r?.likeCount ?? 0 };
@@ -421,8 +463,16 @@ export async function postComments(postId: number, limit = 50): Promise<{ items:
   return { items: page?.items ?? [] };
 }
 
-export async function commentOnPost(postId: number, body: string): Promise<PostComment> {
-  return rpc<PostComment>('comment_on_post', { p_post_id: postId, p_body: str(body, 'Comment', { max: 1000 }) });
+export async function commentOnPost(
+  postId: number,
+  body: string,
+  parentId: number | null = null,
+): Promise<PostComment> {
+  return rpc<PostComment>('comment_on_post', {
+    p_post_id: postId,
+    p_body: str(body, 'Comment', { max: 1000 }),
+    p_parent_id: parentId,
+  });
 }
 
 /** Yours to remove, or the post is yours and the comment was left on it. */

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -26,6 +26,7 @@ import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
+import { activeIdAt, type CardBox } from '../../lib/viewability';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
@@ -57,6 +58,22 @@ export function FlowScreen() {
   const flow = useFlow();
   const [composer, setComposer] = useState(false);
 
+  // Which card is in front of the reader. Only that one is allowed to play;
+  // everything else is a still frame. The arithmetic lives in lib/viewability.
+  const boxes = useRef<Map<number, CardBox>>(new Map());
+  const [scrollY, setScrollY] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+  const [activeId, setActiveId] = useState<number | null>(null);
+
+  const measureCard = useCallback((id: number, y: number, height: number) => {
+    boxes.current.set(id, { id, y, height });
+  }, []);
+
+  const recompute = useCallback((nextY: number, nextH: number) => {
+    const flat = [...boxes.current.values()].sort((a, b) => a.y - b.y);
+    setActiveId(activeIdAt(flat, nextY, nextH));
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
@@ -72,6 +89,17 @@ export function FlowScreen() {
           <RefreshControl refreshing={flow.isRefetching} onRefresh={flow.refresh} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
         }
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          setViewportH(h);
+          recompute(scrollY, h);
+        }}
+        onScroll={(e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          setScrollY(y);
+          recompute(y, viewportH);
+        }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
@@ -147,7 +175,18 @@ export function FlowScreen() {
           ) : flow.posts.length ? (
             <>
               {flow.posts.map((p) => (
-                <PostCard key={p.id} post={p} />
+                <View
+                  key={p.id}
+                  onLayout={(e) =>
+                    measureCard(
+                      p.id,
+                      e.nativeEvent.layout.y,
+                      e.nativeEvent.layout.height,
+                    )
+                  }
+                >
+                  <PostCard post={p} active={activeId === null || activeId === p.id} />
+                </View>
               ))}
               <Button title="Show older posts" variant="secondary" size="md" onPress={flow.loadOlder} loading={flow.isFetching} />
             </>
@@ -168,7 +207,7 @@ export function FlowScreen() {
 }
 
 /** One post. Also used inside a Circle, where the audience is the room. */
-export function PostCard({ post: p }: { post: Post }) {
+export function PostCard({ post: p, active = true }: { post: Post; active?: boolean }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
@@ -262,7 +301,7 @@ export function PostCard({ post: p }: { post: Post }) {
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {p.mediaKind === 'video' ? (
-              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay loop style={{ width: '100%', maxHeight: 400 }} />
+              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay={active} loop={active} style={{ width: '100%', maxHeight: 400 }} />
             ) : (
               <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}

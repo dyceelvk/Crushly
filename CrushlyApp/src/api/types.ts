@@ -48,6 +48,14 @@ export type Profile = {
 /** A post in the Flow: does not expire, unlike a Moment. */
 export type PostAudience = 'connections' | 'everyone' | 'circle';
 
+/**
+ * What you can say about a post. The same five words a Moment accepts, so the
+ * product has one reaction vocabulary instead of two.
+ */
+export type ReactionKind = 'crush' | 'fire' | 'laugh' | 'wow' | 'clap';
+
+export const REACTION_KINDS: ReactionKind[] = ['crush', 'fire', 'laugh', 'wow', 'clap'];
+
 export type Post = {
   id: number;
   body: string;
@@ -66,6 +74,16 @@ export type Post = {
   likeCount: number;
   liked: boolean;
   commentCount: number;
+  /**
+   * What you said, if you said anything. Null when you have not reacted.
+   * Optional because post objects reach the client from cached pages written
+   * before reactions had a kind.
+   */
+  myReaction?: ReactionKind | null;
+  /** Every reaction on the post, counted by kind. Absent when nobody reacted. */
+  reactionKinds?: Partial<Record<ReactionKind, number>>;
+  /** Whether you have kept this for later. */
+  saved?: boolean;
 };
 
 /** One comment left on a post. */
@@ -75,6 +93,15 @@ export type PostComment = {
   createdAt: number;
   mine: boolean;
   author: Profile;
+  /** Null for a comment left on the post; set for a reply to another comment. */
+  parentId?: number | null;
+  /** A removed comment keeps its row so its replies do not vanish with it. */
+  hidden?: boolean;
+  likeCount?: number;
+  liked?: boolean;
+  replyCount?: number;
+  /** Yours to remove, or the post is yours and the comment was left on it. */
+  canDelete?: boolean;
 };
 
 /** What Keep Close looks like from one member's Space. */
