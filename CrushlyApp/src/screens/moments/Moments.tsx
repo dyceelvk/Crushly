@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -194,7 +194,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
             </View>
           ) : null}
           <View style={{ position: 'absolute', bottom: 10, left: 0, right: 0, alignItems: 'center' }}>
-            <Avatar uri={group.user.photo} name={group.user.name} size={Math.min(36, width * 0.3)} ring={group.user.mutual ? 'crush' : null} />
+            <Avatar uri={group.user.photo} name={group.user.name} size={Math.min(36, width * 0.3)} ring={group.user.mutual ? 'crush' : null} ringMoment />
           </View>
         </View>
       </View>

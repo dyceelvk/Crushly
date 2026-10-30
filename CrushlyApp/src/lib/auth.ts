@@ -37,3 +37,17 @@ export function drawPosePair<T>(library: readonly T[], rand: () => number = Math
   while (b === a) b = (b + 1 + Math.floor(rand() * (library.length - 1))) % library.length;
   return [library[a], library[b]];
 }
+
+/** Fail visibly instead of leaving a sign-in spinner running indefinitely.
+ * A timed-out operation may still complete; this does not cancel it. */
+export async function withDeadline<T>(operation: PromiseLike<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

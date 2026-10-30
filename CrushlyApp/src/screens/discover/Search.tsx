@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -131,6 +131,7 @@ export function SearchScreen() {
                     sub={[p.city, p.age ? `${p.age}` : null].filter(Boolean).join(' · ')}
                     verified={p.verified}
                     photo={p.photos?.[0]?.url ?? null}
+                    hasMoment={p.hasMoment}
                     onPress={() => navigation.navigate('UserProfile', { id: p.id })}
                   />
                 ))}
@@ -249,6 +250,7 @@ function MemberRow({
   sub,
   verified,
   photo,
+  hasMoment,
   onPress,
 }: {
   name: string;
@@ -256,12 +258,14 @@ function MemberRow({
   sub?: string;
   verified: boolean;
   photo: string | null;
+  /** Live Moment the viewer may open — draws the blue ring. */
+  hasMoment?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
   return (
     <Row onPress={onPress} label={`${name}${handle ? `, @${handle}` : ''}`}>
-      <Avatar uri={photo} name={name} size={40} ring={verified ? 'gold' : undefined} />
+      <Avatar uri={photo} name={name} size={40} ring={verified ? 'gold' : undefined} ringMoment={hasMoment} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>

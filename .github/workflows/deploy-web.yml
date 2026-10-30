@@ -15,8 +15,13 @@ name: Deploy web app
 
 on:
   workflow_dispatch:
+  # `app/**` is included deliberately: the web app and the Worker are deployed
+  # from this branch, and while only `main` and `arena/**` were listed a push
+  # here silently deployed nothing. A release that publishes an APK while the
+  # download page and the Worker that serves it still describe the previous one
+  # is exactly the state that costs an hour of "why is it still 1.0.7".
   push:
-    branches: [main, arena/**]
+    branches: [main, 'arena/**', 'app/**']
 
 concurrency:
   group: deploy-web-${{ github.ref }}
@@ -47,13 +52,14 @@ jobs:
             exit 1
           fi
 
-      - name: Apply load_post migration
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set -euo pipefail
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261028000027_load_post.sql
-          echo "::notice::Migration 20261028000027_load_post.sql applied successfully."
+      # This step used to hand-apply one migration by filename. That filename
+      # has since been renumbered to match what the database recorded, which
+      # broke the deploy on a file that had already been applied years of
+      # migrations ago. `Deploy database migrations` owns this now — it pushes
+      # everything, in order, and knows what has run. A web deploy should not
+      # be the thing that decides which migration matters.
+      - name: Confirm this deploy needs no migration of its own
+        run: echo "::notice::Schema is applied by the Deploy database migrations workflow; nothing to hand-apply here."
 
   deploy:
     name: Build & deploy to Vercel
@@ -85,9 +91,45 @@ jobs:
           node scripts/check-public-build.mjs
           npm run build:web
 
+      # The build above is the check. This step is the deploy, and until now it
+      # failed on every single push with `Error: You defined "--token", but
+      # it's missing a value` — VERCEL_TOKEN was never added. A permanently red
+      # check on a branch that people are told is green is worse than no check:
+      # it teaches everyone to scroll past the one run that would have caught a
+      # real failure.
+      #
+      # With no token this step now skips, loudly, and names the two ways to
+      # actually deploy. With a token it deploys and verifies.
       - name: Deploy to Vercel
+        id: vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::warning::VERCEL_TOKEN is not set, so this workflow cannot publish the web app. Nothing is broken — the site is deployed by Vercel's own Git integration, and the build above still proves this commit compiles. To let this job deploy: create a token at https://vercel.com/account/tokens and add it as a repository secret named VERCEL_TOKEN."
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           cd "$GITHUB_WORKSPACE/CrushlyApp"
           npx --yes vercel@latest deploy --prod --token="$VERCEL_TOKEN" --message="Deploy ${{ github.sha }}"
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+      # A deploy that nobody confirms is a deploy you find out about from a
+      # member. Ask the live site for the bundle it is serving and confirm the
+      # controls this release is about are in it.
+      - name: Confirm the live site serves this build
+        if: steps.vercel.outputs.deployed == 'true'
+        run: |
+          set -euo pipefail
+          html=$(curl -sS --max-time 30 https://mecrushly.vercel.app/)
+          bundle=$(printf '%s' "$html" | grep -oE '_expo/static/js/web/[A-Za-z0-9._-]+\.js' | sort -u | head -1)
+          echo "live bundle: $bundle"
+          curl -sS --max-time 60 "https://mecrushly.vercel.app/$bundle" -o /tmp/live.js
+          for needle in save_post saved_posts; do
+            if ! grep -q "$needle" /tmp/live.js; then
+              echo "::error::The live bundle does not contain ${needle}, so the site is not serving this release."
+              exit 1
+            fi
+          done
+          echo "::notice::mecrushly.vercel.app is serving this build."

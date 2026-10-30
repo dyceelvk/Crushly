@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ExpoSplash from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
@@ -62,7 +62,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function Shell() {
-  const { status } = useAuth();
+  const { status, retryRestore } = useAuth();
   const { colors } = useTheme();
   const [fontsLoaded, fontError] = useFonts({
     Fraunces_600SemiBold, Fraunces_500Medium_Italic,
@@ -70,6 +70,23 @@ function Shell() {
   });
   const fontsReady = fontsLoaded || !!fontError;
   const [splashHidden, setSplashHidden] = useState(false);
+
+  /**
+   * The branded splash is held for a moment rather than only while the session
+   * restores.
+   *
+   * Restoring a stored session and loading a handful of fonts can both finish
+   * inside a couple of hundred milliseconds on a phone, so the screen that
+   * carries the mark and the tagline was a flash — gone before it could be
+   * read, and on a cold start of a signed-in member it often never appeared at
+   * all. A launch that shows nothing but a logo on black reads as a stutter;
+   * this holds long enough to be a title card and no longer.
+   */
+  const [introDone, setIntroDone] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setIntroDone(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     // Hand off from the native splash to our animated one as soon as we can draw.
@@ -91,7 +108,16 @@ function Shell() {
     },
   };
 
-  if (status === 'restoring' || !fontsReady) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
+  if (status === 'restoreError') return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: 28 }}>
+      <Text style={{ color: colors.text, fontSize: 20, textAlign: 'center' }}>Couldn’t restore your session</Text>
+      <Text style={{ color: colors.textSecondary, marginTop: 12, textAlign: 'center' }}>Check your connection and try again. Your saved session has not been deleted.</Text>
+      <Pressable accessibilityRole="button" onPress={retryRestore} style={{ marginTop: 20, padding: 14, borderRadius: 10, backgroundColor: colors.gold }}>
+        <Text style={{ color: colors.bg }}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+  if (status === 'restoring' || !fontsReady || !introDone) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
 
   return (
     <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Crushly' }}>

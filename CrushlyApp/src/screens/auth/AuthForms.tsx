@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen, Header } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
@@ -77,6 +77,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
       await signIn(e.trim(), p);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
       setLoading(false);
     }
   };

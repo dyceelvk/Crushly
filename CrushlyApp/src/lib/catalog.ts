@@ -1,4 +1,4 @@
-import type { Ionicons } from '@expo/vector-icons';
+import type Ionicons from '@expo/vector-icons/Ionicons';
 import type { Intention, MomentStyle } from '../api/types';
 
 /** Vocabularies shared with the backend validation in api/service.ts — keep in sync. */

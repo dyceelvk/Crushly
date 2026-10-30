@@ -43,6 +43,13 @@ export type Profile = {
   canMessage: boolean;
   acceptsCrushes: boolean;
   at?: number;
+  /**
+   * Whether this member has a live Moment you are allowed to open — the blue
+   * ring around their photo. Server-decided, because whether a Moment is
+   * visible depends on audience, blocks and a private profile, and a client
+   * cannot know any of that. Absent means "not asked", not "no".
+   */
+  hasMoment?: boolean;
 };
 
 /** A post in the Flow: does not expire, unlike a Moment. */
@@ -66,14 +73,36 @@ export type Post = {
   likeCount: number;
   liked: boolean;
   commentCount: number;
+  /**
+   * Whether this post is in your saved drawer. Absent from feeds that do not
+   * fill it in; the post viewer asks `post_saved` for the truth on open.
+   */
+  saved?: boolean;
 };
 
-/** One comment left on a post. */
+/**
+ * One comment left on a post, or one answer to a comment.
+ *
+ * Replies go one level deep. A comment with answers that is deleted is not
+ * removed: its `body` becomes null and `hidden` turns true, so the answers keep
+ * the question they were answering.
+ */
 export type PostComment = {
   id: number;
-  body: string;
+  /** Null once a comment with answers has been deleted. */
+  body: string | null;
+  /** The comment this answers, or null when it is a comment on the post. */
+  parentId: number | null;
+  /** Deleted, but kept because somebody answered it. */
+  hidden: boolean;
   createdAt: number;
   mine: boolean;
+  /** Yours to remove: your own, or any left on a post you wrote. */
+  canDelete: boolean;
+  likeCount: number;
+  liked: boolean;
+  /** How many answers this comment has, for the "View N replies" line. */
+  replyCount: number;
   author: Profile;
 };
 
@@ -169,6 +198,8 @@ export type FullProfile = Profile & {
   lifestyle: Lifestyle;
   messageBlockReason: string | null;
   moments: MomentSummary[];
+  /** The ring, decided server-side. See `Profile.hasMoment`. */
+  hasMoment: boolean;
 };
 
 export type Privacy = {
@@ -225,6 +256,8 @@ export type Me = {
   privacy: Privacy;
   notifications: NotificationSettings;
   plus: { active: boolean; interested: boolean; deepCrushesLeft: number; deepCrushesPerDay: number };
+  /** Whether you have a live Moment — the ring on your own Space. */
+  hasMoment?: boolean;
 };
 
 export type DiscoverPage = { items: Profile[]; nextOffset: number | null; total: number; viewerHasLocation: boolean };
@@ -338,8 +371,15 @@ export type Vibe = {
   coverUrl: string | null;
   durationMs: number | null;
   audience: 'connections' | 'everyone';
-  /** The editor's recipe, or null when the clip is untouched. */
-  edit: VideoEdit | null;
+  /**
+   * The editor's recipe, or null when the clip is untouched.
+   *
+   * A `LiveEdit`, not a `VideoEdit`: the server stores the drawable half —
+   * captions, stickers, look — because the file itself is never re-encoded.
+   * Declared as `VideoEdit` it type-checked while nothing could read it, and
+   * the full-screen feed played every Vibe without its captions.
+   */
+  edit: LiveEdit | null;
   createdAt: number;
   expiresAt: number;
   author: VibeAuthor;

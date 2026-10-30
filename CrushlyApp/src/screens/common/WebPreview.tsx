@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Linking, Platform, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';

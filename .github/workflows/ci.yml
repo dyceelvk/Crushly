@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main, arena/**]
+    # `app/**` is the branch releases are cut from. It was missing, so the
+    # branch that actually ships got no CI at all — every green check on a
+    # release commit came from its pull request, not from the push that
+    # deployed it.
+    branches: [main, 'arena/**', 'app/**']
   pull_request:
   workflow_dispatch:
 

@@ -1,6 +1,8 @@
+import { pickerDurationMs } from '../../lib/upload';
+import { Platform } from 'react-native';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -95,7 +97,7 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
       const asset = result.assets[0];
       const sizeBytes = asset.fileSize ?? 0;
 
-      if (asset.duration && asset.duration > MAX_SECONDS * 1000) {
+      if (pickerDurationMs(asset.duration, Platform.OS === 'web') > MAX_SECONDS * 1000) {
         toast({ kind: 'error', title: 'That clip is too long', message: 'Vibes are short — up to two minutes.' });
         return;
       }
@@ -107,12 +109,12 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
       setPendingClip({
         uri: asset.uri,
         mimeType: asset.mimeType || 'video/mp4',
-        durationMs: asset.duration ?? 0,
+        durationMs: pickerDurationMs(asset.duration, Platform.OS === 'web'),
         sizeBytes,
       });
       navigation.navigate('VideoTrim', {
         sourceUri: asset.uri,
-        sourceDuration: (asset.duration ?? 0) / 1000,
+        sourceDuration: (pickerDurationMs(asset.duration, Platform.OS === 'web')) / 1000,
         category: 'vibe',
       });
     } catch (e) {

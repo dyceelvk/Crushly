@@ -5,12 +5,15 @@ import * as service from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
+  PostComment,
 } from './types';
 
 export const keys = {
   me: ['me'] as const,
   discover: ['discover'] as const,
   user: (id: number) => ['user', id] as const,
+  spacePosts: (id: number) => ['space-posts', id] as const,
+  spaceVibes: (id: number) => ['space-vibes', id] as const,
   crushes: ['crushes'] as const,
   conversations: ['conversations'] as const,
   conversation: (id: number) => ['conversation', id] as const,
@@ -24,6 +27,8 @@ export const keys = {
   circleFeed: (id: number) => ['circle-feed', id] as const,
   circleMessages: (id: number) => ['circle-messages', id] as const,
   post: (id: number) => ['post', id] as const,
+  postSaved: (id: number) => ['post-saved', id] as const,
+  savedPosts: ['saved-posts'] as const,
   postComments: (id: number) => ['post-comments', id] as const,
   closeOnes: ['close-ones'] as const,
   vibes: ['vibes'] as const,
@@ -43,6 +48,28 @@ export const useDiscover = () =>
 
 export const useUser = (id: number) =>
   useQuery({ queryKey: keys.user(id), queryFn: () => service.loadProfile(id), staleTime: 30_000 });
+
+/**
+ * A Space's own posts.
+ *
+ * Separate key from the Flow on purpose: posting invalidates `keys.flow`, and
+ * that must not silently blank someone else's Space — or, worse, make it look
+ * as though a post vanished from a feed that never held it.
+ */
+export const useSpacePosts = (authorId: number) =>
+  useQuery({
+    queryKey: keys.spacePosts(authorId),
+    queryFn: () => service.spacePosts(authorId),
+    staleTime: 30_000,
+  });
+
+/** A Space's live Vibes. */
+export const useSpaceVibes = (authorId: number) =>
+  useQuery({
+    queryKey: keys.spaceVibes(authorId),
+    queryFn: () => service.spaceVibes(authorId),
+    staleTime: 30_000,
+  });
 
 export const useCrushes = () =>
   useQuery({ queryKey: keys.crushes, queryFn: () => service.crushes(), staleTime: 15_000 });
@@ -261,8 +288,82 @@ export function useReactToPost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ postId, liked }: { postId: number; liked: boolean }) => service.reactToPost(postId, liked),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+    onSuccess: (result, { postId }) => {
+      qc.setQueryData<import('./types').Post>(keys.post(postId), (post) =>
+        post ? { ...post, liked: result.liked, likeCount: result.likeCount } : post,
+      );
+      void qc.invalidateQueries({ queryKey: keys.post(postId) });
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.savedPosts });
+      void qc.invalidateQueries({ queryKey: keys.publicFlow });
+      void qc.invalidateQueries({ queryKey: ['space-posts'] });
+      void qc.invalidateQueries({ queryKey: ['circle-feed'] });
+    },
   });
+}
+
+/**
+ * Is this post in my drawer? Asked when the viewer opens, so the bookmark icon
+ * shows the truth even when the feed that opened it pre-dates the save.
+ */
+export function usePostSaved(postId: number | null) {
+  return useQuery({
+    queryKey: keys.postSaved(postId ?? 0),
+    queryFn: () => service.postSaved(postId as number),
+    enabled: postId !== null,
+  });
+}
+
+/**
+ * Save and unsave, optimistic and reversible.
+ *
+ * The old button was a `useState` that said "Post saved" and forgot. This one
+ * answers instantly, then rolls back if the write fails — so the icon is never
+ * ahead of the database for longer than a request. `onError` puts the previous
+ * value back and the screen tells you it did not stick.
+ */
+export function useSavePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ postId, saved }: { postId: number; saved: boolean }) =>
+      service.savePost(postId, saved),
+    onMutate: async ({ postId, saved }) => {
+      const key = keys.postSaved(postId);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<boolean>(key);
+      qc.setQueryData<boolean>(key, saved);
+      return { previous, key };
+    },
+    onError: (_error, _vars, context) => {
+      if (context) qc.setQueryData<boolean>(context.key, context.previous);
+    },
+    onSettled: (_data, _error, vars) => {
+      void qc.invalidateQueries({ queryKey: keys.postSaved(vars.postId) });
+      void qc.invalidateQueries({ queryKey: keys.savedPosts });
+    },
+  });
+}
+
+/** The saved drawer, newest save first. */
+export function useSavedPosts(limit = 20) {
+  const [after, setAfter] = useState<number | null>(null);
+  const query = useQuery({
+    queryKey: [...keys.savedPosts, limit, after],
+    queryFn: () => service.savedPosts(limit, after),
+  });
+  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      const oldest = posts[posts.length - 1];
+      if (oldest && !query.isFetching) setAfter(oldest.id);
+    },
+    refresh: () => {
+      setAfter(null);
+      return query.refetch();
+    },
+  };
 }
 
 /** One post, fetched directly so a post view never depends on the post
@@ -286,10 +387,60 @@ export function usePostComments(postId: number | null) {
 export function useCommentOnPost(postId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) => service.commentOnPost(postId, body),
+    // `parentId` turns a comment into an answer to another comment.
+    mutationFn: ({ body, parentId = null }: { body: string; parentId?: number | null }) =>
+      service.commentOnPost(postId, body, parentId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
       void qc.invalidateQueries({ queryKey: keys.flow });
+    },
+  });
+}
+
+/**
+ * Liking a comment, shown before the server has answered.
+ *
+ * A heart that waits for a round trip feels broken on a slow connection, and
+ * tapping it twice while it waits used to send two conflicting writes. The
+ * count is nudged by one in the right direction straight away, thrown away if
+ * the write fails, and replaced by the server's own count when it succeeds —
+ * so a double tap settles on the truth rather than on two guesses.
+ */
+export function useReactToPostComment(postId: number) {
+  const qc = useQueryClient();
+  const key = keys.postComments(postId);
+  return useMutation({
+    mutationFn: ({ commentId, liked }: { commentId: number; liked: boolean }) =>
+      service.reactToPostComment(commentId, liked),
+    onMutate: async ({ commentId, liked }) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<{ items: PostComment[] }>(key);
+      qc.setQueryData<{ items: PostComment[] }>(key, (current) =>
+        current
+          ? {
+              items: current.items.map((c) =>
+                c.id === commentId
+                  ? { ...c, liked, likeCount: Math.max(0, c.likeCount + (liked ? 1 : -1)) }
+                  : c,
+              ),
+            }
+          : current,
+      );
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) qc.setQueryData(key, context.previous);
+    },
+    onSuccess: (result, { commentId }) => {
+      qc.setQueryData<{ items: PostComment[] }>(key, (current) =>
+        current
+          ? {
+              items: current.items.map((c) =>
+                c.id === commentId ? { ...c, liked: result.liked, likeCount: result.likeCount } : c,
+              ),
+            }
+          : current,
+      );
     },
   });
 }

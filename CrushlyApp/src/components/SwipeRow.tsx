@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { Animated, PanResponder, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeProvider';
 import { haptic } from '../lib/haptics';
 

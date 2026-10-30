@@ -1,6 +1,6 @@
 import React, { forwardRef, useState } from 'react';
 import { TextInput, View, type TextInputProps, type StyleProp, type ViewStyle, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, radius } from '../theme/tokens';

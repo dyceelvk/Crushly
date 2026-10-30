@@ -11,6 +11,20 @@
 
 export const COMPANY_NAME = 'Riel Inc.';
 
+/**
+ * The person the app is credited to. This is the official attribution for the
+ * Crushly application and is shown wherever credits appear — the About section
+ * in Settings, the README, and every project document.
+ *
+ * It is a constant, not a literal at each call site, so it cannot drift: change
+ * it here and the About section, the store copy and the documentation all
+ * follow. Reproduce the name exactly, including its capitalisation.
+ */
+export const APP_AUTHOR = 'Odoh chiagoziem isreal';
+
+/** How the credit reads in a sentence. */
+export const APP_CREDIT_LINE = `Crushly is designed and built by ${APP_AUTHOR}.`;
+
 /** Full legal entity as it should appear in the Terms and Privacy Policy. */
 export const COMPANY_LEGAL_NAME = 'Riel Inc.';
 

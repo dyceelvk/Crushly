@@ -1,6 +1,7 @@
+import { PLUS_VISIBLE } from '../../lib/featureVisibility';
 import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -49,7 +50,11 @@ export function ProfileTabScreen() {
       </View>
 
       <View style={{ alignItems: 'center', marginTop: space.lg }}>
-        <Avatar uri={p.photos[0]?.url} name={p.name} size={116} ring="gold" />
+        {/*
+          Your own Space rings here too: a Moment of yours that is live is
+          worth seeing on your own profile, not only on everybody else's.
+        */}
+        <Avatar uri={p.photos[0]?.url} name={p.name} size={116} ring="gold" ringMoment={me.hasMoment} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.md }}>
           <Txt variant="heading">
             {p.name}
@@ -117,7 +122,7 @@ export function ProfileTabScreen() {
         </Group>
       ) : null}
 
-      <Pressable onPress={() => navigation.navigate('Plus', {})} accessibilityRole="button" accessibilityLabel="Crushly Plus. Learn more">
+      {PLUS_VISIBLE ? <Pressable onPress={() => navigation.navigate('Plus', {})} accessibilityRole="button" accessibilityLabel="Crushly Plus. Learn more">
         <LinearGradient
           colors={[colors.goldSoft, 'transparent']}
           start={{ x: 0, y: 0 }}
@@ -133,7 +138,7 @@ export function ProfileTabScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.gold} />
         </LinearGradient>
-      </Pressable>
+      </Pressable> : null}
 
       <Group title="Your people" style={{ marginTop: space.xl }}>
         <ListRow

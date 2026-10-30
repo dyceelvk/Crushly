@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { pickerDurationMs } from '../../lib/upload';
+import { Platform } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, Share, View, useWindowDimensions, type ViewToken } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -13,14 +15,15 @@ import { Button } from '../../components/Button';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { BottomSheet } from '../../components/BottomSheet';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
+import { CommentsSheet } from '../../components/CommentsSheet';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/Toast';
 import {
-  useCommentOnPost, useCreatePost, useDeletePost, useDeletePostComment, useFlow, useMe, useMyCircles,
-  useOpenConversation, usePostComments, useReactToPost,
+  useCreatePost, useDeletePost, useFlow, useMe, useMyCircles,
+  useOpenConversation, useReactToPost,
 } from '../../api/hooks';
-import type { Post, PostComment } from '../../api/types';
+import type { Post } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useMemberActions } from '../../state/memberActions';
@@ -31,6 +34,7 @@ import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
+import { EditedPhoto } from '../../components/EditedPhoto';
 import { splitForUpload, emptyEdit, type VideoEdit } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import type { RootStackParamList } from '../../navigation/types';
@@ -53,14 +57,117 @@ export function FlowScreen() {
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
-  const toast = useToast();
   const { data: me } = useMe();
   const flow = useFlow();
   const [composer, setComposer] = useState(false);
 
+  /**
+   * Which clip is allowed to play. Only one, ever.
+   *
+   * Every clip in the Flow used to call `play()` on mount and loop, so scrolling
+   * past three clips left all three audible at once, looping over each other.
+   * Two independent rules stop that:
+   *
+   *  - `focused` is false whenever this tab is not the one in front, so a clip
+   *    cannot keep playing behind another tab.
+   *  - `visible` is the single post whose clip is actually on screen, decided
+   *    by the platform's own viewability pass rather than a scroll handler
+   *    guessing at offsets. Everything else is paused.
+   */
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+
+  const [visible, setVisible] = useState<number | null>(null);
+  // RN throws if either of these changes between renders, so both live in refs.
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const first = viewableItems[0];
+    setVisible(first?.item ? (first.item as Post).id : null);
+  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 55 }).current;
+
+  const header = (
+    <>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flex: 1 }}>
+          <Txt variant="display" accessibilityRole="header">
+            Flows
+          </Txt>
+          <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
+            What people are sharing. Posts stay until they’re removed.
+          </Txt>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
+          <IconButton icon="bookmark-outline" label="Saved posts" onPress={() => navigation.navigate('SavedPosts')} />
+          <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
+        </View>
+      </View>
+
+      <Pressable
+        onPress={() => setComposer(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Share a post"
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.lg,
+          backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+          paddingHorizontal: 14, paddingVertical: 12,
+        }}
+      >
+        <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={36} />
+        <Txt variant="body" color="textMuted" style={{ flex: 1 }}>
+          Share something…
+        </Txt>
+        <Ionicons name="create-outline" size={18} color={colors.gold} />
+      </Pressable>
+
+      {/* Discover is not a tab: it is one door, here, that opens into a
+          single screen holding People, Moments and Vibes as sections. */}
+      <Pressable
+        onPress={() => navigation.navigate('Discover')}
+        accessibilityRole="button"
+        accessibilityLabel="Discover. Vibes, Moments and public posts"
+        style={{
+          marginTop: space.lg,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          backgroundColor: colors.goldSoft,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.gold,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+        }}
+      >
+        <Ionicons name="compass-outline" size={18} color={colors.gold} />
+        <Txt variant="bodyStrong" style={{ flex: 1 }}>
+          Discover
+        </Txt>
+        <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
+          Vibes, Moments and public posts
+        </Txt>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </Pressable>
+    </>
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView
+      {/*
+        A list, not a ScrollView, for one reason: only a virtualised list can
+        report which rows are on screen, and that report is what stops a clip
+        below the fold from playing. Everything above the posts is the header,
+        so the screen looks exactly as it did.
+      */}
+      <FlatList
+        data={flow.posts}
+        keyExtractor={(p) => String(p.id)}
+        ListHeaderComponent={header}
         contentContainerStyle={{
           paddingTop: insets.top + space.sm,
           paddingHorizontal: gutter,
@@ -73,104 +180,57 @@ export function FlowScreen() {
           <RefreshControl refreshing={flow.isRefetching} onRefresh={flow.refresh} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
         }
         showsVerticalScrollIndicator={false}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1 }}>
-            <Txt variant="display" accessibilityRole="header">
-              Flows
-            </Txt>
-            <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-              What people are sharing. Posts stay until they’re removed.
-            </Txt>
+        onViewableItemsChanged={onViewable}
+        viewabilityConfig={viewabilityConfig}
+        renderItem={({ item }) => (
+          <View style={{ marginTop: space.md }}>
+            <PostCard post={item} playing={focused && visible === item.id} restrictPlayback />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
-            <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
-          </View>
-        </View>
-
-        {/* Home opens on the rooms you belong to, not on a list of strangers. */}
-
-        <Pressable
-          onPress={() => setComposer(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Share a post"
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.lg,
-            backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
-            paddingHorizontal: 14, paddingVertical: 12,
-          }}
-        >
-          <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={36} />
-          <Txt variant="body" color="textMuted" style={{ flex: 1 }}>
-            Share something…
-          </Txt>
-          <Ionicons name="create-outline" size={18} color={colors.gold} />
-        </Pressable>
-
-        {/* Discover is not a tab: it is one door, here, that opens into a
-            single screen holding People, Moments and Vibes as sections. */}
-        <Pressable
-          onPress={() => navigation.navigate('Discover')}
-          accessibilityRole="button"
-          accessibilityLabel="Discover. Vibes, Moments and public posts"
-          style={{
-            marginTop: space.lg,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            backgroundColor: colors.goldSoft,
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.gold,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-          }}
-        >
-          <Ionicons name="compass-outline" size={18} color={colors.gold} />
-          <Txt variant="bodyStrong" style={{ flex: 1 }}>
-            Discover
-          </Txt>
-          <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
-            Vibes, Moments and public posts
-          </Txt>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </Pressable>
-
-        <View style={{ marginTop: space.xl, gap: space.md }}>
-          {flow.isLoading ? (
-            <Skeleton style={{ height: 120 }} />
+        )}
+        ListFooterComponent={
+          flow.posts.length ? (
+            <View style={{ marginTop: space.md }}>
+              <Button title="Show older posts" variant="secondary" size="md" onPress={flow.loadOlder} loading={flow.isFetching} />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          flow.isLoading ? (
+            <Skeleton style={{ height: 120, marginTop: space.xl }} />
           ) : flow.isError ? (
             <ErrorState message={flow.error instanceof Error ? flow.error.message : 'Your Flows didn’t load.'} onRetry={flow.refresh} />
-          ) : flow.posts.length ? (
-            <>
-              {flow.posts.map((p) => (
-                <PostCard key={p.id} post={p} />
-              ))}
-              <Button title="Show older posts" variant="secondary" size="md" onPress={flow.loadOlder} loading={flow.isFetching} />
-            </>
           ) : (
-            <EmptyState
-              icon="chatbubbles-outline"
-              title="Your Flows are quiet"
-              message="Posts from people you’re connected with show up here. Share something and it will."
-              action={{ label: 'Share a post', onPress: () => setComposer(true) }}
-            />
-          )}
-        </View>
-      </ScrollView>
+            <View style={{ marginTop: space.xl }}>
+              <EmptyState
+                icon="chatbubbles-outline"
+                title="Your Flows are quiet"
+                message="Posts from people you’re connected with show up here. Share something and it will."
+                action={{ label: 'Share a post', onPress: () => setComposer(true) }}
+              />
+            </View>
+          )
+        }
+      />
 
       <Composer visible={composer} onClose={() => setComposer(false)} onPosted={flow.refresh} />
     </View>
   );
 }
 
-/** One post. Also used inside a Circle, where the audience is the room. */
-export function PostCard({ post: p }: { post: Post }) {
+/**
+ * One post. Also used inside a Circle and in Discover, where the audience is
+ * the room or the public feed.
+ *
+ * `playing` is the screen's answer to "is this the one on screen". A post that
+ * is not playing still shows its clip — paused on its first frame — because a
+ * feed you have to press play on is not a feed. In untracked lists (Discover,
+ * Circles, Saved), clips start paused but can be played manually instead of
+ * starting every clip in the list at once.
+ */
+export function PostCard({ post: p, playing = false, restrictPlayback = false }: { post: Post; playing?: boolean; restrictPlayback?: boolean }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
-  const { data: me } = useMe();
   const remove = useDeletePost();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
@@ -211,6 +271,35 @@ export function PostCard({ post: p }: { post: Post }) {
   // renders as video even before the migration lands everywhere.
   const mediaKind = p.mediaKind ?? (p.mediaUrl ? /\.(mp4|webm|mov|m4v)(\?|$)/i.test(p.mediaUrl) ? 'video' : 'photo' : null);
 
+  // A clip in the feed is 4:5, the same frame a portrait photo gets. It used to
+  // be `maxHeight: 400`, and that is the whole reason Flow videos never
+  // played: VideoEditCanvas absolutely positions the video inside its root and
+  // gives it no height of its own, so a root sized only by maxHeight collapses
+  // to nothing — a black bar that is not a video. PostViewer always worked
+  // because it passes an explicit height.
+  //
+  // The width used to come from the WINDOW, and that is what made a clip look
+  // zoomed and run off the card. This card never gets the window: the list
+  // around it pads itself by `gutter` on each side, so the card is narrower
+  // than the phone by 2 × gutter — 40px on every phone. A 9:16 clip in a box
+  // 40px too wide is fitted by its height, so the picture is scaled up by
+  // 393/353 ≈ 1.11 and the left and right of the frame are cut off: the clip
+  // reads as zoomed in, cropped, and "not the size I uploaded". Nothing about
+  // the file was wrong — the box was.
+  //
+  // So the box is measured from the card itself rather than guessed. `boxW`
+  // stays 0 until the first layout pass, and until then the clip draws at its
+  // own ratio inside the card's width, so there is no 40px-wide flicker on the
+  // way in. This also makes the card correct wherever it is rendered — the
+  // Flow, Saved, Discover, or a Circle — each of which pads itself
+  // differently, and on a tablet where the column is capped.
+  const { height: winHeight } = useWindowDimensions();
+  const [boxW, setBoxW] = useState(0);
+  const videoW = boxW > 0 ? boxW : undefined;
+  // How tall a clip may get in the feed: it must not fill the phone, or the
+  // post underneath it is never seen without scrolling.
+  const clipMaxH = Math.round(winHeight * 0.62);
+
 
 return (
     <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
@@ -221,7 +310,13 @@ return (
           accessibilityLabel={`Open ${authorName}’s Space`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
         >
-          <Avatar uri={p.author.photos[0]?.url ?? null} name={p.author.name} size={38} ring={p.author.verified ? 'gold' : undefined} />
+          <Avatar
+            uri={p.author.photos[0]?.url ?? null}
+            name={p.author.name}
+            size={38}
+            ring={p.author.verified ? 'gold' : undefined}
+            ringMoment={p.author.hasMoment}
+          />
           <View style={{ flexShrink: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Txt variant="bodyStrong" numberOfLines={1}>
@@ -274,11 +369,42 @@ return (
         ) : null}
 
         {p.mediaUrl ? (
-          <View style={{ marginTop: space.sm }}>
+          <View
+            style={{ marginTop: space.sm }}
+            onLayout={(e) => {
+              const w = Math.round(e.nativeEvent.layout.width);
+              if (w > 0) setBoxW((b) => (b === w ? b : w));
+            }}
+          >
             {mediaKind === 'video' ? (
-              <EditedClip uri={resolveVideoUri(p.mediaUrl)} live={p.edit ?? null} autoPlay contentFit="contain" style={{ width: '100%', maxHeight: 400 }} />
+              <View style={{ width: '100%', alignItems: 'center' }}>
+                <EditedClip
+                  uri={resolveVideoUri(p.mediaUrl)}
+                  live={p.edit ?? null}
+                  autoPlay={playing}
+                  paused={restrictPlayback && !playing}
+                  // Small button in the corner, never a sheet over the clip:
+                  // the whole video sits inside a Pressable that opens the
+                  // post, and a centred overlay swallowed that tap and made the
+                  // Post Viewer impossible to reach.
+                  controlPlacement="corner"
+                  // Sound never starts on its own in a feed. The clip plays
+                  // muted with a "Tap for sound" mark; unmuting is the viewer's
+                  // decision, made by tapping the sound button on the clip.
+                  muted
+                  showSoundHint
+                  contentFit="contain"
+                  // The frame is the clip's own ratio, measured from the source
+                  // and no wider than the card. A 4:5 clip fills the column; a
+                  // 9:16 clip is narrowed until it fits under `maxHeight`
+                  // instead of being scaled up until its sides are gone.
+                  fitToClip
+                  maxHeight={clipMaxH}
+                  frameWidth={videoW}
+                />
+              </View>
             ) : (
-              <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
+              <EditedPhoto uri={p.mediaUrl} live={p.edit ?? null} contentFit="contain" style={{ width: '100%', aspectRatio: 4 / 5, maxHeight: 500 }} alt={`Post by ${authorName}`} />
             )}
           </View>
         ) : null}
@@ -296,7 +422,10 @@ return (
           count={p.likeCount}
           label={p.liked ? 'Take back your like' : 'Like'}
           active={p.liked}
-          onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
+          onPress={() => {
+            if (like.isPending) return;
+            like.mutate({ postId: p.id, liked: !p.liked }, { onError: (e) => toast({ kind: 'error', title: 'Like not sent', message: (e as Error).message }) });
+          }}
         />
         <PostAction icon="share-social-outline" label="Share this post" onPress={share} />
       </View>
@@ -309,7 +438,12 @@ return (
         <View style={{ height: space.sm }} />
       )}
 
-      <PostComments postId={p.id} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      <CommentsSheet
+        postId={p.id}
+        visible={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        commentCount={p.commentCount}
+      />
     </View>
   );
 }
@@ -329,6 +463,9 @@ function PostAction({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      // The tap target stays comfortable even when the count is hidden, so a
+      // post with no comments yet is still easy to open.
+      hitSlop={8}
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -342,81 +479,6 @@ function PostAction({
           {String(count)}
         </Txt>
       )}
-    </Pressable>
-  );
-}
-
-/** The comments under one post, read and written in place. */
-function PostComments({ postId, visible, onClose }: { postId: number; visible: boolean; onClose: () => void }) {
-  const { colors } = useTheme();
-  const toast = useToast();
-  const query = usePostComments(visible ? postId : null);
-  const send = useCommentOnPost(postId);
-  const remove = useDeletePostComment(postId);
-  const [draft, setDraft] = useState('');
-
-  const submit = async () => {
-    const body = draft.trim();
-    if (!body) return;
-    setDraft('');
-    try {
-      await send.mutateAsync(body);
-    } catch (e) {
-      setDraft(body);
-      toast({ kind: 'error', title: 'Comment not added', message: (e as Error).message });
-    }
-  };
-
-  return (
-    <BottomSheet visible={visible} onClose={onClose} title="Comments">
-      <View style={{ maxHeight: 380 }}>
-        {query.isLoading ? <Skeleton style={{ height: 60 }} /> : null}
-        {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : null}
-        {query.data?.items?.length === 0 ? (
-          <Txt variant="body" color="textMuted" style={{ paddingVertical: space.lg, textAlign: 'center' }}>
-            No comments yet. Be the first.
-          </Txt>
-        ) : null}
-        {(query.data?.items ?? []).map((c) => (
-          <CommentRow key={c.id} comment={c} onDelete={() => remove.mutate(c.id)} />
-        ))}
-      </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingTop: space.sm, borderTopWidth: 1, borderColor: colors.border }}>
-        <View style={{ flex: 1 }}>
-          <Input
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Write a comment"
-            maxLength={1000}
-            multiline
-            containerStyle={{ minWidth: 0 }}
-          />
-        </View>
-        <Button title="Send" size="sm" onPress={submit} loading={send.isPending} disabled={!draft.trim()} />
-      </View>
-    </BottomSheet>
-  );
-}
-
-function CommentRow({ comment: c, onDelete }: { comment: PostComment; onDelete: () => void }) {
-  const navigation = useNavigation<Nav>();
-  return (
-    <Pressable
-      onPress={() => (c.mine ? navigation.navigate('Main', { screen: 'Profile' }) : navigation.navigate('UserProfile', { id: c.author.id }))}
-      accessibilityRole="button"
-      style={{ flexDirection: 'row', gap: 10, paddingVertical: space.sm }}
-    >
-      <Avatar uri={c.author.photos[0]?.url ?? null} name={c.author.name} size={32} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="caption" color="textMuted">
-          {c.mine ? 'You' : c.author.name} · {timeAgo(c.createdAt)}
-        </Txt>
-        <Txt variant="body" selectable>
-          {c.body}
-        </Txt>
-      </View>
-      {c.mine ? <IconButton icon="trash-outline" label="Delete comment" onPress={onDelete} color="textMuted" /> : null}
     </Pressable>
   );
 }
@@ -487,7 +549,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
       const asset = result.assets[0];
       setPhoto(null);
       setClipEdit(null);
-      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: asset.duration ?? 0 });
+      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: pickerDurationMs(asset.duration, Platform.OS === 'web') });
     } catch (e) {
       toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
     } finally {
@@ -507,6 +569,8 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
         photoMime: photo?.mimeType ?? null,
         videoUri: prepared ? prepared.uri : null,
         videoMime: clip?.mimeType ?? null,
+        // The remux needs to know how much to copy; the picker measured it.
+        videoDurationMs: clip?.durationMs ?? null,
         edit: prepared ? prepared.live : photoEdit ?? null,
       });
       setBody('');

@@ -39,7 +39,13 @@ const LIFECYCLE = {
 
 const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account';
 const AUTH_TTL_MS = 23 * 60 * 60 * 1000; // B2 tokens last 24h; refresh early
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // matches media_upload_ticket's ceiling
+// The ceiling must be the largest one media_upload_ticket grants, or the
+// Worker rejects a file the database was willing to accept: it did, at 25 MB,
+// while clips were allowed 80. Every upload between the two sizes failed here,
+// and the app then fell back to Supabase Storage, which refuses upserts — so
+// the member saw "new row violates row-level security policy" for a file that
+// was never too large and had nothing to do with row policies.
+const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
 
 /**
  * Backblaze wants a SHA-1 with every upload, and hashing is the only real work
@@ -135,6 +141,13 @@ async function rpc<T>(env: Env, token: string, fn: string, body: unknown): Promi
     } catch {
       /* keep the default */
     }
+    // The database raises `__CRUSHLY__<status>__<code>__<message>` so the app
+    // can recover a real status from a PostgREST error. Relaying that string
+    // verbatim put the marker itself into a toast a member reads:
+    // "__CRUSHLY__415____That file type is not supported." Take the status and
+    // the sentence out of it here, so the Worker answers like an HTTP service.
+    const marked = /^__CRUSHLY__(\d+)__([a-z0-9_]*)__([\s\S]*)$/.exec(message);
+    if (marked) return { ok: false, status: Number(marked[1]) || res.status, message: marked[3] || 'Not allowed.' };
     return { ok: false, status: res.status, message };
   }
   return { ok: true, data: (text ? JSON.parse(text) : null) as T };
@@ -266,7 +279,7 @@ function b2Auth(env: Env): Promise<B2Auth> {
     });
 }
 
-async function b2Upload(env: Env, path: string, contentType: string, bytes: ArrayBuffer) {
+async function b2Upload(env: Env, path: string, contentType: string, bytes: ArrayBuffer | ReadableStream) {
   const auth = await b2Auth(env);
   const slot = await fetch(`${auth.apiUrl}/b2api/v2/b2_get_upload_url`, {
     method: 'POST',
@@ -285,8 +298,10 @@ async function b2Upload(env: Env, path: string, contentType: string, bytes: Arra
       Authorization: authorizationToken,
       'X-Bz-File-Name': encodeURIComponent(path),
       'Content-Type': contentType,
+      // A stream has no digest to take and no length to weigh, so it goes
+      // unverified; Backblaze still stores its own checksum of what arrives.
       'X-Bz-Content-Sha1':
-        bytes.byteLength <= VERIFIED_SHA1_MAX_BYTES
+        bytes instanceof ArrayBuffer && bytes.byteLength <= VERIFIED_SHA1_MAX_BYTES
           ? hex(await crypto.subtle.digest('SHA-1', bytes))
           : 'do_not_verify',
     },
@@ -538,16 +553,49 @@ const BUILD_HEADERS = [
 async function apkBuild(
   request: Request, url: URL, ctx: ExecutionContext, origin: string | null,
 ): Promise<Response> {
-  const name = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
+  const asked = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
+  /* `/apk/latest` is a stable door onto the current build. The download page
+     can point at it in plain HTML, before any JavaScript has run, and it keeps
+     working release after release — a hardcoded filename is stale the morning
+     after the next build, and if the file behind it is ever cleared the page
+     offers a 404. */
+  const name = asked === 'latest' ? RELEASE.file : asked;
   const release = Object.prototype.hasOwnProperty.call(BUILDS, name) ? BUILDS[name] : null;
   if (!release) return fail(404, 'That build isn’t available.', origin);
 
   const range = request.headers.get('Range');
 
+  /* The edge cache is keyed by the *build*, not by the URL that asked for it.
+   *
+   * `/apk/latest` is one URL whose meaning changes with every release. Keyed by
+   * the URL, a cached 1.0.6 body kept being handed out under a name that now
+   * meant 1.0.7: the Worker said one version, `/version` said the same, and the
+   * file that actually arrived was the old one. Anyone installed from the
+   * download page in that window got the previous build and no way to tell.
+   *
+   * Keying by the release file makes a new release a different cache entry, so
+   * a stale body cannot outlive the version it belonged to. */
+  /* …but the *filename* is not what changes when a build is replaced. Two
+   * different builds can carry the same `Crushly-1.0.11-Android9plus.apk`, and
+   * both did: a rebuilt APK has a new fingerprint and the same name, because
+   * the name is the version. Keyed on the name alone, the edge went on serving
+   * the first body to anyone who asked — `release.json` said
+   * `sha256 cb55b5…`, the phone downloaded `550710bd…`, and the integrity check
+   * on an otherwise perfect page told a member the file was not ours.
+   *
+   * So the key carries the fingerprint the Worker is publishing. A rebuilt
+   * same-version file is a different key, which is the whole point: the bytes
+   * and the checksum a member is told to verify are always the same bytes.
+   * Older entries simply stop being looked up. */
+  const fingerprint = (release === RELEASE && release.sha256) || '';
+  const cacheKey = new URL(
+    `${url.origin}/apk/${encodeURIComponent(name)}?${fingerprint.slice(0, 16)}`,
+  ).toString();
+
   // A whole download is worth keeping at the edge for a while — it is the same
   // bytes for everybody, and the phone may well ask twice.
   if (!range) {
-    const hit = await caches.default.match(url.toString()).catch(() => undefined);
+    const hit = await caches.default.match(cacheKey).catch(() => undefined);
     if (hit) return hit;
   }
 
@@ -572,7 +620,7 @@ async function apkBuild(
     headers,
   });
   if (!range && upstream.status === 200 && request.method === 'GET') {
-    ctx.waitUntil(caches.default.put(url.toString(), out.clone()).catch(() => undefined));
+    ctx.waitUntil(caches.default.put(cacheKey, out.clone()).catch(() => undefined));
   }
   return out;
 }
@@ -613,18 +661,38 @@ export default {
     if (request.method === 'POST') {
       const kind = request.headers.get('X-Media-Kind') ?? '';
       const contentType = request.headers.get('Content-Type') ?? 'application/octet-stream';
-      const bytes = await request.arrayBuffer();
-      if (bytes.byteLength > MAX_UPLOAD_BYTES) return fail(413, 'That file is too large.', origin);
+      // Weighed, not read. Buffering the body into an ArrayBuffer is what made
+      // anything past ~25 MB fail here: the isolate copies the whole file once
+      // to measure it and again to forward it, and a clip the database had
+      // already agreed to accept died between the two. The length is declared
+      // by the client, so the ceiling can still be enforced before a byte is
+      // forwarded, and the body streams straight through to storage.
+      const declared = Number(request.headers.get('Content-Length') ?? '0');
+      let bytes: ArrayBuffer | ReadableStream | null = null;
+      let size = declared;
+      if (!Number.isFinite(size) || size <= 0) {
+        // No length offered: this is the one case that must read the body, and
+        // it keeps it, since there is nothing left to stream afterwards.
+        bytes = await request.arrayBuffer();
+        size = bytes.byteLength;
+      }
+      if (size > MAX_UPLOAD_BYTES) return fail(413, 'That file is too large.', origin);
+      if (size <= 0) return fail(400, 'That file looks empty - try picking it again.', origin);
 
       const ticket = await rpc<{ path: string }>(env, token, 'media_upload_ticket', {
         p_kind: kind,
         p_content_type: contentType,
-        p_bytes: bytes.byteLength,
+        p_bytes: size,
       });
       if (!ticket.ok) return fail(ticket.status, ticket.message, origin);
 
       try {
-        await b2Upload(env, ticket.data.path, contentType, bytes);
+        await b2Upload(
+          env,
+          ticket.data.path,
+          contentType,
+          bytes ?? (request.body as ReadableStream),
+        );
       } catch (e) {
         // Credentials and bucket details never reach the client.
         console.error('upload failed:', (e as Error).message);
@@ -653,14 +721,14 @@ export default {
       if (verdict.data.cacheable) {
         const cache = caches.default;
         const hit = await cache.match(key).catch(() => undefined);
-        if (hit) return withHeaders(hit, path);
+        if (hit) return withHeaders(hit, path, verdict.data.cacheable);
       }
 
       const auth = await b2Auth(env);
       const upstream = await b2Download(env, auth, path);
       if (!upstream.ok) return fail(404, 'That file isn’t available.', origin);
 
-      const response = withHeaders(new Response(upstream.body, upstream), path);
+      const response = withHeaders(new Response(upstream.body, upstream), path, verdict.data.cacheable);
       if (verdict.data.cacheable) {
         const cached = response.clone();
         void caches.default.put(key, cached).catch(() => undefined);
@@ -686,12 +754,56 @@ export default {
   },
 };
 
-/** Cache policy by kind: Moments are short-lived, chat media is never shared. */
-function withHeaders(response: Response, path: string): Response {
+/**
+ * Cache policy by kind: Moments are short-lived, chat media is never shared.
+ *
+ * `cacheable` comes from the database, which is the only place that knows
+ * whether every member would be given these bytes. The two must agree: a file
+ * the database refuses to share was still going out with a week of shared
+ * caching on it, which is the one combination that leaks — the Worker declines
+ * to put it in the edge cache, then a browser or a downstream proxy keeps it
+ * anyway and hands it to whoever asks next. When the database says no, nothing
+ * downstream is allowed to remember it either.
+ */
+/**
+ * The type a stored path should be served as.
+ *
+ * The bucket stores bytes and remembers the Content-Type it was given, but a
+ * response that arrives with none is treated by every browser as
+ * `application/octet-stream`, and the `nosniff` header below then forbids it
+ * from guessing — a clip downloaded instead of played. The extension is the
+ * last word, because that is what the upload was required to match.
+ */
+function mediaType(path: string): string | null {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return (
+    {
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      m4a: 'audio/mp4',
+      mp3: 'audio/mpeg',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      heic: 'image/heic',
+      mov: 'video/quicktime',
+    } as Record<string, string>
+  )[ext] ?? null;
+}
+
+function withHeaders(response: Response, path: string, cacheable: boolean): Response {
   const kind = path.split('/')[0];
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
-  if (kind === 'messages') headers.set('Cache-Control', 'private, no-store');
+  // Say what this is, rather than letting storage metadata decide. A clip must
+  // arrive as `video/*` or a phone will offer to save it instead of playing it.
+  const type = mediaType(path);
+  if (type) headers.set('Content-Type', type);
+  // Range requests are what a video player uses to start before the file has
+  // finished arriving, and to seek. Advertise the capability honestly.
+  if (!headers.has('Accept-Ranges')) headers.set('Accept-Ranges', 'bytes');
+  if (!cacheable || kind === 'messages') headers.set('Cache-Control', 'private, no-store');
   else if (kind === 'moments') headers.set('Cache-Control', 'public, max-age=3600');
   else headers.set('Cache-Control', 'public, max-age=604800');
   return new Response(response.body, { status: response.status, headers });

@@ -156,7 +156,13 @@ def _density_region(b, storage):
         right += 1
     start, end = left * block, min((right + 1) * block, len(b))
     if end - start < storage:
-        raise ValueError('no stretch of text long enough to hold the strings')
+        # A run this short means the density map is a poor guide for this build,
+        # not that the strings are missing. Hand back the whole file and let the
+        # validation decide: a wrong position fails on its own terms (an entry
+        # outside the blob, strings that do not fill it, text that reads as
+        # noise), while a real table is found wherever it is. This is slower and
+        # still cannot be fooled — it only gives up the shortcut.
+        return 64, len(b)
     return start, end
 
 
@@ -169,8 +175,11 @@ def entries_from(words, position, count, storage):
 
 def read_strings(b):
     """Returns (header, strings), each string being (text, is_long)."""
-    if len(b) % 4:
-        raise ValueError('bytecode file is not a multiple of four bytes')
+    # Not `len(b) % 4`. Hermes pads sections to four bytes but does not pad the
+    # file, so a bundle can legitimately end one, two or three bytes past the
+    # last word. Two exports of identical source here came out 4,015,251 and
+    # 4,015,252 bytes long; the shorter of the two used to fail this check and
+    # block publication of a perfectly good build.
 
     header = header_fields(b)
     count = header['stringCount']
@@ -182,66 +191,76 @@ def read_strings(b):
     words = struct.unpack_from(f'<{(len(b) - len(b) % 4) // 4}I', b, 0)
     region_start, region_end = _density_region(b, storage)
 
-    # Where the table would sit if the blob started at `base`; the two are
-    # adjacent, so the blob's position fixes the table's.
+    # Where the blob would sit if the table started at `position`. Hermes writes
+    # the small-string table first and the blob after it; the overflow table
+    # sits between them for the handful of strings too long for an entry.
     back = 8 * overflow_count + 4 * count
     expected = sorted({count - 1, count // 2, count // 4, count // 8, 1024, 256})
 
-    last_error = None
-    for base in range(max(region_start, 64), min(region_end, len(b) - storage) + 1):
-        if base % 4:
+    # The blob is inside the dense region, so the table that describes it starts
+    # before the region does; allow a whole region of run-up rather than
+    # assuming the two are adjacent.
+    #
+    # The dense run is a hint, never a fence: the blob it points at can hold a
+    # short stretch of low-density bytes that breaks the run in two, and a
+    # boundary taken from the broken run then lands inside the blob's own
+    # tables. Every candidate is validated in full below, so the range is
+    # opened up rather than trimmed to the guess.
+    first = max(64, region_start - back - 256 * 1024)
+    for position in range(first, len(b) - back + 1):
+        if position % 4:
             continue
-        for slack in (0, 4, 8, 12):
-            position = base - back - slack
-            if position < 64 or position % 4:
-                continue
-            # Reject at once: real entries sit inside the blob and the long ones
-            # point into the overflow table.
-            try:
-                for i in expected:
-                    e = unpack_entry(words[(position + 4 * i) // 4])
-                    if e['offset'] >= storage:
-                        raise ValueError('an entry points past the end of the blob')
-                    if e['length'] == LONG_STRING and e['offset'] >= overflow_count:
-                        raise ValueError('an entry points past the overflow table')
-                entries = [unpack_entry(words[(position + 4 * i) // 4])
-                           for i in range(count)]
-                if any(e['offset'] >= storage for e in entries):
+        # The blob follows the tables; its start is fixed by theirs.
+        base = position + back
+        if base + storage > len(b):
+            continue
+        # Reject at once: real entries sit inside the blob and the long ones
+        # point into the overflow table.
+        try:
+            for i in expected:
+                e = unpack_entry(words[(position + 4 * i) // 4])
+                if e['offset'] >= storage:
                     raise ValueError('an entry points past the end of the blob')
+                if e['length'] == LONG_STRING and e['offset'] >= overflow_count:
+                    raise ValueError('an entry points past the overflow table')
+            entries = [unpack_entry(words[(position + 4 * i) // 4])
+                       for i in range(count)]
+            if any(e['offset'] >= storage for e in entries):
+                raise ValueError('an entry points past the end of the blob')
 
-                overflow = [struct.unpack_from('<II', b, position + 4 * count + 8 * i)
-                            for i in range(overflow_count)]
+            overflow = [struct.unpack_from('<II', b, position + 4 * count + 8 * i)
+                        for i in range(overflow_count)]
 
-                def span_of(entry):
-                    if entry['length'] == LONG_STRING:
-                        if entry['offset'] >= len(overflow):
-                            raise ValueError('entry points outside the overflow table')
-                        off, chars = overflow[entry['offset']]
-                    else:
-                        off, chars = entry['offset'], entry['length']
-                    return off, chars * (2 if entry['isUTF16'] else 1)
+            def span_of(entry):
+                if entry['length'] == LONG_STRING:
+                    if entry['offset'] >= len(overflow):
+                        raise ValueError('entry points outside the overflow table')
+                    off, chars = overflow[entry['offset']]
+                else:
+                    off, chars = entry['offset'], entry['length']
+                return off, chars * (2 if entry['isUTF16'] else 1)
 
-                sizes = [span_of(e) for e in entries]
-                if max(off + size for off, size in sizes) != storage:
-                    raise ValueError('the strings do not fill the blob')
+            sizes = [span_of(e) for e in entries]
+            if max(off + size for off, size in sizes) != storage:
+                raise ValueError('the strings do not fill the blob')
 
-                strings = []
-                for entry, (off, size) in zip(entries, sizes):
-                    raw = b[base + off:base + off + size]
-                    if len(raw) != size:
-                        raise ValueError('a string runs past the end of the file')
-                    try:
-                        text = (raw.decode('utf-16-le', errors='surrogatepass')
-                                if entry['isUTF16'] else raw.decode('latin-1'))
-                    except UnicodeDecodeError:
-                        raise ValueError('a string does not decode as text')
-                    strings.append((text, entry['length'] == LONG_STRING))
-                if not looks_like_text(strings):
-                    raise ValueError('the strings at this position read as noise')
-                return header, strings
-            except ValueError as exc:
-                last_error = exc
-                continue
+            strings = []
+            for entry, (off, size) in zip(entries, sizes):
+                raw = b[base + off:base + off + size]
+                if len(raw) != size:
+                    raise ValueError('a string runs past the end of the file')
+                try:
+                    text = (raw.decode('utf-16-le', errors='surrogatepass')
+                            if entry['isUTF16'] else raw.decode('latin-1'))
+                except UnicodeDecodeError:
+                    raise ValueError('a string does not decode as text')
+                strings.append((text, entry['length'] == LONG_STRING))
+            if not looks_like_text(strings):
+                raise ValueError('the strings at this position read as noise')
+            return header, strings
+        except ValueError as exc:
+            last_error = exc
+            continue
     raise ValueError(f'could not read the Hermes string table ({last_error})')
 
 

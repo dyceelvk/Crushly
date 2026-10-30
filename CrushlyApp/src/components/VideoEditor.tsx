@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useVideoPlayer } from 'expo-video';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +58,9 @@ const TOOLS: { id: ToolId; label: string; icon: keyof typeof Ionicons.glyphMap }
   { id: 'music', label: 'Sound', icon: 'musical-notes-outline' },
 ];
 
+/** The tools that need a timeline. A still has none, so they are not offered. */
+const CLIP_ONLY: ToolId[] = ['trim', 'speed', 'music'];
+
 const STICKERS = [
   '🔥', '💜', '😂', '🥹', '✨', '🩷', '👀', '🙌', '💯', '🌙',
   '☀️', '🍃', '🎧', '☕', '🕊️', '🐆', '🌊', '⭐', '🫶', '🎈',
@@ -92,6 +95,7 @@ export type VideoEditorResult = { uri: string; edit: VideoEdit | null };
 export function VideoEditorModal({
   visible,
   sourceUri,
+  sourceIsPhoto = false,
   sourceDuration,
   category = 'post',
   naturalRatio = 9 / 16,
@@ -101,6 +105,12 @@ export function VideoEditorModal({
 }: {
   visible: boolean;
   sourceUri: string | null;
+  /**
+   * True when the source is a still. The same tools apply — words, stickers,
+   * filters, light, crop — but there is no timeline to trim, no speed and no
+   * sound, so those are hidden rather than offered and ignored.
+   */
+  sourceIsPhoto?: boolean;
   /** Seconds. Falls back to what the player reports if the picker didn't know. */
   sourceDuration?: number;
   category?: EditCategory;
@@ -121,7 +131,7 @@ export function VideoEditorModal({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  const player = useVideoPlayer(visible && sourceUri ? sourceUri : null, (p) => {
+  const player = useVideoPlayer(visible && sourceUri && !sourceIsPhoto ? sourceUri : null, (p) => {
     p.loop = false;
   });
   const musicPlayer = useVideoPlayer(edit.music?.uri ?? null, (p) => {
@@ -304,7 +314,8 @@ export function VideoEditorModal({
         {/* View screen at top */}
         <View style={{ alignItems: 'center', paddingHorizontal: space.md }}>
           <VideoEditCanvas
-            player={player}
+            player={sourceIsPhoto ? null : player}
+            stillUri={sourceIsPhoto ? sourceUri : null}
             edit={edit}
             clipTime={clipTime}
             naturalRatio={naturalRatio}
@@ -417,7 +428,7 @@ export function VideoEditorModal({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: 8 }}
         >
-          {TOOLS.map((t) => {
+          {(sourceIsPhoto ? TOOLS.filter((t) => !CLIP_ONLY.includes(t.id)) : TOOLS).map((t) => {
             const active = tool === t.id;
             return (
               <Pressable

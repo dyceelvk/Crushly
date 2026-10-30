@@ -8,7 +8,7 @@ export type TabParamList = {
   Profile: undefined;
 };
 
-export type InfoPage = 'guidelines' | 'privacy' | 'terms' | 'help' | 'safety-tips' | 'contact';
+export type InfoPage = 'guidelines' | 'privacy' | 'terms' | 'credits' | 'help' | 'safety-tips' | 'contact';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -44,6 +44,7 @@ export type RootStackParamList = {
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle' };
   CreatePost: undefined;
   PostViewer: { postId: number };
+  SavedPosts: undefined;
   WebPreview: { url: string };
   Safety: undefined;
   Privacy: undefined;

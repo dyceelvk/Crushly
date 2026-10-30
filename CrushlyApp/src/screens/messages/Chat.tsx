@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, AppState, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { Txt } from '../../components/Txt';
@@ -11,6 +11,7 @@ import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
+import { EditedClip } from '../../components/EditedClip';
 import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
@@ -42,6 +43,22 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const { conversationId } = route.params;
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+
+  /*
+   * Android needs a behaviour, not `undefined`.
+   *
+   * `behavior={undefined}` turns the component into a plain View and relies on
+   * the OS resizing the window for the keyboard. On Android 15 and later the
+   * app draws edge to edge — the same change that made `CommentsSheet` measure
+   * the keyboard instead of trusting a resize — so the window does not shrink,
+   * this tree keeps its full height, and the composer sits underneath the
+   * keyboard. You type a Whisper and cannot see what you are typing.
+   *
+   * `height` shrinks the tree by exactly the keyboard's height, which keeps the
+   * list and the composer above it. `softwareKeyboardLayoutMode: 'resize'` in
+   * app.json is what older Android versions honour; this is the modern one.
+   */
+  const kavBehavior = Platform.OS === 'ios' ? 'padding' : 'height';
   const toast = useToast();
   const { contentWidth, width } = useLayout();
   const { data: conv, error: convError, refetch: refetchConv } = useConversation(conversationId);
@@ -57,6 +74,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
+  // The clip somebody whispered, open full screen. Separate from the photo
+  // viewer because a clip needs a player and a photo needs an image.
+  const [clipViewer, setClipViewer] = useState<string | null>(null);
+  // Nothing in a thread makes a sound on its own, so the viewer opens silent
+  // and the sound is one deliberate tap away.
+  const [clipSound, setClipSound] = useState(false);
   const [recording, setRecording] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
@@ -345,7 +368,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         </View>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={kavBehavior}>
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />
         ) : chat.error ? (
@@ -427,6 +450,10 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       onLongPress={setActionFor}
                       onDoubleTap={react}
                       onOpenPhoto={setViewer}
+                      onOpenVideo={(uri) => {
+                        setClipSound(false);
+                        setClipViewer(uri);
+                      }}
                       onOpenProfile={openProfile}
                       onRetry={retry}
                       onOpenReply={jumpTo}
@@ -509,7 +536,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 <>
                   <View style={{ flex: 1, minWidth: 0, minHeight: 44, maxHeight: 130, borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'flex-end' }}>
                     <Pressable
-                      onPress={() => setTray((t) => !t)}
+                      onPress={() => {
+                        // The tray and the keyboard compete for the same space;
+                        // the tray wins, so close the keyboard first.
+                        Keyboard.dismiss();
+                        setTray((t) => !t);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={tray ? 'Close attachments' : 'Add photo, sticker or Space'}
                       hitSlop={4}
@@ -641,6 +673,9 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         }))}
       />
 
+      {/* Clip viewer — what the little window in the thread opens into. */}
+      <ClipViewer uri={clipViewer} sound={clipSound} onToggleSound={() => setClipSound((v) => !v)} onClose={() => setClipViewer(null)} insetsTop={insets.top} />
+
       {/* Photo viewer */}
       <Modal visible={!!viewer} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)', justifyContent: 'center' }}>
@@ -666,5 +701,54 @@ function TrayButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyp
         {label}
       </Txt>
     </Pressable>
+  );
+}
+
+/**
+ * A whispered clip, full screen.
+ *
+ * Shares EditedClip so it measures the clip and fits the frame to its real
+ * shape, and gives the same tap-to-pause control as everywhere else. Sound is
+ * off until asked for: opening somebody's clip should not be a noise the room
+ * hears.
+ */
+function ClipViewer({
+  uri,
+  sound,
+  onToggleSound,
+  onClose,
+  insetsTop,
+}: {
+  uri: string | null;
+  sound: boolean;
+  onToggleSound: () => void;
+  onClose: () => void;
+  insetsTop: number;
+}) {
+  return (
+    <Modal visible={!!uri} animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
+        {uri ? (
+          <EditedClip
+            uri={uri}
+            live={null}
+            style={{ width: '100%', height: '100%' }}
+            autoPlay
+            loop
+            muted={!sound}
+            contentFit="contain"
+          />
+        ) : null}
+        <View style={{ position: 'absolute', top: insetsTop + 12, right: 16, flexDirection: 'row', gap: 8 }}>
+          <IconButton
+            icon={sound ? 'volume-high' : 'volume-mute'}
+            variant="glass"
+            label={sound ? 'Mute clip' : 'Play clip with sound'}
+            onPress={onToggleSound}
+          />
+          <IconButton icon="close" variant="glass" label="Close clip" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
   );
 }

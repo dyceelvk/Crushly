@@ -361,18 +361,30 @@ begin
     if sqlerrm like '%oversized files must be refused%' then raise; end if;
   end;
 
-  j := public.can_view_media('photos/1/a.jpg');
-  assert (j ->> 'allowed')::bool and (j ->> 'cacheable')::bool, 'profile photos are readable by members and cacheable';
+  -- Asked about a photo that exists, because the rule follows rows now: a path
+  -- in the photos/ shape that nothing points at is not a profile photo, and
+  -- media_security stopped handing those out.
+  j := public.can_view_media((select ph.url from photos ph where ph.user_id = me order by ph.id limit 1));
+  assert (j ->> 'allowed')::bool, 'you can read your own profile photo';
+  -- Readable, but never handed to the shared cache. Who may see a face depends
+  -- on visibility, incognito and blocks, so two members asking for the same
+  -- path can deserve different answers; anything cached under one key would
+  -- answer for both. This assertion is the one that catches it if the rule is
+  -- ever loosened, and the Worker's Cache-Control is driven by the same value.
+  assert not (j ->> 'cacheable')::bool, 'profile photos are readable but never cached under a shared key';
 
+  -- The folder is the sender's id, not a placeholder: media_security ties a
+  -- chat file to the person who sent it, so a path with someone else's number
+  -- in it is refused no matter who is asking.
   insert into public.messages (conversation_id, sender_id, kind, media_url)
-    values (conv_id, me, 'photo', 'messages/999/note.jpg');
-  j := public.can_view_media('messages/999/note.jpg');
+    values (conv_id, me, 'photo', 'messages/' || me || '/note.jpg');
+  j := public.can_view_media('messages/' || me || '/note.jpg');
   assert (j ->> 'allowed')::bool, 'you can read your own chat media';
   assert not (j ->> 'cacheable')::bool, 'chat media is never cached under a shared key';
   perform set_config('request.jwt.claim.sub', marcus::text, false);
-  assert (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
+  assert (public.can_view_media('messages/' || me || '/note.jpg') ->> 'allowed')::bool, 'the other person in the chat can read it too';
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000000', false);
-  assert not (public.can_view_media('messages/999/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
+  assert not (public.can_view_media('messages/' || me || '/note.jpg') ->> 'allowed')::bool, 'outsiders get nothing from chat media';
   assert not (public.can_view_media('photos/1/a.jpg') ->> 'allowed')::bool, 'signed-out callers get nothing at all';
   perform set_config('request.jwt.claim.sub', daniel::text, false);
 
@@ -491,8 +503,98 @@ begin
     assert not exists (select 1 from public.circle_messages where circle_id = room), 'and its messages too';
   end;
 
+  -- ------------------------------------------------------ a Space has a feed
+  -- The tabs on a Space are only honest if they answer with the same rule the
+  -- main feeds use. A post of mine that is mine-only must be in my Space and
+  -- nowhere else; a Circle post must be in neither the Space nor the Flow.
+  declare
+    own_post bigint;
+    room_post bigint;
+    room bigint;
+  begin
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+    j := public.create_post('only I should read this', null, 'connections');
+    own_post := (j ->> 'id')::bigint;
+
+    assert exists (
+      select 1 from jsonb_array_elements(public.space_posts((select id from profiles where name = 'Daniel'), 50) -> 'items') i
+       where (i ->> 'id')::bigint = own_post
+    ), 'your own post belongs in your own Space';
+
+    -- Marcus is not connected to Daniel; connections-only is not his to read.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert not exists (
+      select 1 from jsonb_array_elements(public.space_posts((select id from profiles where name = 'Daniel'), 50) -> 'items') i
+       where (i ->> 'id')::bigint = own_post
+    ), 'a Space must not show a post the viewer could not see in the Flow';
+
+    -- A Circle post is addressed to a room, so it reaches nobody else — but a
+    -- Space is "what did this person share with me", and a room you are in with
+    -- them counts. What matters is that the room's privacy holds on both feeds.
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    j := public.create_circle('Smoke space room', '', array[]::bigint[]);
+    room := (j -> 'circle' ->> 'id')::bigint;
+    j := public.create_post('inside the room', null, 'connections', room);
+    room_post := (j ->> 'id')::bigint;
+
+    assert not exists (
+      select 1 from jsonb_array_elements(public.flow_feed(50) -> 'items') i
+       where (i ->> 'id')::bigint = room_post
+    ), 'a Circle post must never leak into the Flow';
+
+    -- Marcus is not in the room, so he sees it in neither feed — not even on
+    -- the author's own Space, which is the whole point of asking the question.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert not exists (
+      select 1 from jsonb_array_elements(public.space_posts((select id from profiles where name = 'Daniel'), 50) -> 'items') i
+       where (i ->> 'id')::bigint = room_post
+    ), 'a Space must not reveal a Circle post to someone outside the Circle';
+
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    perform public.leave_circle(room);
+  end;
+
+  -- The ring is a fact about a Moment, and it must agree with the viewer.
+  -- Earlier blocks leave Daniel with a pile of live Moments, so the ring test
+  -- clears them first: a `connections` Moment is only interesting when it is
+  -- the only thing on the Space.
+  declare
+    my_moment bigint;
+    target bigint;
+    stale bigint;
+  begin
+    target := (select id from profiles where name = 'Daniel');
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+
+    for stale in select id from public.moments where user_id = target loop
+      perform public.delete_moment(stale);
+    end loop;
+
+    j := public.create_moment('text', 'my live moment', null, 'glass', 'connections', null);
+    my_moment := (j ->> 'id')::bigint;
+
+    assert (public.load_profile(target) ->> 'hasMoment')::boolean = true,
+      'your own live Moment should ring on your own Space';
+
+    -- A stranger who may not open it must not be told it exists.
+    perform set_config('request.jwt.claim.sub', jayden::text, false);
+    if public.load_profile(target) is not null then
+      assert (public.load_profile(target) ->> 'hasMoment')::boolean = false,
+        'the ring must not promise a Moment the viewer cannot open';
+    end if;
+
+    -- But a member Daniel is close to does open it, so the ring belongs there.
+    perform set_config('request.jwt.claim.sub', marcus::text, false);
+    assert (public.load_profile(target) ->> 'hasMoment')::boolean = true,
+      'a member you are close to still sees the ring on your Space';
+
+    perform set_config('request.jwt.claim.sub', daniel::text, false);
+    perform public.delete_moment(my_moment);
+  end;
+
   delete from public.moments where body in ('connections only', 'gone', 'flood');
-  delete from public.messages where media_url = 'messages/999/note.jpg';
+  delete from public.messages where media_url like 'messages/%/note.jpg';
 
   reset role;
   raise notice 'smoke tests passed';

@@ -1,9 +1,10 @@
+import { PLUS_VISIBLE } from '../lib/featureVisibility';
 import React, { useEffect, useRef } from 'react';
 import {
   Platform,
   Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { browserLocation } from '../lib/browser';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -34,8 +35,9 @@ import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
 import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
-import { VibeViewerScreen } from '../screens/discover/VibeViewer';
+import { VibeViewerScreen } from '../screens/discover/VibeFeed';
 import { PostViewerScreen } from '../screens/flow/PostViewer';
+import { SavedPostsScreen } from '../screens/flow/SavedPosts';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VibeComposerScreen } from '../screens/discover/VibeComposer';
 import { VideoTrimScreen } from '../screens/common/VideoTrimScreen';
@@ -173,6 +175,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="WebPreview" component={WebPreviewScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="VibeViewer" component={VibeViewerScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
           <Stack.Screen name="PostViewer" component={PostViewerScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+          <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           <Stack.Screen name="Moments" component={MomentsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Discover" component={DiscoverScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
@@ -198,7 +201,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
             <Stack.Screen name="VideoTrim" component={VideoTrimScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
             <Stack.Screen name="CreatePost" component={CreatePostScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
-            <Stack.Screen name="Plus" component={PlusScreen} />
+            {PLUS_VISIBLE ? <Stack.Screen name="Plus" component={PlusScreen} /> : null}
           </Stack.Group>
           <Stack.Group screenOptions={{ presentation: 'transparentModal', animation: reduceMotion ? 'none' : 'fade', contentStyle: { backgroundColor: 'transparent' } }}>
             <Stack.Screen name="MutualCrush" component={MutualCrushScreen} />

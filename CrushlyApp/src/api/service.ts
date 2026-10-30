@@ -1,6 +1,8 @@
+import { integerDurationMs } from '../lib/upload';
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
-import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { supabase, ApiError, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { clipContainer, clipContentType, containerIsStorable, extensionFor } from '../lib/upload';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
@@ -127,7 +129,7 @@ function completion(profile: Record<string, any>, photos: { id: number }[]) {
 export async function getMe(): Promise<Me> {
   requireConfig();
   const id = await meId();
-  const [profileRes, photosRes, prefsRes, privacyRes, notifRes, poseRes, deepRes, email] = await Promise.all([
+  const [profileRes, photosRes, prefsRes, privacyRes, notifRes, poseRes, deepRes, email, liveMoments] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', id).single(),
     supabase.from('photos').select('id, url').eq('user_id', id).order('position').order('id'),
     supabase.from('preferences').select('*').eq('user_id', id).single(),
@@ -148,6 +150,10 @@ export async function getMe(): Promise<Me> {
       .eq('deep', true)
       .gt('created_at', Date.now() - 24 * 60 * 60 * 1000),
     myEmail(),
+    // The ring on your own Space. Counted here rather than inferred from the
+    // Moments feed, because that feed groups by person and is a heavier answer
+    // to a yes/no question.
+    supabase.from('moments').select('id', { count: 'exact', head: true }).eq('user_id', id).gt('expires_at', Date.now()),
   ]);
 
   const p = unwrap(profileRes) as Record<string, any>;
@@ -157,6 +163,7 @@ export async function getMe(): Promise<Me> {
   const notif = unwrap(notifRes) as Record<string, any>;
   const pose = poseRes.error ? null : (poseRes.data as { pose: string } | null);
   const deepUsed = deepRes.count ?? 0;
+  const hasMoment = (liveMoments.count ?? 0) > 0;
 
   return {
     id: p.id as number,
@@ -215,6 +222,7 @@ export async function getMe(): Promise<Me> {
       deepCrushesLeft: Math.max(0, FREE_DEEP_CRUSHES_PER_DAY - deepUsed),
       deepCrushesPerDay: FREE_DEEP_CRUSHES_PER_DAY,
     },
+    hasMoment,
   };
 }
 
@@ -355,6 +363,27 @@ export async function flowFeed(limit = 20, after?: number | null): Promise<FlowP
   return { items: page?.items ?? [] };
 }
 
+/**
+ * Save or unsave a post. A save is a private row, not a signal: the author is
+ * never told, nothing is counted, and only you can read the drawer back. The
+ * database returns the resulting state rather than echoing the request, so a
+ * double tap cannot leave the icon ahead of the truth.
+ */
+export async function savePost(postId: number, saved = true): Promise<{ saved: boolean }> {
+  return rpc<{ saved: boolean }>('save_post', { p_post_id: postId, p_saved: saved });
+}
+
+/** Whether one post is in your drawer — asked when the viewer opens. */
+export async function postSaved(postId: number): Promise<boolean> {
+  return rpc<boolean>('post_saved', { p_post_id: postId });
+}
+
+/** The drawer itself, newest save first, in the same shape as the Flow feed. */
+export async function savedPosts(limit = 20, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('saved_posts', { p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
 /** Shares a post. Photos and clips go to the object store like any other media. */
 export async function createPost(input: {
   body: string;
@@ -363,6 +392,8 @@ export async function createPost(input: {
   photoMime?: string | null;
   videoUri?: string | null;
   videoMime?: string | null;
+  /** Length of the clip in milliseconds, from the picker. Needed to remux. */
+  videoDurationMs?: number | null;
   edit?: LiveEdit | null;
   /** When set, the post belongs to that Circle and its audience is the Circle. */
   circleId?: number | null;
@@ -376,14 +407,40 @@ export async function createPost(input: {
   }
   if (input.videoUri) {
     const id = await meId();
-    const type = (input.videoMime || 'video/mp4').toLowerCase();
-    // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
-    // for a clip, so the container is chosen here instead.
+    const clip = input.videoUri;
+    const container = clipContainer(input.videoMime, clip);
+
+    // The server accepts MP4 and WebM. A `.mov` — what an iPhone or a Samsung
+    // gallery hands over, and what a phone reports as `video/quicktime` — is
+    // refused with 415 before a byte is stored, which is what "That file type
+    // is not supported." was. Its frames are ordinary H.264, so they are
+    // remuxed into an MP4 container on the phone rather than re-encoded here:
+    // same pixels, a container the pipeline reads, no encoder in the APK.
+    let upload = clip;
+    let uploadMime = input.videoMime;
+    if (!containerIsStorable(container)) {
+      const { remuxToMp4 } = await import('../lib/nativeTrim');
+      const remuxed = await remuxToMp4(clip, input.videoDurationMs ?? 0);
+      if (!remuxed) {
+        throw new ApiError(
+          415,
+          container === 'mov'
+            ? 'This clip is saved in a format Crushly can’t publish. Record a video in the app, or export it as MP4, and try again.'
+            : 'That file isn’t a video Crushly can publish. Pick an MP4 or WebM clip and try again.',
+        );
+      }
+      upload = remuxed;
+      uploadMime = 'video/mp4';
+    }
+
+    // The extension and the header are decided together, from the file that is
+    // actually being sent, so a picker's mislabel can never reach the server.
+    const ext = clipContainer(uploadMime, upload) === 'webm' ? 'webm' : clipContainer(uploadMime, upload) === 'mov' ? 'mov' : 'mp4';
     media = await uploadMediaFile(
       'media',
-      `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`,
-      input.videoUri,
-      type,
+      `posts/${id}/${Date.now()}.${ext}`,
+      upload,
+      clipContentType(uploadMime, upload),
     );
   }
   return rpc<Post>('create_post', {
@@ -416,13 +473,30 @@ export async function loadPost(postId: number): Promise<Post> {
   return rpc<Post>('load_post', { p_post_id: postId });
 }
 
-export async function postComments(postId: number, limit = 50): Promise<{ items: PostComment[] }> {
+/**
+ * The whole thread in one call: comments and their answers, with like counts,
+ * so opening the sheet does not cost one request per comment.
+ */
+export async function postComments(postId: number, limit = 200): Promise<{ items: PostComment[] }> {
   const page = await rpc<{ items: PostComment[] }>('post_comments_feed', { p_post_id: postId, p_limit: limit });
   return { items: page?.items ?? [] };
 }
 
-export async function commentOnPost(postId: number, body: string): Promise<PostComment> {
-  return rpc<PostComment>('comment_on_post', { p_post_id: postId, p_body: str(body, 'Comment', { max: 1000 }) });
+/** A comment on the post, or an answer to one when `parentId` is given. */
+export async function commentOnPost(postId: number, body: string, parentId: number | null = null): Promise<void> {
+  await rpc<{ id: number }>('comment_on_post', {
+    p_post_id: postId,
+    p_body: str(body, 'Comment', { max: 1000 }),
+    p_parent_id: parentId,
+  });
+}
+
+/** Like or unlike a comment. The answer is the real count, not a guess. */
+export async function reactToPostComment(commentId: number, liked: boolean): Promise<{ liked: boolean; likeCount: number }> {
+  return rpc<{ liked: boolean; likeCount: number }>('react_to_post_comment', {
+    p_comment_id: commentId,
+    p_liked: liked,
+  });
 }
 
 /** Yours to remove, or the post is yours and the comment was left on it. */
@@ -745,6 +819,32 @@ export async function loadProfile(id: number): Promise<FullProfile> {
   return profile;
 }
 
+/**
+ * One member's posts, for their Space.
+ *
+ * The Flow is viewer-relative, so it cannot answer "what has this person
+ * shared". This asks the question directly and the server filters with the
+ * same rule the Flow uses, so the two can never disagree.
+ */
+export async function spacePosts(authorId: number, limit = 20, after?: number | null): Promise<Post[]> {
+  const page = await rpc<FlowPage>('space_posts', {
+    p_author_id: authorId,
+    p_limit: limit,
+    p_after: after ?? null,
+  });
+  return page?.items ?? [];
+}
+
+/** One member's live Vibes, for their Space. Expired ones never come back. */
+export async function spaceVibes(authorId: number, limit = 30, after?: number | null): Promise<Vibe[]> {
+  const page = await rpc<{ items: Vibe[] }>('space_vibes', {
+    p_author_id: authorId,
+    p_limit: limit,
+    p_after: after ?? null,
+  });
+  return page?.items ?? [];
+}
+
 export async function crushes(): Promise<CrushesResponse> {
   return rpc<CrushesResponse>('crushes_feed');
 }
@@ -1040,7 +1140,7 @@ export async function createVibe(input: {
   const mime = (input.videoMime || 'video/mp4').toLowerCase();
   const media = await uploadMediaFile(
     'media',
-    `vibes/${id}/${Date.now()}.${mime.includes('webm') ? 'webm' : 'mp4'}`,
+    `vibes/${id}/${Date.now()}.${clipContainer(mime, input.videoUri) === 'webm' ? 'webm' : clipContainer(mime, input.videoUri) === 'mov' ? 'mov' : 'mp4'}`,
     input.videoUri,
     mime,
   );
@@ -1061,7 +1161,8 @@ export async function createVibe(input: {
     p_media_url: media,
     p_cover_url: cover,
     p_audience: input.audience,
-    p_duration_ms: input.durationMs ?? null,
+    p_duration_ms: integerDurationMs(input.durationMs),
+    p_edit: input.edit ?? null,
   });
 }
 

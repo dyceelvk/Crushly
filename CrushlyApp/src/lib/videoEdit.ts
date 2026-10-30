@@ -667,3 +667,37 @@ export function editFromLive(live: LiveEdit | null, sourceDuration: number): Vid
   if (!live) return base;
   return { ...base, captions: live.captions, stickers: live.stickers, ...live.look };
 }
+
+/**
+ * The frame a clip should be drawn in, given the column it sits in and the
+ * source's own pixel size.
+ *
+ * This is the arithmetic behind "the video is not the size I uploaded". A feed
+ * card is narrower than the phone — the list pads itself on both sides — so a
+ * clip sized from the window overflows its card by that padding. And a clip
+ * forced into a fixed 4:5 slot either letterboxes (a 9:16 clip loses a fifth of
+ * its height to bars) or, if filled with a `cover` fit, has its sides cropped
+ * and reads as zoomed in.
+ *
+ * The rule here is: keep the whole picture, keep the source's ratio, and never
+ * exceed the column. When the natural height would overrun `maxHeight`, the
+ * frame is narrowed instead of the picture being cropped.
+ *
+ * `ratio` is width / height (0.5625 for 9:16, 0.8 for 4:5).
+ */
+export function fitFrame(
+  columnWidth: number,
+  ratio: number,
+  maxHeight?: number,
+): { width: number; height: number } {
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 4 / 5;
+  const w = Number.isFinite(columnWidth) && columnWidth > 0 ? columnWidth : 0;
+  if (!w) return { width: 0, height: 0 };
+  const naturalHeight = w / safeRatio;
+  const limit = maxHeight && maxHeight > 0 ? maxHeight : Infinity;
+  if (naturalHeight <= limit) {
+    return { width: Math.round(w), height: Math.round(naturalHeight) };
+  }
+  const h = Math.round(limit);
+  return { width: Math.round(h * safeRatio), height: h };
+}

@@ -53,3 +53,32 @@ export async function trimVideo(uri: string, range: TrimRange): Promise<string> 
   const { uri: out } = await trimAsync(uri, { startMs, endMs });
   return out;
 }
+
+/**
+ * Rewrite a clip into an MP4 the server will accept, without re-encoding it.
+ *
+ * A `.mov` from an iPhone or a Samsung gallery is ordinary H.264 inside a
+ * QuickTime container. The platform muxer already knows how to pour those same
+ * encoded frames into an MP4 container, which is what the trimmer does — so
+ * passing the whole clip through it with a full-length range is a remux, not a
+ * conversion. It is fast, it does not lose a pixel, and it needs no encoder in
+ * the APK.
+ *
+ * It is not universal. A clip whose codec cannot live in MP4 (some HEVC
+ * variants, ProRes) makes the muxer throw. That is reported as `null` rather
+ * than an exception: the caller decides what to tell the member, and posting is
+ * never blocked by a missing convenience.
+ *
+ * `durationMs` comes from the picker. A player that reports 0 or nothing is
+ * treated as "no remux possible", because a muxer needs a range to copy.
+ */
+export async function remuxToMp4(uri: string, durationMs: number): Promise<string | null> {
+  if (!trimmerAvailable()) return null;
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
+  try {
+    const { uri: out } = await trimAsync(uri, { startMs: 0, endMs: Math.round(durationMs) });
+    return out;
+  } catch {
+    return null;
+  }
+}

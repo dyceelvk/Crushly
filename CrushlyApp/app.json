@@ -3,13 +3,14 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.5",
+    "version": "1.0.16",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#070708",
     "primaryColor": "#00C6FF",
     "description": "Crushly \u2014 a private, modern social space to meet people and make connections.",
+    "owner": "Odoh chiagoziem isreal",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
@@ -18,7 +19,8 @@
         "NSPhotoLibraryUsageDescription": "Crushly lets you choose photos for your profile, Moments and messages.",
         "NSMicrophoneUsageDescription": "Crushly uses your microphone for voice calls and voice messages.",
         "NSLocationWhenInUseUsageDescription": "Crushly uses your approximate location to show distance. Your exact location is never shared."
-      }
+      },
+      "buildNumber": "15"
     },
     "android": {
       "package": "app.crushly",
@@ -38,7 +40,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 5
+      "versionCode": 16
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -62,9 +64,14 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/splash-mark.png",
+          "imageWidth": 150,
+          "resizeMode": "contain",
           "backgroundColor": "#070708",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 120
+          "dark": {
+            "image": "./assets/splash-mark.png",
+            "backgroundColor": "#070708"
+          }
         }
       ],
       [

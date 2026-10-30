@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { PressableScale } from './PressableScale';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';

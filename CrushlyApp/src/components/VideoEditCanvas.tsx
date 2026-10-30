@@ -1,6 +1,10 @@
+import { mediaSource } from '../lib/mediaHost';
+import { VIDEO_FRAME_FILL } from '../lib/videoFrame';
 import React, { useMemo, useRef } from 'react';
 import { LayoutChangeEvent, Platform, StyleProp, View, ViewStyle } from 'react-native';
+import type { ImageStyle } from 'expo-image';
 import { VideoView } from 'expo-video';
+import { Image } from 'expo-image';
 import type { VideoPlayer } from 'expo-video';
 import {
   Caption,
@@ -25,6 +29,7 @@ type Frame = { width: number; height: number };
  */
 export function VideoEditCanvas({
   player,
+  stillUri = null,
   edit,
   clipTime,
   style,
@@ -37,7 +42,10 @@ export function VideoEditCanvas({
   onFrame,
   contentFit = 'contain',
 }: {
-  player: VideoPlayer;
+  /** Null when editing a still — a photo has no player to draw from. */
+  player: VideoPlayer | null;
+  /** Set when the frame is a photo rather than a clip. */
+  stillUri?: string | null;
   edit: VideoEdit;
   /** Seconds into the trimmed clip. */
   clipTime: number;
@@ -62,7 +70,7 @@ export function VideoEditCanvas({
   // translucent colour over it instead — the only grading available without a
   // GPU pipeline.
   const videoStyle = useMemo(() => {
-    const base: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
+    const base: ViewStyle = { ...VIDEO_FRAME_FILL };
     if (Platform.OS === 'web' && css !== 'none') {
       (base as unknown as Record<string, unknown>).filter = css;
     }
@@ -88,13 +96,24 @@ export function VideoEditCanvas({
       onLayout={onLayout}
       collapsable={false}
     >
-      <VideoView
-        player={player}
-        style={videoStyle}
-        contentFit={contentFit}
-        nativeControls={false}
-        pointerEvents="none"
-      />
+      {stillUri ? (
+        <Image
+          source={mediaSource(stillUri)}
+          style={videoStyle as StyleProp<ImageStyle>}
+          contentFit={contentFit}
+          pointerEvents="none"
+          accessibilityIgnoresInvertColors
+        />
+      ) : player ? (
+        <VideoView
+          player={player}
+          style={videoStyle}
+          contentFit={contentFit}
+          nativeControls={false}
+          surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
+          pointerEvents="none"
+        />
+      ) : null}
 
       {tint ? (
         <View
