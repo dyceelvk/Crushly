@@ -41,7 +41,18 @@ export const RELATIONSHIP_INTENTIONS = [
   'Something casual', 'New people', 'Still figuring it out',
 ];
 
-export const PRONOUNS = ['he/him', 'he/they', 'they/them'];
+/**
+ * The pronoun chips, in the order they are offered.
+ *
+ * `she/her` was missing here while the profile screen tested membership of this
+ * list to decide whether a saved pronoun is a chip or free text. Every member
+ * whose pronouns were `she/her` therefore saw *no* chip selected and their
+ * pronouns sitting in the "Or write your own" box — the screen telling them
+ * their answer was an odd one. It is the single most common answer; the list has
+ * to carry all the common ones, and any answer it does not carry has to still
+ * read as deliberate free text.
+ */
+export const PRONOUNS = ['she/her', 'he/him', 'they/them', 'she/they', 'he/they'];
 
 export const LIFESTYLE: { key: 'workout' | 'drinking' | 'smoking' | 'pets' | 'zodiac'; label: string; icon: keyof typeof Ionicons.glyphMap; options: string[] }[] = [
   { key: 'workout', label: 'Workout', icon: 'barbell-outline', options: ['Often', 'Sometimes', 'Rarely', 'Never'] },

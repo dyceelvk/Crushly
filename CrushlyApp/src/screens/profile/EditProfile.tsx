@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Screen, Header, useLayout } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
@@ -12,39 +12,16 @@ import { ListRow, Group } from '../../components/ListRow';
 import { ConfirmSheet } from '../../components/BottomSheet';
 import { useToast } from '../../components/Toast';
 import { useMe, useSetUsername, useUpdateProfile } from '../../api/hooks';
-import type { Intention, Lifestyle, Me } from '../../api/types';
 import { INTENTIONS, INTERESTS, LANGUAGES, LIFESTYLE, PRONOUNS, RELATIONSHIP_INTENTIONS } from '../../lib/catalog';
+import { birthdayLabel, capMessage, formAfterSave, formFromMe, formKey, isDirty, type ProfileForm } from '../../lib/profileForm';
 import { getApproximateLocation } from '../../lib/media';
 import { space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
-type Form = {
-  name: string;
-  username: string;
-  pronouns: string;
-  city: string;
-  bio: string;
-  intentions: Intention[];
-  relationshipIntention: string;
-  interests: string[];
-  languages: string[];
-  lifestyle: Lifestyle;
-  heightText: string;
-};
+type Form = ProfileForm;
 
-const fromMe = (me: Me): Form => ({
-  name: me.profile.name,
-  username: me.profile.username ?? '',
-  pronouns: me.profile.pronouns,
-  city: me.profile.city,
-  bio: me.profile.bio,
-  intentions: me.profile.intentions,
-  relationshipIntention: me.profile.relationshipIntention,
-  interests: me.profile.interests,
-  languages: me.profile.languages,
-  lifestyle: me.profile.lifestyle,
-  heightText: me.profile.lifestyle.height ? String(me.profile.lifestyle.height) : '',
-});
+const MAX_INTERESTS = 10;
+const MAX_LANGUAGES = 6;
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
@@ -71,16 +48,22 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
   const update = useUpdateProfile();
   const setHandle = useSetUsername();
   const [form, setForm] = useState<Form | null>(null);
+  // What the server has, as a string. Seeded when the Space loads and re-seeded
+  // after every successful save — see `lib/profileForm.ts` for why this is not
+  // derived from the query on each render.
+  const [baseline, setBaseline] = useState('');
   const [locating, setLocating] = useState(false);
   const [leaving, setLeaving] = useState<null | (() => void)>(null);
   const allowLeave = useRef(false);
 
   useEffect(() => {
-    if (me && !form) setForm(fromMe(me));
+    if (!me || form) return;
+    const seed = formFromMe(me);
+    setForm(seed);
+    setBaseline(formKey(seed));
   }, [me, form]);
 
-  const initial = useMemo(() => (me ? JSON.stringify(fromMe(me)) : ''), [me]);
-  const dirty = !!form && JSON.stringify(form) !== initial;
+  const dirty = isDirty(form, baseline);
 
   // Guard against losing unsaved edits.
   useEffect(() => {
@@ -95,7 +78,22 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
   if (!me || !form) return <LoadingBlock label="Loading your Space" />;
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
-  const toggle = <T,>(list: T[], v: T, max = 99) => (list.includes(v) ? list.filter((x) => x !== v) : list.length >= max ? list : [...list, v]);
+
+  /**
+   * Add or remove one entry from a capped list.
+   *
+   * At the cap this used to return the list unchanged and say nothing, so the
+   * eleventh interest was a dead tap — indistinguishable from a broken screen.
+   * Turning a selection off still always works, so the cap is never a trap.
+   */
+  const toggle = <T,>(list: T[], v: T, max: number, what: string) => {
+    if (list.includes(v)) return list.filter((x) => x !== v);
+    if (list.length >= max) {
+      toast({ kind: 'info', ...capMessage(what, max) });
+      return list;
+    }
+    return [...list, v];
+  };
 
   const save = async () => {
     if (!form.name.trim()) return toast({ kind: 'error', title: 'Your name can’t be empty' });
@@ -116,16 +114,24 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
         lifestyle: { ...form.lifestyle, height, work: form.lifestyle.work?.trim() || undefined, education: form.lifestyle.education?.trim() || undefined },
       });
       // The handle is saved on its own: the database owns its rules, and a
-      // taken or badly formed one shouldn't throw away everything else.
-      const handle = form.username.trim().toLowerCase();
-      if (handle !== (me.profile.username || '')) {
+      // taken or badly formed one shouldn't throw away everything else. What is
+      // kept is what the database *returned* — it lowercases, trims and can
+      // refuse — so the form never claims an @handle the server does not have.
+      let handle = me.profile.username || '';
+      const typed = form.username.trim().toLowerCase();
+      if (typed !== handle) {
         try {
-          await setHandle.mutateAsync(handle);
+          handle = await setHandle.mutateAsync(typed);
         } catch (err) {
           toast({ kind: 'error', title: 'Username not changed', message: (err as Error).message });
         }
       }
-      setForm(fromMe(next));
+      // Re-seeded from the server's copy *and* the confirmed handle, then marked
+      // as the new baseline: saving is finished, so the footer goes away and
+      // leaving no longer asks to discard work that was already saved.
+      const saved = formAfterSave(next, handle);
+      setForm(saved);
+      setBaseline(formKey(saved));
       toast({ kind: 'success', title: 'Space saved' });
     } catch (e) {
       toast({ kind: 'error', title: 'Changes not saved', message: (e as Error).message });
@@ -190,7 +196,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
           onPress={updateLocation}
         />
         <Txt variant="small" color="textMuted">
-          Birthday: {me.profile.birthdate ? me.profile.birthdate.split('-').reverse().join('/') : 'not set'} · Contact support if it’s wrong.
+          Birthday: {birthdayLabel(me.profile.birthdate)} · Contact support if it’s wrong.
         </Txt>
       </Section>
 
@@ -206,21 +212,21 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
         />
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
-            Interests · {form.interests.length}/10
+            Interests · {form.interests.length}/{MAX_INTERESTS}
           </Txt>
           <ChipGroup>
             {INTERESTS.map((i) => (
-              <Chip key={i} label={i} size="sm" selected={form.interests.includes(i)} onPress={() => set('interests', toggle(form.interests, i, 10))} />
+              <Chip key={i} label={i} size="sm" selected={form.interests.includes(i)} onPress={() => set('interests', toggle(form.interests, i, MAX_INTERESTS, 'interests'))} />
             ))}
           </ChipGroup>
         </View>
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
-            Languages
+            Languages · {form.languages.length}/{MAX_LANGUAGES}
           </Txt>
           <ChipGroup>
             {LANGUAGES.map((l) => (
-              <Chip key={l} label={l} size="sm" selected={form.languages.includes(l)} onPress={() => set('languages', toggle(form.languages, l, 6))} />
+              <Chip key={l} label={l} size="sm" selected={form.languages.includes(l)} onPress={() => set('languages', toggle(form.languages, l, MAX_LANGUAGES, 'languages'))} />
             ))}
           </ChipGroup>
         </View>
@@ -233,7 +239,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
           </Txt>
           <ChipGroup>
             {INTENTIONS.map((o) => (
-              <Chip key={o.value} label={o.label} icon={o.icon} selected={form.intentions.includes(o.value)} onPress={() => set('intentions', toggle(form.intentions, o.value))} />
+              <Chip key={o.value} label={o.label} icon={o.icon} selected={form.intentions.includes(o.value)} onPress={() => set('intentions', toggle(form.intentions, o.value, INTENTIONS.length, 'intentions'))} />
             ))}
           </ChipGroup>
         </View>
