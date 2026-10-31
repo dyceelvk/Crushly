@@ -1,0 +1,17 @@
+const [,, url, out, port='9222'] = process.argv;
+const t = await (await fetch(`http://127.0.0.1:${port}/json/new`, {method:'PUT'})).json();
+const ws = new WebSocket(t.webSocketDebuggerUrl);
+let id=0; const p=new Map();
+const send=(m,params={})=>new Promise(r=>{const i=++id;p.set(i,r);ws.send(JSON.stringify({id:i,method:m,params}));});
+ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id&&p.has(m.id)){p.get(m.id)(m.result);p.delete(m.id);}};
+await new Promise(r=>ws.onopen=r);
+await send('Page.enable');
+await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});
+await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+await send('Page.navigate',{url});
+await new Promise(r=>setTimeout(r,9000));
+const {data} = await send('Page.captureScreenshot',{format:'png'});
+const {writeFileSync} = await import('node:fs');
+writeFileSync(out, Buffer.from(data,'base64'));
+console.log('saved', out);
+ws.close(); await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`);
