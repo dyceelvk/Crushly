@@ -21,7 +21,9 @@ import { ThemeProvider } from '../src/theme/ThemeProvider';
 import { AuthProvider, useAuth } from '../src/state/auth';
 import { ToastProvider } from '../src/components/Toast';
 import { MemberActionsProvider } from '../src/state/memberActions';
-import { mockEntries } from './mocks';
+import { mockEntries, mockRpc } from './mocks';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
+import { supabase } from '../src/api/client';
 
 import {
   OnboardingIntentionsScreen,
@@ -57,7 +59,9 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   edit: EditProfileScreen,
   user: (p: any) => <UserProfileScreen route={{ key: 'u', name: 'UserProfile', params: { id: 2 } } as any} navigation={p.navigation} />,
   messages: MessagesScreen,
-  chat: ChatScreen,
+  chat: (p: any) => <ChatScreen route={{ key: 'c', name: 'Chat', params: { conversationId: 1 } } as any} navigation={p.navigation} />,
+  // A connection nobody has spoken to yet — the first thing a new match sees.
+  chatempty: (p: any) => <ChatScreen route={{ key: 'c', name: 'Chat', params: { conversationId: 3 } } as any} navigation={p.navigation} />,
   settings: SettingsScreen,
   viewer: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 102 } } as any} navigation={p.navigation} />,
   viewerportrait: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 103 } } as any} navigation={p.navigation} />,
@@ -66,6 +70,18 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   photos: OnboardingPhotosScreen,
   about: OnboardingAboutScreen,
   preferences: OnboardingPreferencesScreen,
+};
+
+// Every RPC goes through the service; answering them here is what lets a
+// screen's real hooks run without a backend. Installed before anything mounts.
+// Shape matters: `service.rpc()` destructures `{ data, error }` off the client,
+// so the stand-in has to answer in that envelope, not with a bare payload.
+(supabase as any).rpc = async (fn: string, args: Record<string, any>) => {
+  try {
+    return { data: await mockRpc(fn, args), error: null };
+  } catch (e) {
+    return { data: null, error: { message: (e as Error).message } };
+  }
 };
 
 const pick = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('s') || 'flow' : 'flow';
@@ -89,9 +105,13 @@ function Inner() {
   const Screen = chosen;
   if (!ready) return <View style={{ flex: 1, backgroundColor: '#0A0E27' }} />;
   return (
-    <View style={{ flex: 1 }} testID={`harness-${status}`}>
-      <Screen navigation={nav} route={{ key: 'h', name: pick, params: {} }} />
-    </View>
+    // The same boundary the shipped app mounts, so a harness render is a
+    // faithful render: a crash looks like what a member would see.
+    <ErrorBoundary>
+      <View style={{ flex: 1 }} testID={`harness-${status}`}>
+        <Screen navigation={nav} route={{ key: 'h', name: pick, params: {} }} />
+      </View>
+    </ErrorBoundary>
   );
 }
 

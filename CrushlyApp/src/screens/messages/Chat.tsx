@@ -36,7 +36,9 @@ const ICEBREAKERS = [
   'Perfect Saturday: early run or late brunch?',
 ];
 
-type Row = { type: 'msg'; m: Message; first: boolean; seen: boolean } | { type: 'day'; key: string; label: string };
+type Row =
+  | { type: 'msg'; m: Message; first: boolean; last: boolean; seen: boolean }
+  | { type: 'day'; key: string; label: string };
 
 export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const { conversationId } = route.params;
@@ -173,8 +175,14 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         prevDay = day;
       }
       const prev = msgs[i - 1];
-      const first = !prev || prev.mine !== m.mine || m.createdAt - prev.createdAt > 5 * 60_000 || new Date(prev.createdAt).toDateString() !== day;
-      out.push({ type: 'msg', m, first, seen: lastMineRead?.id === m.id && msgs[msgs.length - 1]?.mine === true });
+      const next = msgs[i + 1];
+      // A run breaks on a change of sender, a five-minute pause, or midnight.
+      const breaks = (a?: Message, b?: Message) =>
+        !a || !b || a.mine !== b.mine || b.createdAt - a.createdAt > 5 * 60_000 ||
+        new Date(a.createdAt).toDateString() !== new Date(b.createdAt).toDateString();
+      const first = breaks(prev, m);
+      const last = breaks(m, next);
+      out.push({ type: 'msg', m, first, last, seen: lastMineRead?.id === m.id && msgs[msgs.length - 1]?.mine === true });
     });
     return out.reverse(); // inverted list
   }, [chat.messages]);
@@ -294,7 +302,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top, paddingHorizontal: space.md }}>
         <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
-        <ErrorState title="We lost the thread" error={convError} onRetry={refetchConv} />
+        <ErrorState
+          title="We lost the thread"
+          error={convError}
+          message="This conversation didn’t open. Trying again usually sorts it."
+          onRetry={refetchConv}
+        />
       </View>
     );
   }
@@ -349,7 +362,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />
         ) : chat.error ? (
-          <ErrorState title="We lost the thread" error={chat.error} onRetry={chat.reload} />
+          <ErrorState
+            title="We lost the thread"
+            error={chat.error}
+            message="These Whispers didn’t load. Your conversation is still here."
+            onRetry={chat.reload}
+          />
         ) : (
           <FlatList
             ref={listRef}
@@ -422,7 +440,9 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                     <MessageBubble
                       message={item.m}
                       firstInGroup={item.first}
+                      lastInGroup={item.last}
                       showSeen={item.seen}
+                      showTime={item.last}
                       peerName={peer?.name ?? ''}
                       onLongPress={setActionFor}
                       onDoubleTap={react}

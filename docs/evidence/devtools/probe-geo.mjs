@@ -1,0 +1,17 @@
+import './ws-shim.mjs';
+const [,, screen = 'messages', expr = 'ROWS'] = process.argv;
+const PORT = 9222;
+const target = await (await fetch(`http://127.0.0.1:${PORT}/json/new`, { method: 'PUT' })).json();
+const ws = new WebSocket(target.webSocketDebuggerUrl);
+let id = 0; const pending = new Map();
+const send = (m, p = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
+ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); } };
+await new Promise((r) => (ws.onopen = r));
+await send('Page.enable'); await send('Runtime.enable');
+await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+await send('Page.navigate', { url: `http://127.0.0.1:8097/index.html?s=${screen}` });
+await new Promise((r) => setTimeout(r, 9000));
+const ev = async (expression) => { const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) return { ERR: r.exceptionDetails.text }; return r.result?.value; };
+const out = await ev((await import('node:fs')).readFileSync('/home/user/probes/' + expr, 'utf8'));
+console.log(JSON.stringify(out, null, 1));
+ws.close(); await fetch(`http://127.0.0.1:${PORT}/json/close/${target.id}`);

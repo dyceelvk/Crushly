@@ -25,9 +25,13 @@ export const REACTIONS: { key: string; label: string; emoji?: string }[] = [
 
 type Props = {
   message: Message;
-  /** First bubble of a run from the same sender (gets the tail + spacing). */
+  /** First bubble of a run from the same sender (spacing, flat top corner). */
   firstInGroup: boolean;
+  /** Last bubble of the run — the one that carries the tail and the time. */
+  lastInGroup: boolean;
   showSeen: boolean;
+  /** Prints the clock time under this bubble. */
+  showTime: boolean;
   peerName: string;
   onLongPress: (m: Message) => void;
   onDoubleTap: (m: Message) => void;
@@ -38,7 +42,7 @@ type Props = {
   onOpenReply?: (id: number) => void;
 };
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, showSeen, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onRetry, onOpenReply }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showSeen, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
   const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile';
@@ -80,7 +84,14 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
           <View
             style={{
               backgroundColor: bg, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20,
-              borderBottomRightRadius: m.mine && firstInGroup ? 6 : 20, borderBottomLeftRadius: !m.mine && firstInGroup ? 6 : 20,
+              // A run from one sender reads as one block: the corners between
+              // its bubbles go flat, and only the last bubble carries the tail.
+              // (Squaring the *first* bubble, the way this used to, put the tail
+              // above the messages that followed it.)
+              borderTopRightRadius: m.mine && !firstInGroup ? 6 : 20,
+              borderBottomRightRadius: m.mine && lastInGroup ? 6 : 20,
+              borderTopLeftRadius: !m.mine && !firstInGroup ? 6 : 20,
+              borderBottomLeftRadius: !m.mine && lastInGroup ? 6 : 20,
               borderWidth: m.mine ? 0 : 1, borderColor: colors.border,
             }}
           >
@@ -107,10 +118,17 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
         </Pressable>
       ) : m.pending ? (
         <ActivityIndicator size="small" color={colors.textMuted} style={{ marginTop: 4, transform: [{ scale: 0.7 }] }} />
-      ) : showSeen ? (
-        <Txt variant="caption" color="textMuted" style={{ marginTop: 4 }}>
-          Seen
-        </Txt>
+      ) : showSeen || showTime ? (
+        // The time was only ever in the accessibility label, so a sighted member
+        // had no idea when anything was said unless the day rolled over.
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginHorizontal: 4 }}>
+          {showSeen ? (
+            <Txt variant="caption" color="gold">Seen</Txt>
+          ) : null}
+          {showTime ? (
+            <Txt variant="caption" color="textMuted">{clockTime(m.createdAt)}</Txt>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );

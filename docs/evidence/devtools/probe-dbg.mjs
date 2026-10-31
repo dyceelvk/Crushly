@@ -1,0 +1,22 @@
+import './ws-shim.mjs';
+const PORT = 9222;
+const t0 = Date.now();
+const log = (...a) => console.log(Date.now() - t0, ...a);
+const target = await (await fetch(`http://127.0.0.1:${PORT}/json/new`, { method: 'PUT' })).json();
+log('target', target.id);
+const ws = new WebSocket(target.webSocketDebuggerUrl);
+let id = 0; const pending = new Map();
+const send = (m, p = {}, ms = 8000) => new Promise((res) => {
+  const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method: m, params: p }));
+  setTimeout(() => { if (pending.has(i)) { pending.delete(i); res({ __timeout: m }); } }, ms);
+});
+ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); } };
+await new Promise((r) => (ws.onopen = r));
+log('open');
+log('Page.enable', JSON.stringify(await send('Page.enable')));
+log('Runtime.enable', JSON.stringify(await send('Runtime.enable')));
+await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+log('nav', JSON.stringify(await send('Page.navigate', { url: 'http://127.0.0.1:8097/index.html?s=chat' }, 15000)));
+await new Promise((r) => setTimeout(r, 8000));
+log('evaluate', JSON.stringify(await send('Runtime.evaluate', { expression: 'document.body.innerText.slice(0,200)', returnByValue: true }, 30000)));
+process.exit(0);

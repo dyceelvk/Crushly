@@ -75,7 +75,9 @@ export const me = {
   plus: { active: false, interested: false, deepCrushesLeft: 3, deepCrushesPerDay: 3 },
 };
 
-const now = 1793430000000;
+// Live clock, not a frozen one: the screens print relative times against
+// Date.now(), so a fixture stamped at build time would read "9h" forever.
+const now = Date.now();
 
 const posts: any[] = [
   {
@@ -172,24 +174,83 @@ const circles = [
   { id: 2, name: 'Design Room', memberCount: 4, unreadCount: 0, photoUrl: null, lastMessage: 'the new build is up' },
 ];
 
+/** A Message exactly as `serialize_message` builds it — `meta` always an object,
+ *  timestamps in epoch milliseconds (`now_ms()`), `readAt` null when unread. */
+const message = (
+  id: number,
+  conversationId: number,
+  senderId: number,
+  mine: boolean,
+  body: string,
+  createdAt: number,
+  opts: Partial<any> = {},
+): any => ({
+  id,
+  conversationId,
+  senderId,
+  mine,
+  kind: 'text',
+  body,
+  mediaUrl: null,
+  meta: {},
+  createdAt,
+  readAt: null,
+  reactions: [],
+  ...opts,
+});
+
+/** `list_conversations()` unwrapped — the service hands the screen a plain
+ *  array, so that is what the cache must hold. */
 const conversations = [
   {
     id: 1,
     peer: { id: 2, name: 'Ngozi', verified: true, photo: `${MEDIA}/face2.jpg`, online: true },
-    lastMessage: 'okay that clip is unreal',
-    lastAt: now - 1000 * 60 * 6,
-    unreadCount: 1,
-    mine: false,
+    lastMessage: message(11, 1, 2, false, 'okay that clip is unreal', now - 1000 * 60 * 6),
+    unread: 1,
+    updatedAt: now - 1000 * 60 * 6,
   },
   {
     id: 2,
     peer: { id: 3, name: 'Tunde', verified: false, photo: `${MEDIA}/face3.jpg`, online: false },
-    lastMessage: 'sent a photo',
-    lastAt: now - 1000 * 60 * 60,
-    unreadCount: 0,
-    mine: true,
+    lastMessage: message(12, 2, 1, true, '', now - 1000 * 60 * 60, {
+      kind: 'photo',
+      mediaUrl: `${MEDIA}/scene2.jpg`,
+      readAt: now - 1000 * 60 * 52,
+    }),
+    unread: 0,
+    updatedAt: now - 1000 * 60 * 60,
+  },
+  {
+    id: 3,
+    peer: { id: 4, name: 'Amara', verified: false, photo: null, online: null },
+    lastMessage: message(13, 3, 4, false, 'Voice note', now - 1000 * 60 * 60 * 26, { kind: 'voice' }),
+    unread: 4,
+    updatedAt: now - 1000 * 60 * 60 * 26,
   },
 ];
+
+/**
+ * The thread on `Chat` (`get_messages` → `items`). Newest last: the screen
+ * inverts the list itself. Deliberately mixed — a five-minute gap, a day
+ * boundary, a photo, a reply, a self-sent message already read — because those
+ * are the cases the grouping and the seen-tick have to get right.
+ */
+export const threads: Record<number, { items: any[]; hasMore: boolean; lastReadMine: number | null }> = {
+  1: {
+    items: [
+      message(1, 1, 1, true, 'That rooftop shot is doing something to me. Where is it?', now - 1000 * 60 * 60 * 30),
+      message(2, 1, 2, false, 'Aba Road, the one with the blue gate. Go at 6, not 5.', now - 1000 * 60 * 60 * 29),
+      message(3, 1, 1, true, 'Noted. Bringing the good camera.', now - 1000 * 60 * 60 * 29, { readAt: now - 1000 * 60 * 28 }),
+      message(4, 1, 2, false, '', now - 1000 * 60 * 60 * 28, { kind: 'photo', mediaUrl: `${MEDIA}/scene1.jpg` }),
+      message(5, 1, 1, true, 'Okay that clip is unreal.', now - 1000 * 60 * 8),
+      message(6, 1, 1, true, 'How long did you wait for the light?', now - 1000 * 60 * 7),
+      message(7, 1, 1, true, 'I have never had the patience.', now - 1000 * 60 * 6),
+      message(8, 1, 2, false, 'Six minutes. Then the sky did the rest.', now - 1000 * 60 * 5),
+    ],
+    hasMore: false,
+    lastReadMine: 5,
+  },
+};
 
 const closeOnes = {
   items: [
@@ -209,11 +270,11 @@ export const mockEntries: [unknown[], unknown][] = [
   [['post-comments', 101], { items: comments.filter((c) => c.postId === 101) }],
   [['post-comments', 102], { items: comments.filter((c) => c.postId === 102) }],
   [['circles'], { items: circles }],
-  [['conversations'], { items: conversations }],
+  [['conversations'], conversations],
   [['app-update'], { available: false, latestVersion: '1.0.3', url: null }],
   [['blocks'], { items: [] }],
   [['notifications'], { items: [], unread: 0 }],
-  [['crushes'], { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [] }],
+  [['crushes'], { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] }],
   [['close-ones'], closeOnes],
   [['user', 2], person(2, 'Ngozi', 'ngozi', { bio: 'Filmmaker. I make small films about big feelings.', verified: true, intentions: ['dating'], relationshipIntention: 'Long-term partner' })],
   [['badges'], { items: [] }],
@@ -221,3 +282,57 @@ export const mockEntries: [unknown[], unknown][] = [
 
 export const mockPosts = posts;
 export const mockComments = comments;
+
+/* ------------------------------------------------------------- mock transport */
+
+const conversationDetail = (id: number) => {
+  const conv = conversations.find((c) => c.id === id) ?? conversations[0];
+  return { id: conv.id, closed: false, peer: conv.peer, canSend: true, blockReason: null };
+};
+
+/**
+ * Answers the RPCs a screen calls through its hooks.
+ *
+ * The cache above only covers screens that read `useQuery` keys verbatim;
+ * anything that goes through `useChat` or a mutation calls `service.*`, which
+ * calls `supabase.rpc`. Overriding that one method means a render exercises the
+ * real hooks, the real service, and the real shapes — the same boundary the app
+ * uses — instead of a hand-seeded payload that can quietly disagree with it.
+ *
+ * Anything not listed here rejects, so a missing mock is loud instead of silent.
+ */
+export async function mockRpc(fn: string, args: Record<string, any> = {}): Promise<unknown> {
+  switch (fn) {
+    case 'list_conversations':
+      return { items: conversations };
+    case 'load_conversation':
+      return conversationDetail(Number(args.p_conversation_id));
+    case 'get_messages': {
+      const thread = threads[Number(args.p_conversation_id)] ?? { items: [], hasMore: false, lastReadMine: null };
+      const after = Number(args.p_after_id ?? 0);
+      const items = after ? thread.items.filter((m) => m.id > after) : thread.items;
+      return { items, hasMore: thread.hasMore, lastReadMine: thread.lastReadMine };
+    }
+    case 'mark_conversation_read':
+      return true;
+    case 'send_message': {
+      const thread = threads[Number(args.p_conversation_id)];
+      const last = thread?.items[thread.items.length - 1];
+      return message(
+        (last?.id ?? 0) + 1,
+        Number(args.p_conversation_id),
+        1,
+        true,
+        String(args.p_body ?? ''),
+        Date.now(),
+        { kind: String(args.p_kind ?? 'text'), meta: args.p_meta ?? {}, readAt: null },
+      );
+    }
+    case 'toggle_message_reaction':
+      return { id: Number(args.p_message_id), reactions: [{ userId: 1, kind: String(args.p_kind ?? 'crush') }] };
+    case 'crushes_feed':
+      return { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] };
+    default:
+      throw new Error(`harness: no mock for ${fn}()`);
+  }
+}

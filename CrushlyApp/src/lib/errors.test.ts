@@ -51,3 +51,15 @@ test('offline is distinguishable from refused, because the advice differs', () =
   assert.equal(isOffline(new Error('You can show up to 6 photos.')), false);
   assert.equal(isOffline(null), false);
 });
+
+test('a query library talking about itself is not a message', () => {
+  // Found by rendering the empty Chat error state with only the raw error to
+  // show: React Query's own wording reached the member, key and all.
+  assert.equal(errorLine('Query data cannot be undefined. Query key: ["conversation",1]'), GENERIC_ERROR);
+  assert.equal(errorLine(new Error('["conversation",1] data is undefined')), GENERIC_ERROR);
+  assert.equal(errorLine('[{"items":[]}] No queryFn found'), GENERIC_ERROR);
+});
+
+test('a member-facing sentence that mentions a key still gets through', () => {
+  assert.equal(errorLine('That Space is private. Ask them for a key.'), 'That Space is private. Ask them for a key.');
+});

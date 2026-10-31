@@ -1,0 +1,9 @@
+(() => {
+  const out = [];
+  for (const el of document.querySelectorAll('[aria-label]')) {
+    const r = el.getBoundingClientRect();
+    if (r.height < 30) continue;
+    out.push({ label: (el.getAttribute('aria-label') || '').slice(0, 70), role: el.getAttribute('role'), tag: el.tagName, y: Math.round(r.y), h: Math.round(r.height), w: Math.round(r.width), x: Math.round(r.x) });
+  }
+  return out;
+})()

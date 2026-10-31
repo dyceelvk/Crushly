@@ -1,0 +1,17 @@
+(() => {
+  const out = { rows: [] };
+  // A conversation row: the pressable that contains an avatar-sized box.
+  const all = [...document.querySelectorAll('div[role="button"]')];
+  for (const el of all) {
+    const t = (el.innerText || '').replace(/\n/g, ' | ').slice(0, 90);
+    if (!t || t.length < 3) continue;
+    const r = el.getBoundingClientRect();
+    if (r.height < 40) continue;
+    const kids = [...el.children].map(k => {
+      const kr = k.getBoundingClientRect();
+      return { x: Math.round(kr.x), y: Math.round(kr.y), w: Math.round(kr.width), h: Math.round(kr.height), cy: Math.round(kr.y + kr.height / 2) };
+    });
+    out.rows.push({ text: t, rect: { y: Math.round(r.y), h: Math.round(r.height) }, kids });
+  }
+  return out;
+})()
