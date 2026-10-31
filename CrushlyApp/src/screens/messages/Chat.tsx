@@ -294,7 +294,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top, paddingHorizontal: space.md }}>
         <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
-        <ErrorState message={(convError as Error).message} onRetry={refetchConv} />
+        <ErrorState title="We lost the thread" error={convError} onRetry={refetchConv} />
       </View>
     );
   }
@@ -349,7 +349,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />
         ) : chat.error ? (
-          <ErrorState message={chat.error} onRetry={chat.reload} />
+          <ErrorState title="We lost the thread" error={chat.error} onRetry={chat.reload} />
         ) : (
           <FlatList
             ref={listRef}

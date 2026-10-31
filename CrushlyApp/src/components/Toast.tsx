@@ -8,6 +8,7 @@ import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
 import { haptic } from '../lib/haptics';
+import { errorLine } from '../lib/errors';
 
 type ToastKind = 'success' | 'error' | 'info' | 'crush';
 type ToastInput = { kind?: ToastKind; title: string; message?: string; avatar?: string | null; onPress?: () => void; duration?: number };
@@ -23,8 +24,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     counter.current += 1;
     if (t.kind === 'crush') haptic.success();
     else if (t.kind === 'error') haptic.warning();
-    AccessibilityInfo.announceForAccessibility(`${t.title}${t.message ? `. ${t.message}` : ''}`);
-    setToast({ ...t, id: counter.current });
+    // Same gate as the error states: a rejected mutation surfaces here with
+    // `(e as Error).message`, and that can be `TypeError: Failed to fetch` just as
+    // easily as a sentence written for a person. A message survives only if it is
+    // one we wrote.
+    const message = t.message ? errorLine(t.message) : undefined;
+    AccessibilityInfo.announceForAccessibility(`${t.title}${message ? `. ${message}` : ''}`);
+    setToast({ ...t, message, id: counter.current });
   }, []);
   return (
     <ToastContext.Provider value={show}>

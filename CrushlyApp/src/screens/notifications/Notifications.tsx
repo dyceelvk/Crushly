@@ -145,7 +145,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
           }}
           ListEmptyComponent={
             isError ? (
-              <ErrorState message={(error as Error)?.message} onRetry={refetch} />
+              <ErrorState error={error} message="Notifications didn’t load." onRetry={refetch} />
             ) : (
               <EmptyState
                 icon="notifications-outline"

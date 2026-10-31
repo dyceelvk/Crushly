@@ -139,7 +139,7 @@ export function DiscoverScreen() {
             <Skeleton style={{ height: 120, borderRadius: 14 }} />
           </View>
         ) : feed.isError ? (
-          <ErrorState message={feed.error instanceof Error ? feed.error.message : 'Posts didn’t load.'} onRetry={refresh} />
+          <ErrorState error={feed.error} message="Posts didn’t load." onRetry={refresh} />
         ) : posts.length ? (
           <View style={{ gap: space.md }}>
             {posts.map((p) => (

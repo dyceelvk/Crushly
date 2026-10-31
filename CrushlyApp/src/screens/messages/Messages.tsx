@@ -132,7 +132,7 @@ export function MessagesScreen() {
         renderItem={({ item }) => <ConversationRow conv={item} onPress={() => navigation.navigate('Chat', { conversationId: item.id })} />}
         ListEmptyComponent={
           isLoading ? null : isError ? (
-            <ErrorState message={(error as Error)?.message} onRetry={refetch} />
+            <ErrorState error={error} message="Your messages didn’t load." onRetry={refetch} />
           ) : q && !filteredFresh.length ? (
             <EmptyState
               icon="search-outline"

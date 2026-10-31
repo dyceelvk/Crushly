@@ -213,7 +213,7 @@ export function FlowScreen() {
           {flow.isLoading ? (
             <Skeleton style={{ height: 120 }} />
           ) : flow.isError ? (
-            <ErrorState message={flow.error instanceof Error ? flow.error.message : 'Your Flows didn’t load.'} onRetry={flow.refresh} />
+            <ErrorState error={flow.error} message="Your Flows didn’t load." onRetry={flow.refresh} />
           ) : flow.posts.length ? (
             <>
               {flow.posts.map((p, index) => {

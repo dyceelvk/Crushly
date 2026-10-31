@@ -165,7 +165,7 @@ export function CrushesScreen() {
         )}
         ListEmptyComponent={
           isLoading ? null : isError ? (
-            <ErrorState message={(error as Error)?.message} onRetry={refetch} />
+            <ErrorState error={error} message="Your Crushes didn’t load." onRetry={refetch} />
           ) : (
             <EmptyState icon="crush" title={empty.title} message={empty.message} action={empty.action} />
           )

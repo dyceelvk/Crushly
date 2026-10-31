@@ -65,7 +65,7 @@ export function CloseOnesScreen() {
           {list.isLoading ? (
             <LoadingBlock label="Loading your Close Ones" />
           ) : list.isError ? (
-            <ErrorState message={list.error instanceof Error ? list.error.message : 'Your Close Ones didn’t load.'} onRetry={list.refetch} />
+            <ErrorState error={list.error} message="Your Close Ones didn’t load." onRetry={list.refetch} />
           ) : list.data?.items.length ? (
             list.data.items.map((entry) => (
               <View

@@ -85,7 +85,8 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.xl, paddingHorizontal: gutter }}>
         <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
         <ErrorState
-          message={space_q.error instanceof Error ? space_q.error.message : 'This Circle isn’t available.'}
+          error={space_q.error}
+          message="This Circle isn’t available."
           onRetry={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Flows' }))}
         />
       </View>
@@ -227,7 +228,7 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
       {thread.isLoading ? (
         <LoadingBlock label="Loading the conversation" />
       ) : thread.isError ? (
-        <ErrorState message={thread.error instanceof Error ? thread.error.message : 'The conversation didn’t load.'} onRetry={thread.refetch} />
+        <ErrorState error={thread.error} message="The conversation didn’t load." onRetry={thread.refetch} />
       ) : items.length ? (
         items.map((m) => <Bubble key={m.id} message={m} author={byId.get(m.senderId)} />)
       ) : (
@@ -412,7 +413,7 @@ function RoomPosts({ circleId }: { circleId: number }) {
       {feed.isLoading ? (
         <LoadingBlock label="Loading posts" />
       ) : feed.isError ? (
-        <ErrorState message={feed.error instanceof Error ? feed.error.message : 'These posts didn’t load.'} onRetry={feed.refresh} />
+        <ErrorState error={feed.error} message="These posts didn’t load." onRetry={feed.refresh} />
       ) : feed.posts.length ? (
         <>
           {feed.posts.map((p) => (

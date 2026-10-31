@@ -18,6 +18,7 @@ import { SplashScreen } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import type { RootStackParamList } from './src/navigation/types';
 import { ApiError } from './src/api/client';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 ExpoSplash.preventAutoHideAsync().catch(() => {});
 
@@ -97,7 +98,11 @@ function Shell() {
     <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Crushly' }}>
       <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
       <MemberActionsProvider>
-        <RootNavigator fontsReady={fontsReady} />
+        {/* A render error unmounts the tree and leaves a white page. The boundary
+            makes that a sentence and a "Try again" instead. */}
+        <ErrorBoundary>
+          <RootNavigator fontsReady={fontsReady} />
+        </ErrorBoundary>
       </MemberActionsProvider>
     </NavigationContainer>
   );

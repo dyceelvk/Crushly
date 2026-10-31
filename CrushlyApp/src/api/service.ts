@@ -5,6 +5,7 @@ import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
+import { profileShape } from '../lib/profileShape';
 import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
 import {
   INTENTIONS as catalogIntentions,
@@ -806,9 +807,13 @@ export async function discover(): Promise<DiscoverPage> {
 }
 
 export async function loadProfile(id: number): Promise<FullProfile> {
-  const profile = await rpc<FullProfile | null>('load_profile', { p_target_id: id });
+  const profile = await rpc<unknown>('load_profile', { p_target_id: id });
   if (!profile) throw new ApiError(404, 'This Space isn’t available.');
-  return profile;
+  // Normalised at the boundary, not inside the screen: `load_profile` composes
+  // its payload from three functions and merges Moments in conditionally, and its
+  // jsonb columns can be null. A screen that indexes a missing key is a white
+  // page, which is how this was found.
+  return profileShape(profile);
 }
 
 export async function crushes(): Promise<CrushesResponse> {

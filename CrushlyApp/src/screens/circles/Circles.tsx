@@ -78,7 +78,7 @@ export function CirclesScreen() {
           {circles.isLoading ? (
             <LoadingBlock label="Loading your Circles" />
           ) : circles.isError ? (
-            <ErrorState message={circles.error instanceof Error ? circles.error.message : 'Your Circles didn’t load.'} onRetry={circles.refetch} />
+            <ErrorState error={circles.error} message="Your Circles didn’t load." onRetry={circles.refetch} />
           ) : items.length ? (
             items.map((c) => (
               <Pressable

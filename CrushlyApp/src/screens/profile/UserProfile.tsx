@@ -86,7 +86,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top, paddingHorizontal: gutter }}>
         <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} style={{ marginTop: space.sm }} />
-        <ErrorState message={(error as Error)?.message || 'This Space isn’t available.'} onRetry={refetch} />
+        <ErrorState error={error} message="This Space isn’t available." onRetry={refetch} />
       </View>
     );
   }
@@ -139,27 +139,6 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             ))}
           </ScrollView>
           <LinearGradient colors={['rgba(7,7,8,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 120 }} pointerEvents="none" />
-          {p.moments.length > 0 && (
-            <Pressable
-              onPress={() => navigation.navigate('MomentViewer', { userId: p.id, mine: route.params.id === p.id })}
-              accessibilityLabel={`View ${p.name}'s Moments`}
-              style={{
-                position: 'absolute',
-                left: gutter,
-                bottom: space.xxl,
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                borderWidth: 3,
-                borderColor: colors.cyan,
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 60,
-              }}
-            >
-              <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
-            </Pressable>
-          )}
           <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.75, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} pointerEvents="none" />
           <View style={{ position: 'absolute', top: insets.top + space.sm, left: gutter, right: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <IconButton icon="chevron-back" variant="glass" label="Go back" onPress={() => navigation.goBack()} />
@@ -183,9 +162,14 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               </Txt>
               {p.verified ? <VerifiedBadge size={24} /> : null}
               {p.moments.length > 0 && (
+                // One entry point, beside the name it belongs to. There used to be a
+                // second, floating at the bottom-left of the hero, which landed on
+                // top of the name and the @handle line.
                 <Pressable
                   onPress={() => navigation.navigate('MomentViewer', { userId: p.id })}
                   accessibilityLabel={`View ${p.name}'s Moments`}
+                  accessibilityRole="button"
+                  hitSlop={8}
                   style={{
                     width: 32,
                     height: 32,

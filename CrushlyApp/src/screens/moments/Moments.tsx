@@ -136,7 +136,7 @@ export function MomentsScreen() {
           ))}
         </View>
       ) : isError ? (
-        <ErrorState message={(error as Error)?.message} onRetry={refetch} />
+        <ErrorState error={error} message="Moments didn’t load." onRetry={refetch} />
       ) : !connections.length && !nearby.length ? (
         <EmptyState
           icon="aperture-outline"

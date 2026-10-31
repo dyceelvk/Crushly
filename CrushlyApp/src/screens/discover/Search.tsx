@@ -110,7 +110,8 @@ export function SearchScreen() {
           </View>
         ) : results.isError ? (
           <ErrorState
-            message={results.error instanceof Error ? results.error.message : 'Search didn’t load.'}
+            error={results.error}
+            message="Search didn’t load."
             onRetry={results.refetch}
           />
         ) : total === 0 ? (

@@ -7,6 +7,7 @@ import { Button } from './Button';
 import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
+import { errorLine } from '../lib/errors';
 
 type EmptyProps = {
   icon?: keyof typeof Ionicons.glyphMap | 'crush';
@@ -60,12 +61,38 @@ export function EmptyState({ icon = 'sparkles-outline', title, message, action, 
   );
 }
 
-export function ErrorState({ message, onRetry, style }: { message?: string; onRetry?: () => void; style?: StyleProp<ViewStyle> }) {
+/**
+ * The one error state in the app.
+ *
+ * It takes the raw error rather than a string, and decides what a member may read
+ * — see `lib/errors.ts`. Fourteen screens were passing `(err as Error).message`
+ * straight in, so the app was printing `TypeError: Failed to fetch` and Postgres
+ * constraint names at people. Sanitising here fixes every one of them, including
+ * the ones written next month.
+ *
+ * The title is a prop because the same failure reads differently in different
+ * places: "We lost the thread" is right in a conversation and odd on a profile.
+ */
+export function ErrorState({
+  error,
+  message,
+  title = 'That didn’t load',
+  onRetry,
+  style,
+}: {
+  /** The error itself, if the caller still has it. Preferred over `message`. */
+  error?: unknown;
+  /** A message the caller wrote itself, or one that has already been vetted. */
+  message?: string;
+  title?: string;
+  onRetry?: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
     <EmptyState
       icon="cloud-offline-outline"
-      title="We lost the thread"
-      message={message || 'Something interrupted the connection. Give it another try.'}
+      title={title}
+      message={errorLine(error ?? message, message)}
       action={onRetry ? { label: 'Try again', onPress: onRetry, variant: 'secondary' } : undefined}
       style={style}
     />
