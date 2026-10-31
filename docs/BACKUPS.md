@@ -42,8 +42,10 @@ their sizes are compared as the check that they are the same artifact.
 
 | File | Commit | Size (bytes) | Notes |
 |---|---|---|---|
-| `Crushly_a00edf8_2026-10-31.zip` | `a00edf8` | 18,030,815 | **Current.** Edit Space: she/her is a chip, the interest cap answers, saving ends the edit. Dropbox id `id:pAqbTsCp9FkAAAAAAAAAXQ`, Drive id `1ILAC72K59U865UQOHfyBxsb9S-clUmdp`. |
-| `Crushly_ed782c1_2026-10-31.zip` | `ed782c1` | 18,026,071 | Superseded by `a00edf8`. Video frames follow the source; `PlayPauseFlash` replaces native controls. Pushed to `main` + `feat/flow-engine-and-viewer`, deployed to production. Dropbox id `id:pAqbTsCp9FkAAAAAAAAAXA`, Drive id `1s9YtTmlD9mSMjp2K7A7q7rDxNW_aC1xb`. |
+| `Crushly_c93e39d_2026-10-31.zip` | `c93e39d` | 18,079,874 | **Current.** The app is byte-identical to `a00edf8`; this adds `devtools/` (render harness, CDP probes, build script) and `docs/` (this file, the status report, five evidence reports). Dropbox `/Crushly/backups/` id `id:pAqbTsCp9FkAAAAAAAAAXw`, Drive `Crushly-Backups/` id `1kpqQPDQmHekPP7vQ-bjYhPrlMOdfkNuE`. |
+| `Crushly_workspace_c93e39d_2026-10-31.zip` | `c93e39d` | 32,346,027 | **Not a project pack — the workspace archive.** Everything that existed only on disk: all 60+ `evidence/` PNGs and raw captures, the harness test media (faces + landscape/portrait `.webm`/`.mp4`), `design/`, `uploads/`, `work/`, the `.editwork`/`.videowork` copies of the files edited mid-turn, and `BACKUPS.md`. Cut because the workspace rolled back once already. Dropbox `/Crushly/backups/` id `id:pAqbTsCp9FkAAAAAAAAAXg`, Drive `Crushly-Backups/` id `1iL5Fig-3A26IX3E3HD99NtF-KHBCA1r0`. |
+| `Crushly_a00edf8_2026-10-31.zip` | `a00edf8` | 18,030,815 | Superseded by `c93e39d`. Edit Space: she/her is a chip, the interest cap answers, saving ends the edit. Dropbox `/Crushly/backups/` id `id:pAqbTsCp9FkAAAAAAAAAXQ`, Drive `Crushly-Backups/` id `1ILAC72K59U865UQOHfyBxsb9S-clUmdp`. |
+| `Crushly_ed782c1_2026-10-31.zip` | `ed782c1` | 18,026,071 | Superseded by `a00edf8`. Video frames follow the source; `PlayPauseFlash` replaces native controls. Pushed to `main` + `feat/flow-engine-and-viewer`, deployed to production. Dropbox `/Crushly/backups/` id `id:pAqbTsCp9FkAAAAAAAAAXA`, Drive `Crushly-Backups/` id `1s9YtTmlD9mSMjp2K7A7q7rDxNW_aC1xb`. |
 | `Crushly_eca51f4_2026-10-31.zip` | `eca51f4` | 18,013,564 | Superseded by `ed782c1`. "Continue with Google" (hidden until the provider is switched on), plus the auth fixes from `d464a0a`. Deployed to production. Dropbox id `id:pAqbTsCp9FkAAAAAAAAAWw`, Drive id `160STHq5ek59cob9zsTZDe9lkVGSpjUyx`. |
 | `Crushly_d464a0a_2026-10-31.zip` | `d464a0a` | 18,011,557 | Auth fix + Space tab in the same deployment. Superseded. Auth fix: `already registered` is no longer reported as "check your inbox", and every auth link now carries `emailRedirectTo`. Deployed to production. Dropbox id `id:pAqbTsCp9FkAAAAAAAAAWg`, Drive id `1zfX1knl93Wtc82-qkeMIR-RrDPoP4J5y`. |
 | `Crushly_a6b3ab8_2026-10-31.zip` | `a6b3ab8` | — | Not packed: superseded by `d464a0a` before the pack ran, and both are in the same deployment history. |
@@ -60,6 +62,26 @@ with it (the older five survived). Both are intact in Dropbox and Drive under th
 ids in the table above, so nothing is lost — but a local-only copy of a pack is
 not a backup, which is the case for uploading every pack to both stores as the
 same action as cutting it.
+
+## What is saved where
+
+Three places, and the rule is that **nothing important lives in only one of
+them**. The workspace is a scratch disk: it has rolled back mid-turn once, losing
+eight commits' worth of tracked files, and `/tmp` disappears between sessions.
+
+| Where | What | How to check it |
+|---|---|---|
+| **GitHub** (`dyceelvk/Crushly`, `main`) | Every commit, plus `devtools/` (harness + probes) and `docs/` (this file, the status report, the evidence reports). | `git log --oneline -1` locally, `git ls-remote origin main` after a push. |
+| **Dropbox** | Every `Crushly_*_2026-10-31.zip` pack and the workspace archive, all in **`/Crushly/backups/`**. | `list_folder("/Crushly/backups")`. |
+| **Google Drive** | The same files, same names, in the **`Crushly-Backups/`** folder (id `1Xx7G0EV-xvxRuGW9BL7Owg2Oz5Se_NC-`). | `list_files` with `q="'1Xx7G0EV-xvxRuGW9BL7Owg2Oz5Se_NC-' in parents"`. |
+
+A pack is cut from a commit with `git archive`, so it is byte-identical to what
+git holds for that sha — and the sha is in the filename.
+
+One correction made while checking: the first four packs of this session went
+to the **root** of both stores while everything before them lived in
+`/Crushly/backups/` and `Crushly-Backups/`. They have been moved in, so the
+inventory and the folders now agree.
 
 ## Two things that bit us once
 
