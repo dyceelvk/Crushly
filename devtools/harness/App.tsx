@@ -23,7 +23,7 @@ import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 import { AuthProvider, useAuth } from '../src/state/auth';
 import { ToastProvider } from '../src/components/Toast';
 import { MemberActionsProvider } from '../src/state/memberActions';
-import { mockEntries, mockRpc } from './mocks';
+import { mockEntries, mockRpc, momentsFeedVideo } from './mocks';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { supabase } from '../src/api/client';
 
@@ -41,6 +41,9 @@ import { EditProfileScreen } from '../src/screens/profile/EditProfile';
 import { UserProfileScreen } from '../src/screens/profile/UserProfile';
 import { DiscoverScreen } from '../src/screens/discover/Discover';
 import { SearchScreen } from '../src/screens/discover/Search';
+import { MomentsScreen } from '../src/screens/moments/Moments';
+import { MomentViewerScreen } from '../src/screens/moments/MomentViewer';
+import { MomentComposerScreen } from '../src/screens/moments/MomentComposer';
 import { MessagesScreen } from '../src/screens/messages/Messages';
 import { ChatScreen } from '../src/screens/messages/Chat';
 import { SettingsScreen } from '../src/screens/settings/Settings';
@@ -123,6 +126,12 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   user: (p: any) => <UserProfileScreen route={{ key: 'u', name: 'UserProfile', params: { id: 2 } } as any} navigation={p.navigation} />,
   discover: DiscoverScreen,
   search: SearchScreen,
+  moments: MomentsScreen,
+  momentsvideo: MomentsScreen,
+  moment: (p: any) => <MomentViewerScreen route={{ key: 'mv', name: 'MomentViewer', params: { userId: 2 } } as any} navigation={p.navigation} />,
+  // A clip rather than a photo: the branch that plays.
+  momentvideo: (p: any) => <MomentViewerScreen route={{ key: 'mv', name: 'MomentViewer', params: { userId: 5 } } as any} navigation={p.navigation} />,
+  momentcomposer: MomentComposerScreen,
   messages: MessagesScreen,
   chat: (p: any) => <ChatScreen route={{ key: 'c', name: 'Chat', params: { conversationId: 1 } } as any} navigation={p.navigation} />,
   // A connection nobody has spoken to yet — the first thing a new match sees.
@@ -159,6 +168,8 @@ const queryClient = new QueryClient({
 for (const [key, value] of mockEntries) {
   queryClient.setQueryData(key, value);
 }
+// `?s=momentsvideo` seeds the feed with a clip instead of a photo.
+if (pick === 'momentsvideo' || pick === 'momentvideo') queryClient.setQueryData(['moments'], momentsFeedVideo);
 
 function Inner() {
   const { status } = useAuth();

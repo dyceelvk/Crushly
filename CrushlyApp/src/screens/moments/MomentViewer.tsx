@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View, type GestureResponderEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { Txt } from '../../components/Txt';
@@ -258,13 +259,16 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
-        <MomentPreview
-          key={moment.id}
-          moment={moment}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: moment.kind === 'video' ? 0 : space.xl }}
-          textSize={26}
-          autoPlay={moment.kind === 'video'}
-        />
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <MomentPreview
+            key={moment.id}
+            moment={moment}
+            caption={false}
+            style={{ flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
+            textSize={26}
+            autoPlay={moment.kind === 'video'}
+          />
+        </View>
 
         {/* Tap to move, hold to pause. One responder surface that claims the
             touch and keeps it until the finger lifts — a pause can no longer be
@@ -287,8 +291,20 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         {/* No on-screen badge while held: the progress bar freezing at the top
             and the haptic on pause are the feedback. */}
 
+        <LinearGradient
+          colors={['rgba(0,0,0,0.6)', 'transparent']}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 116 }}
+          pointerEvents="none"
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)']}
+          locations={[0, 0.55, 1]}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 300 }}
+          pointerEvents="none"
+        />
+
         {/* Top: progress + author */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.md, backgroundColor: 'rgba(0,0,0,0.25)' }} pointerEvents="box-none">
+        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.md }} pointerEvents="box-none">
           <View style={{ flexDirection: 'row', gap: 4 }} accessibilityElementsHidden>
             {group.moments.map((m, i) => (
               <View key={m.id} style={{ flex: 1, height: 2.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' }}>
@@ -331,10 +347,11 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         {(moment.kind === 'photo' || moment.kind === 'video') && moment.body ? (
           <View
             style={{
-              backgroundColor: 'rgba(0,0,0,0.5)',
-              borderRadius: 12,
+              backgroundColor: 'rgba(0,0,0,0.42)',
+              borderRadius: 14,
               paddingHorizontal: space.md,
               paddingVertical: space.sm,
+              marginHorizontal: space.md,
               marginBottom: space.sm,
             }}
             pointerEvents="none"
@@ -356,7 +373,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         ) : null}
 
         {/* Bottom */}
-        <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: 'rgba(0,0,0,0.35)' }}>
+        <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.md) }}>
           {mine ? (
             <View style={{ gap: 4, paddingVertical: space.xs }} accessible accessibilityLabel={`Seen by ${moment.viewCount ?? 0}. ${reactionsLine ?? 'No reactions yet'}`}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -387,7 +404,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
                 </View>
               ) : null}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={{ flex: 1, minWidth: 0, height: 48, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', justifyContent: 'center' }}>
+                <View style={{ flex: 1, minWidth: 0, height: 48, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', backgroundColor: 'rgba(255,255,255,0.14)', justifyContent: 'center' }}>
                   <TextInput
                     value={reply}
                     onChangeText={setReply}

@@ -370,6 +370,32 @@ export const momentsFeed = {
       latestAt: now - 1000 * 60 * 60 * 3,
       moments: [moment(3, 8, authors.kelechi, 'Sunday people, Sunday light.', now - 1000 * 60 * 60 * 3)],
     },
+    // Somebody nearby rather than in your connections: the second section, and
+    // the words-only Moment (no photo to hide behind).
+    {
+      user: authors.chidi,
+      hasUnseen: false,
+      latestAt: now - 1000 * 60 * 60 * 7,
+      moments: [moment(4, 5, authors.chidi, 'Rain on the roof and nowhere to be.', now - 1000 * 60 * 60 * 7, { kind: 'text', style: 'midnight', mediaUrl: null })],
+    },
+  ],
+};
+
+/** The same feed with a clip in it, for the video branch of the viewer. */
+export const momentsFeedVideo = {
+  mine: momentsFeed.mine,
+  others: [
+    {
+      user: { ...authors.chidi, name: 'Chidi', mutual: true },
+      hasUnseen: true,
+      latestAt: now - 1000 * 60 * 5,
+      moments: [
+        moment(11, 5, { ...authors.chidi, name: 'Chidi' }, 'Sound on. It is worth it.', now - 1000 * 60 * 5, {
+          kind: 'video',
+          mediaUrl: `${MEDIA}/video-portrait.webm`,
+        }),
+      ],
+    },
   ],
 };
 

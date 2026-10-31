@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { IconButton } from '../../components/IconButton';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,9 +24,27 @@ import { timeAgo } from '../../lib/format';
 import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
-export function MomentPreview({ moment, style, textSize = 15, lines = 6, autoPlay = false }: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean }) {
+export function MomentPreview({
+  moment, style, textSize = 15, lines = 6, autoPlay = false, caption = true,
+}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; caption?: boolean }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
   if (moment.kind === 'video') {
+    // A tile does not play. Mounting a player per tile costs a decoder each and
+    // depends on the browser painting a first frame for a video nobody started —
+    // so the picture is drawn as a card and the badge in the corner says "clip".
+    if (!autoPlay) {
+      return (
+        <LinearGradient colors={['#1A1A22', '#08080A']} style={[{ padding: 12, justifyContent: 'center' }, style]}>
+          {caption && moment.body ? (
+            <Txt variant="accent" color="#fff" numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
+              <LinkText text={moment.body} bare />
+            </Txt>
+          ) : (
+            <Ionicons name="videocam-outline" size={Math.max(18, textSize * 1.4)} color="rgba(255,255,255,0.65)" />
+          )}
+        </LinearGradient>
+      );
+    }
     return (
       <View style={[{ overflow: 'hidden', backgroundColor: '#000' }, style]}>
         <EditedClip
@@ -35,7 +54,7 @@ export function MomentPreview({ moment, style, textSize = 15, lines = 6, autoPla
           autoPlay={autoPlay}
           loop={autoPlay}
         />
-        {moment.body ? (
+        {caption && moment.body ? (
           <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(0,0,0,0.55)' }}>
             <Txt variant="body" numberOfLines={lines} style={{ fontSize: textSize, color: '#FFF', lineHeight: textSize * 1.35 }}>
               <LinkText text={moment.body} bare />
@@ -49,7 +68,7 @@ export function MomentPreview({ moment, style, textSize = 15, lines = 6, autoPla
     return (
       <View style={[{ overflow: 'hidden' }, style]}>
         <Photo uri={moment.mediaUrl} style={{ width: '100%', height: '100%' }} />
-        {moment.body ? (
+        {caption && moment.body ? (
           <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(0,0,0,0.55)' }}>
             <Txt variant="body" numberOfLines={lines} style={{ fontSize: textSize, color: '#FFF', lineHeight: textSize * 1.35 }}>
               <LinkText text={moment.body} bare />
@@ -90,12 +109,17 @@ export function MomentsScreen() {
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />}
       showsVerticalScrollIndicator={false}
     >
-      <Txt variant="display" accessibilityRole="header">
-        Moments
-      </Txt>
-      <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-        Little glimpses of life. Gone in 24 hours.
-      </Txt>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
+        <View style={{ flex: 1 }}>
+          <Txt variant="display" accessibilityRole="header">
+            Moments
+          </Txt>
+          <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
+            Little glimpses of life. Gone in 24 hours.
+          </Txt>
+        </View>
+      </View>
 
       {/* Your Moment */}
       <Pressable
@@ -184,8 +208,19 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
     >
       <View style={{ width, height: h, borderRadius: width * 0.3, padding: 2.5, borderWidth: 1.5, borderColor: group.hasUnseen ? colors.gold : colors.border }}>
         <View style={{ flex: 1, borderRadius: width * 0.3 - 3, overflow: 'hidden', backgroundColor: colors.card }}>
-          <MomentPreview moment={latest} style={{ width: '100%', height: '100%', paddingBottom: latest.kind === 'text' ? Math.min(36, width * 0.3) + 14 : 0 }} textSize={Math.max(10, width / 10)} lines={4} />
+          <MomentPreview
+            moment={latest}
+            caption={latest.kind !== 'photo'}
+            style={{ width: '100%', height: '100%' }}
+            textSize={Math.max(10, width / 10)}
+            lines={3}
+          />
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} />
+          {latest.kind === 'video' ? (
+            <View style={{ position: 'absolute', bottom: 10, right: 10, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.55)' }}>
+              <Ionicons name="play" size={13} color="#fff" />
+            </View>
+          ) : null}
           {group.moments.length > 1 ? (
             <View style={{ position: 'absolute', top: 10, right: 12, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
               <Txt variant="caption" color="#fff">
@@ -193,12 +228,10 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
               </Txt>
             </View>
           ) : null}
-          <View style={{ position: 'absolute', bottom: 10, left: 0, right: 0, alignItems: 'center' }}>
-            <Avatar uri={group.user.photo} name={group.user.name} size={Math.min(36, width * 0.3)} ring={group.user.mutual ? 'crush' : null} />
-          </View>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 6 }}>
+        <Avatar uri={group.user.photo} name={group.user.name} size={18} ring={group.user.mutual ? 'crush' : null} />
         <Txt variant="smallStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
           {group.user.name}
         </Txt>
