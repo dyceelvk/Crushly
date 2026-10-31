@@ -14,6 +14,12 @@ type AuthContextValue = {
   status: AuthStatus;
   me: Me | null;
   signIn: (email: string, password: string) => Promise<void>;
+  /**
+   * Hands the browser to Google and comes back with a session. No email is
+   * involved, so nothing can be rate-limited, delayed or filed as spam — and the
+   * address arrives already verified by Google.
+   */
+  signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   /** Verifies the emailed one-time code and signs the member in. */
   verifySignupOtp: (email: string, token: string) => Promise<void>;
@@ -138,6 +144,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [afterAuth],
   );
 
+  const signInWithGoogle = useCallback(async () => {
+    requireConfig();
+    if (Platform.OS !== 'web') {
+      // The native path needs a deep link back into the app bundle, which is a
+      // separate piece of work (expo-auth-session + a custom scheme). Rather than
+      // fail in a way nobody can read, say what to do.
+      throw new ApiError(400, 'Google sign-in is web-only for now — use email, or open Crushly in a browser.');
+    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: webOrigin() },
+    });
+    // Success means the browser is already navigating; the session is adopted
+    // when Supabase redirects back with detectSessionInUrl.
+    if (error) throw toApiError(error);
+  }, []);
+
   const signUp = useCallback(
     async (email: string, password: string) => {
       requireConfig();
@@ -247,8 +270,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : mustSetPassword ? 'resetting' : me && !me.onboarded ? 'onboarding' : 'ready';
 
   const value = useMemo(
-    () => ({ status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget }),
-    [status, me, signIn, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget],
+    () => ({ status, me, signIn, signInWithGoogle, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget }),
+    [status, me, signIn, signInWithGoogle, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

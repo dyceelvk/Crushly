@@ -1,19 +1,72 @@
 import React, { useRef, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthScaffold, AuthSwitch } from '../../components/AuthScaffold';
 import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import * as service from '../../api/service';
+import { useAuthProviders } from '../../api/providers';
 import { sanitizeOtp, passwordStrength } from '../../lib/auth';
 import { ApiError, configProblem, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
-import { HIT, rhythm, space } from '../../theme/tokens';
+import { HIT, rhythm, space, stroke } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
 const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
+
+/**
+ * "Continue with Google", shown only when the project has the provider on.
+ *
+ * It is the one sign-in path with no email in it: nothing to rate-limit, nothing
+ * to land in spam, and the address comes back already verified. Placed above the
+ * form because it is the shorter road, and separated by a plain "or" so the two
+ * routes read as alternatives rather than a stack of buttons.
+ */
+function GoogleOption({ onPress, busy }: { onPress: () => void; busy: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ gap: space.sm }}>
+      <Button
+        title="Continue with Google"
+        variant="outline"
+        size="md"
+        icon="logo-google"
+        onPress={onPress}
+        loading={busy}
+        accessibilityHint="Signs in with your Google account, no email code needed"
+      />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        <View style={{ flex: 1, height: stroke.hairline, backgroundColor: colors.border }} />
+        <Txt variant="caption" color="textMuted">
+          or use your email
+        </Txt>
+        <View style={{ flex: 1, height: stroke.hairline, backgroundColor: colors.border }} />
+      </View>
+    </View>
+  );
+}
+
+/** The Google handler plus the "is it even on" question, in one place. */
+function useGoogleSignIn(setError: (m: string | null) => void) {
+  const { signInWithGoogle } = useAuth();
+  const providers = useAuthProviders();
+  const [busy, setBusy] = useState(false);
+  const enabled = Platform.OS === 'web' && Boolean(providers.data?.google);
+  const start = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await signInWithGoogle();
+      // On success the browser is already leaving for Google.
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  return { enabled, busy, start };
+}
 
 function NotConfiguredNotice() {
   const { colors } = useTheme();
@@ -64,6 +117,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const passwordRef = useRef<TextInput>(null);
+  const google = useGoogleSignIn(setError);
 
   const submit = async (e = email, p = password) => {
     if (!e.trim() || !p) {
@@ -89,6 +143,11 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
     >
       {!isConfigured ? <NotConfiguredNotice /> : null}
       {error ? <Banner message={error} /> : null}
+      {google.enabled ? (
+        <View style={{ marginBottom: rhythm.group }}>
+          <GoogleOption onPress={() => void google.start()} busy={google.busy} />
+        </View>
+      ) : null}
       <View style={{ gap: rhythm.group }}>
         <Input
           label="Email"
@@ -178,6 +237,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
   const [mode, setMode] = useState<'choose' | 'code'>('choose');
   const [linkState, setLinkState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const passwordRef = useRef<TextInput>(null);
+  const google = useGoogleSignIn((m) => setErrors(m ? { form: m } : {}));
 
   const strength = passwordStrength(password);
 

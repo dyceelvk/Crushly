@@ -30,6 +30,11 @@ const RAW_URL = cleanEnvValue(process.env.EXPO_PUBLIC_SUPABASE_URL);
 const SUPABASE_URL = normalizeProjectUrl(RAW_URL);
 const SUPABASE_ANON_KEY = cleanEnvValue(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 
+/** The bare project origin and public key, exported for the few calls that
+ *  are simple REST and do not need the supabase-js client (auth providers). */
+export const SUPABASE_PROJECT_URL = SUPABASE_URL;
+export const SUPABASE_PUBLIC_KEY = SUPABASE_ANON_KEY;
+
 export const isConfigured = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
 
 /** Why the build can't reach the backend, for the sign-in screens to explain. */
