@@ -240,7 +240,9 @@ function VideoNoteBubble({ m }: { m: Message }) {
       <VideoView
         player={player}
         style={{ width: 220, height: 280 }}
-        contentFit="cover"
+        // `cover` cut the sides off a landscape note. A note is watched, not
+        // cropped: letterbox it and keep the whole picture.
+        contentFit="contain"
         nativeControls
         accessibilityLabel={`Video note, ${durationLabel(Number(m.meta.duration) || 0)}`}
       />

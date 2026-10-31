@@ -29,6 +29,7 @@ export function VideoEditCanvas({
   clipTime,
   style,
   naturalRatio = 9 / 16,
+  fit,
   interactive = false,
   selectedId = null,
   onSelect,
@@ -43,6 +44,12 @@ export function VideoEditCanvas({
   style?: StyleProp<ViewStyle>;
   /** Width / height of the source video, used by the Original crop. */
   naturalRatio?: number;
+  /**
+   * How the picture sits in its frame. The caller decides, because the caller is
+   * what shaped the frame: `contain` when the box already matches the file, and
+   * `cover` only when a crop was chosen on purpose.
+   */
+  fit?: 'cover' | 'contain';
   interactive?: boolean;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
@@ -59,7 +66,21 @@ export function VideoEditCanvas({
   // translucent colour over it instead — the only grading available without a
   // GPU pipeline.
   const videoStyle = useMemo(() => {
-    const base: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
+    /**
+     * `width`/`height` are not optional here, and leaving them out was the
+     * actual cause of "the video is zoomed or cropped".
+     *
+     * A `<video>` is a replaced element: `position:absolute; inset:0` does not
+     * stretch it — it keeps its intrinsic size (a 1280×720 clip stayed 1280×720
+     * inside a 348×196 frame) and the frame simply clipped it from the top-left.
+     * `object-fit` had no box of its own to work in, so `contain` and `cover` did
+     * nothing at all. With an explicit 100% box the picture fits the frame and
+     * `object-fit` finally means something.
+     */
+    const base: ViewStyle = {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      width: '100%', height: '100%',
+    };
     if (Platform.OS === 'web' && css !== 'none') {
       (base as unknown as Record<string, unknown>).filter = css;
     }
@@ -88,7 +109,7 @@ export function VideoEditCanvas({
       <VideoView
         player={player}
         style={videoStyle}
-        contentFit={edit.aspect === 'original' ? 'contain' : 'cover'}
+        contentFit={fit ?? (edit.aspect === 'original' ? 'contain' : 'cover')}
         nativeControls={false}
         pointerEvents="none"
       />

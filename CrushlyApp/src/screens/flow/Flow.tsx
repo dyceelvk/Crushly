@@ -381,7 +381,21 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {p.mediaKind === 'video' ? (
-              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay={active} loop={active} style={{ width: '100%', aspectRatio: mediaRatio ?? 0.8, maxHeight: 520 }} />
+              /* The frame used to be `mediaRatio ?? 0.8` — a photo's default,
+                 reused for video. Every clip was therefore drawn in a 4:5 box:
+                 landscape ones letterboxed into a band, portrait ones cropped.
+                 `EditedClip` measures the source now and shapes its own box;
+                 `maxHeight` still stops a tall clip owning the screen. */
+              <EditedClip
+                uri={p.mediaUrl}
+                live={p.edit}
+                autoPlay={active}
+                loop={active}
+                controls
+                fallbackRatio={0.8}
+                maxHeight={520}
+                accessibilityLabel={`Video by ${authorName}`}
+              />
             ) : (
               /* `contain` inside an unsized box is what made every photo in the
                  feed invisible: the image had a width, no height, and nothing

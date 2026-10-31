@@ -276,12 +276,22 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       >
         {post.mediaUrl ? (
           post.mediaKind === 'video' ? (
+            /* The stage is the box here, so the clip fills it and letterboxes
+               inside it rather than shaping itself — a 16:9 clip on a phone
+               screen is a band with black above and below, which is correct.
+               `controls` gives it the tap-to-pause it never had, and double tap
+               still reacts: both gestures are decided in one place so a double
+               tap cannot also fire the pause. */
             <EditedClip
               uri={resolveVideoUri(post.mediaUrl)}
               live={post.edit ?? null}
               autoPlay
               loop
+              fill
+              controls
+              onDoubleTap={() => void reactWith('crush')}
               style={{ width: '100%', height: '100%' }}
+              accessibilityLabel={`Video by ${authorName}`}
             />
           ) : (
             /* A photo viewer fills the stage. `contain` letterboxes, and the
