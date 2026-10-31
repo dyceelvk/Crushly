@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCount } from './counts';
+import { formatCount, spokenCount } from './counts';
 
 test('zero', () => {
   assert.equal(formatCount(0), '0');
@@ -41,4 +41,25 @@ test('nonsense does not reach the screen as NaN', () => {
   assert.equal(formatCount(Number.NaN), '0');
   assert.equal(formatCount(-5), '0');
   assert.equal(formatCount(Number.POSITIVE_INFINITY), '0');
+});
+
+test('a spoken count spells the number out instead of shortening it', () => {
+  assert.equal(spokenCount(12_417, 'reaction'), '12417 reactions');
+  assert.equal(spokenCount(10_000, 'reaction'), '10000 reactions');
+});
+
+test('a spoken count uses the singular for exactly one', () => {
+  assert.equal(spokenCount(1, 'comment'), '1 comment');
+  assert.equal(spokenCount(1, 'person', 'people'), '1 person');
+  assert.equal(spokenCount(2, 'person', 'people'), '2 people');
+});
+
+test('a count of nothing is not announced at all', () => {
+  assert.equal(spokenCount(0, 'reaction'), '');
+  assert.equal(spokenCount(Number.NaN, 'reaction'), '');
+  assert.equal(spokenCount(-3, 'reaction'), '');
+});
+
+test('a spoken count floors like the visible one does', () => {
+  assert.equal(spokenCount(9999.9, 'share'), '9999 shares');
 });

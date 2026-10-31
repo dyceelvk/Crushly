@@ -41,7 +41,7 @@ import { mediaSource } from '../../lib/mediaHost';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
-import { formatCount } from '../../lib/counts';
+import { formatCount, spokenCount } from '../../lib/counts';
 import type { RootStackParamList, ScreenProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -337,15 +337,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           icon={post.liked ? 'heart' : 'heart-outline'}
           glyph={post.myReaction ? REACTION_GLYPH[post.myReaction] : null}
           tint={post.liked ? colors.crush : '#FFFFFF'}
-          label={post.liked ? 'Take back your reaction' : 'React to this post'}
+          label={post.liked ? 'Take back your reaction' : 'React to this post, hold for more'}
           count={formatCount(totalReactions)}
+          spoken={spokenCount(totalReactions, 'reaction')}
           onPress={tapHeart}
           onLongPress={() => setReactionsOpen(true)}
         />
         <RailAction
           icon="chatbubble-ellipses-outline"
-          label="Comments"
+          label="Open comments"
           count={formatCount(post.commentCount)}
+          spoken={spokenCount(post.commentCount, 'comment')}
           onPress={() => setCommentsOpen(true)}
         />
         <RailAction
@@ -661,6 +663,7 @@ function RailAction({
   glyph,
   label,
   count,
+  spoken,
   tint = '#FFFFFF',
   onPress,
   onLongPress,
@@ -669,6 +672,8 @@ function RailAction({
   glyph?: string | null;
   label: string;
   count: string;
+  /** The exact, unshortened figure for assistive tech. See lib/counts. */
+  spoken?: string;
   tint?: string;
   onPress: () => void;
   onLongPress?: () => void;
@@ -680,7 +685,7 @@ function RailAction({
       onLongPress={onLongPress}
       delayLongPress={380}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={spoken ? `${label}, ${spoken}` : label}
       hitSlop={8}
       style={{ alignItems: 'center', gap: 4 }}
     >
