@@ -5,7 +5,7 @@ import * as service from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
-  ReactionKind,
+  Post, PostComment, ReactionKind,
 } from './types';
 
 export const keys = {
@@ -270,25 +270,128 @@ export function useReactToPost() {
   });
 }
 
-/** Keep a post for later. Silent: the author is never told. */
+/**
+ * Rewrite one post wherever it is already on screen.
+ *
+ * A saved flag and a fresh reaction are both things the eye should see before
+ * the network answers, but a post is never in just one place: it is the post
+ * view (a `Post` under `keys.post`), and it is also a row inside every feed page
+ * that happens to be cached. Patching only the post view would leave the same
+ * post un-saved one back-step away.
+ *
+ * Returns the entries it changed so `onError` can put exactly those back —
+ * restoring from a full snapshot of the cache would also discard anything else
+ * that settled while the request was in flight.
+ */
+type PostListPage = { items?: Post[] };
+
+function patchCachedPost(
+  qc: QueryClient,
+  postId: number,
+  update: (post: Post) => Post,
+): Array<[readonly unknown[], unknown]> {
+  const touched: Array<[readonly unknown[], unknown]> = [];
+  const apply = (post: Post | undefined) =>
+    post && post.id === postId ? update(post) : post;
+
+  const singleKey = keys.post(postId);
+  const single = qc.getQueryData<Post>(singleKey);
+  if (single && single.id === postId) {
+    touched.push([singleKey, single]);
+    qc.setQueryData(singleKey, update(single));
+  }
+
+  for (const query of qc.getQueryCache().findAll({ predicate: (q) => isPostListKey(q.queryKey) })) {
+    const data = qc.getQueryData<PostListPage | Post[]>(query.queryKey);
+    if (!data) continue;
+    if (Array.isArray(data)) {
+      if (!data.some((p) => p?.id === postId)) continue;
+      touched.push([query.queryKey, data]);
+      qc.setQueryData(query.queryKey, data.map((p) => apply(p) as Post));
+    } else if (Array.isArray(data.items) && data.items.some((p) => p?.id === postId)) {
+      touched.push([query.queryKey, data]);
+      qc.setQueryData(query.queryKey, { ...data, items: data.items.map((p) => apply(p) as Post) });
+    }
+  }
+
+  return touched;
+}
+
+/** Every cached query whose payload is a page of posts under `items`. */
+const POST_LIST_HEADS = ['flow', 'public-flow', 'circle-feed', 'space-posts', 'saved-posts'] as const;
+
+function isPostListKey(key: readonly unknown[]): boolean {
+  return POST_LIST_HEADS.includes(key[0] as (typeof POST_LIST_HEADS)[number]);
+}
+
+/**
+ * Keep a post for later. Silent: the author is never told.
+ *
+ * Optimistic, because keeping is a private, reversible whim: the bookmark should
+ * fill under the finger. The server's answer replaces the guess on success, and
+ * a failure puts the bookmark back rather than leaving a lie on screen.
+ */
 export function useSavePost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ postId, saved }: { postId: number; saved: boolean }) => service.savePost(postId, saved),
-    onSuccess: (_r, vars) => {
+    onMutate: ({ postId, saved }) => {
+      const touched = patchCachedPost(qc, postId, (post) => ({ ...post, saved }));
+      return { touched };
+    },
+    onError: (_e, _v, ctx) => {
+      for (const [key, data] of ctx?.touched ?? []) qc.setQueryData(key, data);
+    },
+    onSuccess: (result, vars) => {
+      // The server may disagree (a post whose audience just narrowed comes back
+      // unsaved), so the guess is corrected from the answer before the refetch.
+      patchCachedPost(qc, vars.postId, (post) => ({ ...post, saved: result.saved }));
       void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
     },
   });
 }
 
-/** Like a comment. The count and the heart come back from the same call. */
+/**
+ * Like a comment. The count and the heart come back from the same call.
+ *
+ * Optimistic for the same reason, and it moves the count with the heart: a
+ * heart that fills while the number stays put reads as broken. The result
+ * overwrites both, so a double tap that races itself settles on the truth.
+ */
 export function useLikePostComment(postId: number) {
   const qc = useQueryClient();
+  const key = keys.postComments(postId);
   return useMutation({
     mutationFn: ({ commentId, liked }: { commentId: number; liked: boolean }) =>
       service.likePostComment(commentId, liked),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.postComments(postId) });
+    onMutate: ({ commentId, liked }) => {
+      const before = qc.getQueryData<{ items: PostComment[] }>(key);
+      if (before?.items) {
+        qc.setQueryData(key, {
+          ...before,
+          items: before.items.map((c) =>
+            c.id === commentId
+              ? { ...c, liked, likeCount: Math.max(0, (c.likeCount ?? 0) + (liked ? 1 : -1)) }
+              : c,
+          ),
+        });
+      }
+      return { before };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.before) qc.setQueryData(key, ctx.before);
+    },
+    onSuccess: (result, vars) => {
+      const current = qc.getQueryData<{ items: PostComment[] }>(key);
+      if (current?.items) {
+        qc.setQueryData(key, {
+          ...current,
+          items: current.items.map((c) =>
+            c.id === vars.commentId ? { ...c, liked: result.liked, likeCount: result.likeCount } : c,
+          ),
+        });
+      }
+      void qc.invalidateQueries({ queryKey: key });
     },
   });
 }

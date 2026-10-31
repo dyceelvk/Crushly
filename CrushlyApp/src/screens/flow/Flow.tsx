@@ -27,6 +27,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { activeIdAt, type CardBox } from '../../lib/viewability';
+import { feedWindow } from '../../lib/feedWindow';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
@@ -73,6 +74,14 @@ export function FlowScreen() {
     const flat = [...boxes.current.values()].sort((a, b) => a.y - b.y);
     setActiveId(activeIdAt(flat, nextY, nextH));
   }, []);
+
+  // Which cards stay alive. The reader's own card plus one either side: the one
+  // just left, so scrolling back is instant, and the one coming up, so its
+  // media is decoded before it arrives.
+  const activeIndex = activeId === null
+    ? -1
+    : flow.posts.findIndex((p) => p.id === activeId);
+  const alive = feedWindow(flow.posts.length, Math.max(activeIndex, 0));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -174,20 +183,40 @@ export function FlowScreen() {
             <ErrorState message={flow.error instanceof Error ? flow.error.message : 'Your Flows didn’t load.'} onRetry={flow.refresh} />
           ) : flow.posts.length ? (
             <>
-              {flow.posts.map((p) => (
-                <View
-                  key={p.id}
-                  onLayout={(e) =>
-                    measureCard(
-                      p.id,
-                      e.nativeEvent.layout.y,
-                      e.nativeEvent.layout.height,
-                    )
-                  }
-                >
-                  <PostCard post={p} active={activeId === null || activeId === p.id} />
-                </View>
-              ))}
+              {flow.posts.map((p, index) => {
+                // Keep a short window around the card you are reading and let
+                // the rest go cold. A row that is out of the window keeps the
+                // height it measured, so the scroll position does not move —
+                // it just stops paying for a card nobody is looking at.
+                //
+                // A row that has never been measured is always mounted: it has
+                // to render once to report its height, and its height is what
+                // the window needs before it can be trusted.
+                const measured = boxes.current.get(p.id)?.height;
+                const mounted =
+                  measured === undefined ||
+                  (index >= alive.start && index <= alive.end);
+
+                return (
+                  <View
+                    key={p.id}
+                    // A mounted row sizes itself. A cold row is a spacer of
+                    // exactly the height it had, so nothing shifts.
+                    style={mounted ? undefined : { height: measured, overflow: 'hidden' }}
+                    onLayout={(e) =>
+                      measureCard(
+                        p.id,
+                        e.nativeEvent.layout.y,
+                        e.nativeEvent.layout.height,
+                      )
+                    }
+                  >
+                    {mounted ? (
+                      <PostCard post={p} active={activeId === null || activeId === p.id} />
+                    ) : null}
+                  </View>
+                );
+              })}
               <Button title="Show older posts" variant="secondary" size="md" onPress={flow.loadOlder} loading={flow.isFetching} />
             </>
           ) : (
