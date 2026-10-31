@@ -125,10 +125,85 @@ export const type = {
   accent: { fontFamily: fonts.displayItalic, fontSize: 17, lineHeight: 24 },
 } as const;
 
+/**
+ * Numbers that sit under each other — counts in a rail, timers, prices — need
+ * tabular figures or they jitter as the value changes. Kept separate from
+ * `caption` so callers have to ask for it deliberately.
+ */
+export const numeric = {
+  ...type.caption,
+  fontVariant: ['tabular-nums'] as const,
+} as const;
+
 export type TypeVariant = keyof typeof type;
 
 /** Minimum touch target (WCAG / platform guidance). */
 export const HIT = 44;
+
+/* ---------------------------------------------------------------------------
+ * Elevation
+ *
+ * The palette already answers "what colour is a surface" (bg, card, elevated).
+ * It never answered "how far off the page is this thing", so shadows were being
+ * invented screen by screen — some 0.2 opacity, some 0.5, most skipping Android
+ * entirely because a `shadowColor` alone does nothing there.
+ *
+ * Four levels, and that is the whole vocabulary. `none` exists so a caller can
+ * say "on the page" explicitly instead of passing undefined and hoping.
+ * ------------------------------------------------------------------------- */
+
+export const elevation = {
+  none: {},
+  /** Cards resting on the page. Barely there on purpose. */
+  soft: {
+    shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  /** Raised chrome: sticky headers, floating rails, the compose bar. */
+  raised: {
+    shadowColor: '#000000', shadowOpacity: 0.26, shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  /** Things that float over content and want to be unmistakably above it. */
+  float: {
+    shadowColor: '#000000', shadowOpacity: 0.38, shadowRadius: 32, shadowOffset: { width: 0, height: 14 },
+    elevation: 12,
+  },
+  /** Sheets and dialogs. The heaviest thing in the product. */
+  sheet: {
+    shadowColor: '#000000', shadowOpacity: 0.5, shadowRadius: 48, shadowOffset: { width: 0, height: -8 },
+    elevation: 20,
+  },
+} as const;
+
+/** Border widths, so a hairline is never a guess between 0.5 and 1. */
+export const stroke = { hairline: 1, thick: 1.5 } as const;
+
+/**
+ * The vertical rhythm of a screen.
+ *
+ * `space` answers "how far apart are these two things". This answers "how far
+ * apart are these two groups of things", which is the question that actually
+ * makes a layout look deliberate rather than evenly spaced everywhere.
+ */
+export const rhythm = {
+  /** Inside a group: a label and its field. */
+  tight: space.xs,
+  /** Between related groups. */
+  group: space.md,
+  /** Between sections of a screen. */
+  section: space.xxl,
+  /** Between the page and the first thing on it. */
+  page: space.xl,
+} as const;
+
+/** Opacity steps, so a scrim is the same scrim everywhere. */
+export const alpha = {
+  disabled: 0.42,
+  muted: 0.64,
+  veil: 0.82,
+  solid: 1,
+} as const;
 
 export const motion = {
   fast: 140,

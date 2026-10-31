@@ -3,19 +3,62 @@ import { Animated, Easing, Platform, StyleSheet, View, useWindowDimensions } fro
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeProvider';
 
-/** Soft champagne glow used behind hero moments (splash, Mutual Crush, welcome). */
-export function Glow({ size = 420, color, opacity = 1, style }: { size?: number; color?: string; opacity?: number; style?: object }) {
+/**
+ * Soft glow used behind hero moments (splash, Mutual Crush, welcome).
+ *
+ * React Native has no radial gradient, so this fakes one with concentric discs.
+ * It used to be four of them at increasing opacity, which at large sizes and
+ * low alphas banded into four visible rings — the edges read as hard circles
+ * rather than a falloff.
+ *
+ * Now the ring count scales and each ring's alpha is solved from the target
+ * centre density, so the steps between rings are below what an 8-bit channel
+ * can show. Sixteen rings at ~0.7% each accumulate to the same centre brightness
+ * as the old four at 3-12%, but without the contours. `density` is the
+ * accumulated opacity at the middle of the glow.
+ */
+export function Glow({
+  size = 420,
+  color,
+  opacity = 1,
+  density = 0.14,
+  style,
+}: {
+  size?: number;
+  color?: string;
+  opacity?: number;
+  /** Accumulated alpha at the centre of the glow. Lower is softer. */
+  density?: number;
+  style?: object;
+}) {
   const { colors } = useTheme();
   const c = color || colors.gold;
-  // Stacked translucent discs approximate a radial gradient on every platform.
+
+  // Enough rings that the hue step between neighbours is invisible, capped so
+  // a huge glow does not become hundreds of views.
+  const rings = Math.min(28, Math.max(10, Math.round(size / 34)));
+  // alpha each ring needs so that `rings` stacked layers reach `density`.
+  const step = 1 - Math.pow(1 - Math.min(Math.max(density, 0.01), 0.9), 1 / rings);
+
   return (
     <View pointerEvents="none" style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity }, style]}>
-      {[1, 0.78, 0.56, 0.36].map((s, i) => (
-        <View
-          key={s}
-          style={{ position: 'absolute', width: size * s, height: size * s, borderRadius: (size * s) / 2, backgroundColor: c, opacity: 0.035 + i * 0.03 }}
-        />
-      ))}
+      {Array.from({ length: rings }, (_, i) => {
+        // i = 0 is the largest (outermost, faintest edge of the falloff)
+        const scale = 1 - i / rings;
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              width: size * scale,
+              height: size * scale,
+              borderRadius: (size * scale) / 2,
+              backgroundColor: c,
+              opacity: step,
+            }}
+          />
+        );
+      })}
     </View>
   );
 }
