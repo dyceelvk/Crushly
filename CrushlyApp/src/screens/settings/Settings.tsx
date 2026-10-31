@@ -65,20 +65,12 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="People you’ve cut off" icon="ban-outline" onPress={() => navigation.navigate('BlockedUsers')} last />
       </Group>
 
+      {/* One section, not two both called "App". The version and the update
+          status belong with the rest of the app settings; the footer below used
+          to state the version a second time. */}
       <Group title="App">
         <ListRow title="Crush Alerts" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
-        <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} last />
-      </Group>
-
-      <Group title="Support">
-        <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
-        <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
-        <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
-        <ListRow title="Privacy policy" icon="lock-closed-outline" onPress={() => navigation.navigate('Info', { page: 'privacy' })} />
-        <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
-      </Group>
-
-      <Group title="App">
+        <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} />
         <ListRow title="App version" value={version} icon="information-circle-outline" />
         {update.data?.available ? (
           <ListRow
@@ -101,12 +93,17 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         )}
       </Group>
 
+      <Group title="Support">
+        <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
+        <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
+        <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
+        <ListRow title="Privacy policy" icon="lock-closed-outline" onPress={() => navigation.navigate('Info', { page: 'privacy' })} />
+        <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
+      </Group>
+
       <Button title="Sign out" variant="secondary" onPress={() => setConfirmOut(true)} style={{ marginTop: space.xl }} />
       <View style={{ alignItems: 'center', marginTop: space.xl, gap: 4 }}>
         <Wordmark size={18} />
-        <Txt variant="caption" color="textMuted">
-          Version {version}
-        </Txt>
         <Txt variant="caption" color="textMuted">
           A {COMPANY_NAME} product
         </Txt>
