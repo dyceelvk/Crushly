@@ -13,6 +13,7 @@ import { ConfirmSheet } from '../../components/BottomSheet';
 import { useToast } from '../../components/Toast';
 import { useMe, useSetUsername, useUpdateProfile } from '../../api/hooks';
 import { INTENTIONS, INTERESTS, LANGUAGES, LIFESTYLE, PRONOUNS, RELATIONSHIP_INTENTIONS } from '../../lib/catalog';
+import { profileCompletion } from '../../lib/completion';
 import { birthdayLabel, capMessage, formAfterSave, formFromMe, formKey, isDirty, type ProfileForm } from '../../lib/profileForm';
 import { getApproximateLocation } from '../../lib/media';
 import { space } from '../../theme/tokens';
@@ -53,6 +54,9 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
   // derived from the query on each render.
   const [baseline, setBaseline] = useState('');
   const [locating, setLocating] = useState(false);
+  // "My own" is a choice, not a side effect of what is typed: a member with
+  // she/her chosen should not be looking at an empty box as well.
+  const [ownPronouns, setOwnPronouns] = useState(false);
   const [leaving, setLeaving] = useState<null | (() => void)>(null);
   const allowLeave = useRef(false);
 
@@ -61,6 +65,8 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
     const seed = formFromMe(me);
     setForm(seed);
     setBaseline(formKey(seed));
+    // A saved pronoun that is not one of the presets is a custom one.
+    setOwnPronouns(!!seed.pronouns && !PRONOUNS.includes(seed.pronouns));
   }, [me, form]);
 
   const dirty = isDirty(form, baseline);
@@ -151,7 +157,26 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
     }
   };
 
-  const pct = me.completion.percent;
+  // Live, from the form on screen — not from the last saved copy. The score used
+  // to come from `me`, so it sat still while you typed (and could tell you to
+  // write a bio that was already in the box below). Photos are uploaded as soon
+  // as they are picked, so that count is already current.
+  const live = profileCompletion(
+    {
+      name: form.name,
+      birthdate: me.profile.birthdate,
+      bio: form.bio,
+      pronouns: form.pronouns,
+      city: form.city,
+      intentions: form.intentions,
+      interests: form.interests,
+      languages: form.languages,
+      relationshipIntention: form.relationshipIntention,
+      lifestyle: { ...form.lifestyle, height: form.heightText ? Number(form.heightText) : undefined },
+    },
+    me.profile.photos.length,
+  );
+  const pct = live.percent;
 
   return (
     <Screen keyboard footer={dirty ? <Button title="Save changes" onPress={save} loading={update.isPending || setHandle.isPending} /> : undefined}>
@@ -159,11 +184,15 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
       <View style={{ gap: 6 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Txt variant="smallStrong">Profile {pct}% complete</Txt>
-          {me.completion.missing[0] ? (
+          {live.missing[0] ? (
             <Txt variant="small" color="textMuted" numberOfLines={1} style={{ flexShrink: 1, marginLeft: 8 }}>
-              Next: {me.completion.missing[0]}
+              Next: {live.missing[0]}
             </Txt>
-          ) : null}
+          ) : (
+            <Txt variant="small" color="gold" numberOfLines={1} style={{ flexShrink: 1, marginLeft: 8 }}>
+              Nothing missing
+            </Txt>
+          )}
         </View>
         <ProgressBar value={pct / 100} label={`Space ${pct}% complete`} />
       </View>
@@ -179,12 +208,40 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
           <Txt variant="label" color="textSecondary">
             Pronouns
           </Txt>
+          {/* The box for writing your own used to sit here permanently, empty and
+              next to a selected chip — an invitation to retype what you had just
+              chosen. It appears only when "My own" is the answer. */}
           <ChipGroup>
             {PRONOUNS.map((p) => (
-              <Chip key={p} label={p} selected={form.pronouns === p} onPress={() => set('pronouns', form.pronouns === p ? '' : p)} />
+              <Chip
+                key={p}
+                label={p}
+                selected={form.pronouns === p}
+                onPress={() => {
+                  setOwnPronouns(false);
+                  set('pronouns', form.pronouns === p ? '' : p);
+                }}
+              />
             ))}
+            <Chip
+              label="My own"
+              selected={ownPronouns}
+              onPress={() => {
+                setOwnPronouns(true);
+                if (PRONOUNS.includes(form.pronouns)) set('pronouns', '');
+              }}
+            />
           </ChipGroup>
-          <Input value={PRONOUNS.includes(form.pronouns) ? '' : form.pronouns} onChangeText={(t) => set('pronouns', t)} placeholder="Or write your own" maxLength={24} accessibilityLabel="Custom pronouns" />
+          {ownPronouns ? (
+            <Input
+              value={form.pronouns}
+              onChangeText={(t) => set('pronouns', t)}
+              placeholder="In your words"
+              maxLength={24}
+              accessibilityLabel="Custom pronouns"
+              autoFocus
+            />
+          ) : null}
         </View>
         <Input label="City or neighbourhood" value={form.city} onChangeText={(t) => set('city', t)} maxLength={60} icon="location-outline" />
         <Button

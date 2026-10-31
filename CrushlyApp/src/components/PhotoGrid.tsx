@@ -49,11 +49,13 @@ export function PhotoGrid({ photos, width }: { photos: PhotoT[]; width: number }
   const slot = (i: number, w: number, h: number) => {
     const p = photos[i];
     const loading = uploadingSlot === i || (remove.isPending && remove.variables === p?.id);
+    // Every empty slot is a real way in. Three of the six used to be disabled:
+    // dimmed, still visibly "add a photo", and inert when tapped.
     return (
       <PressableScale
         key={p ? `p${p.id}` : `e${i}`}
         onPress={() => (p ? setSelected(p) : add(i))}
-        disabled={loading || (!p && i > photos.length)}
+        disabled={loading}
         accessibilityLabel={p ? `Photo ${i + 1}${i === 0 ? ', main photo' : ''}. Options` : `Add photo ${i + 1}`}
         pressedScale={0.97}
         style={{
@@ -62,8 +64,10 @@ export function PhotoGrid({ photos, width }: { photos: PhotoT[]; width: number }
           borderStyle: p ? 'solid' : 'dashed', alignItems: 'center', justifyContent: 'center',
         }}
       >
+        {/* The next slot is the invitation; the ones after it are quieter, but
+            they still work. */}
         {p ? <Photo uri={p.url} style={{ width: '100%', height: '100%' }} /> : (
-          <View style={{ alignItems: 'center', gap: 6, opacity: i > photos.length ? 0.4 : 1 }}>
+          <View style={{ alignItems: 'center', gap: 6, opacity: i > photos.length ? 0.55 : 1 }}>
             <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.goldSoft, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="add" size={22} color={colors.gold} />
             </View>

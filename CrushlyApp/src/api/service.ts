@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
+import { profileCompletion } from '../lib/completion';
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
@@ -103,27 +104,6 @@ async function myEmail(): Promise<string> {
 
 /* --------------------------------------------------------------------- me */
 
-function completion(profile: Record<string, any>, photos: { id: number }[]) {
-  const interests: string[] = profile.interests ?? [];
-  const languages: string[] = profile.languages ?? [];
-  const lifestyle: Record<string, unknown> = profile.lifestyle ?? {};
-  const checks = [
-    { label: 'Add a photo', weight: 20, done: photos.length >= 1 },
-    { label: 'Add at least 3 photos', weight: 10, done: photos.length >= 3 },
-    { label: 'Name and birthday', weight: 10, done: !!profile.name && !!profile.birthdate },
-    { label: 'Write a bio', weight: 15, done: (profile.bio ?? '').length >= 20 },
-    { label: 'Pick 3 interests', weight: 10, done: interests.length >= 3 },
-    { label: 'Say what you’re looking for', weight: 10, done: (profile.intentions ?? []).length > 0 },
-    { label: 'Relationship intention', weight: 5, done: !!profile.relationship_intention },
-    { label: 'Pronouns', weight: 5, done: !!profile.pronouns },
-    { label: 'Languages', weight: 5, done: languages.length > 0 },
-    { label: 'Lifestyle details', weight: 5, done: Object.keys(lifestyle).length >= 2 },
-    { label: 'Your city', weight: 5, done: !!profile.city },
-  ];
-  const percent = checks.reduce((sum, c) => sum + (c.done ? c.weight : 0), 0);
-  return { percent, missing: checks.filter((c) => !c.done).map((c) => c.label) };
-}
-
 /** Full, private view of the signed-in member. Only ever returned to them. */
 export async function getMe(): Promise<Me> {
   requireConfig();
@@ -182,7 +162,7 @@ export async function getMe(): Promise<Me> {
       photos,
     },
     verification: { status: p.verification, pose: pose?.pose ?? null },
-    completion: completion(p, photos),
+    completion: profileCompletion(p as any, photos.length),
     preferences: {
       ageMin: prefs.age_min,
       ageMax: prefs.age_max,
