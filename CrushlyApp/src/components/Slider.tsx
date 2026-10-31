@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { AccessibilityActionEvent, PanResponder, View, type LayoutChangeEvent } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
+import { elevation } from '../theme/tokens';
 
-const THUMB = 28;
+const THUMB = 26;
+const TRACK = 4;
 
 type RangeProps = {
   min: number;
@@ -77,20 +79,25 @@ export function RangeSlider({ min, max, low, high, step = 1, onChange, label, fo
 
   const lowX = toX(low);
   const highX = range ? toX(high!) : lowX;
+  // One solid thumb inside a hairline ring, rather than a white disc with a
+  // thick coloured band around it — at 28pt the old one read as a loading
+  // spinner once there were two of them on the same screen.
   const thumbStyle = {
-    position: 'absolute' as const, top: 0, width: THUMB, height: THUMB, borderRadius: THUMB / 2, backgroundColor: colors.text,
-    borderWidth: 3, borderColor: colors.primary, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+    position: 'absolute' as const, top: 0, width: THUMB, height: THUMB, borderRadius: THUMB / 2,
+    backgroundColor: colors.primary,
+    borderWidth: 2, borderColor: colors.bg,
+    ...elevation.soft,
   };
 
   return (
     <View style={{ height: 44, justifyContent: 'center' }} onLayout={onLayout}>
       <View style={{ height: THUMB, justifyContent: 'center' }}>
-        <View style={{ height: 4, borderRadius: 2, backgroundColor: colors.elevated, marginHorizontal: THUMB / 2 }} />
+        <View style={{ height: TRACK, borderRadius: TRACK / 2, backgroundColor: colors.elevated, marginHorizontal: THUMB / 2 }} />
         {width > 0 ? (
           <>
             <View
               style={{
-                position: 'absolute', height: 4, borderRadius: 2, backgroundColor: colors.primary,
+                position: 'absolute', height: TRACK, borderRadius: TRACK / 2, backgroundColor: colors.primary,
                 left: (range ? lowX : 0) + THUMB / 2, width: Math.max(0, (range ? highX - lowX : lowX)),
               }}
             />

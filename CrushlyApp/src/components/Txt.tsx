@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, type TextProps, type TextStyle } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
-import { type as typeScale, type TypeVariant, type Palette } from '../theme/tokens';
+import { numeric, type as typeScale, type TypeVariant, type Palette } from '../theme/tokens';
 
 type ColorKey = 'text' | 'textSecondary' | 'textMuted' | 'gold' | 'crush' | 'success' | 'danger' | 'onGold' | 'onCrush';
 
@@ -18,7 +18,12 @@ export function Txt({ variant = 'body', color = 'text', align, style, maxFontSiz
   return (
     <Text
       maxFontSizeMultiplier={maxFontSizeMultiplier}
-      style={[typeScale[variant], { color: resolved ?? color }, align ? { textAlign: align } : null, style]}
+      style={[
+        variant === 'numeric' ? (numeric as unknown as TextStyle) : typeScale[variant as Exclude<TypeVariant, 'numeric'>],
+        { color: resolved ?? color },
+        align ? { textAlign: align } : null,
+        style,
+      ]}
       {...rest}
     />
   );

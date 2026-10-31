@@ -127,15 +127,19 @@ export const type = {
 
 /**
  * Numbers that sit under each other — counts in a rail, timers, prices — need
- * tabular figures or they jitter as the value changes. Kept separate from
- * `caption` so callers have to ask for it deliberately.
+ * tabular figures or they jitter as the value changes. It is a real variant, so
+ * `variant="numeric"` works anywhere text does; kept separate from `caption` so
+ * callers have to ask for it deliberately.
  */
+export type TypeVariant = keyof typeof type | 'numeric';
+
+/** Same shape as a `type` entry, with tabular figures. */
 export const numeric = {
-  ...type.caption,
+  fontFamily: fonts.semibold,
+  fontSize: 12,
+  lineHeight: 16,
   fontVariant: ['tabular-nums'] as const,
 } as const;
-
-export type TypeVariant = keyof typeof type;
 
 /** Minimum touch target (WCAG / platform guidance). */
 export const HIT = 44;

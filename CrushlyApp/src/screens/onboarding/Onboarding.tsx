@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Glow } from '../../components/Ambient';
+import { CrushlyMark } from '../../components/Logo';
 import { Screen, useLayout } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';
@@ -9,7 +11,6 @@ import { UsernameField } from '../../components/UsernameField';
 import { useSetUsername } from '../../api/hooks';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { IconButton } from '../../components/IconButton';
-import { ProgressBar } from '../../components/States';
 import { PhotoGrid } from '../../components/PhotoGrid';
 import { RangeSlider } from '../../components/Slider';
 import { ListRow, Group } from '../../components/ListRow';
@@ -18,7 +19,8 @@ import { useMe, useUpdatePreferences, useUpdatePrivacy, useUpdateProfile } from 
 import { completeOnboarding } from '../../api/service';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
-import { space } from '../../theme/tokens';
+import { haptic } from '../../lib/haptics';
+import { HIT, alpha, radius, rhythm, space, stroke } from '../../theme/tokens';
 import { FILTER_INTENTIONS, INTENTIONS, INTERESTS, LANGUAGES, PRONOUNS, RELATIONSHIP_INTENTIONS, distanceLabel } from '../../lib/catalog';
 import { getApproximateLocation } from '../../lib/media';
 import type { Intention, Me } from '../../api/types';
@@ -26,42 +28,174 @@ import type { ScreenProps } from '../../navigation/types';
 
 const TOTAL = 5;
 
+/**
+ * Where you are in the flow, as five segments rather than a bar.
+ *
+ * A single bar with a gradient on it answers "how far" but not "how many left",
+ * and the gradient made the filled part ambiguous — a member cannot tell a
+ * progress bar from decoration. Five segments answer both questions at a glance:
+ * two filled means two done, three to go, whatever the screen is.
+ */
+function StepSegments({ step, total }: { step: number; total: number }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel={`Step ${step} of ${total}`}
+      accessibilityValue={{ min: 1, max: total, now: step }}
+      style={{ flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center' }}
+    >
+      {Array.from({ length: total }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            height: 3,
+            borderRadius: 2,
+            backgroundColor: i < step ? colors.primary : colors.elevated,
+            opacity: i < step ? 1 : alpha.solid,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The frame all five onboarding steps share.
+ *
+ * Replaces a header that stacked a back button, a gradient bar and a "1/5"
+ * counter on one crowded line, with the title at whatever distance was left
+ * over. Now: one app bar (escape on the left, progress in the middle, nothing
+ * competing on the right), one headline block, the step's content, and a
+ * hairline-separated footer holding the only forward action on screen.
+ *
+ * The steps are separate routes, so the navigator cuts between them. A short
+ * entrance on the content closes that gap — the flow reads as one surface
+ * changing rather than five pages loading. Honours Reduce Motion.
+ */
 function Shell({
   step, title, subtitle, children, onNext, nextLabel = 'Continue', nextDisabled, loading, onBack, skip,
 }: {
   step: number; title: string; subtitle?: string; children: React.ReactNode; onNext: () => void; nextLabel?: string;
   nextDisabled?: boolean; loading?: boolean; onBack?: () => void; skip?: () => void;
 }) {
+  const { colors, reduceMotion } = useTheme();
   const { signOut } = useAuth();
+  const entrance = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (reduceMotion) {
+      entrance.setValue(1);
+      return;
+    }
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [entrance, reduceMotion]);
+
   return (
     <Screen
       keyboard
+      scrollProps={{ showsVerticalScrollIndicator: true }}
       footer={
-        <View style={{ gap: 4 }}>
+        <View>
+          {/* The footer is where the only forward action lives, so it gets a
+              hairline of its own instead of floating over the form. */}
+          <View style={{ height: stroke.hairline, backgroundColor: colors.border, marginBottom: space.md }} />
           <Button title={nextLabel} onPress={onNext} disabled={nextDisabled} loading={loading} />
           {skip ? <Button title="Skip for now" variant="ghost" size="md" onPress={skip} /> : null}
         </View>
       }
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingTop: space.sm, minHeight: 52 }}>
-        {onBack ? <IconButton icon="chevron-back" label="Back" onPress={onBack} /> : <IconButton icon="log-out-outline" label="Sign out" onPress={signOut} />}
-        <View style={{ flex: 1 }}>
-          <ProgressBar value={step / TOTAL} label={`Step ${step} of ${TOTAL}`} />
-        </View>
-        <Txt variant="caption" color="textMuted" style={{ width: 36, textAlign: 'right' }}>
-          {step}/{TOTAL}
-        </Txt>
+      <Glow size={520} color={colors.primary} opacity={0.22} style={{ position: 'absolute', top: -180, right: -220 }} />
+
+      {/* App bar: one thing on the left, one on the right, nothing between
+          them. Progress lives on its own line underneath, full width — squeezed
+          between a back button and a counter it was neither centred nor
+          readable, and the segments did not line up with anything. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: space.sm, minHeight: HIT }}>
+        {onBack ? (
+          <IconButton icon="chevron-back" label="Back" variant="plain" onPress={onBack} />
+        ) : (
+          /* No back on step one, so the left slot holds the mark — the same
+             lockup that sits at the top of the account screens, which is what
+             this flow follows directly. */
+          <View style={{ width: HIT, height: HIT, alignItems: 'center', justifyContent: 'center' }}>
+            <CrushlyMark size={22} />
+          </View>
+        )}
+        {/* Signing out is a real escape hatch, but it sat where a back button
+            normally sits, at the mouth of the flow's best conversion path, as a
+            full 44pt filled icon button. As a quiet word on the right it is
+            still there for someone who needs it and invisible to someone who
+            does not. */}
+        {!onBack ? (
+          <Pressable
+            onPress={signOut}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            hitSlop={12}
+            style={({ pressed }) => ({ minHeight: HIT, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+          >
+            <Txt variant="small" color="textMuted">Sign out</Txt>
+          </Pressable>
+        ) : (
+          <Txt variant="label" color="textMuted">
+            Step {step} of {TOTAL}
+          </Txt>
+        )}
       </View>
-      <Txt variant="display" style={{ marginTop: space.xl }} accessibilityRole="header">
-        {title}
-      </Txt>
-      {subtitle ? (
-        <Txt variant="body" color="textSecondary" style={{ marginTop: 6 }}>
-          {subtitle}
+
+      <View style={{ marginTop: space.sm }}>
+        <StepSegments step={step} total={TOTAL} />
+      </View>
+
+      <Animated.View
+        style={{
+          opacity: entrance,
+          transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+        }}
+      >
+        <View style={{ marginTop: rhythm.section }}>
+          <Txt variant="title" accessibilityRole="header">
+            {title}
+          </Txt>
+          {subtitle ? (
+            <Txt variant="body" color="textSecondary" style={{ marginTop: space.xs, maxWidth: 360 }}>
+              {subtitle}
+            </Txt>
+          ) : null}
+        </View>
+        <View style={{ marginTop: rhythm.section }}>{children}</View>
+      </Animated.View>
+    </Screen>
+  );
+}
+
+/**
+ * A labelled block inside a step: the label, the control, and the one line of
+ * explanation that belongs to it. Grouping this way is what stops a long form
+ * looking like an even list of unrelated boxes.
+ */
+function Section({ label, hint, error, children, first }: { label?: string; hint?: string; error?: string; children: React.ReactNode; first?: boolean }) {
+  return (
+    <View style={{ marginTop: first ? 0 : rhythm.section }}>
+      {label ? (
+        <Txt variant="label" color="textSecondary" style={{ marginBottom: rhythm.tight }}>
+          {label}
         </Txt>
       ) : null}
-      <View style={{ marginTop: space.xl }}>{children}</View>
-    </Screen>
+      {children}
+      {error || hint ? (
+        <Txt variant="small" color={error ? 'danger' : 'textMuted'} style={{ marginTop: rhythm.tight }}>
+          {error || hint}
+        </Txt>
+      ) : null}
+    </View>
   );
 }
 
@@ -97,31 +231,58 @@ export function OnboardingIntentionsScreen({ navigation }: ScreenProps<'Onboardi
       loading={saving}
       onNext={async () => (await save({ intentions: selected })) && navigation.navigate('OnboardingBasics')}
     >
-      <View style={{ gap: 10 }}>
+      <View style={{ gap: space.xs }}>
         {INTENTIONS.map((o) => {
           const on = selected.includes(o.value);
           return (
             <Pressable
               key={o.value}
-              onPress={() => toggle(o.value)}
+              onPress={() => {
+                haptic.tap();
+                toggle(o.value);
+              }}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: on }}
               accessibilityLabel={`${o.label}. ${o.description}`}
               style={({ pressed }) => ({
-                flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 20, borderWidth: 1,
-                borderColor: on ? colors.gold : colors.border, backgroundColor: on ? colors.goldSoft : colors.card, opacity: pressed ? 0.85 : 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: space.sm,
+                paddingVertical: space.sm,
+                paddingHorizontal: space.sm,
+                borderRadius: radius.md,
+                borderWidth: stroke.hairline,
+                borderColor: on ? colors.primaryLine : colors.border,
+                backgroundColor: on ? colors.primarySoft : colors.card,
+                opacity: pressed ? 0.85 : 1,
               })}
             >
-              <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: on ? colors.gold : colors.elevated, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={o.icon} size={20} color={on ? colors.onGold : colors.textSecondary} />
+              <View
+                style={{
+                  width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: on ? colors.primary : colors.elevated,
+                }}
+              >
+                <Ionicons name={o.icon} size={18} color={on ? colors.onPrimary : colors.textSecondary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Txt variant="subheading">{o.label}</Txt>
-                <Txt variant="small" color="textSecondary">
+                <Txt variant="bodyStrong">{o.label}</Txt>
+                <Txt variant="small" color="textSecondary" style={{ marginTop: 1 }}>
                   {o.description}
                 </Txt>
               </View>
-              <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={on ? colors.gold : colors.borderStrong} />
+              {/* A drawn radio rather than an icon pair: the control stays the
+                  same size in both states, so selecting a row does not make it
+                  twitch, and it reads as one thing you can check. */}
+              <View
+                style={{
+                  width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                  borderWidth: stroke.thick, borderColor: on ? colors.primary : colors.borderStrong,
+                  backgroundColor: on ? colors.primary : 'transparent',
+                }}
+              >
+                {on ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+              </View>
             </Pressable>
           );
         })}
@@ -196,47 +357,45 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
 
   return (
     <Shell step={2} title="Who are you?" subtitle="The basics. Only your first name and age show on your Space." onBack={() => navigation.goBack()} onNext={next} loading={saving || setHandle.isPending}>
-      <View style={{ gap: space.lg }}>
-        <Input label="First name" value={name} onChangeText={setName} placeholder="Your first name" autoComplete="given-name" textContentType="givenName" maxLength={30} error={errors.name} />
-        <UsernameField value={username} onChange={setUsername} error={errors.username} />
-        <View style={{ gap: 8 }}>
-          <Txt variant="label" color="textSecondary">
-            Birthday
-          </Txt>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
+      <View>
+        <View style={{ gap: rhythm.group }}>
+          <Input label="First name" value={name} onChangeText={setName} placeholder="Your first name" autoComplete="given-name" textContentType="givenName" maxLength={30} error={errors.name} />
+          <UsernameField value={username} onChange={setUsername} error={errors.username} />
+        </View>
+        <Section
+          label="Birthday"
+          error={errors.birthday}
+          hint="Your birthday is private. We only show your age, and you can hide it later."
+        >
+          <View style={{ flexDirection: 'row', gap: space.xs }}>
             <Input containerStyle={{ flex: 1 }} value={day} onChangeText={(t) => { setDay(t.replace(/\D/g, '').slice(0, 2)); if (t.length === 2) monthRef.current?.focus(); }} placeholder="DD" keyboardType="number-pad" maxLength={2} accessibilityLabel="Birth day" style={{ textAlign: 'center' }} />
             <Input ref={monthRef} containerStyle={{ flex: 1 }} value={month} onChangeText={(t) => { setMonth(t.replace(/\D/g, '').slice(0, 2)); if (t.length === 2) yearRef.current?.focus(); }} placeholder="MM" keyboardType="number-pad" maxLength={2} accessibilityLabel="Birth month" style={{ textAlign: 'center' }} />
             <Input ref={yearRef} containerStyle={{ flex: 1.5 }} value={year} onChangeText={(t) => setYear(t.replace(/\D/g, '').slice(0, 4))} placeholder="YYYY" keyboardType="number-pad" maxLength={4} accessibilityLabel="Birth year" style={{ textAlign: 'center' }} />
           </View>
-          <Txt variant="small" color={errors.birthday ? 'danger' : 'textMuted'}>
-            {errors.birthday || 'Your birthday is private. We only show your age, and you can hide it later.'}
-          </Txt>
-        </View>
-        <View style={{ gap: 8 }}>
-          <Txt variant="label" color="textSecondary">
-            Pronouns (optional)
-          </Txt>
+        </Section>
+        <Section label="Pronouns" hint="Optional. Pick a set or write your own.">
           <ChipGroup>
             {PRONOUNS.map((pr) => (
               <Chip key={pr} label={pr} selected={!custom && pronouns === pr} onPress={() => { setCustom(''); setPronouns(pronouns === pr ? '' : pr); }} />
             ))}
           </ChipGroup>
-          <Input value={custom} onChangeText={setCustom} placeholder="Or write your own" maxLength={24} accessibilityLabel="Custom pronouns" />
-        </View>
-        <View style={{ gap: 8 }}>
-          <Input label="City or neighbourhood" value={city} onChangeText={setCity} placeholder="e.g. City Centre" maxLength={60} icon="location-outline" />
-          <Button
-            title={location || me?.profile.hasLocation ? 'Approximate location added' : 'Use my approximate location'}
-            icon={location || me?.profile.hasLocation ? 'checkmark-circle' : 'navigate-outline'}
-            variant="secondary"
-            size="md"
-            loading={locating}
-            onPress={useLocation}
-          />
-          <Txt variant="small" color="textMuted">
-            We never show your exact location — only a rounded distance like “5 km”, and you can hide that too.
-          </Txt>
-        </View>
+          <View style={{ marginTop: space.xs }}>
+            <Input value={custom} onChangeText={setCustom} placeholder="Or write your own" maxLength={24} accessibilityLabel="Custom pronouns" />
+          </View>
+        </Section>
+        <Section label="Where you are" hint="We never show your exact location — only a rounded distance like “5 km”, and you can hide that too.">
+          <View style={{ gap: space.xs }}>
+            <Input value={city} onChangeText={setCity} placeholder="City or neighbourhood" maxLength={60} icon="location-outline" accessibilityLabel="City or neighbourhood" />
+            <Button
+              title={location || me?.profile.hasLocation ? 'Approximate location added' : 'Use my approximate location'}
+              icon={location || me?.profile.hasLocation ? 'checkmark-circle' : 'navigate-outline'}
+              variant="secondary"
+              size="md"
+              loading={locating}
+              onPress={useLocation}
+            />
+          </View>
+        </Section>
       </View>
     </Shell>
   );
@@ -244,6 +403,7 @@ export function OnboardingBasicsScreen({ navigation }: ScreenProps<'OnboardingBa
 
 /* 3 — Photos */
 export function OnboardingPhotosScreen({ navigation }: ScreenProps<'OnboardingPhotos'>) {
+  const { colors } = useTheme();
   const { data: me } = useMe();
   const { contentWidth, gutter } = useLayout();
   const photos = me?.profile.photos || [];
@@ -258,10 +418,10 @@ export function OnboardingPhotosScreen({ navigation }: ScreenProps<'OnboardingPh
       nextLabel={photos.length ? 'Continue' : 'Add a photo to continue'}
     >
       <PhotoGrid photos={photos} width={contentWidth - gutter * 2} />
-      <View style={{ marginTop: space.lg, gap: 10 }}>
+      <View style={{ marginTop: rhythm.group, gap: space.xs }}>
         {['Clear, recent photos of your face get the most Crushes.', 'No nudity or other people’s photos — keep it classy.', 'Tap a photo to make it your main one or remove it.'].map((tip) => (
-          <View key={tip} style={{ flexDirection: 'row', gap: 10 }}>
-            <Ionicons name="sparkles-outline" size={16} color="#00C6FF" style={{ marginTop: 2 }} />
+          <View key={tip} style={{ flexDirection: 'row', gap: space.xs }}>
+            <Ionicons name="sparkles-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
               {tip}
             </Txt>
@@ -294,36 +454,27 @@ export function OnboardingAboutScreen({ navigation }: ScreenProps<'OnboardingAbo
       onNext={async () => (await save({ bio, interests, relationshipIntention: rel || null, languages: langs })) && navigation.navigate('OnboardingPreferences')}
     >
       <Input label="Bio" value={bio} onChangeText={setBio} multiline maxLength={500} showCount placeholder="What should someone know before saying hello?" />
-      <View style={{ marginTop: space.xl, gap: 10 }}>
-        <Txt variant="label" color="textSecondary">
-          Interests · {interests.length}/10
-        </Txt>
+      <Section label={`Interests · ${interests.length}/10`} hint={interests.length >= 10 ? 'That is the maximum — remove one to swap it out.' : 'Pick up to ten. These are what people search by.'}>
         <ChipGroup>
           {INTERESTS.map((i) => (
             <Chip key={i} label={i} selected={interests.includes(i)} onPress={() => toggle(interests, setInterests, i, 10)} />
           ))}
         </ChipGroup>
-      </View>
-      <View style={{ marginTop: space.xl, gap: 10 }}>
-        <Txt variant="label" color="textSecondary">
-          Relationship intention
-        </Txt>
+      </Section>
+      <Section label="Relationship intention">
         <ChipGroup>
           {RELATIONSHIP_INTENTIONS.map((r) => (
             <Chip key={r} label={r} selected={rel === r} onPress={() => setRel(rel === r ? '' : r)} />
           ))}
         </ChipGroup>
-      </View>
-      <View style={{ marginTop: space.xl, gap: 10 }}>
-        <Txt variant="label" color="textSecondary">
-          Languages (optional)
-        </Txt>
+      </Section>
+      <Section label="Languages" hint="Optional. Up to six.">
         <ChipGroup>
           {LANGUAGES.map((l) => (
             <Chip key={l} label={l} size="sm" selected={langs.includes(l)} onPress={() => toggle(langs, setLangs, l, 6)} />
           ))}
         </ChipGroup>
-      </View>
+      </Section>
     </Shell>
   );
 }
@@ -367,50 +518,47 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
 
   return (
     <Shell step={5} title="Your preferences" subtitle="Who would you like to discover? Adjust anytime from Discover." onBack={() => navigation.goBack()} onNext={finish} nextLabel="Start discovering" loading={finishing}>
-      <View style={{ gap: 6 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      {/* The live value sits on the same line as its label, right-aligned, in
+          tabular figures — so dragging a thumb changes digits in place instead
+          of shifting the whole row sideways. */}
+      <View style={{ gap: rhythm.tight }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <Txt variant="label" color="textSecondary">
             Age
           </Txt>
-          <Txt variant="bodyStrong" color="gold">
+          <Txt variant="numeric" color="primary">
             {ages[0]}–{ages[1] >= 99 ? '99+' : ages[1]}
           </Txt>
         </View>
         <RangeSlider min={18} max={99} low={ages[0]} high={ages[1]} onChange={(l, h) => setAges([l, h])} label="Age range" />
       </View>
-      <View style={{ gap: 6, marginTop: space.lg }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      <View style={{ gap: rhythm.tight, marginTop: rhythm.group }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <Txt variant="label" color="textSecondary">
             Distance
           </Txt>
-          <Txt variant="bodyStrong" color="gold">
+          <Txt variant="numeric" color="primary">
             {distanceLabel(distance)}
           </Txt>
         </View>
         <RangeSlider min={0} max={distanceSteps.length - 1} low={distanceIndex} onChange={(l) => setDistance(distanceSteps[l])} label="Distance" formatValue={(i) => distanceLabel(distanceSteps[i])} />
       </View>
-      <View style={{ marginTop: space.xl, gap: 10 }}>
-        <Txt variant="label" color="textSecondary">
-          Connection type
-        </Txt>
+      <Section label="Connection type" hint="Leave it on “Open to anything” to see everyone.">
         <ChipGroup>
           <Chip label="Open to anything" selected={!intentions.length} onPress={() => setIntentions([])} />
           {FILTER_INTENTIONS.map((o) => (
             <Chip key={o.value} label={o.label} selected={intentions.includes(o.value)} onPress={() => setIntentions((s) => (s.includes(o.value) ? s.filter((x) => x !== o.value) : [...s, o.value]))} />
           ))}
         </ChipGroup>
-      </View>
-      <View style={{ marginTop: space.xl, gap: 10 }}>
-        <Txt variant="label" color="textSecondary">
-          Interests to prioritise (optional)
-        </Txt>
+      </Section>
+      <Section label="Interests to prioritise" hint="Optional. People who share these come first.">
         <ChipGroup>
           {INTERESTS.slice(0, 12).map((i) => (
             <Chip key={i} label={i} size="sm" selected={interests.includes(i)} onPress={() => setInterests((s) => (s.includes(i) ? s.filter((x) => x !== i) : [...s, i]))} />
           ))}
         </ChipGroup>
-      </View>
-      <Group title="Privacy" style={{ marginTop: space.xl }} footer="You’re always in control. Change these anytime in Privacy.">
+      </Section>
+      <Group title="Privacy" style={{ marginTop: rhythm.section }} footer="You’re always in control. Change these anytime in Privacy.">
         <ListRow title="Show when I’m online" subtitle="If off, you won’t see others’ status either" icon="radio-button-on-outline" iconTone="success" toggle={{ value: showOnline, onChange: setShowOnline }} />
         <ListRow title="Show me in Discover" subtitle="Turn off to browse privately; Crushes you send still arrive" icon="eye-outline" iconTone="gold" toggle={{ value: discoverable, onChange: setDiscoverable }} last />
       </Group>

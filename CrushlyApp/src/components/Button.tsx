@@ -32,7 +32,8 @@ export function Button({
 }: Props) {
   const { colors } = useTheme();
   const height = size === 'lg' ? 56 : size === 'md' ? 48 : 40;
-  const fg = {
+  const dimmed = !!(disabled && !loading);
+  const fg = dimmed ? colors.textMuted : {
     primary: colors.onPrimary,
     crush: colors.onCrush,
     secondary: colors.text,
@@ -69,7 +70,26 @@ export function Button({
   };
 
   let surface: React.ReactNode;
-  if (variant === 'primary') {
+  if (dimmed) {
+    /* A disabled button is not a faded button.
+       Every variant used to keep its own surface and simply drop to 45%, which
+       turned the brand gradient into a muddy teal smear that still looked like
+       the loudest thing on the screen — the opposite of what "you can't press
+       this yet" should say. It becomes one quiet surface with a muted label, so
+       the only colourful thing left on the page is the thing you can actually
+       do. */
+    surface = (
+      <View
+        style={[
+          base,
+          { backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.border },
+          style,
+        ]}
+      >
+        {content}
+      </View>
+    );
+  } else if (variant === 'primary') {
     surface = (
       <LinearGradient colors={[colors.primary, colors.primaryDeep, colors.crush]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[base, style]}>
         {content}
