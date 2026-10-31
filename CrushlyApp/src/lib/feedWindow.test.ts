@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { feedWindow, isMounted, isAudible, FEED_WINDOW_RADIUS } from './feedWindow';
+import { feedWindow, feedRange, isMounted, isAudible, FEED_WINDOW_RADIUS } from './feedWindow';
 
 test('an empty feed has no window and no active post', () => {
   const win = feedWindow(0, 0);
@@ -83,4 +83,31 @@ test('a negative radius is treated as zero rather than inverting the window', ()
 
 test('the default radius is one either side', () => {
   assert.equal(FEED_WINDOW_RADIUS, 1);
+});
+
+test('feedRange keeps every visible row mounted, plus one either side', () => {
+  // Four rows on screen at once on a tall phone: 3, 4, 5 and 6.
+  const win = feedRange(20, 3, 6, 1);
+  assert.equal(win.start, 2);
+  assert.equal(win.end, 7);
+  for (const i of [2, 3, 4, 5, 6, 7]) assert.equal(isMounted(win, i), true, `row ${i} should be mounted`);
+});
+
+test('feedRange never leaves a visible row cold', () => {
+  // The regression this exists for: the window used to be centred on one row,
+  // so a row fully on screen above it was unmounted and became a blank spacer.
+  const win = feedRange(12, 0, 3, 1);
+  for (const i of [0, 1, 2, 3]) assert.equal(isMounted(win, i), true);
+});
+
+test('feedRange takes the ends in either order and clamps to the list', () => {
+  const win = feedRange(5, 4, 1, 1);
+  assert.equal(win.start, 0);
+  assert.equal(win.end, 4);
+});
+
+test('feedRange on an empty feed has no window at all', () => {
+  const win = feedRange(0, 0, 0);
+  assert.equal(win.end, -1);
+  assert.equal(win.active, null);
 });

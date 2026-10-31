@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, type StyleProp, type ImageStyle, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,15 +15,34 @@ type PhotoProps = {
   priority?: 'low' | 'normal' | 'high';
   contentPosition?: 'top' | 'center';
   fit?: 'cover' | 'contain';
+  /**
+   * Width ÷ height to reserve *before* the file has loaded, so the page does not
+   * jump when it arrives. Omit it wherever the caller already sets an explicit
+   * width and height (avatars, tiles).
+   */
+  aspectRatio?: number;
+  /** Ceiling for the height, so one tall photo cannot own the whole screen. */
+  maxHeight?: number;
+  /**
+   * The file's real shape, once known. A feed should not crop someone's photo to
+   * a ratio we invented, so callers hold the measured value and pass it back as
+   * `aspectRatio` on the next render.
+   */
+  onAspect?: (ratio: number) => void;
 };
 
 /**
  * Cached, fading image. expo-image handles memory + disk caching and
  * downsampling, which keeps grids smooth on low-end Android devices.
  */
-export function Photo({ uri, style, alt, priority = 'normal', contentPosition = 'top', fit = 'cover' }: PhotoProps) {
+export function Photo({
+  uri, style, alt, priority = 'normal', contentPosition = 'top', fit = 'cover', aspectRatio, maxHeight, onAspect,
+}: PhotoProps) {
   const { colors } = useTheme();
   const src = mediaUrl(uri);
+  const [measured, setMeasured] = useState(aspectRatio ?? null);
+  const [width, setWidth] = useState(0);
+
   if (!src) {
     return (
       <View style={[{ backgroundColor: colors.elevated, alignItems: 'center', justifyContent: 'center' }, style as StyleProp<ViewStyle>]}>
@@ -31,10 +50,29 @@ export function Photo({ uri, style, alt, priority = 'normal', contentPosition = 
       </View>
     );
   }
+
+  /**
+   * An image with a width but no height collapses to nothing on the web, and that
+   * is exactly what was happening to every photo in the feed: <img> was in the
+   * DOM with the right width, the right natural size and a computed height of
+   * zero, so posts rendered as text with a hole under them.
+   *
+   * With `aspectRatio` in play the caller has also promised two things: the
+   * space is reserved before the file arrives (no layout jump), and the height
+   * is derived from the real width once it is measured, capped by `maxHeight`.
+   * When the file reports its own shape we switch to that, so a portrait photo
+   * stays portrait and nothing gets cropped to a ratio we invented.
+   */
+  const sized: ViewStyle | null = measured
+    ? { height: Math.min(width / measured, maxHeight ?? Infinity) }
+    : aspectRatio
+      ? { aspectRatio }
+      : null;
+
   return (
     <Image
       source={mediaSource(src)}
-      style={[{ backgroundColor: colors.skeleton }, style]}
+      style={[{ backgroundColor: colors.skeleton }, sized as StyleProp<ImageStyle>, style]}
       contentFit={fit}
       contentPosition={contentPosition}
       transition={220}
@@ -44,6 +82,15 @@ export function Photo({ uri, style, alt, priority = 'normal', contentPosition = 
       accessible={!!alt}
       accessibilityLabel={alt}
       accessibilityIgnoresInvertColors
+      onLayout={aspectRatio ? (e) => setWidth(e.nativeEvent.layout.width) : undefined}
+      onLoad={
+        aspectRatio && onAspect
+          ? (e) => {
+              const { width: w, height: h } = e.source ?? {};
+              if (w && h) onAspect(w / h);
+            }
+          : undefined
+      }
     />
   );
 }

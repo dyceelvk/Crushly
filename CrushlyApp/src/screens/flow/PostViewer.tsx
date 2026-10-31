@@ -58,6 +58,24 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * read and the comments were always below the fold. This keeps the thing you
  * came to watch in place.
  */
+/** The palette's word for each reaction, so a like is the crush colour. */
+const REACTION_TINT: Record<ReactionKind, string> = {
+  crush: '#FF4081',
+  fire: '#FF8A3D',
+  laugh: '#FFC940',
+  wow: '#A040FF',
+  clap: '#00C6FF',
+};
+
+/** The same five reactions, drawn in the app's icon set rather than as emoji. */
+const REACTION_ICON: Record<ReactionKind, keyof typeof Ionicons.glyphMap> = {
+  crush: 'heart',
+  fire: 'flame',
+  laugh: 'happy',
+  wow: 'alert-circle',
+  clap: 'hand-left',
+};
+
 const REACTION_GLYPH: Record<ReactionKind, string> = {
   crush: '❤️',
   fire: '🔥',
@@ -266,9 +284,12 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               style={{ width: '100%', height: '100%' }}
             />
           ) : (
+            /* A photo viewer fills the stage. `contain` letterboxes, and the
+               letterbox is black — which on this screen read as a broken layout
+               with a band of nothing above and below the picture. */
             <Photo
               uri={post.mediaUrl}
-              fit="contain"
+              fit="cover"
               contentPosition="center"
               style={{ width: '100%', height: '100%' }}
               alt={`Post by ${authorName}`}
@@ -335,7 +356,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       >
         <RailAction
           icon={post.liked ? 'heart' : 'heart-outline'}
-          glyph={post.myReaction ? REACTION_GLYPH[post.myReaction] : null}
           tint={post.liked ? colors.crush : '#FFFFFF'}
           label={post.liked ? 'Take back your reaction' : 'React to this post, hold for more'}
           count={formatCount(totalReactions)}
@@ -414,12 +434,14 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               <Pressable
                 onPress={() => setExpanded(true)}
                 hitSlop={12}
-                accessibilityLabel="Read more"
-                style={{ marginTop: 3 }}
+                accessibilityRole="button"
+                accessibilityLabel="Read the whole caption"
+                style={{ marginTop: 4, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 2 }}
               >
                 <Txt variant="caption" color="textSecondary">
-                  … more
+                  Read more
                 </Txt>
+                <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
               </Pressable>
             ) : null}
           </View>
@@ -427,9 +449,27 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
         {/* Who reacted, and with what — the count becomes a breakdown. */}
         {topKinds.length > 0 ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 9 }}>
-            <Txt variant="caption">{topKinds.map((k) => REACTION_GLYPH[k]).join(' ')}</Txt>
-            <Txt variant="caption" color="textSecondary">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, marginTop: 10 }}>
+            {/* Overlapping discs with the app's own icon set in them. The emoji
+                version sat next to an Ionicons heart in the rail and read as two
+                different products sharing a screen. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {topKinds.map((k, i) => (
+                <View
+                  key={k}
+                  style={{
+                    width: 20, height: 20, borderRadius: 10,
+                    backgroundColor: REACTION_TINT[k],
+                    borderWidth: 1.5, borderColor: '#05060f',
+                    alignItems: 'center', justifyContent: 'center',
+                    marginLeft: i === 0 ? 0 : -6,
+                  }}
+                >
+                  <Ionicons name={REACTION_ICON[k]} size={10} color="#FFFFFF" />
+                </View>
+              ))}
+            </View>
+            <Txt variant="numeric" color="textSecondary">
               {formatCount(totalReactions)} reacted
             </Txt>
           </View>
@@ -658,9 +698,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
 /* --------------------------------------------------------------------- pieces */
 
+/**
+ * One control in the viewer's rail.
+ *
+ * The button is a 46pt glass disc and the word under it is the same shape for
+ * every action — a count for the things that have one, a verb for the things
+ * that don't. It used to also draw a second, smaller glyph underneath for the
+ * reader's own reaction, which was the same fact the filled heart was already
+ * telling them, in a size too small to read.
+ */
 function RailAction({
   icon,
-  glyph,
   label,
   count,
   spoken,
@@ -669,7 +717,6 @@ function RailAction({
   onLongPress,
 }: {
   icon: React.ComponentProps<typeof Ionicons>['name'];
-  glyph?: string | null;
   label: string;
   count: string;
   /** The exact, unshortened figure for assistive tech. See lib/counts. */
@@ -703,8 +750,8 @@ function RailAction({
       >
         <Ionicons name={icon} size={21} color={tint} />
       </View>
-      <Txt variant="caption" style={{ color: tint, fontWeight: '700' }} numberOfLines={1}>
-        {glyph ?? count}
+      <Txt variant="numeric" style={{ color: tint }} numberOfLines={1}>
+        {count}
       </Txt>
     </Pressable>
   );

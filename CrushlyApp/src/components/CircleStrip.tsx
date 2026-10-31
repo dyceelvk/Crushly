@@ -81,12 +81,15 @@ function SectionHead({ count, onSeeAll }: { count?: number; onSeeAll?: () => voi
         marginBottom: space.sm,
       }}
     >
-      <Txt variant="title" accessibilityRole="header">
+      {/* A section heading, not a second page title. It used to be `title` at
+          26pt, which is louder than the "Flows" masthead above it — so the eye
+          landed on a sub-section first and the page had two tops. */}
+      <Txt variant="heading" accessibilityRole="header">
         Your Circles
       </Txt>
       {count && onSeeAll ? (
         <Pressable onPress={onSeeAll} accessibilityRole="link" accessibilityLabel="See all Circles" hitSlop={8}>
-          <Txt variant="smallStrong" color="gold">
+          <Txt variant="smallStrong" color="primary">
             See all ›
           </Txt>
         </Pressable>

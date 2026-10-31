@@ -24,10 +24,11 @@ import {
 import type { Post, PostComment } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
-import { fonts, radius, space } from '../../theme/tokens';
+import { HIT, elevation, fonts, radius, rhythm, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
-import { activeIdAt, type CardBox } from '../../lib/viewability';
-import { feedWindow } from '../../lib/feedWindow';
+import { formatCount, spokenCount } from '../../lib/counts';
+import { activeIdAt, visibleIndices, type CardBox } from '../../lib/viewability';
+import { feedRange, feedWindow } from '../../lib/feedWindow';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
@@ -75,13 +76,21 @@ export function FlowScreen() {
     setActiveId(activeIdAt(flat, nextY, nextH));
   }, []);
 
-  // Which cards stay alive. The reader's own card plus one either side: the one
-  // just left, so scrolling back is instant, and the one coming up, so its
-  // media is decoded before it arrives.
-  const activeIndex = activeId === null
-    ? -1
-    : flow.posts.findIndex((p) => p.id === activeId);
-  const alive = feedWindow(flow.posts.length, Math.max(activeIndex, 0));
+  // Which cards stay alive.
+  //
+  // Not "the card the reader is on, plus one" — that window is centred on a
+  // single row, and on a tall screen three or four rows are on it at once, so the
+  // ones above the focus line got unmounted and replaced by a spacer of their own
+  // height. That is a blank hole in the middle of the feed, which is exactly what
+  // the first render of this screen showed. The window now covers every row that
+  // is actually on screen, plus one either side for runway.
+  const measuredBoxes = flow.posts
+    .map((p) => boxes.current.get(p.id))
+    .filter((b): b is CardBox => !!b && b.height > 0);
+  const onScreen = visibleIndices(measuredBoxes, scrollY, viewportH || 0);
+  const alive = onScreen.length
+    ? feedRange(flow.posts.length, onScreen[0], onScreen[onScreen.length - 1])
+    : feedWindow(flow.posts.length, 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -110,20 +119,22 @@ export function FlowScreen() {
           recompute(y, viewportH);
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1 }}>
-            <Txt variant="display" accessibilityRole="header">
-              Flows
-            </Txt>
-            <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-              What people are sharing. Posts stay until they’re removed.
-            </Txt>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <IconButton icon="search-outline" label="Search" onPress={() => navigation.navigate('Search')} />
-            <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" onPress={() => navigation.navigate('Circles')} />
+        {/* Masthead. The subtitle used to wrap under the two circular buttons,
+            which left it ragging across three lines around a pair of discs;
+            it is one short line now, and the buttons sit beside the title
+            rather than beside the paragraph. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
+          <Txt variant="title" accessibilityRole="header" style={{ flexShrink: 1 }}>
+            Flows
+          </Txt>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
+            <IconButton icon="search-outline" label="Search" variant="gold" size={38} iconSize={18} onPress={() => navigation.navigate('Search')} />
+            <IconButton icon="chatbubble-ellipses-outline" label="Your Circles" variant="gold" size={38} iconSize={18} onPress={() => navigation.navigate('Circles')} />
           </View>
         </View>
+        <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
+          What people are sharing. Posts stay until they’re removed.
+        </Txt>
 
         {/* Home opens on the rooms you belong to, not on a list of strangers. */}
         <View style={{ marginTop: space.lg }}>
@@ -134,49 +145,71 @@ export function FlowScreen() {
           onPress={() => setComposer(true)}
           accessibilityRole="button"
           accessibilityLabel="Share a post"
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.lg,
-            backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
-            paddingHorizontal: 14, paddingVertical: 12,
-          }}
+          style={({ pressed }) => ({
+            flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: rhythm.section,
+            backgroundColor: colors.card, borderRadius: radius.md, borderWidth: stroke.hairline, borderColor: colors.border,
+            paddingHorizontal: space.sm, paddingVertical: space.sm,
+            ...elevation.soft,
+            opacity: pressed ? 0.85 : 1,
+          })}
         >
           <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={36} />
           <Txt variant="body" color="textMuted" style={{ flex: 1 }}>
             Share something…
           </Txt>
-          <Ionicons name="create-outline" size={18} color={colors.gold} />
+          <View
+            style={{
+              width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: colors.primarySoft,
+            }}
+          >
+            <Ionicons name="create-outline" size={17} color={colors.primary} />
+          </View>
         </Pressable>
 
         {/* Discover is not a tab: it is one door, here, that opens into a
             single screen holding People, Moments and Vibes as sections. */}
+        {/* Discover is a door, so it is built like one: a title with its own
+            line underneath, not a title and a description fighting for the same
+            row. The old version ran a bright cyan border all the way round it,
+            which made a secondary route the loudest outline on the screen —
+            louder than the post the member came to read. */}
         <Pressable
           onPress={() => navigation.navigate('Discover')}
           accessibilityRole="button"
           accessibilityLabel="Discover. Vibes, Moments and public posts"
-          style={{
-            marginTop: space.lg,
+          style={({ pressed }) => ({
+            marginTop: space.sm,
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 10,
-            backgroundColor: colors.goldSoft,
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.gold,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-          }}
+            gap: space.sm,
+            backgroundColor: colors.card,
+            borderRadius: radius.md,
+            borderWidth: stroke.hairline,
+            borderColor: colors.border,
+            paddingHorizontal: space.sm,
+            paddingVertical: space.sm,
+            opacity: pressed ? 0.85 : 1,
+          })}
         >
-          <Ionicons name="compass-outline" size={18} color={colors.gold} />
-          <Txt variant="bodyStrong" style={{ flex: 1 }}>
-            Discover
-          </Txt>
-          <Txt variant="small" color="textSecondary" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
-            Vibes, Moments and public posts
-          </Txt>
+          <View
+            style={{
+              width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: colors.primarySoft,
+            }}
+          >
+            <Ionicons name="compass-outline" size={17} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Txt variant="bodyStrong">Discover</Txt>
+            <Txt variant="small" color="textSecondary" numberOfLines={1}>
+              Vibes, Moments and public posts
+            </Txt>
+          </View>
           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
         </Pressable>
 
-        <View style={{ marginTop: space.xl, gap: space.md }}>
+        <View style={{ marginTop: rhythm.section, gap: space.sm }}>
           {flow.isLoading ? (
             <Skeleton style={{ height: 120 }} />
           ) : flow.isError ? (
@@ -267,9 +300,23 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
     }
   };
 
+  // The file's real shape, once it reports one. Starts at 4:5 — the commonest
+  // portrait photo — so the space is held open and the feed does not jump when
+  // the image lands.
+  const [mediaRatio, setMediaRatio] = useState<number | null>(null);
+
   return (
-    <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.md, paddingTop: space.md }}>
+    <View
+      style={{
+        backgroundColor: colors.card,
+        borderRadius: radius.lg,
+        borderWidth: stroke.hairline,
+        borderColor: colors.border,
+        overflow: 'hidden',
+        ...elevation.soft,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingTop: space.sm }}>
         <Pressable
           onPress={() => (p.mine ? navigation.navigate('Main', { screen: 'Profile' }) : navigation.navigate('UserProfile', { id: p.author.id }))}
           accessibilityRole="button"
@@ -278,22 +325,24 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
         >
           <Avatar uri={p.author.photos[0]?.url ?? null} name={p.author.name} size={38} ring={p.author.verified ? 'gold' : undefined} />
           <View style={{ flexShrink: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Txt variant="bodyStrong" numberOfLines={1}>
                 {authorName}
               </Txt>
               {p.author.verified ? <VerifiedBadge size={14} /> : null}
             </View>
             <Txt variant="caption" color="textMuted" numberOfLines={1}>
-              {[p.author.username ? `@${p.author.username}` : null, timeAgo(p.createdAt)].filter(Boolean).join('  ·  ')}
+              {[p.author.username ? `@${p.author.username}` : null, timeAgo(p.createdAt)].filter(Boolean).join(' · ')}
             </Txt>
           </View>
         </Pressable>
-        <Pill label={p.audience === 'everyone' ? 'Everyone' : 'Connections'} />
+        <Pill label={p.audience === 'everyone' ? 'Everyone' : 'Connections'} tone={p.audience === 'everyone' ? 'open' : 'quiet'} />
         {p.mine ? (
           <IconButton
             icon="trash-outline"
             label="Delete post"
+            variant="plain"
+            size={36}
             onPress={() => remove.mutate(p.id, { onError: (e) => toast({ kind: 'error', title: 'Not deleted', message: (e as Error).message }) })}
             color={colors.textMuted}
           />
@@ -301,6 +350,8 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
           <IconButton
             icon="ellipsis-horizontal"
             label={`More options for ${authorName}`}
+            variant="plain"
+            size={36}
             onPress={() =>
               openActions({
                 id: p.author.id,
@@ -322,7 +373,7 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
         style={{ marginTop: space.sm }}
       >
         {p.body ? (
-          <Txt variant="body" style={{ paddingHorizontal: space.md, paddingTop: space.sm, fontSize: 16, lineHeight: 23 }} selectable>
+          <Txt variant="body" style={{ paddingHorizontal: space.sm, paddingTop: space.sm, fontSize: 16, lineHeight: 23 }} selectable>
             <LinkText text={p.body} bare />
           </Txt>
         ) : null}
@@ -330,38 +381,72 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
         {p.mediaUrl ? (
           <View style={{ marginTop: space.sm }}>
             {p.mediaKind === 'video' ? (
-              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay={active} loop={active} style={{ width: '100%', maxHeight: 400 }} />
+              <EditedClip uri={p.mediaUrl} live={p.edit} autoPlay={active} loop={active} style={{ width: '100%', aspectRatio: mediaRatio ?? 0.8, maxHeight: 520 }} />
             ) : (
-              <Photo uri={p.mediaUrl} fit="contain" contentPosition="center" style={{ width: '100%', maxHeight: 500 }} alt={`Post by ${authorName}`} />
+              /* `contain` inside an unsized box is what made every photo in the
+                 feed invisible: the image had a width, no height, and nothing
+                 to size it against. It now reserves 4:5, adopts the file's real
+                 shape when it reports one, and crops only if it has to. */
+              <Photo
+                uri={p.mediaUrl}
+                fit="cover"
+                contentPosition="center"
+                aspectRatio={mediaRatio ?? 0.8}
+                maxHeight={520}
+                onAspect={setMediaRatio}
+                style={{ width: '100%' }}
+                alt={`Post by ${authorName}`}
+              />
             )}
           </View>
         ) : null}
       </Pressable>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm }}>
+      {/* One rail, three verbs, evenly spaced, with the share at the far end
+          where the thumb is not. Heights match the comment sheet's handle so
+          the card does not change height when the sheet opens. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xs, paddingVertical: 2 }}>
         <PostAction
           icon="chatbubble-outline"
           count={p.commentCount}
           label="Comments"
+          noun="comments"
           onPress={() => setCommentsOpen(true)}
         />
         <PostAction
           icon={p.liked ? 'heart' : 'heart-outline'}
           count={p.likeCount}
           label={p.liked ? 'Take back your like' : 'Like'}
+          noun="likes"
           active={p.liked}
           onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
         />
+        <View style={{ flex: 1 }} />
         <PostAction icon="share-social-outline" label="Share this post" onPress={share} />
       </View>
 
       {!p.mine && p.author.crush?.mutual ? (
-        <View style={{ paddingHorizontal: space.md, paddingVertical: space.sm }}>
-          <Button title="Whisper" size="sm" variant="secondary" icon="chatbubble-outline" onPress={whisper} />
-        </View>
-      ) : (
-        <View style={{ height: space.sm }} />
-      )}
+        <Pressable
+          onPress={whisper}
+          accessibilityRole="button"
+          accessibilityLabel={`Whisper ${authorName}`}
+          style={({ pressed }) => ({
+            flexDirection: 'row', alignItems: 'center', gap: space.xs,
+            marginHorizontal: space.sm, marginBottom: space.sm,
+            paddingHorizontal: space.sm, paddingVertical: 10,
+            borderRadius: radius.sm, backgroundColor: colors.primarySoft,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Ionicons name="chatbubble-ellipses" size={15} color={colors.primary} />
+          <Txt variant="smallStrong" color="primary">
+            Whisper
+          </Txt>
+          <Txt variant="small" color="textSecondary" numberOfLines={1} style={{ flex: 1 }}>
+            · only the two of you
+          </Txt>
+        </Pressable>
+      ) : null}
 
       <PostComments postId={p.id} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
     </View>
@@ -370,30 +455,34 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
 
 /** One of the three things you can do with a post, shown under it. */
 function PostAction({
-  icon, count, label, active, onPress,
+  icon, count, label, noun, active, onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   count?: number;
   label: string;
+  /** What the count counts, so a screen reader hears "42 comments", not "42". */
+  noun?: string;
   active?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+  const spoken = count !== undefined && noun ? spokenCount(count, noun.replace(/s$/, ''), noun) : '';
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
+      accessibilityLabel={spoken ? `${label}, ${spoken}` : label}
+      hitSlop={6}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: 6,
-        paddingVertical: 8, paddingHorizontal: 10, borderRadius: radius.md,
-        opacity: pressed ? 0.6 : 1,
+        minHeight: HIT, paddingHorizontal: space.sm, borderRadius: radius.sm,
+        opacity: pressed ? 0.55 : 1,
       })}
     >
-      <Ionicons name={icon} size={18} color={active ? colors.gold : colors.textMuted} />
+      <Ionicons name={icon} size={19} color={active ? colors.crush : colors.textSecondary} />
       {count === undefined || count === 0 ? null : (
-        <Txt variant="caption" color={active ? 'gold' : 'textSecondary'}>
-          {String(count)}
+        <Txt variant="numeric" color={active ? 'crush' : 'textSecondary'}>
+          {formatCount(count)}
         </Txt>
       )}
     </Pressable>
@@ -475,11 +564,27 @@ function CommentRow({ comment: c, onDelete }: { comment: PostComment; onDelete: 
   );
 }
 
-function Pill({ label }: { label: string }) {
+/**
+ * Who can see this. Two states that used to look identical — a grey pill in both
+ * cases — so the one decision that matters on a post was invisible at a glance.
+ * "Everyone" is open and says so in the accent colour; "Connections" stays quiet,
+ * because it is the default and should not shout.
+ */
+function Pill({ label, tone = 'quiet' }: { label: string; tone?: 'quiet' | 'open' }) {
   const { colors } = useTheme();
+  const open = tone === 'open';
   return (
-    <View style={{ borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.border }}>
-      <Txt variant="caption" color="textSecondary">
+    <View
+      style={{
+        borderRadius: radius.pill,
+        paddingHorizontal: space.xs,
+        paddingVertical: 3,
+        backgroundColor: open ? colors.primarySoft : colors.elevated,
+        borderWidth: stroke.hairline,
+        borderColor: open ? colors.primaryLine : colors.border,
+      }}
+    >
+      <Txt variant="caption" color={open ? 'primary' : 'textSecondary'}>
         {label}
       </Txt>
     </View>

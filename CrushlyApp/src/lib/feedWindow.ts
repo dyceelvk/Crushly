@@ -42,6 +42,28 @@ export function feedWindow(count: number, activeIndex: number, radius = FEED_WIN
   };
 }
 
+/**
+ * The window around a *span* of visible rows rather than a single row.
+ *
+ * `feedWindow` is right when exactly one thing is "the" active row — a
+ * full-screen viewer, or a short list. A scrolling feed on a tall screen can have
+ * three or four rows on it at once, and centring the window on one of them leaves
+ * the others unmounted, which shows up as a blank hole in the page. This takes
+ * the first and last row actually on screen and adds the same radius either side,
+ * so everything visible is mounted plus one row of runway in each direction.
+ */
+export function feedRange(count: number, firstVisible: number, lastVisible: number, radius = FEED_WINDOW_RADIUS): FeedWindow {
+  if (count <= 0) return { start: 0, end: -1, active: null };
+  const lo = Math.min(Math.max(Math.min(firstVisible, lastVisible), 0), count - 1);
+  const hi = Math.min(Math.max(Math.max(firstVisible, lastVisible), 0), count - 1);
+  const span = Math.max(0, Math.floor(radius));
+  return {
+    start: Math.max(0, lo - span),
+    end: Math.min(count - 1, hi + span),
+    active: Math.round((lo + hi) / 2),
+  };
+}
+
 /** Whether an index is inside the mounted window. */
 export function isMounted(win: FeedWindow, index: number): boolean {
   return index >= win.start && index <= win.end;

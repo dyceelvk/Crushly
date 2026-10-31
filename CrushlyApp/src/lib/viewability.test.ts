@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activeIdAt, FOCUS_LINE, type CardBox } from './viewability';
+import { activeIdAt, visibleIndices, FOCUS_LINE, type CardBox } from './viewability';
 
 const boxes: CardBox[] = [
   { id: 101, y: 0, height: 600 },
@@ -52,4 +52,34 @@ test('a line below every card picks the last', () => {
 
 test('card boundaries belong to the card that starts there', () => {
   assert.equal(activeIdAt(boxes, 600 - 800 * FOCUS_LINE, 800), 102);
+});
+
+test('visibleIndices returns every card that is on screen, not just the focused one', () => {
+  // Four cards, a tall viewport: 0 and 1 fully visible, 2 partly.
+  const boxes = [
+    { id: 10, y: 0, height: 400 },
+    { id: 11, y: 400, height: 400 },
+    { id: 12, y: 800, height: 400 },
+    { id: 13, y: 1200, height: 400 },
+  ];
+  const withTall = visibleIndices(boxes, 0, 900);
+  assert.deepEqual(withTall, [0, 1, 2]);
+});
+
+test('visibleIndices follows the scroll position', () => {
+  const boxes = [
+    { id: 10, y: 0, height: 400 },
+    { id: 11, y: 400, height: 400 },
+    { id: 12, y: 800, height: 400 },
+  ];
+  assert.deepEqual(visibleIndices(boxes, 400, 400), [1]);
+  assert.deepEqual(visibleIndices(boxes, 1200, 400), []);
+});
+
+test('visibleIndices ignores a card that has not measured yet', () => {
+  const boxes = [
+    { id: 10, y: 0, height: 0 },
+    { id: 11, y: 0, height: 400 },
+  ];
+  assert.deepEqual(visibleIndices(boxes, 0, 400), [1]);
 });

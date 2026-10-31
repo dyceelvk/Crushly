@@ -45,3 +45,25 @@ export function activeIdAt(
   }
   return best ? best.id : null;
 }
+
+/**
+ * Every card that is at least partly on screen.
+ *
+ * The focus line answers "what is the reader on"; this answers "what can the
+ * reader see". They are not the same question, and confusing them is what left a
+ * blank hole at the top of the feed on a tall screen: a card fully visible above
+ * the focus line was outside a window centred on the focus-line card, so it was
+ * unmounted and replaced by a spacer of its own height.
+ *
+ * Returns indices into `boxes`, in the order the boxes arrive.
+ */
+export function visibleIndices(boxes: CardBox[], scrollY: number, viewportHeight: number): number[] {
+  const out: number[] = [];
+  const top = scrollY;
+  const bottom = scrollY + viewportHeight;
+  boxes.forEach((box, i) => {
+    if (box.height <= 0) return;
+    if (box.y + box.height > top && box.y < bottom) out.push(i);
+  });
+  return out;
+}
