@@ -746,16 +746,32 @@ export async function updateAccount(body: {
   return { me: await getMe(), emailPending };
 }
 
+/**
+ * Where the app is actually running, or undefined off the web.
+ *
+ * Every auth email that carries a link needs this: GoTrue builds the link from
+ * `site_url` unless the request names a redirect, and `site_url` was still the
+ * old Netlify deployment — so the link took members out of the app they were
+ * standing in. The origin also has to be in the project's redirect allow list,
+ * which is a Supabase-side setting, not something this file can fix.
+ */
+export function webOrigin(): string | undefined {
+  return browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window)?.origin;
+}
+
 export async function resendConfirmation(email: string): Promise<void> {
-  const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim().toLowerCase() });
+  const origin = webOrigin();
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: email.trim().toLowerCase(),
+    ...(origin ? { options: { emailRedirectTo: origin } } : {}),
+  });
   if (error) throw toApiError(error);
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
   const next = email.trim().toLowerCase();
-  const { error } = await supabase.auth.resetPasswordForEmail(next, {
-    redirectTo: browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window)?.origin,
-  });
+  const { error } = await supabase.auth.resetPasswordForEmail(next, { redirectTo: webOrigin() });
   if (error) throw toApiError(error);
 }
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { drawPosePair, isCompleteOtp, passwordStrength, sanitizeOtp } from './auth';
+import { drawPosePair, isCompleteOtp, passwordStrength, sanitizeOtp, signUpOutcome } from './auth';
 
 test('sanitizeOtp keeps digits only and caps at 6', () => {
   assert.equal(sanitizeOtp(''), '');
@@ -55,4 +55,16 @@ test('drawPosePair is deterministic with an injected rand and never repeats', ()
 test('drawPosePair works for a pair and rejects a single pose', () => {
   assert.deepEqual(drawPosePair(['only', 'two'], () => 0.99), ['two', 'only']);
   assert.throws(() => drawPosePair(['solo']), /at least 2/);
+});
+
+test('signUpOutcome separates a new address from one that already has an account', () => {
+  // A session means the project has confirmation turned off: signed in already.
+  assert.equal(signUpOutcome({ session: { access_token: 'x' }, user: { identities: [] } }), 'signed-in');
+  // The normal new-address case: a user with one identity, waiting to confirm.
+  assert.equal(signUpOutcome({ session: null, user: { identities: [{}] } }), 'confirm-email');
+  // The silent case: an address with a confirmed account gets no email at all.
+  assert.equal(signUpOutcome({ session: null, user: { identities: [] } }), 'already-registered');
+  // Defensive: no user at all is still treated as "nothing was sent".
+  assert.equal(signUpOutcome({ session: null, user: { identities: null } }), 'already-registered');
+  assert.equal(signUpOutcome({ session: null, user: null }), 'confirm-email');
 });

@@ -3,8 +3,9 @@ import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
+import { signUpOutcome } from '../lib/auth';
 import { keys } from '../api/hooks';
-import { getMe } from '../api/service';
+import { getMe, webOrigin } from '../api/service';
 import type { Me } from '../api/types';
 
 export type AuthStatus = 'restoring' | 'signedOut' | 'onboarding' | 'resetting' | 'ready';
@@ -140,15 +141,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(
     async (email: string, password: string) => {
       requireConfig();
-      const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
+      /**
+       * `emailRedirectTo` is not optional in practice. Without it the link in the
+       * confirmation email is built from the project's `site_url`, which was
+       * still the old Netlify deploy — so a member who tapped "Confirm my email"
+       * left the app they were using. Passing the origin they are actually on is
+       * what makes the link come back here; it only works because that origin is
+       * in the project's redirect allow list.
+       */
+      const origin = webOrigin();
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        ...(origin ? { options: { emailRedirectTo: origin } } : {}),
+      });
       if (error) {
         const msg = String(error.message ?? '');
         if (/already (registered|exists)/i.test(msg)) {
           throw new ApiError(409, 'An account with this email already exists. Try signing in.');
         }
+        if (/rate limit|too many/i.test(msg)) {
+          throw new ApiError(429, 'Too many emails just now. Give it an hour and try again — or sign in if you already have a Space.');
+        }
         throw new ApiError(error.status ?? 400, msg || 'We couldn’t create your account. Please try again.');
       }
-      if (!data.session) {
+      const outcome = signUpOutcome(data);
+      if (outcome === 'already-registered') {
+        /**
+         * No error, no session, no identity — and no email. Saying "check your
+         * inbox" here is the bug that looks exactly like a broken mail server.
+         */
+        throw new ApiError(409, 'That email already has a Space. Sign in instead — or use Forgot password for a reset code.');
+      }
+      if (outcome === 'confirm-email') {
         throw new ApiError(
           202,
           'Check your inbox — we sent a code and a link. Use whichever you prefer.',
