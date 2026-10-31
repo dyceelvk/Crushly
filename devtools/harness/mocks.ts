@@ -260,29 +260,6 @@ const closeOnes = {
   ],
 };
 
-/** [query key, data] pairs, seeded into the cache before anything mounts. */
-export const mockEntries: [unknown[], unknown][] = [
-  [['me'], me],
-  [['flow', 20, null], { items: posts }],
-  [['post', 101], posts[0]],
-  [['post', 102], posts[1]],
-  [['post', 103], posts[2]],
-  [['post-comments', 101], { items: comments.filter((c) => c.postId === 101) }],
-  [['post-comments', 102], { items: comments.filter((c) => c.postId === 102) }],
-  [['circles'], { items: circles }],
-  [['conversations'], conversations],
-  [['app-update'], { available: false, latestVersion: '1.0.3', url: null }],
-  [['blocks'], { items: [] }],
-  [['notifications'], { items: [], unread: 0 }],
-  [['crushes'], { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] }],
-  [['close-ones'], closeOnes],
-  [['user', 2], person(2, 'Ngozi', 'ngozi', { bio: 'Filmmaker. I make small films about big feelings.', verified: true, intentions: ['dating'], relationshipIntention: 'Long-term partner' })],
-  [['badges'], { items: [] }],
-];
-
-export const mockPosts = posts;
-export const mockComments = comments;
-
 /* ------------------------------------------------------------- mock transport */
 
 const conversationDetail = (id: number) => {
@@ -330,9 +307,135 @@ export async function mockRpc(fn: string, args: Record<string, any> = {}): Promi
     }
     case 'toggle_message_reaction':
       return { id: Number(args.p_message_id), reactions: [{ userId: 1, kind: String(args.p_kind ?? 'crush') }] };
+    case 'public_flow_feed':
+      return { items: posts.filter((p) => p.audience !== 'connections') };
+    case 'vibes_feed':
+      return { items: vibes };
+    case 'search_all':
+      // Filtered by the query, like the real `search_all()`. A mock that ignores
+      // what was typed makes a screenshot that "proves" search returns the wrong
+      // people — the failure mode this harness exists to avoid.
+      return filterSearch(String(args.p_query ?? ''));
     case 'crushes_feed':
       return { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] };
     default:
       throw new Error(`harness: no mock for ${fn}()`);
   }
 }
+
+/* ------------------------------------------------------- discover fixtures */
+
+/** A Moment as `visible_moments()` serves it: flat, with the author attached. */
+const moment = (id: number, userId: number, author: any, body: string, createdAt: number, opts: Partial<any> = {}): any => ({
+  id,
+  userId,
+  kind: 'photo',
+  body,
+  mediaUrl: `${MEDIA}/scene${(id % 4) + 1}.jpg`,
+  style: 'champagne',
+  edit: null,
+  createdAt,
+  audience: 'everyone',
+  expiresAt: createdAt + 86400000,
+  seen: false,
+  myReaction: null,
+  viewCount: 12,
+  author,
+  ...opts,
+});
+
+const authors = {
+  kelechi: { id: 8, name: 'Kelechi', verified: false, photo: `${MEDIA}/face4.jpg`, mutual: true },
+  ngozi: { id: 2, name: 'Ngozi', verified: true, photo: `${MEDIA}/face2.jpg`, mutual: true },
+  chidi: { id: 5, name: 'Chidi', verified: false, photo: `${MEDIA}/face1.jpg`, mutual: false },
+};
+
+/** The grouped feed the screen actually reads — `momentsFeed()` returns this
+ *  shape, not the flat rows (the service groups them in `lib/moments.ts`). */
+export const momentsFeed = {
+  mine: { user: { id: 1, name: 'Ada', verified: false, photo: `${MEDIA}/face1.jpg`, mutual: false }, moments: [] as any[] },
+  others: [
+    {
+      user: authors.ngozi,
+      hasUnseen: true,
+      latestAt: now - 1000 * 60 * 20,
+      moments: [
+        moment(1, 2, authors.ngozi, 'Blue hour on Aba Road.', now - 1000 * 60 * 90),
+        moment(2, 2, authors.ngozi, 'Six minutes of waiting.', now - 1000 * 60 * 20),
+      ],
+    },
+    {
+      user: authors.kelechi,
+      hasUnseen: false,
+      latestAt: now - 1000 * 60 * 60 * 3,
+      moments: [moment(3, 8, authors.kelechi, 'Sunday people, Sunday light.', now - 1000 * 60 * 60 * 3)],
+    },
+  ],
+};
+
+const vibe = (id: number, author: any, body: string, createdAt: number, opts: Partial<any> = {}): any => ({
+  id,
+  body,
+  mediaUrl: `${MEDIA}/video-portrait.webm`,
+  coverUrl: `${MEDIA}/scene2.jpg`,
+  durationMs: 12_000,
+  audience: 'everyone',
+  edit: null,
+  createdAt,
+  expiresAt: createdAt + 86400000,
+  author,
+  mine: false,
+  seen: false,
+  viewCount: 143,
+  ...opts,
+});
+
+export const vibes = [
+  vibe(1, { id: 2, name: 'Ngozi', photo: `${MEDIA}/face2.jpg` }, 'The light did all the work.', now - 1000 * 60 * 40),
+  vibe(2, { id: 5, name: 'Chidi', photo: `${MEDIA}/face1.jpg` }, 'Sound on. It is worth it.', now - 1000 * 60 * 60 * 5),
+];
+
+/** Case-insensitive substring match over the words and names a member can see. */
+export function filterSearch(query: string) {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return { members: [], posts: [], vibes: [], moments: [] };
+  const hit = (...fields: (string | null | undefined)[]) =>
+    fields.some((f) => (f ?? '').toLowerCase().includes(q));
+  return {
+    members: searchResults.members.filter((p) => hit(p.name, p.username, p.city, ...(p.interests ?? []))),
+    posts: searchResults.posts.filter((p) => hit(p.body, p.author?.name)),
+    vibes: searchResults.vibes.filter((v) => hit(v.body, v.author?.name)),
+    moments: [],
+  };
+}
+
+export const searchResults = {
+  members: [person(2, 'Ngozi', 'ngozi', { verified: true }), person(4, 'Amara', 'amara', { photos: [] })],
+  posts: posts.slice(0, 2),
+  vibes: vibes.slice(0, 1),
+  moments: [],
+};
+
+/** [query key, data] pairs, seeded into the cache before anything mounts. */
+export const mockEntries: [unknown[], unknown][] = [
+  [['me'], me],
+  [['flow', 20, null], { items: posts }],
+  [['post', 101], posts[0]],
+  [['post', 102], posts[1]],
+  [['post', 103], posts[2]],
+  [['post-comments', 101], { items: comments.filter((c) => c.postId === 101) }],
+  [['post-comments', 102], { items: comments.filter((c) => c.postId === 102) }],
+  [['circles'], { items: circles }],
+  [['conversations'], conversations],
+  [['app-update'], { available: false, latestVersion: '1.0.3', url: null }],
+  [['blocks'], { items: [] }],
+  [['notifications'], { items: [], unread: 0 }],
+  [['crushes'], { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] }],
+  [['close-ones'], closeOnes],
+  [['user', 2], person(2, 'Ngozi', 'ngozi', { bio: 'Filmmaker. I make small films about big feelings.', verified: true, intentions: ['dating'], relationshipIntention: 'Long-term partner' })],
+  [['moments'], momentsFeed],
+  [['badges'], { items: [], notifications: 2, messages: 0 }],
+];
+
+export const mockPosts = posts;
+export const mockComments = comments;

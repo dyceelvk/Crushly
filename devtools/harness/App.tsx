@@ -11,13 +11,15 @@
  */
 import React from 'react';
 import { View } from 'react-native';
+import { Txt } from '../src/components/Txt';
 import { useFonts } from 'expo-font';
 import { Fraunces_500Medium_Italic, Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
 import { Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from '@expo-google-fonts/manrope';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NavigationContainer } from '@react-navigation/native';
-import { ThemeProvider } from '../src/theme/ThemeProvider';
+import { NavigationContainer, type NavigationState } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 import { AuthProvider, useAuth } from '../src/state/auth';
 import { ToastProvider } from '../src/components/Toast';
 import { MemberActionsProvider } from '../src/state/memberActions';
@@ -37,27 +39,90 @@ import { PostViewerScreen } from '../src/screens/flow/PostViewer';
 import { ProfileTabScreen } from '../src/screens/profile/ProfileTab';
 import { EditProfileScreen } from '../src/screens/profile/EditProfile';
 import { UserProfileScreen } from '../src/screens/profile/UserProfile';
+import { DiscoverScreen } from '../src/screens/discover/Discover';
+import { SearchScreen } from '../src/screens/discover/Search';
 import { MessagesScreen } from '../src/screens/messages/Messages';
 import { ChatScreen } from '../src/screens/messages/Chat';
 import { SettingsScreen } from '../src/screens/settings/Settings';
 
-const nav = {
-  navigate: () => {},
-  goBack: () => {},
-  replace: () => {},
-  push: () => {},
-  reset: () => {},
-  setOptions: () => {},
-  addListener: () => () => {},
-  canGoBack: () => true,
-  dispatch: () => {},
-} as any;
+/**
+ * Navigation is real here, not a stub.
+ *
+ * Screens call `useNavigation()`, which reads the navigator's context — a
+ * hand-made `nav` object passed as a prop never reached them, so every tap that
+ * was supposed to navigate silently did nothing and no probe could tell. The
+ * chosen screen is mounted as the initial route of a real stack, and every route
+ * a screen can navigate to is registered as a stub; the current route is published
+ * on `window.__route` so a probe can assert where a tap actually landed.
+ */
+declare global {
+  interface Window { __route?: { name: string; params?: unknown; stack: string[] } }
+}
+
+const Stack = createNativeStackNavigator();
+
+/** Routes a screen under test is allowed to reach. Registered so a wrong name
+ *  fails loudly in the harness instead of only in production. */
+const REACHABLE = [
+  'PostViewer', 'VibeViewer', 'VibeComposer', 'Moments', 'UserProfile', 'Search', 'Discover',
+  'Notifications', 'MutualCrush', 'Chat', 'Messages', 'EditProfile', 'Settings', 'Filters',
+  'Privacy', 'Safety', 'BlockedUsers', 'Account', 'Appearance', 'Info', 'Plus',
+  'NotificationSettings', 'Crushes', 'Circles', 'CloseOnes', 'Flow', 'ProfileTab',
+];
+
+function deepest(state?: NavigationState | { routes: any[] }): { name: string; params?: unknown; stack: string[] } {
+  if (!state) return { name: 'Harness', stack: [] };
+  const stack: string[] = [];
+  let node: any = state;
+  while (node?.routes?.length) {
+    const route = node.routes[node.index ?? node.routes.length - 1];
+    stack.push(route.name);
+    node = route.state;
+  }
+  const last = stack[stack.length - 1] ?? 'Harness';
+  const found = (state as any).routes?.find((r: any) => r.name === last);
+  return { name: last, params: found?.params, stack };
+}
+
+function Stub({ route }: { route: { name: string; params?: unknown } }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, padding: 24, justifyContent: 'center' }}>
+      <Txt variant="title">Stub · {route.name}</Txt>
+      <Txt variant="small" color="textSecondary" style={{ marginTop: 6 }}>
+        {JSON.stringify(route.params ?? {})}
+      </Txt>
+    </View>
+  );
+}
+
+function Nav() {
+  const Screen = chosen;
+  return (
+    <Stack.Navigator
+      initialRouteName="Harness"
+      screenOptions={{ headerShown: false }}
+      screenListeners={{
+        state: (e) => {
+          if (typeof window !== 'undefined') window.__route = deepest(e.data.state as NavigationState);
+        },
+      }}
+    >
+      <Stack.Screen name="Harness" component={Screen as any} />
+      {REACHABLE.map((name) => (
+        <Stack.Screen key={name} name={name} component={Stub as any} />
+      ))}
+    </Stack.Navigator>
+  );
+}
 
 const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   flow: FlowScreen,
   profile: ProfileTabScreen,
   edit: EditProfileScreen,
   user: (p: any) => <UserProfileScreen route={{ key: 'u', name: 'UserProfile', params: { id: 2 } } as any} navigation={p.navigation} />,
+  discover: DiscoverScreen,
+  search: SearchScreen,
   messages: MessagesScreen,
   chat: (p: any) => <ChatScreen route={{ key: 'c', name: 'Chat', params: { conversationId: 1 } } as any} navigation={p.navigation} />,
   // A connection nobody has spoken to yet — the first thing a new match sees.
@@ -102,14 +167,13 @@ function Inner() {
     Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
   });
   const ready = fontsLoaded || !!fontError;
-  const Screen = chosen;
   if (!ready) return <View style={{ flex: 1, backgroundColor: '#0A0E27' }} />;
   return (
     // The same boundary the shipped app mounts, so a harness render is a
     // faithful render: a crash looks like what a member would see.
     <ErrorBoundary>
       <View style={{ flex: 1 }} testID={`harness-${status}`}>
-        <Screen navigation={nav} route={{ key: 'h', name: pick, params: {} }} />
+        <Nav />
       </View>
     </ErrorBoundary>
   );

@@ -269,7 +269,16 @@ export function FlowScreen() {
 }
 
 /** One post. Also used inside a Circle, where the audience is the room. */
-export function PostCard({ post: p, active = true }: { post: Post; active?: boolean }) {
+export function PostCard({
+  post: p,
+  active = true,
+  secondPerson = true,
+}: {
+  post: Post;
+  active?: boolean;
+  /** True on your own feed, where "You" is right. False in a list of everyone's. */
+  secondPerson?: boolean;
+}) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
@@ -287,7 +296,9 @@ export function PostCard({ post: p, active = true }: { post: Post; active?: bool
     }
   };
 
-  const authorName = p.mine ? 'You' : p.author.name;
+  // On your own feed a post is "You"; in a list of other people's posts the same
+  // word is a lie about who wrote it, so the caller says which it is.
+  const authorName = p.mine && secondPerson ? 'You' : p.author.name;
 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const like = useReactToPost();

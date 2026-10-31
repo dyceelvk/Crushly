@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,7 +12,7 @@ import { MomentsRow } from './MomentsRow';
 import { PostCard } from '../flow/Flow';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { keys, useBadges, useCrush, usePublicFlow } from '../../api/hooks';
+import { keys, useBadges, useCrush, usePublicFlow, useVibes } from '../../api/hooks';
 import type { Profile } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
@@ -71,8 +71,17 @@ export function DiscoverScreen() {
   const qc = useQueryClient();
   const { data: badges } = useBadges(true);
   const feed = usePublicFlow();
+  // The Vibes row lives inside this scroller, so whether it has anything to show
+  // is decided here — otherwise the row paints its own empty state and, when
+  // there is nothing, so does the feed underneath it: two empty states stacked,
+  // one of them telling you to post a clip you may already have posted.
+  const vibes = useVibes();
 
   const posts = feed.data ?? [];
+  // Second person only where the list really is yours-and-others. Here every
+  // card is somebody's post in a shared list, so "You" would be wrong — and on a
+  // public screen it read as though the app had merged you into the crowd.
+  const nothingVibed = !vibes.isLoading && !vibes.data?.length;
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: keys.vibes });
@@ -105,6 +114,10 @@ export function DiscoverScreen() {
               What people are sharing.
             </Txt>
           </View>
+          {/* Search lived one screen away, behind an icon on Flow, and had no
+              entry point here at all — on the screen whose whole job is finding
+              people and things. */}
+          <IconButton icon="search-outline" label="Search people and posts" onPress={() => navigation.navigate('Search')} />
           <IconButton
             icon="notifications-outline"
             label={`Crush Alerts${badges?.notifications ? `, ${badges.notifications} unread` : ''}`}
@@ -113,6 +126,8 @@ export function DiscoverScreen() {
           />
         </View>
 
+        {/* Vibes keeps its own heading (it owns the "share a clip" tile); the
+            feed below is what gets quiet when there is nothing to watch. */}
         <VibesRow />
         <MomentsRow />
 
@@ -143,14 +158,18 @@ export function DiscoverScreen() {
         ) : posts.length ? (
           <View style={{ gap: space.md }}>
             {posts.map((p) => (
-              <PostCard key={p.id} post={p} />
+              <PostCard key={p.id} post={p} secondPerson={false} />
             ))}
           </View>
         ) : (
           <EmptyState
             icon="chatbubbles-outline"
             title="Nothing public yet"
-            message="When somebody shares a post with Everyone, it shows up here."
+            message={
+              nothingVibed
+                ? 'When somebody shares a post or a Vibe with Everyone, it shows up here.'
+                : 'Nobody has shared a post publicly yet. The Vibes above are what people are sharing right now.'
+            }
           />
         )}
       </ScrollView>

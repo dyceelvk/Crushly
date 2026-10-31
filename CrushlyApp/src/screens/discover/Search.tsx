@@ -150,7 +150,11 @@ export function SearchScreen() {
                     verified={!!post.author?.verified}
                     photo={post.author?.photo ?? null}
                     when={post.createdAt}
-                    onPress={() => post.author?.id != null && navigation.navigate('UserProfile', { id: post.author.id })}
+                    /* A result you searched for should open what matched, not
+                       the person who wrote it. Every row here used to go to the
+                       author's Space, so a post you found by its words was
+                       unreachable from the one screen that found it. */
+                    onPress={() => navigation.navigate('PostViewer', { postId: post.id })}
                   />
                 ))}
               </Section>
@@ -168,7 +172,7 @@ export function SearchScreen() {
                     verified={!!v.author?.verified}
                     photo={v.author?.photo ?? null}
                     when={v.createdAt}
-                    onPress={() => v.author?.id != null && navigation.navigate('UserProfile', { id: v.author.id })}
+                    onPress={() => navigation.navigate('VibeViewer', { id: v.id })}
                   />
                 ))}
               </Section>
@@ -186,7 +190,7 @@ export function SearchScreen() {
                     verified={!!m.author?.verified}
                     photo={m.author?.photo ?? null}
                     when={m.createdAt}
-                    onPress={() => m.author?.id != null && navigation.navigate('UserProfile', { id: m.author.id })}
+                    onPress={() => navigation.navigate('Moments')}
                   />
                 ))}
               </Section>
