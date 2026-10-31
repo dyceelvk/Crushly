@@ -1,17 +1,16 @@
 import React, { useRef, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header } from '../../components/Layout';
+import { AuthScaffold, AuthSwitch } from '../../components/AuthScaffold';
 import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
-import { CrushlyMark } from '../../components/Logo';
 import * as service from '../../api/service';
 import { sanitizeOtp, passwordStrength } from '../../lib/auth';
 import { ApiError, configProblem, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
-import { space } from '../../theme/tokens';
+import { HIT, rhythm, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
 const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
@@ -82,18 +81,15 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
   };
 
   return (
-    <Screen keyboard footer={<Button title="Sign in" onPress={() => submit()} loading={loading} />}>
-      <Header back />
-      <CrushlyMark size={44} />
-      <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-        Welcome back
-      </Txt>
-      <Txt variant="body" color="textSecondary" style={{ marginTop: 4, marginBottom: space.xl }}>
-        Good to see you again.
-      </Txt>
+    <AuthScaffold
+      title="Welcome back"
+      lede="Sign in to pick up where you left off."
+      cta={<Button title="Sign in" onPress={() => submit()} loading={loading} />}
+      footnote={<AuthSwitch lead="New here?" action="Create an account" onPress={() => navigation.replace('SignUp')} />}
+    >
       {!isConfigured ? <NotConfiguredNotice /> : null}
       {error ? <Banner message={error} /> : null}
-      <View style={{ gap: space.md }}>
+      <View style={{ gap: rhythm.group }}>
         <Input
           label="Email"
           value={email}
@@ -107,32 +103,44 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
           onSubmitEditing={() => passwordRef.current?.focus()}
           icon="mail-outline"
         />
-        <Input
-          ref={passwordRef}
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Your password"
-          secureTextEntry
-          autoComplete="current-password"
-          textContentType="password"
-          returnKeyType="go"
-          onSubmitEditing={() => submit()}
-          icon="lock-closed-outline"
-        />
+        <View>
+          <Input
+            ref={passwordRef}
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Your password"
+            secureTextEntry
+            autoComplete="current-password"
+            textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={() => submit()}
+            icon="lock-closed-outline"
+          />
+          {/* Recovery belongs to the password field, so it sits under it and
+              aligns to the far edge — reading distance, not a centred chip
+              competing with the form. */}
+          <Pressable
+            onPress={() => navigation.navigate('ForgotPassword')}
+            accessibilityRole="link"
+            accessibilityLabel="Forgot your password? Reset it"
+            hitSlop={HIT / 2}
+            style={({ pressed }) => ({
+              alignSelf: 'flex-end',
+              minHeight: HIT,
+              justifyContent: 'center',
+              paddingHorizontal: 4,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Txt variant="smallStrong" color="gold">
+              Forgot your password?
+            </Txt>
+          </Pressable>
+        </View>
       </View>
-      <Pressable onPress={() => navigation.navigate('ForgotPassword')} accessibilityRole="link" style={{ marginTop: space.sm, alignSelf: 'center', padding: 8 }}>
-        <Txt variant="small" color="textSecondary">
-          Forgot password? <Txt variant="smallStrong" color="gold">Reset it</Txt>
-        </Txt>
-      </Pressable>
-      <Pressable onPress={() => navigation.replace('SignUp')} accessibilityRole="link" style={{ marginTop: space.lg, alignSelf: 'center', padding: 8 }}>
-        <Txt variant="small" color="textSecondary">
-          New here? <Txt variant="smallStrong" color="gold">Create an account</Txt>
-        </Txt>
-      </Pressable>
       {DEMO_ENABLED ? (
-        <View style={{ marginTop: space.xl }}>
+        <View style={{ marginTop: rhythm.section }}>
           <Button
             title="Explore the demo community"
             variant="outline"
@@ -150,7 +158,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
           </Txt>
         </View>
       ) : null}
-    </Screen>
+    </AuthScaffold>
   );
 }
 
@@ -221,26 +229,24 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
 
   if (sentTo) {
     return (
-      <Screen
-        footer={
+      <AuthScaffold
+        title="Check your inbox"
+        lede={
+          <>
+            We sent a code and a link to <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you
+            prefer — you’ll be signed in automatically either way.
+          </>
+        }
+        cta={
           mode === 'code' ? (
             <Button title="Verify & continue" onPress={() => void submitCode(code)} loading={verifying} disabled={code.length !== 6} />
           ) : undefined
         }
+        footnote={<AuthSwitch lead="Wrong address?" action="Go back to sign in" onPress={() => navigation.replace('SignIn')} />}
       >
-        <Header back />
-        <CrushlyMark size={44} />
-        <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-          Check your inbox
-        </Txt>
-        <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
-          We sent a code and a link to{' '}
-          <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you prefer — you’ll be signed in
-          automatically either way.
-        </Txt>
 
         {mode === 'choose' ? (
-          <View style={{ marginTop: space.xl, gap: space.sm }}>
+          <View style={{ gap: space.sm }}>
             <Button title="Verify with code" icon="keypad-outline" onPress={() => setMode('code')} />
             <Button title="Get a link" variant="outline" icon="link-outline" loading={linkState === 'busy'} onPress={() => void sendLink()} />
             {linkState === 'done' ? (
@@ -261,7 +267,6 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
           <>
             <View
               style={{
-                marginTop: space.xl,
                 backgroundColor: colors.goldSoft,
                 borderRadius: 16,
                 borderWidth: 1.5,
@@ -319,28 +324,37 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
           </>
         )}
 
-        <Pressable onPress={() => navigation.replace('SignIn')} style={{ marginTop: space.lg, alignSelf: 'center' }}>
-          <Txt variant="small" color="textMuted">
-            Wrong address? Go back to sign in.
-          </Txt>
-        </Pressable>
-      </Screen>
+      </AuthScaffold>
     );
   }
 
   return (
-    <Screen keyboard footer={<Button title="Create account" onPress={submit} loading={loading} />}>
-      <Header back />
-      <CrushlyMark size={44} />
-      <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-        Create your account
-      </Txt>
-      <Txt variant="body" color="textSecondary" style={{ marginTop: 4, marginBottom: space.xl }}>
-        Your email stays private. It’s never shown on your Space.
-      </Txt>
+    <AuthScaffold
+      eyebrow="Step 1 of 2"
+      title="Create your account"
+      lede="Your email stays private. It’s never shown on your Space."
+      cta={<Button title="Create account" onPress={submit} loading={loading} />}
+      footnote={
+        <>
+          <AuthSwitch lead="Already a member?" action="Sign in" onPress={() => navigation.replace('SignIn')} />
+          {/* Legal links used to sit between the password field and the
+              checkbox, where two bright cyan links competed with the form. They
+              belong at the very bottom, in the quiet colour, as one line. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm }}>
+            <Pressable onPress={() => navigation.navigate('Info', { page: 'terms' })} accessibilityRole="link" hitSlop={12}>
+              <Txt variant="small" color="textMuted">Terms</Txt>
+            </Pressable>
+            <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: colors.textMuted }} />
+            <Pressable onPress={() => navigation.navigate('Info', { page: 'guidelines' })} accessibilityRole="link" hitSlop={12}>
+              <Txt variant="small" color="textMuted">Community Guidelines</Txt>
+            </Pressable>
+          </View>
+        </>
+      }
+    >
       {!isConfigured ? <NotConfiguredNotice /> : null}
       {errors.form ? <Banner message={errors.form} /> : null}
-      <View style={{ gap: space.md }}>
+      <View style={{ gap: rhythm.group }}>
         <Input
           label="Email"
           value={email}
@@ -374,7 +388,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
         accessibilityRole="checkbox"
         accessibilityState={{ checked: adult }}
         accessibilityLabel="I’m 18 or older and agree to the Terms and Community Guidelines"
-        style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: space.xl, paddingVertical: 4 }}
+        style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: rhythm.group, paddingVertical: 4 }}
       >
         <View
           style={{
@@ -388,29 +402,12 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
           I’m 18 or older and I agree to the Terms and Community Guidelines.
         </Txt>
       </Pressable>
-      <View style={{ flexDirection: 'row', gap: space.md, marginLeft: 36, marginTop: 2 }}>
-        <Pressable onPress={() => navigation.navigate('Info', { page: 'terms' })} accessibilityRole="link" hitSlop={8} style={{ paddingVertical: 6 }}>
-          <Txt variant="smallStrong" color="gold">
-            Read the Terms
-          </Txt>
-        </Pressable>
-        <Pressable onPress={() => navigation.navigate('Info', { page: 'guidelines' })} accessibilityRole="link" hitSlop={8} style={{ paddingVertical: 6 }}>
-          <Txt variant="smallStrong" color="gold">
-            Community Guidelines
-          </Txt>
-        </Pressable>
-      </View>
       {errors.adult ? (
         <Txt variant="small" color="danger" style={{ marginTop: 6 }}>
           {errors.adult}
         </Txt>
       ) : null}
-      <Pressable onPress={() => navigation.replace('SignIn')} accessibilityRole="link" style={{ marginTop: space.lg, alignSelf: 'center', padding: 8 }}>
-        <Txt variant="small" color="textSecondary">
-          Already a member? <Txt variant="smallStrong" color="gold">Sign in</Txt>
-        </Txt>
-      </Pressable>
-    </Screen>
+    </AuthScaffold>
   );
 }
 
@@ -463,25 +460,24 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
 
   if (sentTo) {
     return (
-      <Screen
-        footer={
+      <AuthScaffold
+        title="Check your inbox"
+        lede={
+          <>
+            We sent a code and a link to <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you
+            prefer to set a new password.
+          </>
+        }
+        onBack={() => navigation.replace('SignIn')}
+        cta={
           mode === 'code' ? (
             <Button title="Save new password" onPress={() => void saveWithCode()} loading={busy} />
           ) : undefined
         }
+        footnote={<AuthSwitch lead="Remembered it?" action="Back to sign in" onPress={() => navigation.replace('SignIn')} />}
       >
-        <Header back onBack={() => navigation.replace('SignIn')} />
-        <CrushlyMark size={44} />
-        <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-          Check your inbox
-        </Txt>
-        <Txt variant="body" color="textSecondary" style={{ marginTop: 8 }}>
-          We sent a code and a link to{' '}
-          <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you prefer to set a new password.
-        </Txt>
-
         {mode === 'choose' ? (
-          <View style={{ marginTop: space.xl, gap: space.sm }}>
+          <View style={{ gap: space.sm }}>
             <Button title="Verify with code" icon="keypad-outline" onPress={() => setMode('code')} />
             <Button
               title="Get a link"
@@ -515,7 +511,7 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
         ) : (
           <>
             {error ? <Banner message={error} /> : null}
-            <View style={{ gap: space.md, marginTop: space.lg }}>
+            <View style={{ gap: rhythm.group }}>
               <Input
                 label="Code from your email"
                 value={code}
@@ -550,25 +546,18 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
           </>
         )}
 
-        <Pressable onPress={() => navigation.replace('SignIn')} style={{ marginTop: space.xl, alignSelf: 'center' }}>
-          <Txt variant="small" color="textMuted">
-            Back to sign in
-          </Txt>
-        </Pressable>
-      </Screen>
+      </AuthScaffold>
     );
   }
 
   return (
-    <Screen keyboard footer={<Button title="Send reset email" onPress={() => void send()} loading={busy} />}>
-      <Header back onBack={() => navigation.replace('SignIn')} />
-      <CrushlyMark size={44} />
-      <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-        Reset your password
-      </Txt>
-      <Txt variant="body" color="textSecondary" style={{ marginTop: 8, marginBottom: space.xl }}>
-        Tell us the email you signed up with and we’ll send a code and a link to set a new password.
-      </Txt>
+    <AuthScaffold
+      title="Reset your password"
+      lede="Tell us the email you signed up with and we’ll send a code and a link to set a new password."
+      onBack={() => navigation.replace('SignIn')}
+      cta={<Button title="Send reset email" onPress={() => void send()} loading={busy} />}
+      footnote={<AuthSwitch lead="Remembered it?" action="Back to sign in" onPress={() => navigation.replace('SignIn')} />}
+    >
       {error ? <Banner message={error} /> : null}
       <Input
         label="Email"
@@ -581,7 +570,7 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
         textContentType="emailAddress"
         icon="mail-outline"
       />
-    </Screen>
+    </AuthScaffold>
   );
 }
 
@@ -607,16 +596,14 @@ export function SetPasswordScreen() {
   };
 
   return (
-    <Screen keyboard footer={<Button title="Save new password" onPress={() => void save()} loading={busy} />}>
-      <CrushlyMark size={44} />
-      <Txt variant="display" style={{ marginTop: space.md }} accessibilityRole="header">
-        Choose a new password
-      </Txt>
-      <Txt variant="body" color="textSecondary" style={{ marginTop: 8, marginBottom: space.xl }}>
-        You’re signed in — just pick a new password and you’re back in.
-      </Txt>
+    <AuthScaffold
+      hideBack
+      title="Choose a new password"
+      lede="You’re signed in — just pick a new password and you’re back in."
+      cta={<Button title="Save new password" onPress={() => void save()} loading={busy} />}
+    >
       {error ? <Banner message={error} /> : null}
-      <View style={{ gap: space.md }}>
+      <View style={{ gap: rhythm.group }}>
         <Input
           label="New password"
           value={password}
@@ -637,6 +624,6 @@ export function SetPasswordScreen() {
           icon="lock-closed-outline"
         />
       </View>
-    </Screen>
+    </AuthScaffold>
   );
 }

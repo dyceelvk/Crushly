@@ -6,8 +6,13 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { palettes, fonts } from '../../theme/tokens';
 
 /**
- * Cinematic but brief: the mark fades up through a champagne glow while a
- * single light sweep passes. Shown only while the session restores.
+ * Cinematic but brief: the mark fades up through the brand's own light while a
+ * single sweep passes. Shown only while the session restores.
+ *
+ * It uses the same two-colour glow and the same line as the Welcome screen, so
+ * the first frame and the second frame are the same product — the splash used
+ * to sit on a single cyan disc and say a different sentence from the screen it
+ * handed off to.
  */
 export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
   const { reduceMotion } = useTheme();
@@ -29,8 +34,9 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
   }, [fade, lift, tagline, reduceMotion]);
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Find your connection.">
-      <Glow size={460} color={c.gold} opacity={0.9} style={{ position: 'absolute' }} />
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Follow the feeling.">
+      <Glow size={460} color={c.primary} opacity={0.8} style={{ position: 'absolute' }} />
+      <Glow size={380} color={c.crush} opacity={0.5} style={{ position: 'absolute', top: -140, right: -120 }} />
       <LightSweep duration={1300} />
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
         <CrushlyMark size={92} />
@@ -45,7 +51,7 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
             opacity: tagline,
           }}
         >
-          Find your connection.
+          Follow the feeling.
         </Animated.Text>
       </Animated.View>
     </View>
