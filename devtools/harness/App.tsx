@@ -41,6 +41,9 @@ import { EditProfileScreen } from '../src/screens/profile/EditProfile';
 import { UserProfileScreen } from '../src/screens/profile/UserProfile';
 import { DiscoverScreen } from '../src/screens/discover/Discover';
 import { SearchScreen } from '../src/screens/discover/Search';
+import { CirclesScreen } from '../src/screens/circles/Circles';
+import { CircleScreen } from '../src/screens/circles/Circle';
+import { CloseOnesScreen } from '../src/screens/circles/CloseOnes';
 import { MomentsScreen } from '../src/screens/moments/Moments';
 import { MomentViewerScreen } from '../src/screens/moments/MomentViewer';
 import { MomentComposerScreen } from '../src/screens/moments/MomentComposer';
@@ -126,6 +129,11 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   user: (p: any) => <UserProfileScreen route={{ key: 'u', name: 'UserProfile', params: { id: 2 } } as any} navigation={p.navigation} />,
   discover: DiscoverScreen,
   search: SearchScreen,
+  circles: CirclesScreen,
+  // A room with people in it, and one that is empty: the two states of the screen.
+  circle: (p: any) => <CircleScreen route={{ key: 'c', name: 'Circle', params: { circleId: 1 } } as any} navigation={p.navigation} />,
+  circleempty: (p: any) => <CircleScreen route={{ key: 'c', name: 'Circle', params: { circleId: 3 } } as any} navigation={p.navigation} />,
+  closeones: CloseOnesScreen,
   moments: MomentsScreen,
   momentsvideo: MomentsScreen,
   moment: (p: any) => <MomentViewerScreen route={{ key: 'mv', name: 'MomentViewer', params: { userId: 2 } } as any} navigation={p.navigation} />,

@@ -169,10 +169,81 @@ const comments = [
   },
 ];
 
-const circles = [
-  { id: 1, name: 'Sunday People', memberCount: 6, unreadCount: 2, photoUrl: `${MEDIA}/face2.jpg`, lastMessage: 'see you at 4' },
-  { id: 2, name: 'Design Room', memberCount: 4, unreadCount: 0, photoUrl: null, lastMessage: 'the new build is up' },
+/**
+ * Circles, in the shape `my_circles()` returns (`CircleSummary`): the room plus
+ * what is new in it. The earlier fixture was a guess — `photoUrl`, `unreadCount`
+ * and `lastMessage` are not fields on a `Circle` at all — and a fixture that
+ * disagrees with the type renders a screen nobody will ever see.
+ */
+export const circles: any[] = [
+  {
+    id: 1,
+    name: 'Sunday People',
+    about: 'The ones who show up on a Sunday even when it rains.',
+    coverUrl: `${MEDIA}/scene2.jpg`,
+    createdAt: now - 86400000 * 60,
+    ownerId: 1,
+    myRole: 'owner',
+    muted: false,
+    memberCount: 6,
+    lastMessageAt: now - 1000 * 60 * 12,
+    unreadCount: 2,
+  },
+  {
+    id: 2,
+    name: 'Design Room',
+    about: 'Screens, type and arguments about spacing.',
+    coverUrl: null,
+    createdAt: now - 86400000 * 20,
+    ownerId: 2,
+    myRole: 'member',
+    muted: false,
+    memberCount: 4,
+    lastMessageAt: now - 1000 * 60 * 60 * 9,
+    unreadCount: 0,
+  },
+  {
+    // A room with nothing in it yet, and no cover: the empty case.
+    id: 3,
+    name: 'Abuja, December',
+    about: '',
+    coverUrl: null,
+    createdAt: now - 1000 * 60 * 60 * 5,
+    ownerId: 1,
+    myRole: 'owner',
+    muted: true,
+    memberCount: 1,
+    lastMessageAt: null,
+    unreadCount: 0,
+  },
 ];
+
+/** `circle_space()` — the room and its people. */
+export const circleSpaces: Record<number, any> = {
+  1: {
+    circle: circles[0],
+    members: [
+      { member: person(1, 'Ada', 'ada'), role: 'owner', joinedAt: now - 86400000 * 60 },
+      { member: person(2, 'Ngozi', 'ngozi', { verified: true }), role: 'member', joinedAt: now - 86400000 * 59 },
+      { member: person(3, 'Tunde', 'tunde'), role: 'member', joinedAt: now - 86400000 * 40 },
+    ],
+  },
+  3: { circle: circles[2], members: [{ member: person(1, 'Ada', 'ada'), role: 'owner', joinedAt: now - 1000 * 60 * 60 * 5 }] },
+};
+
+/** The room's chat, as `circle_messages()` serves it. */
+export const circleThreads: Record<number, any> = {
+  1: {
+    items: [
+      { id: 1, circleId: 1, senderId: 2, mine: false, kind: 'text', body: 'Who is coming on Sunday?', mediaUrl: null, createdAt: now - 1000 * 60 * 60 * 3, sender: person(2, 'Ngozi', 'ngozi', { verified: true }) },
+      { id: 2, circleId: 1, senderId: 3, mine: false, kind: 'text', body: 'Me. Bringing the small camera.', mediaUrl: null, createdAt: now - 1000 * 60 * 60 * 2, sender: person(3, 'Tunde', 'tunde') },
+      { id: 3, circleId: 1, senderId: 2, mine: false, kind: 'photo', body: '', mediaUrl: `${MEDIA}/scene3.jpg`, createdAt: now - 1000 * 60 * 30, sender: person(2, 'Ngozi', 'ngozi', { verified: true }) },
+      { id: 4, circleId: 1, senderId: 1, mine: true, kind: 'text', body: 'see you at 4', mediaUrl: null, createdAt: now - 1000 * 60 * 12, sender: person(1, 'Ada', 'ada') },
+    ],
+    hasMore: false,
+  },
+  3: { items: [], hasMore: false },
+};
 
 /** A Message exactly as `serialize_message` builds it — `meta` always an object,
  *  timestamps in epoch milliseconds (`now_ms()`), `readAt` null when unread. */
@@ -316,6 +387,28 @@ export async function mockRpc(fn: string, args: Record<string, any> = {}): Promi
       // what was typed makes a screenshot that "proves" search returns the wrong
       // people — the failure mode this harness exists to avoid.
       return filterSearch(String(args.p_query ?? ''));
+    case 'my_circles':
+      return { items: circles };
+    case 'circle_space':
+      return circleSpaces[Number(args.p_circle_id)] ?? null;
+    case 'circle_messages': {
+      const t = circleThreads[Number(args.p_circle_id)] ?? { items: [], hasMore: false };
+      return { items: t.items, hasMore: t.hasMore };
+    }
+    case 'circle_feed':
+      return { items: posts.slice(0, 2), hasMore: false };
+    case 'read_circle':
+    case 'mark_circle_read':
+      return true;
+    case 'send_circle_message': {
+      const t = circleThreads[Number(args.p_circle_id)] ?? { items: [], hasMore: false };
+      const last = t.items[t.items.length - 1];
+      const sent = { id: (last?.id ?? 0) + 1, circleId: Number(args.p_circle_id), senderId: 1, mine: true, kind: 'text', body: String(args.p_body ?? ''), mediaUrl: null, createdAt: Date.now(), sender: person(1, 'Ada', 'ada') };
+      t.items.push(sent);
+      return sent;
+    }
+    case 'close_ones':
+      return closeOnes;
     case 'crushes_feed':
       return { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] };
     default:
@@ -452,6 +545,12 @@ export const mockEntries: [unknown[], unknown][] = [
   [['post-comments', 101], { items: comments.filter((c) => c.postId === 101) }],
   [['post-comments', 102], { items: comments.filter((c) => c.postId === 102) }],
   [['circles'], { items: circles }],
+  [['circle', 1], circleSpaces[1]],
+  [['circle', 3], circleSpaces[3]],
+  [['circle-messages', 1], circleThreads[1]],
+  [['circle-messages', 3], circleThreads[3]],
+  [['circle-feed', 1], { items: posts.slice(0, 2), hasMore: false }],
+  [['circle-feed', 3], { items: [], hasMore: false }],
   [['conversations'], conversations],
   [['app-update'], { available: false, latestVersion: '1.0.3', url: null }],
   [['blocks'], { items: [] }],

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -20,7 +20,7 @@ import {
   useLeaveCircle, useReadCircle, useRemoveCircleMember, useRenameCircle, useSendCircleMessage,
 } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
-import { radius, space } from '../../theme/tokens';
+import { fonts, radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
@@ -51,23 +51,12 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
   const [tab, setTab] = useState<Tab>('chat');
   const [menu, setMenu] = useState(false);
   const read = useReadCircle();
-  const thread = useCircleMessages(circleId); // same cache the chat panel reads
-  const scroller = useRef<ScrollView>(null);
 
   // Looking at the room is what marks it read.
   useEffect(() => {
     read.mutate(circleId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [circleId]);
-
-  // A room reads like a conversation: newest at the bottom, and the view
-  // follows it.
-  const count = thread.data?.items.length ?? 0;
-  useEffect(() => {
-    if (tab !== 'chat') return;
-    const id = setTimeout(() => scroller.current?.scrollToEnd({ animated: false }), 120);
-    return () => clearTimeout(id);
-  }, [tab, count]);
 
   const circle = space_q.data?.circle;
   const members = space_q.data?.members ?? [];
@@ -95,20 +84,20 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView
-        ref={scroller}
-        contentContainerStyle={{
-          paddingTop: insets.top + space.sm,
+      {/*
+        The room's name and its three tabs stay put; only the room's contents
+        move. They used to scroll with the page, which took the tabs away the
+        moment you scrolled down a long conversation — and left the composer
+        stranded at the end of the scroll instead of under your thumb.
+      */}
+      <View
+        style={{
+          paddingTop: Math.max(insets.top, space.md) + space.sm,
           paddingHorizontal: gutter,
-          paddingBottom: space.xxxl,
           width: '100%',
           maxWidth: contentWidth,
           alignSelf: 'center',
         }}
-        refreshControl={
-          <RefreshControl refreshing={space_q.isRefetching} onRefresh={space_q.refetch} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
-        }
-        showsVerticalScrollIndicator={false}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
@@ -132,12 +121,29 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
           value={tab}
           onChange={setTab}
         />
-        <View style={{ height: space.md }} />
+      </View>
 
-        {tab === 'chat' ? <RoomChat circleId={circleId} members={members} /> : null}
-        {tab === 'posts' ? <RoomPosts circleId={circleId} /> : null}
-        {tab === 'people' ? <RoomPeople circleId={circleId} members={members} isOwner={circle.myRole === 'owner'} /> : null}
-      </ScrollView>
+      {tab === 'chat' ? (
+        <RoomChat circleId={circleId} members={members} bottomInset={insets.bottom} />
+      ) : (
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: gutter,
+            paddingTop: space.md,
+            paddingBottom: space.xxxl,
+            width: '100%',
+            maxWidth: contentWidth,
+            alignSelf: 'center',
+          }}
+          refreshControl={
+            <RefreshControl refreshing={space_q.isRefetching} onRefresh={space_q.refetch} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {tab === 'posts' ? <RoomPosts circleId={circleId} /> : null}
+          {tab === 'people' ? <RoomPeople circleId={circleId} members={members} isOwner={circle.myRole === 'owner'} /> : null}
+        </ScrollView>
+      )}
 
       <CircleMenu
         visible={menu}
@@ -153,8 +159,18 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
 
 /* ------------------------------------------------------------------- chat */
 
-function RoomChat({ circleId, members }: { circleId: number; members: { member: { id: number; name: string; photos: { url: string }[] }; role: string }[] }) {
+function RoomChat({
+  circleId,
+  members,
+  bottomInset = 0,
+}: {
+  circleId: number;
+  members: { member: { id: number; name: string; photos: { url: string }[] }; role: string }[];
+  bottomInset?: number;
+}) {
   const { colors } = useTheme();
+  const { contentWidth, gutter } = useLayout();
+  const scroller = useRef<ScrollView>(null);
   const toast = useToast();
   const thread = useCircleMessages(circleId);
   const send = useSendCircleMessage();
@@ -223,23 +239,73 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
     }
   };
 
-  return (
-    <View style={{ gap: space.sm }}>
-      {thread.isLoading ? (
-        <LoadingBlock label="Loading the conversation" />
-      ) : thread.isError ? (
-        <ErrorState error={thread.error} message="The conversation didn’t load." onRetry={thread.refetch} />
-      ) : items.length ? (
-        items.map((m) => <Bubble key={m.id} message={m} author={byId.get(m.senderId)} />)
-      ) : (
-        <EmptyState
-          icon="chatbubble-outline"
-          title="Nothing said yet"
-          message="Only the people in this Circle can read what’s written here. Say hello."
-        />
-      )}
+  // A conversation reads bottom-up: the newest thing is the thing you are
+  // looking at, so the view follows it in.
+  const count = items.length;
+  useEffect(() => {
+    const id = setTimeout(() => scroller.current?.scrollToEnd({ animated: false }), 80);
+    return () => clearTimeout(id);
+  }, [count]);
 
-      <View style={{ marginTop: space.sm, gap: space.sm }}>
+  const canSend = !!body.trim() || !!photo || !!clip;
+
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        ref={scroller}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: gutter,
+          paddingTop: space.md,
+          paddingBottom: space.lg,
+          width: '100%',
+          maxWidth: contentWidth,
+          alignSelf: 'center',
+          gap: space.sm,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {thread.isLoading ? (
+          <LoadingBlock label="Loading the conversation" />
+        ) : thread.isError ? (
+          <ErrorState error={thread.error} message="The conversation didn’t load." onRetry={thread.refetch} />
+        ) : items.length ? (
+          items.map((m, i) => (
+            <Bubble
+              key={m.id}
+              message={m}
+              author={byId.get(m.senderId)}
+              // One face per run of messages from the same person: a face on
+              // every bubble is noise, and it made a four-message exchange look
+              // like eight people talking.
+              showFace={i === 0 || items[i - 1].senderId !== m.senderId}
+            />
+          ))
+        ) : (
+          <EmptyState
+            icon="chatbubble-outline"
+            title="Nothing said yet"
+            message="Only the people in this Circle can read what’s written here. Say hello."
+          />
+        )}
+      </ScrollView>
+
+      {/* The composer sits under your thumb, not at the end of the scroll. */}
+      <View
+        style={{
+          paddingHorizontal: gutter,
+          paddingTop: space.sm,
+          paddingBottom: Math.max(bottomInset, space.sm),
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          backgroundColor: colors.bg,
+          width: '100%',
+          maxWidth: contentWidth,
+          alignSelf: 'center',
+          gap: space.sm,
+        }}
+      >
         {photo ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Photo uri={photo.uri} style={{ width: 64, height: 64, borderRadius: radius.sm }} />
@@ -253,19 +319,61 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
             <Button title="Remove" size="sm" variant="ghost" onPress={() => { setClip(null); setClipEdit(null); }} />
           </View>
         ) : null}
+
+        {/*
+          A chat field, not a form field. It used to be `Input multiline`, which
+          is built for a paragraph in a settings form — `minHeight: 110` — so a
+          one-line room got a 110pt slab floating above the buttons while the
+          media buttons sat on the floor beside it. Whispers already had the
+          right shape; this is that shape.
+        */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
           <IconButton icon="image-outline" label="Add a photo" onPress={pick} disabled={picking} />
           <IconButton icon="videocam-outline" label="Add a clip" onPress={pickClip} disabled={picking} />
-          <View style={{ flex: 1 }}>
-            <Input
+          <View
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 44,
+              maxHeight: 130,
+              borderRadius: 22,
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+              flexDirection: 'row',
+              alignItems: 'flex-end',
+            }}
+          >
+            <TextInput
               value={body}
               onChangeText={setBody}
               placeholder="Write something…"
-              maxLength={2000}
+              placeholderTextColor={colors.textMuted}
               multiline
+              maxLength={2000}
+              accessibilityLabel="Message the Circle"
+              style={[
+                {
+                  flex: 1,
+                  minWidth: 0,
+                  color: colors.text,
+                  fontFamily: fonts.regular,
+                  fontSize: 16,
+                  paddingLeft: 16,
+                  paddingRight: 16,
+                  paddingTop: 11,
+                  paddingBottom: 11,
+                  maxHeight: 128,
+                },
+                Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null,
+              ]}
             />
           </View>
-          <IconButton icon="send" label="Send message" color={colors.gold} disabled={(!body.trim() && !photo && !clip) || send.isPending} onPress={submit} />
+          {canSend ? (
+            <IconButton icon="arrow-up" variant="crush" label="Send message" color={colors.crush} disabled={send.isPending} onPress={submit} />
+          ) : (
+            <IconButton icon="send" label="Send message" color={colors.gold} disabled onPress={submit} />
+          )}
         </View>
       </View>
 
@@ -288,9 +396,12 @@ function RoomChat({ circleId, members }: { circleId: number; members: { member: 
 function Bubble({
   message: m,
   author,
+  showFace = true,
 }: {
   message: CircleMessage;
   author?: { id: number; name: string; photos: { url: string }[] };
+  /** False for the second and later messages in a run from the same person. */
+  showFace?: boolean;
 }) {
   const { colors } = useTheme();
   const mine = m.mine;
@@ -298,8 +409,15 @@ function Bubble({
 
   return (
     <View style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, maxWidth: '88%' }}>
-        {!mine ? <Avatar uri={author?.photos[0]?.url ?? null} name={name} size={30} /> : null}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, maxWidth: '88%' }}>
+        {!mine ? (
+          showFace ? (
+            <Avatar uri={author?.photos[0]?.url ?? null} name={name} size={30} />
+          ) : (
+            // Keeps the run aligned without repeating the face.
+            <View style={{ width: 30 }} />
+          )
+        ) : null}
         <View
           style={{
             backgroundColor: mine ? colors.goldSoft : colors.card,
