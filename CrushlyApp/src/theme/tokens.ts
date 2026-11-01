@@ -111,20 +111,32 @@ export const fonts = {
   extrabold: 'Manrope_800ExtraBold',
 } as const;
 
+/**
+ * The type scale, at 85%.
+ *
+ * Every size here was a step larger than the screen wanted: a Flow's body sat at
+ * 15/22 and most of the screens were read at arm's length on a phone, so a post
+ * filled the display and a Space ran out of room before its own tabs. The whole
+ * scale is scaled by the same 0.85 rather than retuned a size at a time, because
+ * the problem was the scale, not any one step — the relationships between hero,
+ * display and body are the design, and they survive a multiplier.
+ *
+ * Line heights move with the sizes so the vertical rhythm keeps its proportions.
+ */
 export const type = {
-  hero: { fontFamily: fonts.display, fontSize: 38, lineHeight: 44, letterSpacing: -0.6 },
-  display: { fontFamily: fonts.display, fontSize: 32, lineHeight: 38, letterSpacing: -0.4 },
-  title: { fontFamily: fonts.display, fontSize: 26, lineHeight: 32, letterSpacing: -0.2 },
-  heading: { fontFamily: fonts.bold, fontSize: 19, lineHeight: 25, letterSpacing: -0.2 },
-  subheading: { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 22 },
-  body: { fontFamily: fonts.medium, fontSize: 15, lineHeight: 22 },
-  bodyStrong: { fontFamily: fonts.bold, fontSize: 15, lineHeight: 22 },
-  small: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 18 },
-  smallStrong: { fontFamily: fonts.bold, fontSize: 13, lineHeight: 18 },
-  caption: { fontFamily: fonts.semibold, fontSize: 12, lineHeight: 16 },
-  label: { fontFamily: fonts.extrabold, fontSize: 11, lineHeight: 14, letterSpacing: 1.4, textTransform: 'uppercase' as const },
-  button: { fontFamily: fonts.bold, fontSize: 16, lineHeight: 20, letterSpacing: 0.1 },
-  accent: { fontFamily: fonts.displayItalic, fontSize: 17, lineHeight: 24 },
+  hero: { fontFamily: fonts.display, fontSize: 32, lineHeight: 37, letterSpacing: -0.5 },
+  display: { fontFamily: fonts.display, fontSize: 27, lineHeight: 32, letterSpacing: -0.3 },
+  title: { fontFamily: fonts.display, fontSize: 22, lineHeight: 27, letterSpacing: -0.2 },
+  heading: { fontFamily: fonts.bold, fontSize: 16, lineHeight: 21, letterSpacing: -0.2 },
+  subheading: { fontFamily: fonts.semibold, fontSize: 13.5, lineHeight: 19 },
+  body: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 19 },
+  bodyStrong: { fontFamily: fonts.bold, fontSize: 13, lineHeight: 19 },
+  small: { fontFamily: fonts.medium, fontSize: 11, lineHeight: 15 },
+  smallStrong: { fontFamily: fonts.bold, fontSize: 11, lineHeight: 15 },
+  caption: { fontFamily: fonts.semibold, fontSize: 10, lineHeight: 14 },
+  label: { fontFamily: fonts.extrabold, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.2, textTransform: 'uppercase' as const },
+  button: { fontFamily: fonts.bold, fontSize: 13.5, lineHeight: 17, letterSpacing: 0.1 },
+  accent: { fontFamily: fonts.displayItalic, fontSize: 14.5, lineHeight: 20 },
 } as const;
 
 /**

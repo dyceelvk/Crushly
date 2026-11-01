@@ -26,7 +26,7 @@ export type RootStackParamList = {
   Chat: { conversationId: number };
   MutualCrush: { userId: number; name: string; photo?: string | null };
   Discover: undefined;
-  Search: undefined;
+  Search: { q?: string } | undefined;
   Filters: undefined;
   Notifications: undefined;
   Settings: undefined;
@@ -42,7 +42,9 @@ export type RootStackParamList = {
   MomentComposer: undefined;
   VibeComposer: undefined;
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle' };
-  CreatePost: undefined;
+  /** `type` skips the "what are you sharing?" board — used by entry points
+   *  that already are one thing, like the Moment button on a Space. */
+  CreatePost: { type?: 'flow' | 'vibe' | 'moment' } | undefined;
   PostViewer: { postId: number };
   WebPreview: { url: string };
   Safety: undefined;

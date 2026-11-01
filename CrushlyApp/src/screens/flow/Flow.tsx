@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { CircleStrip } from '../../components/CircleStrip';
 import { LinkText } from '../../components/LinkText';
+import { Rise } from '../../components/Rise';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -246,7 +247,9 @@ export function FlowScreen() {
                     }
                   >
                     {mounted ? (
-                      <PostCard post={p} active={activeId === null || activeId === p.id} />
+                      <Rise delay={Math.min(index, 4) * 40}>
+                        <PostCard post={p} active={activeId === null || activeId === p.id} />
+                      </Rise>
                     ) : null}
                   </View>
                 );
@@ -274,11 +277,21 @@ export function PostCard({
   post: p,
   active = true,
   secondPerson = true,
+  expanded = false,
+  onOpen,
 }: {
   post: Post;
   active?: boolean;
   /** True on your own feed, where "You" is right. False in a list of everyone's. */
   secondPerson?: boolean;
+  /** Opened in place, rather than pushed into a screen of its own. */
+  expanded?: boolean;
+  /**
+   * Where tapping the post goes. The feed pushes a viewer; a Circle opens the
+   * post where it already sits, because the room you are standing in is the
+   * context — leaving it to read one line of it was the wrong trade.
+   */
+  onOpen?: () => void;
 }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
@@ -374,13 +387,13 @@ export function PostCard({
 
       {/* Post body + media: tap to open the full post view */}
       <Pressable
-        onPress={() => navigation.navigate('PostViewer', { postId: p.id })}
+        onPress={onOpen ?? (() => navigation.navigate('PostViewer', { postId: p.id }))}
         accessibilityRole="button"
         accessibilityLabel={`Open ${authorName}’s post`}
         style={{ marginTop: space.sm }}
       >
         {p.body ? (
-          <Txt variant="body" style={{ paddingHorizontal: space.sm, paddingTop: space.sm, fontSize: 16, lineHeight: 23 }} selectable>
+          <Txt variant="body" style={{ paddingHorizontal: space.sm, paddingTop: space.sm }} selectable>
             <LinkText text={p.body} bare />
           </Txt>
         ) : null}
@@ -435,7 +448,7 @@ export function PostCard({
           count={p.commentCount}
           label="Comments"
           noun="comments"
-          onPress={() => setCommentsOpen(true)}
+          onPress={() => (onOpen ? onOpen() : setCommentsOpen(true))}
         />
         <PostAction
           icon={p.liked ? 'heart' : 'heart-outline'}
@@ -474,7 +487,34 @@ export function PostCard({
         </Pressable>
       ) : null}
 
-      <PostComments postId={p.id} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      {expanded ? (
+        /* Opened in place: the post keeps its position in the room, grows to
+           show the whole of itself, and the comments arrive underneath it
+           rather than in a sheet over the top. */
+        <View
+          style={{
+            borderTopWidth: stroke.hairline,
+            borderTopColor: colors.border,
+            paddingHorizontal: space.sm,
+            paddingBottom: space.sm,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.xs }}>
+            <Txt variant="label" color="textSecondary">
+              Comments
+            </Txt>
+            <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel="Close this post" hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Txt variant="caption" color="textMuted">
+                Close
+              </Txt>
+              <Ionicons name="chevron-up" size={14} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          <CommentsBody postId={p.id} />
+        </View>
+      ) : (
+        <PostComments postId={p.id} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      )}
     </View>
   );
 }
@@ -515,11 +555,27 @@ function PostAction({
   );
 }
 
-/** The comments under one post, read and written in place. */
+/**
+ * The comments under one post, read and written in place.
+ *
+ * Two ways to show the same thing: a sheet over the feed, and — in a Circle,
+ * where the post opens where it already sits — no sheet at all, straight under
+ * the post. The list and the box are one component so the two cannot drift.
+ */
 function PostComments({ postId, visible, onClose }: { postId: number; visible: boolean; onClose: () => void }) {
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="Comments">
+      <CommentsBody postId={postId} maxHeight={380} />
+    </BottomSheet>
+  );
+}
+
+/** The list and the box, with no opinion about what contains them. */
+function CommentsBody({ postId, maxHeight }: { postId: number; maxHeight?: number }) {
   const { colors } = useTheme();
   const toast = useToast();
-  const query = usePostComments(visible ? postId : null);
+  // Only fetched once it is actually on screen; an unopened sheet costs nothing.
+  const query = usePostComments(postId);
   const send = useCommentOnPost(postId);
   const remove = useDeletePostComment(postId);
   const [draft, setDraft] = useState('');
@@ -537,8 +593,8 @@ function PostComments({ postId, visible, onClose }: { postId: number; visible: b
   };
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Comments">
-      <View style={{ maxHeight: 380 }}>
+    <>
+      <View style={maxHeight ? { maxHeight } : undefined}>
         {query.isLoading ? <Skeleton style={{ height: 60 }} /> : null}
         {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : null}
         {query.data?.items?.length === 0 ? (
@@ -564,7 +620,7 @@ function PostComments({ postId, visible, onClose }: { postId: number; visible: b
         </View>
         <Button title="Send" size="sm" onPress={submit} loading={send.isPending} disabled={!draft.trim()} />
       </View>
-    </BottomSheet>
+    </>
   );
 }
 

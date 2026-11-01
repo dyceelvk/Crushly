@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  PanResponder,
   Share,
   TextInput,
   View,
@@ -276,6 +277,56 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }
   }, [post, authorName]);
 
+  /**
+   * The reel.
+   *
+   * Watching one post at a time was the right shape; being trapped in the one
+   * you tapped was not. The order is the feed's own order, so swiping up is
+   * simply "the next thing down the list" — no new list, no new fetch, no
+   * second definition of what comes next.
+   */
+  const reel = flow.data?.items ?? [];
+  const at = post ? reel.findIndex((x) => x.id === post.id) : -1;
+  const nextPost = at >= 0 && at < reel.length - 1 ? reel[at + 1] : null;
+  const prevPost = at > 0 ? reel[at - 1] : null;
+
+  const step = useCallback(
+    (dir: 1 | -1) => {
+      const target = dir === 1 ? nextPost : prevPost;
+      if (!target) {
+        toast({
+          kind: 'info',
+          title: dir === 1 ? 'That’s the most recent' : 'That’s the start of this page',
+          message: dir === 1 ? 'Nothing newer than this one, yet.' : 'Scroll your Flow to load what came before.',
+        });
+        return;
+      }
+      // The same screen, showing the next post: the route is the only state, so
+      // Back still leaves the viewer rather than walking the reel.
+      navigation.setParams({ postId: target.id });
+    },
+    [nextPost, prevPost, navigation, toast],
+  );
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
+  // A sheet on top owns the gesture: nothing should page the reel out from
+  // under a comment somebody is halfway through writing.
+  const sheetOpen = commentsOpen || shareOpen || moreOpen || reactionsOpen || editOpen || confirmDelete;
+  const sheetRef = useRef(sheetOpen);
+  sheetRef.current = sheetOpen;
+
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) =>
+        !sheetRef.current && Math.abs(g.dy) > 26 && Math.abs(g.dy) > Math.abs(g.dx) * 1.6,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dy < -60) stepRef.current(1);
+        else if (g.dy > 60) stepRef.current(-1);
+      },
+    }),
+  ).current;
+
   if (!post) {
     const loading = (flow.isLoading || postQuery.isLoading) && postQuery.data === undefined;
     return (
@@ -303,7 +354,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const needsReadMore = body.length > 140;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#05060f' }}>
+    <View style={{ flex: 1, backgroundColor: '#05060f' }} {...pan.panHandlers}>
       {/* ---------------------------------------------------------- the stage */}
       <Pressable
         onPress={onMediaTap}
@@ -395,7 +446,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         <IconButton icon="close" label="Close" variant="glass" onPress={close} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Txt variant="caption" color="textMuted" style={{ letterSpacing: 1.4 }}>
-            THE FLOW
+            {at >= 0 && reel.length ? `THE FLOW · ${at + 1} OF ${reel.length}` : 'THE FLOW'}
           </Txt>
           <Txt variant="bodyStrong" numberOfLines={1}>
             {post.audience === 'everyone' ? 'Everyone' : 'Your connections'}

@@ -99,7 +99,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
               borderWidth: m.mine ? 0 : 1, borderColor: colors.border,
             }}
           >
-            {m.kind === 'voice' ? <VoiceNote m={m} ink={ink} /> : <Txt variant="body" color={ink} style={{ fontSize: 16, lineHeight: 22 }} selectable>{m.body}</Txt>}
+            {m.kind === 'voice' ? <VoiceNote m={m} ink={ink} /> : <Txt variant="body" color={ink} selectable>{m.body}</Txt>}
           </View>
         )}
         {reactionSummary.length ? (

@@ -17,6 +17,9 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Input } from '../../components/Input';
 import { Segmented } from '../../components/Segmented';
+import { Pill } from '../../components/Badges';
+import { PressableScale } from '../../components/PressableScale';
+import { Rise } from '../../components/Rise';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { useCreatePost } from '../../api/hooks';
@@ -43,6 +46,15 @@ type MediaItem = {
 
 type PostType = 'Flows' | 'Stories' | 'Moments' | 'Vibes';
 
+/** The three things a person can share, in the order the product grew them. */
+type PostKind = 'flow' | 'vibe' | 'moment';
+
+const BOARDS: { kind: PostKind; title: string; blurb: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { kind: 'flow', title: 'Flow', blurb: 'Words, photos, a clip. Stays until you take it down.', icon: 'albums-outline' },
+  { kind: 'vibe', title: 'Vibe', blurb: 'A short clip with a fortnight to live.', icon: 'flash-outline' },
+  { kind: 'moment', title: 'Moment', blurb: 'One glimpse. Gone in 24 hours.', icon: 'aperture-outline' },
+];
+
 /**
  * Create Post — unified composer for text, photo, and video posts.
  *
@@ -50,7 +62,7 @@ type PostType = 'Flows' | 'Stories' | 'Moments' | 'Vibes';
  * editors, add-text bar at the bottom. Video goes trim-first (dedicated trim
  * screen right after picking), then the full editor for captions/filters/etc.
  */
-export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
+export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'>) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
@@ -62,9 +74,23 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const isTablet = width >= 700;
   const twoCol = width >= 600;
 
+  /**
+   * What is being shared, chosen *before* the board is built.
+   *
+   * The composer used to ask this last — a "Post type" row of four segments at
+   * the bottom of a settings panel, after the photograph had already been
+   * picked and the words already written. By then the answer changes nothing
+   * anyone can see, and three of the four answers were not even wired to a
+   * different composer: a Vibe and a Moment lived in screens of their own while
+   * "Post type: Vibes" quietly posted a Flow. So the question comes first, and
+   * each answer leads to the board that is actually that thing.
+   */
+  const [kind, setKind] = useState<PostKind | null>(route.params?.type ?? null);
+
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
-  const [postType, setPostType] = useState<PostType>('Flows');
+  // A board knows what it is; there is nothing left to choose underneath it.
+  const postType: PostType = 'Flows';
   const [scheduleOn, setScheduleOn] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -115,7 +141,7 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
     }, [pendingMedia])
   );
 
-  const maxBody = postType === 'Moments' ? 280 : MAX_BODY;
+  const maxBody = MAX_BODY;
   const ready = body.trim().length > 0 || media.length > 0;
 
   const pickMedia = async () => {
@@ -238,6 +264,86 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
   const headerHeight = 60;
   const rightPanelWidth = 340;
 
+  /**
+   * The question, asked first.
+   *
+   * Three cards, one of which is the thing you already had in mind. Choosing a
+   * Vibe or a Moment hands over to the screen that has always been that, rather
+   * than pretending a Flow with a different label on it is one.
+   */
+  if (!kind) {
+    const choose = (next: PostKind) => {
+      if (next === 'vibe') {
+        navigation.replace('VibeComposer');
+        return;
+      }
+      if (next === 'moment') {
+        navigation.replace('MomentComposer');
+        return;
+      }
+      setKind(next);
+    };
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: space.sm,
+            width: '100%', maxWidth: contentWidth, alignSelf: 'center',
+          }}
+        >
+          <IconButton icon="close" label="Cancel" onPress={() => navigation.goBack()} />
+          <Txt variant="title" style={{ flex: 1 }} accessibilityRole="header">
+            Share something
+          </Txt>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: gutter, paddingTop: space.md, paddingBottom: insets.bottom + space.xxl,
+            gap: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center',
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {BOARDS.map((b, i) => (
+            <Rise key={b.kind} delay={i * 70}>
+            <PressableScale
+              onPress={() => choose(b.kind)}
+              pressedScale={0.985}
+              accessibilityRole="button"
+              accessibilityLabel={`${b.title}. ${b.blurb}`}
+            >
+              <View
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: space.md,
+                  padding: space.md, borderRadius: radius.lg,
+                  backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+                }}
+              >
+                <View
+                  style={{
+                    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: colors.goldSoft ?? colors.elevated,
+                  }}
+                >
+                  <Ionicons name={b.icon} size={21} color={colors.gold} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt variant="heading">{b.title}</Txt>
+                  <Txt variant="small" color="textSecondary">
+                    {b.blurb}
+                  </Txt>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </View>
+            </PressableScale>
+            </Rise>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View
@@ -255,9 +361,17 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
       >
         <IconButton icon="close" label="Cancel" onPress={() => navigation.goBack()} />
         <Txt variant="title" style={{ flex: 1 }} accessibilityRole="header">
-          Create Post
+          {kind === 'moment' ? 'New Moment' : kind === 'vibe' ? 'New Vibe' : 'New Flow'}
         </Txt>
-        <Button title="Draft" size="sm" variant="ghost" onPress={() => {}} accessibilityLabel="Save as draft" />
+        {/* Back to the question. Changing your mind about what this is should
+            cost one tap, not a discarded draft. */}
+        <Button
+          title="Change"
+          size="sm"
+          variant="ghost"
+          onPress={() => setKind(null)}
+          accessibilityLabel="Choose a different kind of post"
+        />
       </View>
 
       <ScrollView
@@ -282,7 +396,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               audience={audience}
               setAudience={setAudience}
               postType={postType}
-              setPostType={setPostType}
               scheduleOn={scheduleOn}
               setScheduleOn={setScheduleOn}
               maxBody={maxBody}
@@ -319,7 +432,6 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
               audience={audience}
               setAudience={setAudience}
               postType={postType}
-              setPostType={setPostType}
               scheduleOn={scheduleOn}
               setScheduleOn={setScheduleOn}
               maxBody={maxBody}
@@ -395,7 +507,6 @@ function ComposerLeft({
   audience,
   setAudience,
   postType,
-  setPostType,
   scheduleOn,
   setScheduleOn,
   maxBody,
@@ -414,7 +525,6 @@ function ComposerLeft({
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
   postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
-  setPostType: (v: 'Flows' | 'Stories' | 'Moments' | 'Vibes') => void;
   scheduleOn: boolean;
   setScheduleOn: (v: boolean) => void;
   maxBody: number;
@@ -551,19 +661,16 @@ function ComposerLeft({
       {/* Tag people */}
       <SettingsRow label="Tag people" hint="Mention friends or creators" icon="person-outline" />
 
-      {/* Post type */}
-      <View style={{ gap: space.sm }}>
-        <Txt variant="label" color="textSecondary">Post type</Txt>
-        <Segmented<'Flows' | 'Stories' | 'Moments' | 'Vibes'>
-          options={[
-            { value: 'Flows', label: 'Flows' },
-            { value: 'Stories', label: 'Stories' },
-            { value: 'Moments', label: 'Moments' },
-            { value: 'Vibes', label: 'Vibes' },
-          ]}
-          value={postType}
-          onChange={setPostType}
-        />
+      {/* What this is. Stated, not asked: it was answered one screen ago, and
+          answering it here again used to change nothing. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ gap: 2 }}>
+          <Txt variant="label" color="textSecondary">Sharing</Txt>
+          <Txt variant="caption" color="textMuted">
+            A Flow — public, or for your connections
+          </Txt>
+        </View>
+        <Pill label="Flow" tone="gold" />
       </View>
 
       {/* Advanced options */}

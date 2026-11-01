@@ -352,7 +352,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
 
           {p.bio ? (
             <Section title={`About ${p.name}`}>
-              <Txt variant="body" style={{ fontSize: 16, lineHeight: 25 }}>
+              <Txt variant="body">
                 {p.bio}
               </Txt>
             </Section>

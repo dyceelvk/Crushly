@@ -4,12 +4,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 import type { RootStackParamList } from '../navigation/types';
+import { useToast } from './Toast';
+import { profileIdByUsername } from '../api/service';
+import { tokenize } from '../lib/links';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const URL_RE = /https?:\/\/[^\s<>"']+/gi;
-
-/** Only two schemes are ever allowed through: a page that isn't http(s) isn't a page. */
 export function isSafeWebUrl(raw: string): boolean {
   try {
     const u = new URL(raw);
@@ -64,8 +64,7 @@ export function LinkText({
 }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
-  const parts = React.useMemo(() => String(text ?? '').split(URL_RE), [text]);
-  const matches = React.useMemo(() => String(text ?? '').match(URL_RE) ?? [], [text]);
+  const { parts, matches } = React.useMemo(() => tokenize(String(text ?? '')), [text]);
 
   if (!matches.length) {
     if (bare) return <>{text}</>;
@@ -76,31 +75,55 @@ export function LinkText({
     );
   }
 
-  // split() drops the links and match() keeps them, so the two are woven back
-  // together: chunk, link, chunk, link — never one without the other.
+  // The text is woven back together: chunk, thing, chunk, thing — never one
+  // without the other. A thing is a link, a handle, or a tag; everything else
+  // is left exactly as it was typed.
   const nodes: React.ReactNode[] = [];
   parts.forEach((chunk, i) => {
     if (chunk) nodes.push(<React.Fragment key={`t-${i}`}>{chunk}</React.Fragment>);
-    const url = matches[i];
-    if (!url) return;
-    if (isSafeWebUrl(url)) {
-      // No variant: the link takes its type from the text around it, and only
-      // the colour marks it out as something you can press.
-      nodes.push(
-        <Txt
-          key={`l-${i}`}
-          color={linkColor}
-          onPress={() => navigation.navigate('WebPreview', { url })}
-          accessibilityRole="link"
-          accessibilityLabel={`Open link to ${prettyUrl(url)} inside Crushly`}
-        >
-          {prettyUrl(url)}
-        </Txt>,
-      );
-    } else {
-      // Not http(s), so it is not offered as a link at all.
-      nodes.push(<React.Fragment key={`r-${i}`}>{url}</React.Fragment>);
+    const m = matches[i];
+    if (!m) return;
+
+    if (m.kind === 'url') {
+      if (isSafeWebUrl(m.text)) {
+        // No variant: the link takes its type from the text around it, and only
+        // the colour marks it out as something you can press.
+        nodes.push(
+          <Txt
+            key={`l-${i}`}
+            color={linkColor}
+            onPress={() => navigation.navigate('WebPreview', { url: m.text })}
+            accessibilityRole="link"
+            accessibilityLabel={`Open link to ${prettyUrl(m.text)} inside Crushly`}
+          >
+            {prettyUrl(m.text)}
+          </Txt>,
+        );
+      } else {
+        // Not http(s), so it is not offered as a link at all.
+        nodes.push(<React.Fragment key={`r-${i}`}>{m.text}</React.Fragment>);
+      }
+      return;
     }
+
+    if (m.kind === 'mention') {
+      nodes.push(<Mention key={`m-${i}`} handle={m.value} color={linkColor} />);
+      return;
+    }
+
+    // A tag is a word, so it filters Search — the same search box, holding the
+    // same word, rather than a second kind of search that only tags use.
+    nodes.push(
+      <Txt
+        key={`h-${i}`}
+        color={linkColor}
+        onPress={() => navigation.navigate('Search', { q: `#${m.value}` })}
+        accessibilityRole="link"
+        accessibilityLabel={`See every post tagged ${m.value}`}
+      >
+        {`#${m.value}`}
+      </Txt>,
+    );
   });
 
   if (bare) return <>{nodes}</>;
@@ -108,6 +131,43 @@ export function LinkText({
   return (
     <Txt variant={variant} color={color} style={style} numberOfLines={numberOfLines}>
       {nodes}
+    </Txt>
+  );
+}
+
+/**
+ * A name, and the Space behind it.
+ *
+ * The lookup happens on the press rather than on render: a feed of forty posts
+ * mentioning forty people should not cost forty queries to draw, and the handle
+ * is already readable without one. If nobody answers to it, the sentence says
+ * so instead of opening an empty screen.
+ */
+function Mention({ handle, color }: { handle: string; color: any }) {
+  const navigation = useNavigation<Nav>();
+  const toast = useToast();
+  const [busy, setBusy] = React.useState(false);
+
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const id = await profileIdByUsername(handle);
+      if (id === null) {
+        toast({ kind: 'info', title: `No one here is @${handle}`, message: 'They may have changed their handle.' });
+        return;
+      }
+      navigation.navigate('UserProfile', { id });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t open that Space', message: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Txt color={color} onPress={open} accessibilityRole="link" accessibilityLabel={`Open @${handle}’s Space`}>
+      {`@${handle}`}
     </Txt>
   );
 }

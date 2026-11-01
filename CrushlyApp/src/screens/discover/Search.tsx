@@ -29,14 +29,17 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  *
  * A result leads somewhere you could already have gone — a member's Space.
  */
-export function SearchScreen() {
+export function SearchScreen({ route }: { route?: { params?: { q?: string } } }) {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
 
-  const [text, setText] = useState('');
-  const [query, setQuery] = useState('');
+  // A hashtag pressed in a post arrives here as the words to search for, so the
+  // tag behaves like the search it is rather than a second kind of search.
+  const seed = route?.params?.q ?? '';
+  const [text, setText] = useState(seed);
+  const [query, setQuery] = useState(seed.trim());
 
   // Typing shouldn't cost a round trip per letter.
   useEffect(() => {

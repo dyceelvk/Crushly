@@ -476,6 +476,9 @@ function RoomPosts({ circleId }: { circleId: number }) {
   const [body, setBody] = useState('');
   const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
   const [picking, setPicking] = useState(false);
+  // Which post in this room is open. One at a time: a room is a list, not a
+  // stack of everything.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const pick = async () => {
     setPicking(true);
@@ -535,7 +538,15 @@ function RoomPosts({ circleId }: { circleId: number }) {
       ) : feed.posts.length ? (
         <>
           {feed.posts.map((p) => (
-            <PostCard key={p.id} post={p} />
+            /* In a Circle a post opens where it sits. Pushing a full-screen
+               viewer meant leaving the room to read something said in it —
+               and coming back to a list that had to find your place again. */
+            <PostCard
+              key={p.id}
+              post={p}
+              expanded={expandedId === p.id}
+              onOpen={() => setExpandedId((cur) => (cur === p.id ? null : p.id))}
+            />
           ))}
           <Button title="Show older posts" variant="secondary" size="md" onPress={feed.loadOlder} loading={feed.isFetching} />
         </>

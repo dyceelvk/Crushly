@@ -178,7 +178,7 @@ const ConversationRow = React.memo(function ConversationRow({ conv, onPress }: {
       <Avatar uri={conv.peer.photo} name={conv.peer.name} size={56} online={!!conv.peer.online} />
       <View style={{ flex: 1, minWidth: 0, borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 12, marginBottom: -12, paddingTop: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Txt variant={unread ? 'bodyStrong' : 'body'} numberOfLines={1} style={{ flexShrink: 1, fontSize: 16 }}>
+          <Txt variant={unread ? 'bodyStrong' : 'body'} numberOfLines={1} style={{ flexShrink: 1 }}>
             {conv.peer.name}
           </Txt>
           {conv.peer.verified ? <VerifiedBadge size={14} /> : null}

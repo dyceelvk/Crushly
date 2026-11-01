@@ -58,7 +58,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           }}
           style={[
             {
-              flex: 1, minWidth: 0, width: '100%', color: colors.text, fontFamily: fonts.medium, fontSize: 16, paddingVertical: multiline ? 14 : 0,
+              flex: 1, minWidth: 0, width: '100%', color: colors.text, fontFamily: fonts.medium, fontSize: 13.5, paddingVertical: multiline ? 14 : 0,
               minHeight: multiline ? 110 : 52, textAlignVertical: multiline ? 'top' : 'center',
             },
             // Removes the default browser focus ring; our border shows focus instead.

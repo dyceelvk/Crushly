@@ -1167,6 +1167,28 @@ export async function searchAll(query: string): Promise<SearchResults> {
   return rpc<SearchResults>('search_all', { p_query: q, p_limit: 8 });
 }
 
+/**
+ * A handle to the Space behind it.
+ *
+ * A mention is only worth printing in a colour if pressing it goes somewhere,
+ * so this is the smallest honest lookup: one column, one row, exact handle.
+ * Handles are stored lower-case at signup, and compared the same way here —
+ * `@Ada` and `@ada` are the same person, which is what everyone expects.
+ */
+export async function profileIdByUsername(username: string): Promise<number | null> {
+  const handle = String(username ?? '').replace(/^@/, '').trim().toLowerCase();
+  if (!handle) return null;
+  requireConfig();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .ilike('username', handle)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw toApiError(error);
+  return data?.id ?? null;
+}
+
 /** Posts people chose to share with Everyone — the public side of Flows. */
 export async function publicFlow(): Promise<Post[]> {
   const res = await rpc<{ items: Post[] }>('public_flow_feed', { p_limit: 20 });

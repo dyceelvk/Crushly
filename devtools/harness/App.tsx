@@ -48,6 +48,7 @@ import { CloseOnesScreen } from '../src/screens/circles/CloseOnes';
 import { MomentsScreen } from '../src/screens/moments/Moments';
 import { MomentViewerScreen } from '../src/screens/moments/MomentViewer';
 import { MomentComposerScreen } from '../src/screens/moments/MomentComposer';
+import { CreatePostScreen } from '../src/screens/common/CreatePostScreen';
 import { MessagesScreen } from '../src/screens/messages/Messages';
 import { ChatScreen } from '../src/screens/messages/Chat';
 import { SettingsScreen } from '../src/screens/settings/Settings';
@@ -143,6 +144,10 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   // A clip rather than a photo: the branch that plays.
   momentvideo: (p: any) => <MomentViewerScreen route={{ key: 'mv', name: 'MomentViewer', params: { userId: 5 } } as any} navigation={p.navigation} />,
   momentcomposer: MomentComposerScreen,
+  // The composer opens on the question now: what is this?
+  composer: (p: any) => <CreatePostScreen route={{ key: 'cp', name: 'CreatePost', params: undefined } as any} navigation={p.navigation} />,
+  // …and straight into the Flow board, which is what the question leads to.
+  composerflow: (p: any) => <CreatePostScreen route={{ key: 'cp', name: 'CreatePost', params: { type: 'flow' } } as any} navigation={p.navigation} />,
   messages: MessagesScreen,
   chat: (p: any) => <ChatScreen route={{ key: 'c', name: 'Chat', params: { conversationId: 1 } } as any} navigation={p.navigation} />,
   // A connection nobody has spoken to yet — the first thing a new match sees.
