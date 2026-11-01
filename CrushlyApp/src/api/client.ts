@@ -179,18 +179,43 @@ async function mediaErrorMessage(res: Response): Promise<string> {
  * folder — `path` only says which kind of media this is. Returns the absolute
  * URL, which is what the row stores.
  */
+/**
+ * An upload is the one request in the app that can lose a minute of somebody's
+ * work, and the one most likely to be attempted on a train. A second attempt
+ * costs nothing when the first failed on the wire — and the first attempt very
+ * often does, on a phone, mid-file.
+ *
+ * Only transport failures and 5xx are retried. A 413 or a 401 will fail again.
+ */
+async function withRetry<T>(run: () => Promise<T>, tries = 2): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      last = e;
+      const status = e instanceof ApiError ? e.status : 0;
+      if (!(status === 0 || status >= 500) || attempt === tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  throw last;
+}
+
 async function uploadToMediaStore(kind: MediaKind, blob: Blob, contentType: string): Promise<string> {
-  const token = await mediaAccessToken();
-  const res = await fetch(`${MEDIA_BASE_URL}/m`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType, 'X-Media-Kind': kind },
-    body: blob,
-  }).catch(() => null);
-  if (!res) throw new ApiError(0, 'You seem to be offline. Check your connection and try again.');
-  if (!res.ok) throw new ApiError(res.status, await mediaErrorMessage(res));
-  const data = (await res.json().catch(() => null)) as { url?: string } | null;
-  if (!data?.url) throw new ApiError(500, 'We couldn’t save that file. Try again.');
-  return data.url;
+  return withRetry(async () => {
+    const token = await mediaAccessToken();
+    const res = await fetch(`${MEDIA_BASE_URL}/m`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType, 'X-Media-Kind': kind },
+      body: blob,
+    }).catch(() => null);
+    if (!res) throw new ApiError(0, 'You seem to be offline. Check your connection and try again.');
+    if (!res.ok) throw new ApiError(res.status, await mediaErrorMessage(res));
+    const data = (await res.json().catch(() => null)) as { url?: string } | null;
+    if (!data?.url) throw new ApiError(500, 'We couldn’t save that file. Try again.');
+    return data.url;
+  });
 }
 
 async function deleteFromMediaStore(url: string): Promise<void> {
@@ -250,6 +275,17 @@ export async function uploadMediaFile(
 ): Promise<string> {
   requireConfig();
   const blob = await uriToBlob(uri);
+  // A phone clip of two minutes is not a file anybody meant to post, and the
+  // upload is the wrong place to find out: say what the limit is, in the size
+  // the person can see in their gallery.
+  const limitMb = bucket === 'media' ? 80 : 12;
+  const mb = blob.size / (1024 * 1024);
+  if (mb > limitMb) {
+    throw new ApiError(
+      413,
+      `That file is ${Math.round(mb)} MB. Crushly takes up to ${limitMb} MB — trim it, or pick something shorter.`,
+    );
+  }
   const kind = bucket === 'media' ? mediaKind(path) : null;
   if (kind && moved(kind)) {
     try {

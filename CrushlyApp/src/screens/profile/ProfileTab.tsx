@@ -154,7 +154,13 @@ export function ProfileTabScreen() {
         <Txt variant="display" accessibilityRole="header">
           Space
         </Txt>
-        <IconButton icon="settings-outline" label="Settings" onPress={() => navigation.navigate('Settings')} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {/* The Space is where most people post from — the thing they are
+              looking at is their own work — so the way to add to it lives here
+              as well as in the middle of the tab bar. */}
+          <IconButton icon="add" label="Share a post" onPress={() => navigation.navigate('CreatePost')} />
+          <IconButton icon="settings-outline" label="Settings" onPress={() => navigation.navigate('Settings')} />
+        </View>
       </View>
 
       {/*

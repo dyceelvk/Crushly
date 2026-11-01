@@ -346,12 +346,25 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             />
           )
         ) : (
-          <LinearGradient
-            colors={['#101a3d', '#2a1747', '#0A0E27']}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-            style={{ width: '100%', height: '100%' }}
-          />
+          /* A post with no photograph is not a broken photograph.
+             It used to render an empty gradient behind a question mark of
+             nothing, which read as a failed image — and then somebody tapping a
+             text post from a Circle got a black screen with the words stranded
+             at the bottom of it. Words-only posts get their words, big, in the
+             middle of the stage, where a viewer expects to find something. */
+          <>
+            <LinearGradient
+              colors={['#101a3d', '#2a1747', '#0A0E27']}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
+              style={{ width: '100%', height: '100%' }}
+            />
+            <View style={{ position: 'absolute', left: gutter, right: gutter, top: '18%', alignItems: 'center' }}>
+              <Txt variant="title" align="center" color="#FFFFFF" numberOfLines={12} style={{ maxWidth: 520 }}>
+                {post.body || 'No words.'}
+              </Txt>
+            </View>
+          </>
         )}
       </Pressable>
 

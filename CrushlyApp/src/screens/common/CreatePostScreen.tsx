@@ -223,6 +223,10 @@ export function CreatePostScreen({ navigation }: ScreenProps<'CreatePost'>) {
       toast({ kind: 'success', title: 'Post shared' });
       navigation.goBack();
     } catch (e) {
+      // The toast washes technical detail out of the sentence it shows, which is
+      // right for a member and useless for us — so the real reason goes to the
+      // console, where it survives in a bug report.
+      console.warn('createPost failed:', e);
       toast({ kind: 'error', title: 'Post not shared', message: (e as Error).message });
     } finally {
       setBusy(false);

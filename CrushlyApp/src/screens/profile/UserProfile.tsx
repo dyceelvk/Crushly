@@ -29,6 +29,9 @@ import { timeAgo } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
+/** Diameter of the round face that sits on the cover. */
+const FACE = 84;
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ marginTop: space.xl }}>
@@ -80,7 +83,10 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   const vibes = useSpaceVibes(id);
 
   const heroW = Math.min(width, contentWidth);
-  const heroH = Math.min(heroW * 1.22, 640);
+  // A cover, not a portrait: wide enough to read as the backdrop of the Space,
+  // short enough that the face, the name and the tabs are all on the first
+  // screen without scrolling.
+  const heroH = Math.min(heroW * 0.98, 460);
 
   if (isLoading) {
     return (
@@ -161,18 +167,16 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             </View>
             <IconButton icon="ellipsis-horizontal" variant="glass" label={`More options for ${p.name}`} onPress={() => openActions(member)} />
           </View>
-          <View style={{ position: 'absolute', left: gutter, right: gutter, bottom: space.xl }}>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: space.sm, flexWrap: 'wrap' }}>
+          {/* Only the state pills live on the cover now. The name, the face and
+              the actions sit under it, on the page background, which is what
+              stops the identity block from eating the screen the tabs need. */}
+          <View style={{ position: 'absolute', left: gutter, right: gutter, bottom: space.md }}>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
               {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
               {p.crush.mutual ? <Pill tone="glass" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
               {keep.data?.keepsYou ? <Pill tone="glass" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} /> : null}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Txt variant="hero" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1 }}>
-                {p.name}
-                {p.age ? <Txt variant="hero" color="rgba(255,255,255,0.86)">{`, ${p.age}`}</Txt> : null}
-              </Txt>
-              {p.verified ? <VerifiedBadge size={24} /> : null}
               {p.moments.length > 0 && (
                 /*
                  * The ring around the face is the way into their Moments — the
@@ -200,55 +204,93 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                 </Pressable>
               )}
             </View>
-            <Txt variant="body" color="rgba(255,255,255,0.86)" style={{ marginTop: 2 }}>
-              {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
-            </Txt>
           </View>
         </View>
 
+        {/*
+          The face, overlapping the cover the way a profile picture is meant to.
+          It carries the Moments ring when there is something to watch, so the
+          ring is still the way in — it just is not a second avatar floating in
+          the middle of a name line.
+        */}
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
-          <View
-            style={{
-              marginTop: space.lg, flexDirection: 'row', alignItems: 'center', gap: 12,
-              backgroundColor: keep.data?.keeps ? colors.goldSoft : colors.card,
-              borderWidth: 1, borderColor: keep.data?.keeps ? colors.goldLine : colors.border,
-              borderRadius: radius.lg, padding: space.md,
-            }}
-          >
-            <View style={{ flex: 1, flexShrink: 1, gap: 2 }}>
-              <Txt variant="bodyStrong">
-                {keep.data?.keeps ? 'Kept close' : 'Keep Close'}
-              </Txt>
-              <Txt variant="small" color="textSecondary">
-                {keep.data?.keeps
-                  ? 'You’ll see what they share. They aren’t told when you let go.'
-                  : 'Keep them near without asking anything back. Only you see your list.'}
-              </Txt>
-              {keep.data && !keep.data.self ? (
-                <Txt variant="caption" color="textMuted" style={{ marginTop: 2 }}>
-                  {keep.data.keptByCount === 0
-                    ? 'Nobody keeps them close yet'
-                    : `${keep.data.keptByCount} ${keep.data.keptByCount === 1 ? 'member keeps' : 'members keep'} them close`}
-                </Txt>
-              ) : null}
-            </View>
-            <Button
-              title={keep.data?.keeps ? 'Let go' : 'Keep Close'}
-              size="sm"
-              variant={keep.data?.keeps ? 'secondary' : 'primary'}
-              icon={keep.data?.keeps ? undefined : 'bookmark-outline'}
-              loading={keepClose.isPending || letGo.isPending}
-              onPress={() => {
-                haptic.tap();
-                if (keep.data?.keeps) {
-                  letGo.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not let go', message: (e as Error).message }) });
-                } else {
-                  keepClose.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not kept close', message: (e as Error).message }) });
-                }
-              }}
-            />
-          </View>
+          <View style={{ marginTop: -46, flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }}>
+            <Pressable
+              onPress={p.moments.length ? () => navigation.navigate('MomentViewer', { userId: p.id }) : undefined}
+              accessibilityRole="button"
+              accessibilityLabel={p.moments.length ? `View ${p.name}’s Moments` : `${p.name}’s photo`}
+            >
+              <LinearGradient
+                colors={p.moments.length ? [colors.gold, colors.crush, colors.goldDeep] : ['transparent', 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ width: FACE + 8, height: FACE + 8, borderRadius: (FACE + 8) / 2, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <View style={{ width: FACE + 2, height: FACE + 2, borderRadius: (FACE + 2) / 2, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+                  <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={FACE - 4} />
+                </View>
+              </LinearGradient>
+            </Pressable>
 
+            {/* The name, and the two things you can do about this person —
+                one of them a chip, not a card. */}
+            <View style={{ flex: 1, minWidth: 0, paddingBottom: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
+                  {p.name}
+                  {p.age ? <Txt variant="title" color="textSecondary">{`, ${p.age}`}</Txt> : null}
+                </Txt>
+                {p.verified ? <VerifiedBadge size={18} /> : null}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                <Pressable
+                  onPress={() => {
+                    haptic.tap();
+                    if (keep.data?.keeps) letGo.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not let go', message: (e as Error).message }) });
+                    else keepClose.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not kept close', message: (e as Error).message }) });
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={keep.data?.keeps ? `Stop keeping ${p.name} close` : `Keep ${p.name} close`}
+                  hitSlop={8}
+                  disabled={keepClose.isPending || letGo.isPending}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 5,
+                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+                    backgroundColor: keep.data?.keeps ? colors.goldSoft : colors.card,
+                    borderWidth: 1, borderColor: keep.data?.keeps ? colors.goldLine : colors.border,
+                  }}
+                >
+                  <Ionicons name={keep.data?.keeps ? 'bookmark' : 'bookmark-outline'} size={12} color={keep.data?.keeps ? colors.gold : colors.textSecondary} />
+                  <Txt variant="caption" color={keep.data?.keeps ? 'gold' : 'textSecondary'}>
+                    {keep.data?.keeps ? 'Kept close' : 'Keep Close'}
+                  </Txt>
+                </Pressable>
+                <Pressable
+                  onPress={onCrush}
+                  accessibilityRole="button"
+                  accessibilityLabel={p.crush.mutual ? `Whisper ${p.name}` : p.crush.sent ? 'Withdraw your Crush' : `Crush on ${p.name}`}
+                  hitSlop={8}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 5,
+                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+                    backgroundColor: p.crush.sent ? colors.crushSoft : colors.card,
+                    borderWidth: 1, borderColor: p.crush.sent ? colors.crushLine : colors.border,
+                  }}
+                >
+                  <Ionicons name={p.crush.mutual ? 'chatbubble-ellipses' : p.crush.sent ? 'heart' : 'heart-outline'} size={12} color={colors.crush} />
+                  <Txt variant="caption" color={p.crush.sent ? 'crush' : 'textSecondary'}>
+                    {p.crush.mutual ? 'Whisper' : p.crush.sent ? 'Crushed' : 'Crush'}
+                  </Txt>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+          <Txt variant="small" color="textSecondary" style={{ marginTop: space.sm }}>
+            {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
+          </Txt>
+        </View>
+
+        <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
           {p.crush.note ? (
             <View style={{ marginTop: space.lg, backgroundColor: colors.goldSoft, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: colors.goldLine }}>
               <Txt variant="label" color="gold">

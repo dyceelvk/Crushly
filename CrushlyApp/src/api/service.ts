@@ -125,7 +125,11 @@ export async function getMe(): Promise<Me> {
       .maybeSingle(),
     supabase
       .from('crushes')
-      .select('id', { count: 'exact', head: true })
+      // `crushes` is keyed on the pair, not on a row id: asking for `id` made
+      // Postgres answer 42703 and took the whole of `getMe` down with it, which
+      // is how a member ended up with no name, no photos and no audience on
+      // every screen that reads `me`.
+      .select('from_id', { count: 'exact', head: true })
       .eq('from_id', id)
       .eq('deep', true)
       .gt('created_at', Date.now() - 24 * 60 * 60 * 1000),
