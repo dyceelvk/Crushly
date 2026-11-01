@@ -17,7 +17,10 @@ import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState } from '../../components/States';
-import { BottomSheet } from '../../components/BottomSheet';
+import { ShareToWhisper } from '../../components/ShareToWhisper';
+import { EditPostSheet } from '../../components/EditPostSheet';
+import { useMemberActions } from '../../state/memberActions';
+import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import {
@@ -120,6 +123,13 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const [expanded, setExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
+  // Share is a choice now: a person here, or somewhere else entirely.
+  const [shareOpen, setShareOpen] = useState(false);
+  // The three dots: everything you can do to a post that isn't a reaction.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const { openActions } = useMemberActions();
   const lastTap = useRef(0);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
@@ -219,6 +229,15 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }
   }, [post, remove, close, toast]);
 
+  const memberForActions = {
+    id: post?.author.id ?? 0,
+    name: post?.author.name ?? 'Member',
+    age: undefined,
+    connected: !!post?.author.crush?.mutual,
+    context: `post:${post?.id ?? 0}`,
+    onGone: () => close(),
+  };
+
   const whisper = useCallback(async () => {
     if (!post) return;
     try {
@@ -228,6 +247,18 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       toast({ kind: 'error', title: 'Couldn’t open your Whisper', message: (e as Error).message });
     }
   }, [post, openWhisper, navigation, toast]);
+
+  /** The words, on the clipboard — the commonest reason to want a menu here. */
+  const copyWords = useCallback(async () => {
+    if (!post) return;
+    try {
+      const Clipboard = await import('expo-clipboard');
+      await Clipboard.setStringAsync(post.body || `${authorName} on Crushly`);
+      toast({ kind: 'success', title: 'Copied', message: 'The words are on your clipboard.' });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t copy', message: (e as Error).message });
+    }
+  }, [post, authorName, toast]);
 
   const share = useCallback(async () => {
     if (!post) return;
@@ -348,9 +379,11 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             {post.audience === 'everyone' ? 'Everyone' : 'Your connections'}
           </Txt>
         </View>
-        {post.mine ? (
-          <IconButton icon="trash-outline" label="Delete post" variant="glass" onPress={deletePost} />
-        ) : null}
+        {/* The three dots are for every post, not only your own: keeping a post,
+            sending it to somebody, reporting it and deleting it all live here.
+            Delete used to be the only thing in this corner, which meant the one
+            destructive action in the app was also the easiest one to hit. */}
+        <IconButton icon="ellipsis-horizontal" label="More for this post" variant="glass" onPress={() => setMoreOpen(true)} />
       </View>
 
       {/* ----------------------------------------------------------- the rail */}
@@ -387,7 +420,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           count={post.saved ? 'Kept' : 'Keep'}
           onPress={toggleKeep}
         />
-        <RailAction icon="arrow-redo-outline" label="Share this post" count="Share" onPress={share} />
+        <RailAction icon="arrow-redo-outline" label="Share this post" count="Share" onPress={() => setShareOpen(true)} />
       </View>
 
       {/* -------------------------------------------------------- the caption */}
@@ -548,6 +581,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       </View>
 
       {/* ------------------------------------------------- reaction picker */}
+      <ShareToWhisper visible={shareOpen} post={post} onClose={() => setShareOpen(false)} />
+
+      <EditPostSheet post={post} visible={editOpen} onClose={() => setEditOpen(false)} />
+
       <BottomSheet
         visible={reactionsOpen}
         onClose={() => setReactionsOpen(false)}
@@ -583,6 +620,93 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           })}
         </View>
       </BottomSheet>
+
+
+      {/* ------------------------------------------------------- the dots menu */}
+      <BottomSheet
+        visible={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        title="This post"
+        subtitle={post.mine ? 'You wrote this one.' : `By ${authorName}`}
+      >
+        <View style={{ paddingHorizontal: space.md, paddingBottom: space.lg }}>
+          <SheetRow
+            icon="paper-plane-outline"
+            label="Send to a Whisper"
+            hint="Pick the person it’s for"
+            onPress={() => {
+              setMoreOpen(false);
+              setShareOpen(true);
+            }}
+          />
+          <SheetRow
+            icon={post.saved ? 'bookmark' : 'bookmark-outline'}
+            label={post.saved ? 'Let it go' : 'Keep for later'}
+            hint={post.saved ? 'It leaves your kept posts' : 'Only you can see what you keep'}
+            onPress={() => {
+              setMoreOpen(false);
+              void toggleKeep();
+            }}
+          />
+          {post.body ? (
+            <SheetRow icon="copy-outline" label="Copy the words" onPress={() => { setMoreOpen(false); void copyWords(); }} />
+          ) : null}
+          <SheetRow
+            icon="share-social-outline"
+            label="Share outside Crushly"
+            onPress={() => {
+              setMoreOpen(false);
+              void share();
+            }}
+          />
+          {post.mine ? (
+            <SheetRow
+              icon="create-outline"
+              label="Edit the words"
+              hint="Reword it, or change who can see it"
+              onPress={() => {
+                setMoreOpen(false);
+                setEditOpen(true);
+              }}
+            />
+          ) : null}
+          {post.mine ? (
+            <SheetRow
+              icon="trash-outline"
+              label="Delete this post"
+              hint="It goes for everyone, right away"
+              destructive
+              onPress={() => {
+                setMoreOpen(false);
+                setConfirmDelete(true);
+              }}
+            />
+          ) : (
+            <SheetRow
+              icon="flag-outline"
+              label={`Report or block ${authorName}`}
+              onPress={() => {
+                setMoreOpen(false);
+                openActions(memberForActions);
+              }}
+            />
+          )}
+        </View>
+      </BottomSheet>
+
+      {/* Delete asks once, from the dots menu, rather than firing on a tap. */}
+      <ConfirmSheet
+        visible={confirmDelete}
+        title="Delete this post?"
+        message="It disappears for everyone, right away. This can’t be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          setConfirmDelete(false);
+          void deletePost();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
 
       {/* ---------------------------------------------------- the comment sheet */}
       <BottomSheet
@@ -717,6 +841,58 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
  * reader's own reaction, which was the same fact the filled heart was already
  * telling them, in a size too small to read.
  */
+
+/**
+ * One line in the dots menu.
+ *
+ * A row, not a button: an icon, a name, and at most one line about what happens
+ * next. Every action here is undoable or asks first, so nothing needs to shout.
+ */
+function SheetRow({
+  icon,
+  label,
+  hint,
+  destructive,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  hint?: string;
+  destructive?: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  const tint = destructive ? colors.danger : colors.text;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={hint ? `${label}. ${hint}` : label}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        paddingVertical: 14,
+        paddingHorizontal: 4,
+        borderRadius: radius.md,
+        backgroundColor: pressed ? colors.elevated : 'transparent',
+      })}
+    >
+      <Ionicons name={icon} size={20} color={destructive ? colors.danger : colors.textSecondary} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Txt variant="bodyStrong" color={destructive ? 'danger' : 'text'} numberOfLines={1}>
+          {label}
+        </Txt>
+        {hint ? (
+          <Txt variant="caption" color="textMuted" numberOfLines={1}>
+            {hint}
+          </Txt>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
 function RailAction({
   icon,
   label,

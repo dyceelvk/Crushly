@@ -4,21 +4,25 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
-import { Photo, OnlineDot } from '../../components/Photo';
+import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
+import { Segmented } from '../../components/Segmented';
 import { Pill, VerifiedBadge } from '../../components/Badges';
-import { ErrorState, Skeleton } from '../../components/States';
+import { ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useOpenConversation, useUndoCrush, useUser } from '../../api/hooks';
-import type { FullProfile } from '../../api/types';
+import { useOpenConversation, useSpacePosts, useSpaceVibes, useUndoCrush, useUser } from '../../api/hooks';
+import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { useTheme } from '../../theme/ThemeProvider';
+import { MomentPreview } from '../moments/Moments';
+import { PostCard } from '../flow/Flow';
+import type { Post, Vibe } from '../../api/types';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
 import { timeAgo } from '../../lib/format';
@@ -66,6 +70,14 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   const keepClose = useKeepClose();
   const letGo = useLetGo();
   const [index, setIndex] = useState(0);
+  /**
+   * A Space is three things now: what they've posted, the Vibes still running,
+   * and their Moments. It used to be one long page of facts about a person with
+   * nothing they had actually made on it.
+   */
+  const [tab, setTab] = useState<'posts' | 'vibes' | 'moments'>('posts');
+  const posts = useSpacePosts(id);
+  const vibes = useSpaceVibes(id);
 
   const heroW = Math.min(width, contentWidth);
   const heroH = Math.min(heroW * 1.22, 640);
@@ -162,27 +174,29 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               </Txt>
               {p.verified ? <VerifiedBadge size={24} /> : null}
               {p.moments.length > 0 && (
-                // One entry point, beside the name it belongs to. There used to be a
-                // second, floating at the bottom-left of the hero, which landed on
-                // top of the name and the @handle line.
+                /*
+                 * The ring around the face is the way into their Moments — the
+                 * shape everybody already knows from every other app, and the
+                 * one thing on this hero that says "there is something new".
+                 * It used to be a speech bubble, which said "message them".
+                 */
                 <Pressable
                   onPress={() => navigation.navigate('MomentViewer', { userId: p.id })}
-                  accessibilityLabel={`View ${p.name}'s Moments`}
+                  accessibilityLabel={`View ${p.name}’s ${p.moments.length === 1 ? 'Moment' : 'Moments'}`}
                   accessibilityRole="button"
-                  hitSlop={8}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: 'rgba(0,0,0,0.6)',
-                    borderWidth: 2,
-                    borderColor: '#fff',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginLeft: 8,
-                  }}
+                  hitSlop={10}
+                  style={{ marginLeft: 6 }}
                 >
-                  <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
+                  <LinearGradient
+                    colors={[colors.gold, colors.crush, colors.goldDeep]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+                      <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={32} />
+                    </View>
+                  </LinearGradient>
                 </Pressable>
               )}
             </View>
@@ -245,6 +259,54 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               </Txt>
             </View>
           ) : null}
+
+          {/*
+            Three tabs, and the ring above them is the shortcut everyone
+            already knows: face ring → Moments. The identity facts (about,
+            looking for, interests) sit under the content, because what someone
+            has made is the reason to be on this page.
+          */}
+          <View style={{ marginTop: space.lg }}>
+            <Segmented<'posts' | 'vibes' | 'moments'>
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'posts', label: 'Posts', count: posts.data?.items.length ?? undefined },
+                { value: 'vibes', label: 'Vibes', count: vibes.data?.items.length ?? undefined },
+                { value: 'moments', label: 'Moments', count: p.moments.length || undefined },
+              ]}
+            />
+          </View>
+
+          <View style={{ marginTop: space.md }}>
+            {tab === 'posts' ? (
+              <SpacePosts
+                items={posts.data?.items ?? []}
+                loading={posts.isLoading}
+                failed={posts.isError}
+                name={p.name}
+                onRetry={() => void posts.refetch()}
+              />
+            ) : null}
+            {tab === 'vibes' ? (
+              <SpaceVibes
+                items={vibes.data?.items ?? []}
+                loading={vibes.isLoading}
+                failed={vibes.isError}
+                name={p.name}
+                onOpen={(id) => navigation.navigate('VibeViewer', { id })}
+                onRetry={() => void vibes.refetch()}
+                gutter={gutter}
+              />
+            ) : null}
+            {tab === 'moments' ? (
+              <SpaceMoments
+                moments={p.moments}
+                name={p.name}
+                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id })}
+              />
+            ) : null}
+          </View>
 
           {p.bio ? (
             <Section title={`About ${p.name}`}>
@@ -322,6 +384,173 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />
         </View>
       </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------- the three panels */
+
+/** What they've posted, in the same card the Flow uses. */
+function SpacePosts({
+  items,
+  loading,
+  failed,
+  name,
+  onRetry,
+}: {
+  items: Post[];
+  loading: boolean;
+  failed: boolean;
+  name: string;
+  onRetry: () => void;
+}) {
+  const { colors } = useTheme();
+  if (loading) {
+    return (
+      <View style={{ gap: space.md }}>
+        <Skeleton style={{ height: 260, borderRadius: radius.lg }} />
+        <Skeleton style={{ height: 180, borderRadius: radius.lg }} />
+      </View>
+    );
+  }
+  if (failed) {
+    return (
+      <EmptyState
+        icon="cloud-offline-outline"
+        title="Couldn’t load their posts"
+        message="This is usually the connection, not the post."
+        action={{ label: 'Try again', onPress: onRetry }}
+      />
+    );
+  }
+  if (!items.length) {
+    return (
+      <EmptyState
+        icon="document-text-outline"
+        title="Nothing posted yet"
+        message={`${name} hasn’t shared anything on the Flow.`}
+      />
+    );
+  }
+  return (
+    <View style={{ gap: space.md }}>
+      {items.map((post) => (
+        <View key={post.id} style={{ borderTopWidth: 0, borderColor: colors.border }}>
+          {/* `secondPerson={false}`: this is a list of somebody else's posts, so
+              "You" would be a lie about who wrote them. */}
+          <PostCard post={post} secondPerson={false} active={false} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** The Vibes they still have running, as tiles — the shape a clip wants. */
+function SpaceVibes({
+  items,
+  loading,
+  failed,
+  name,
+  onOpen,
+  onRetry,
+  gutter,
+}: {
+  items: Vibe[];
+  loading: boolean;
+  failed: boolean;
+  name: string;
+  onOpen: (id: number) => void;
+  onRetry: () => void;
+  gutter: number;
+}) {
+  const { colors } = useTheme();
+  const { contentWidth } = useLayout();
+  const cols = 3;
+  const gap = 6;
+  const w = (contentWidth - gutter * 2 - gap * (cols - 1)) / cols;
+  if (loading) {
+    return (
+      <View style={{ flexDirection: 'row', gap }}>
+        {Array.from({ length: cols }).map((_, i) => (
+          <Skeleton key={i} style={{ width: w, height: w * 1.5, borderRadius: radius.md }} />
+        ))}
+      </View>
+    );
+  }
+  if (failed) {
+    return <EmptyState icon="cloud-offline-outline" title="Couldn’t load their Vibes" message="Try again in a moment." action={{ label: 'Try again', onPress: onRetry }} />;
+  }
+  if (!items.length) {
+    return <EmptyState icon="videocam-outline" title="No Vibes running" message={`${name} has no clip up right now. Vibes last a day.`} />;
+  }
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
+      {items.map((v) => (
+        <Pressable
+          key={v.id}
+          onPress={() => onOpen(v.id)}
+          accessibilityRole="button"
+          accessibilityLabel={`Play ${name}’s Vibe${v.body ? `: ${v.body}` : ''}`}
+          style={({ pressed }) => ({ width: w, opacity: pressed ? 0.85 : 1 })}
+        >
+          <View style={{ width: w, height: w * 1.5, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.card }}>
+            {v.coverUrl ? (
+              <Photo uri={v.coverUrl} style={{ width: '100%', height: '100%' }} alt="" />
+            ) : (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="videocam-outline" size={20} color={colors.textMuted} />
+              </View>
+            )}
+            <View style={{ position: 'absolute', right: 6, bottom: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="play" size={11} color="#fff" />
+            </View>
+            {v.body ? (
+              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 6 }}>
+                <Txt variant="caption" color="#FFFFFF" numberOfLines={2}>
+                  {v.body}
+                </Txt>
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/** Their Moments, in the same pebble grid the Moments tab uses. */
+function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; name: string; onOpen: () => void }) {
+  const { colors } = useTheme();
+  const { contentWidth, gutter } = useLayout();
+  const cols = 3;
+  const gap = 10;
+  const w = (contentWidth - gutter * 2 - gap * (cols - 1)) / cols;
+  if (!moments.length) {
+    return <EmptyState icon="aperture-outline" title="No Moments right now" message={`${name} hasn’t shared a glimpse today. They disappear after 24 hours.`} />;
+  }
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
+      {moments.map((m) => (
+        <Pressable
+          key={m.id}
+          onPress={onOpen}
+          accessibilityRole="button"
+          accessibilityLabel={`Play ${name}’s Moment${m.body ? `: ${m.body}` : ''}`}
+          style={({ pressed }) => ({ width: w, opacity: pressed ? 0.85 : 1 })}
+        >
+          <View style={{ width: w, height: w * 1.35, borderRadius: w * 0.3, overflow: 'hidden', borderWidth: 1.5, borderColor: colors.goldLine, padding: 2 }}>
+            <View style={{ flex: 1, borderRadius: w * 0.3 - 3, overflow: 'hidden', backgroundColor: colors.card }}>
+              <MomentPreview
+                moment={m as unknown as Parameters<typeof MomentPreview>[0]['moment']}
+                style={{ width: '100%', height: '100%' }}
+                caption={m.kind !== 'photo'}
+                textSize={Math.max(9, w / 11)}
+                lines={3}
+              />
+            </View>
+          </View>
+        </Pressable>
+      ))}
     </View>
   );
 }

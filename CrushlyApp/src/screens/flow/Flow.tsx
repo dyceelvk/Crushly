@@ -14,6 +14,7 @@ import { Button } from '../../components/Button';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { BottomSheet } from '../../components/BottomSheet';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
+import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/Toast';
@@ -303,13 +304,8 @@ export function PostCard({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const like = useReactToPost();
 
-  const share = async () => {
-    try {
-      await Share.share({ message: p.body ? `${p.body}\n\n— ${authorName} on Crushly` : `${authorName} on Crushly` });
-    } catch {
-      // Backing out of a share sheet is not a failure worth reporting.
-    }
-  };
+  // A post leaves the feed two ways now: into a Whisper, or out of the app.
+  const [shareOpen, setShareOpen] = useState(false);
 
   // The file's real shape, once it reports one. Starts at 4:5 — the commonest
   // portrait photo — so the space is held open and the feed does not jump when
@@ -450,8 +446,10 @@ export function PostCard({
           onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
         />
         <View style={{ flex: 1 }} />
-        <PostAction icon="share-social-outline" label="Share this post" onPress={share} />
+        <PostAction icon="share-social-outline" label="Share this post" onPress={() => setShareOpen(true)} />
       </View>
+
+      <ShareToWhisper visible={shareOpen} post={p} onClose={() => setShareOpen(false)} />
 
       {!p.mine && p.author.crush?.mutual ? (
         <Pressable

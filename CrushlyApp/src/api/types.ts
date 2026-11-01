@@ -260,7 +260,7 @@ export type CrushesResponse = { incoming: Profile[]; outgoing: Profile[]; mutual
 
 export type Peer = { id: number; name: string; verified: boolean; photo: string | null; online: boolean | null };
 
-export type MessageKind = 'text' | 'photo' | 'voice' | 'video' | 'call' | 'sticker' | 'profile' | 'moment_reply';
+export type MessageKind = 'text' | 'photo' | 'voice' | 'video' | 'call' | 'sticker' | 'profile' | 'post' | 'moment_reply';
 
 export type Message = {
   id: number;

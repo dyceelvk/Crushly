@@ -70,7 +70,8 @@ const Stack = createNativeStackNavigator();
 /** Routes a screen under test is allowed to reach. Registered so a wrong name
  *  fails loudly in the harness instead of only in production. */
 const REACHABLE = [
-  'PostViewer', 'VibeViewer', 'VibeComposer', 'Moments', 'UserProfile', 'Search', 'Discover',
+  'PostViewer', 'VibeViewer', 'VibeComposer', 'Moments', 'MomentViewer', 'MomentComposer',
+  'Circle', 'Verification', 'Main', 'UserProfile', 'Search', 'Discover',
   'Notifications', 'MutualCrush', 'Chat', 'Messages', 'EditProfile', 'Settings', 'Filters',
   'Privacy', 'Safety', 'BlockedUsers', 'Account', 'Appearance', 'Info', 'Plus',
   'NotificationSettings', 'Crushes', 'Circles', 'CloseOnes', 'Flow', 'ProfileTab',
@@ -147,6 +148,8 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   settings: SettingsScreen,
   viewer: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 102 } } as any} navigation={p.navigation} />,
   viewerportrait: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 103 } } as any} navigation={p.navigation} />,
+  // Your own post: the dots menu offers Edit and Delete, not Report.
+  viewermine: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 101 } } as any} navigation={p.navigation} />,
   intentions: OnboardingIntentionsScreen,
   basics: OnboardingBasicsScreen,
   photos: OnboardingPhotosScreen,

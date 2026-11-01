@@ -38,6 +38,7 @@ export type SendDraft =
   | ({ kind: 'text'; body: string } & ReplyTo)
   | ({ kind: 'sticker'; sticker: string } & ReplyTo)
   | ({ kind: 'profile'; profileId: number } & ReplyTo)
+  | ({ kind: 'post'; postId: number } & ReplyTo)
   | ({ kind: 'photo'; uri: string; mimeType?: string; caption?: string } & ReplyTo)
   | ({ kind: 'voice'; uri: string; duration: number; mimeType?: string } & ReplyTo)
   | ({ kind: 'video'; uri: string; duration: number; mimeType?: string } & ReplyTo)
@@ -463,6 +464,23 @@ export async function deletePostComment(commentId: number): Promise<void> {
 
 /* ------------------------------------------------------- keep close, circles */
 
+/**
+ * Rewrite your own post. Words and audience only — the media is the file you
+ * chose, and changing it would be a different post.
+ */
+export async function editPost(input: {
+  postId: number;
+  body?: string;
+  audience?: 'everyone' | 'connections';
+}): Promise<Post> {
+  return rpc<Post>('edit_post', {
+    p_post_id: input.postId,
+    p_body: input.body ?? null,
+    p_audience: input.audience ?? null,
+    p_edit: null,
+  });
+}
+
 export async function keepState(memberId: number): Promise<KeepState> {
   return rpc<KeepState>('keep_state', { p_member_id: memberId });
 }
@@ -478,6 +496,23 @@ export async function letGo(memberId: number): Promise<void> {
 
 export async function closeOnes(limit = 50): Promise<{ items: CloseOne[] }> {
   const page = await rpc<{ items: CloseOne[] }>('close_ones', { p_limit: limit });
+  return { items: page?.items ?? [] };
+}
+
+/**
+ * What one member has posted, and the Vibes they still have running.
+ *
+ * These two RPCs already existed in the database (`space_posts` / `space_vibes`)
+ * and nothing on the client had ever called them, so a Space could show who
+ * somebody is and never what they had made.
+ */
+export async function spacePosts(authorId: number, limit = 20, after: number | null = null): Promise<{ items: Post[] }> {
+  const page = await rpc<{ items: Post[] }>('space_posts', { p_author_id: authorId, p_limit: limit, p_after: after });
+  return { items: page?.items ?? [] };
+}
+
+export async function spaceVibes(authorId: number, limit = 30, after: number | null = null): Promise<{ items: Vibe[] }> {
+  const page = await rpc<{ items: Vibe[] }>('space_vibes', { p_author_id: authorId, p_limit: limit, p_after: after });
   return { items: page?.items ?? [] };
 }
 
@@ -889,6 +924,9 @@ export async function sendMessage(conversationId: number, draft: SendDraft): Pro
     meta = { sticker: draft.sticker };
   } else if (draft.kind === 'profile') {
     meta = { profileId: draft.profileId };
+  } else if (draft.kind === 'post') {
+    // The server rebuilds the card from the row; the id is all it needs.
+    meta = { postId: draft.postId };
   } else if (draft.kind === 'photo') {
     const type = draft.mimeType || 'image/jpeg';
     body = str(draft.caption ?? '', 'Caption', { max: 300 });

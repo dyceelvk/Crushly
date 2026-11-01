@@ -10,6 +10,7 @@ import { VerifiedBadge } from './Badges';
 import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius } from '../theme/tokens';
+import { EditedClip } from './EditedClip';
 import type { Message, ReplyQuote } from '../api/types';
 import { mediaUrl } from '../api/client';
 import { mediaSource } from '../lib/mediaHost';
@@ -37,15 +38,17 @@ type Props = {
   onDoubleTap: (m: Message) => void;
   onOpenPhoto: (uri: string) => void;
   onOpenProfile: (id: number) => void;
+  /** A shared post opens the post itself. */
+  onOpenPost?: (id: number) => void;
   onRetry: (m: Message) => void;
   /** Tapping the quoted original — jumps back to it in the conversation. */
   onOpenReply?: (id: number) => void;
 };
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showSeen, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onRetry, onOpenReply }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showSeen, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onOpenPost, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
-  const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile';
+  const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile' || m.kind === 'post';
   const bg = m.mine ? colors.crushDeep : colors.card;
   const ink = m.mine ? '#FFFFFF' : colors.text;
 
@@ -59,6 +62,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
       lastTap.current = now;
       if (m.kind === 'photo' && m.mediaUrl) setTimeout(() => lastTap.current && onOpenPhoto(m.mediaUrl!), 290);
       if (m.kind === 'profile' && m.meta.profileId) onOpenProfile(m.meta.profileId);
+      if (m.kind === 'post' && m.meta.postId) onOpenPost?.(Number(m.meta.postId));
     }
   };
 
@@ -161,6 +165,9 @@ function BareContent({ m }: { m: Message }) {
   if (m.kind === 'video') {
     return <VideoNoteBubble m={m} />;
   }
+  if (m.kind === 'post') {
+    return <SharedPostBubble m={m} />;
+  }
   // shared profile
   return (
     <View style={{ width: 220, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldLine }}>
@@ -182,6 +189,70 @@ function BareContent({ m }: { m: Message }) {
       <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: 10, alignItems: 'center' }}>
         <Txt variant="smallStrong" color="gold">
           View Space
+        </Txt>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A post that was sent into a whisper.
+ *
+ * Small and square, on the side of whoever sent it — the shape a shared thing
+ * should be in a conversation: enough to see what it is, small enough that the
+ * words around it still have room. The card is only a door: tapping it opens the
+ * post, where reacting and commenting live.
+ */
+function SharedPostBubble({ m }: { m: Message }) {
+  const { colors } = useTheme();
+  const name = String(m.meta.name ?? 'Member');
+  const body = String(m.meta.body ?? '');
+  const media = typeof m.meta.mediaUrl === 'string' ? m.meta.mediaUrl : null;
+  const video = m.meta.mediaKind === 'video';
+  const mine = m.mine;
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        gap: 10,
+        padding: 8,
+        width: 246,
+        borderRadius: radius.lg,
+        backgroundColor: mine ? colors.crushDeep : colors.card,
+        borderWidth: 1,
+        borderColor: mine ? colors.crush : colors.border,
+      }}
+    >
+      {/* The picture, square: a clip gets its cover-less self with a play mark. */}
+      <View style={{ width: 72, height: 72, borderRadius: radius.sm, overflow: 'hidden', backgroundColor: '#000' }}>
+        {media && !video ? (
+          <Photo uri={media} fit="cover" style={{ width: 72, height: 72 }} alt="" />
+        ) : media && video ? (
+          <EditedClip uri={media} live={null} style={{ width: 72, height: 72 }} />
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.elevated }}>
+            <Ionicons name="document-text-outline" size={22} color={colors.textMuted} />
+          </View>
+        )}
+        {video ? (
+          <View style={{ position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="play" size={9} color="#fff" />
+          </View>
+        ) : null}
+      </View>
+
+      <View style={{ flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
+        <View style={{ gap: 2 }}>
+          <Txt variant="caption" color={mine ? '#FFFFFF' : 'gold'} numberOfLines={1} style={{ opacity: mine ? 0.8 : 1 }}>
+            {mine ? `You shared ${name}’s post` : `${name}’s post`}
+          </Txt>
+          <Txt variant="small" color={mine ? '#FFFFFF' : 'text'} numberOfLines={3}>
+            {body || (media ? (video ? 'A clip' : 'A photo') : 'A post')}
+          </Txt>
+        </View>
+        <Txt variant="caption" color={mine ? '#FFFFFF' : 'gold'} style={{ opacity: mine ? 0.8 : 1 }}>
+          Open post
         </Txt>
       </View>
     </View>
@@ -351,6 +422,8 @@ function describe(m: Message): string {
       return `${STICKERS.find((s) => s.key === m.meta.sticker)?.label ?? ''} sticker`;
     case 'profile':
       return `Shared ${m.meta.name}'s Space`;
+    case 'post':
+      return `Shared ${m.meta.name}’s post`;
     case 'moment_reply':
       return `Reply to Moment: ${m.body}`;
     default:

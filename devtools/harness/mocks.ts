@@ -317,6 +317,18 @@ export const threads: Record<number, { items: any[]; hasMore: boolean; lastReadM
       message(6, 1, 1, true, 'How long did you wait for the light?', now - 1000 * 60 * 7),
       message(7, 1, 1, true, 'I have never had the patience.', now - 1000 * 60 * 6),
       message(8, 1, 2, false, 'Six minutes. Then the sky did the rest.', now - 1000 * 60 * 5),
+      // A post sent into the whisper, from the other side: the card the
+      // recipient sees. Square picture, on their side, tappable.
+      message(9, 1, 2, false, '', now - 1000 * 60 * 4, {
+        kind: 'post',
+        meta: { postId: 102, authorId: 2, name: 'Ngozi', photo: `${MEDIA}/face2.jpg`, mediaUrl: `${MEDIA}/video-landscape.webm`, mediaKind: 'video', body: 'Shot this on the drive home. Landscape, because I forgot to turn the phone.' },
+      }),
+      // …and one from you, which is the sender's side of the same card.
+      message(10, 1, 1, true, '', now - 1000 * 60 * 3, {
+        kind: 'post',
+        readAt: now - 1000 * 60 * 2,
+        meta: { postId: 101, authorId: 1, name: 'Ada', photo: `${MEDIA}/face1.jpg`, mediaUrl: `${MEDIA}/scene1.jpg`, mediaKind: 'photo', body: 'Six months of building this thing and today it finally feels like a place rather than a product. Come see.' },
+      }),
     ],
     hasMore: false,
     lastReadMine: 5,
@@ -366,15 +378,23 @@ export async function mockRpc(fn: string, args: Record<string, any> = {}): Promi
     case 'send_message': {
       const thread = threads[Number(args.p_conversation_id)];
       const last = thread?.items[thread.items.length - 1];
-      return message(
-        (last?.id ?? 0) + 1,
-        Number(args.p_conversation_id),
-        1,
-        true,
-        String(args.p_body ?? ''),
-        Date.now(),
-        { kind: String(args.p_kind ?? 'text'), meta: args.p_meta ?? {}, readAt: null },
-      );
+      const kind = String(args.p_kind ?? 'text');
+      const meta = (args.p_meta ?? {}) as Record<string, any>;
+      if (kind === 'post') {
+        const shared = posts.find((p) => p.id === Number(meta.postId));
+        if (!shared) throw new Error('That post can’t be shared.');
+        const card = {
+          postId: shared.id,
+          authorId: shared.author.id,
+          name: shared.author.name,
+          photo: shared.author.photo,
+          mediaUrl: shared.mediaUrl,
+          mediaKind: shared.mediaKind,
+          body: shared.body,
+        };
+        return message((last?.id ?? 0) + 1, Number(args.p_conversation_id), 1, true, '', Date.now(), { kind: 'post', meta: card });
+      }
+      return message((last?.id ?? 0) + 1, Number(args.p_conversation_id), 1, true, String(args.p_body ?? ''), Date.now(), { kind });
     }
     case 'toggle_message_reaction':
       return { id: Number(args.p_message_id), reactions: [{ userId: 1, kind: String(args.p_kind ?? 'crush') }] };
@@ -387,6 +407,19 @@ export async function mockRpc(fn: string, args: Record<string, any> = {}): Promi
       // what was typed makes a screenshot that "proves" search returns the wrong
       // people — the failure mode this harness exists to avoid.
       return filterSearch(String(args.p_query ?? ''));
+    case 'space_posts':
+      return { items: posts.filter((p) => p.author.id === Number(args.p_author_id)) };
+    case 'space_vibes':
+      return { items: vibes.filter((v) => v.author.id === Number(args.p_author_id)) };
+    case 'edit_post': {
+      // Only the author, like the real function: the fixture's own post is 101.
+      const target = posts.find((p) => p.id === Number(args.p_post_id));
+      if (!target) throw new Error('That post is gone.');
+      if (!target.mine) throw new Error('This post isn’t yours to edit.');
+      if (typeof args.p_body === 'string') target.body = String(args.p_body);
+      if (args.p_audience === 'everyone' || args.p_audience === 'connections') target.audience = args.p_audience;
+      return target;
+    }
     case 'my_circles':
       return { items: circles };
     case 'circle_space':
@@ -557,7 +590,20 @@ export const mockEntries: [unknown[], unknown][] = [
   [['notifications'], { items: [], unread: 0 }],
   [['crushes'], { incoming: [person(5, 'Chidi', 'chidi'), person(6, 'Bisi', 'bisi')], outgoing: [person(7, 'Emeka', 'emeka')], mutual: [person(8, 'Kelechi', 'kelechi')] }],
   [['close-ones'], closeOnes],
-  [['user', 2], person(2, 'Ngozi', 'ngozi', { bio: 'Filmmaker. I make small films about big feelings.', verified: true, intentions: ['dating'], relationshipIntention: 'Long-term partner' })],
+  [['user', 2], person(2, 'Ngozi', 'ngozi', {
+    bio: 'Filmmaker. I make small films about big feelings.',
+    verified: true,
+    intentions: ['dating'],
+    relationshipIntention: 'Long-term partner',
+    interests: ['Film photography', 'Afrobeats', 'Long drives'],
+    moments: [
+      { id: 1, kind: 'photo', body: 'Blue hour on Aba Road.', mediaUrl: `${MEDIA}/scene3.jpg`, style: 'champagne', edit: null, createdAt: now - 1000 * 60 * 90 },
+      { id: 2, kind: 'text', body: 'Six minutes of waiting.', mediaUrl: null, style: 'midnight', edit: null, createdAt: now - 1000 * 60 * 20 },
+      { id: 3, kind: 'video', body: 'Sound on.', mediaUrl: `${MEDIA}/video-portrait.webm`, style: 'champagne', edit: null, createdAt: now - 1000 * 60 * 200 },
+    ],
+  })],
+  [['space-posts', 2], { items: posts.filter((p: any) => p.author.id === 2) }],
+  [['space-vibes', 2], { items: vibes.filter((v: any) => v.author.id === 2) }],
   [['moments'], momentsFeed],
   [['badges'], { items: [], notifications: 2, messages: 0 }],
 ];

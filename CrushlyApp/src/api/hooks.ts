@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
+import type { SendDraft } from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
@@ -27,6 +28,8 @@ export const keys = {
   post: (id: number) => ['post', id] as const,
   postComments: (id: number) => ['post-comments', id] as const,
   closeOnes: ['close-ones'] as const,
+  spacePosts: (id: number) => ['space-posts', id] as const,
+  spaceVibes: (id: number) => ['space-vibes', id] as const,
   vibes: ['vibes'] as const,
   publicFlow: ['public-flow'] as const,
   update: ['app-update'] as const,
@@ -156,6 +159,38 @@ export const useCircleMessages = (circleId: number) =>
     staleTime: 3_000,
     refetchInterval: 8_000,
   });
+
+/** What this member has posted. The RPC has always existed; nothing called it. */
+export const useSpacePosts = (memberId: number) =>
+  useQuery({
+    queryKey: keys.spacePosts(memberId),
+    queryFn: () => service.spacePosts(memberId),
+    enabled: Number.isFinite(memberId),
+    staleTime: 20_000,
+  });
+
+/** The Vibes this member still has running. */
+export const useSpaceVibes = (memberId: number) =>
+  useQuery({
+    queryKey: keys.spaceVibes(memberId),
+    queryFn: () => service.spaceVibes(memberId),
+    enabled: Number.isFinite(memberId),
+    staleTime: 20_000,
+  });
+
+/** Rewriting your own post: the words, and who can see it. */
+export function useEditPost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { postId: number; body?: string; audience?: 'everyone' | 'connections' }) =>
+      service.editPost(input),
+    onSuccess: (post) => {
+      qc.setQueryData(keys.post(post.id), post);
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.publicFlow });
+    },
+  });
+}
 
 export const useCloseOnes = () =>
   useQuery({ queryKey: keys.closeOnes, queryFn: () => service.closeOnes(), staleTime: 30_000 });
@@ -733,6 +768,20 @@ const POLL_MS = 3000;
  * Conversation state: initial page, incremental polling for new messages,
  * paging back through history, and optimistic sends with retry.
  */
+/** Sends one message into a thread without mounting the thread — the share
+ *  sheet uses this, and so does anything else that posts on somebody's behalf. */
+export function useSendMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, draft }: { conversationId: number; draft: SendDraft }) =>
+      service.sendMessage(conversationId, draft),
+    onSuccess: (_m, v) => {
+      void qc.invalidateQueries({ queryKey: keys.conversation(v.conversationId) });
+      void qc.invalidateQueries({ queryKey: keys.conversations });
+    },
+  });
+}
+
 export function useChat(conversationId: number) {
   const qc = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);

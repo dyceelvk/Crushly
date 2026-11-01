@@ -297,6 +297,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   );
 
   const openProfile = useCallback((id: number) => navigation.navigate('UserProfile', { id }), [navigation]);
+  // A post shared into the thread is a door back to the post.
+  const openPost = useCallback((id: number) => navigation.navigate('PostViewer', { postId: id }), [navigation]);
 
   if (convError) {
     return (
@@ -448,6 +450,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       onDoubleTap={react}
                       onOpenPhoto={setViewer}
                       onOpenProfile={openProfile}
+                      onOpenPost={openPost}
                       onRetry={retry}
                       onOpenReply={jumpTo}
                     />
