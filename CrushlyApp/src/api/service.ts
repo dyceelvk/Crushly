@@ -541,6 +541,23 @@ export async function createCircle(input: {
   });
 }
 
+/** The owner's answer to what kind of room this is, and who may find it. */
+export async function setCircleLook(
+  circleId: number,
+  look: { theme?: string | null; visibility?: 'connections' | 'public' },
+): Promise<void> {
+  await rpc('set_circle_look', {
+    p_circle_id: circleId,
+    p_theme: look.theme ?? null,
+    p_visibility: look.visibility ?? 'connections',
+  });
+}
+
+/** The Circles on somebody's Space — public ones, and ones you share. */
+export async function memberCircles(memberId: number): Promise<{ items: CircleSummary[]; connected: boolean }> {
+  return rpc<{ items: CircleSummary[]; connected: boolean }>('member_circles', { p_member_id: memberId });
+}
+
 export async function renameCircle(circleId: number, name: string): Promise<void> {
   await rpc<boolean>('rename_circle', { p_circle_id: circleId, p_name: String(name ?? '').trim() });
 }

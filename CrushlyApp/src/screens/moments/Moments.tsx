@@ -235,7 +235,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
         <Txt variant="smallStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
           {group.user.name}
         </Txt>
-        {group.user.verified ? <VerifiedBadge size={12} /> : null}
+        <VerifiedBadge size={12} tier={group.user.badgeTier ?? (group.user.verified ? 'verified' : 'none')} />
       </View>
       <Txt variant="caption" color="textMuted" align="center">
         {timeAgo(latest.createdAt)}

@@ -14,6 +14,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
+import { KeepsYouChip } from '../../components/KeepsYouChip';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -292,15 +293,11 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
   const step = useCallback(
     (dir: 1 | -1) => {
+      // The ends are glued, not announced. A toast saying "that's the most
+      // recent" turns a swipe into a lecture; the reel simply stops, the way a
+      // physical reel does when it reaches the end.
       const target = dir === 1 ? nextPost : prevPost;
-      if (!target) {
-        toast({
-          kind: 'info',
-          title: dir === 1 ? 'That’s the most recent' : 'That’s the start of this page',
-          message: dir === 1 ? 'Nothing newer than this one, yet.' : 'Scroll your Flow to load what came before.',
-        });
-        return;
-      }
+      if (!target) return;
       // The same screen, showing the next post: the route is the only state, so
       // Back still leaves the viewer rather than walking the reel.
       navigation.setParams({ postId: target.id });
@@ -446,7 +443,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         <IconButton icon="close" label="Close" variant="glass" onPress={close} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Txt variant="caption" color="textMuted" style={{ letterSpacing: 1.4 }}>
-            {at >= 0 && reel.length ? `THE FLOW · ${at + 1} OF ${reel.length}` : 'THE FLOW'}
+            THE FLOW
           </Txt>
           <Txt variant="bodyStrong" numberOfLines={1}>
             {post.audience === 'everyone' ? 'Everyone' : 'Your connections'}
@@ -534,13 +531,16 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               <Txt variant="bodyStrong" numberOfLines={1}>
                 {authorName}
               </Txt>
-              {post.author.verified ? <VerifiedBadge size={13} /> : null}
+              <VerifiedBadge size={13} tier={post.author.badgeTier ?? (post.author.verified ? 'verified' : 'none')} />
             </View>
-            <Txt variant="caption" color="textMuted" numberOfLines={1}>
-              {[post.author.username ? `@${post.author.username}` : null, timeAgo(post.createdAt)]
-                .filter(Boolean)
-                .join(' · ')}
-            </Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                {[post.author.username ? `@${post.author.username}` : null, timeAgo(post.createdAt)]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Txt>
+              {post.author.keepsYou ? <KeepsYouChip /> : null}
+            </View>
           </View>
         </Pressable>
 

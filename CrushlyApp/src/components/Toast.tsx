@@ -6,9 +6,9 @@ import { Txt } from './Txt';
 import { Avatar } from './Photo';
 import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
+import { errorLine } from '../lib/errors';
 import { radius, space } from '../theme/tokens';
 import { haptic } from '../lib/haptics';
-import { errorLine } from '../lib/errors';
 
 type ToastKind = 'success' | 'error' | 'info' | 'crush';
 type ToastInput = { kind?: ToastKind; title: string; message?: string; avatar?: string | null; onPress?: () => void; duration?: number };
@@ -99,6 +99,8 @@ function ToastView({ toast, onDone }: { toast: ToastItem; onDone: () => void }) 
           </Txt>
           {toast.message ? (
             <Txt variant="small" color="textSecondary" numberOfLines={2}>
+              {/* Already through `errorLine` in the provider: a toast is the
+                  last place a stack trace should surface. */}
               {toast.message}
             </Txt>
           ) : null}

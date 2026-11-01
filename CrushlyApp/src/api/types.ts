@@ -22,6 +22,8 @@ export type CrushState = {
   mutual: boolean;
 };
 
+export type BadgeTier = 'none' | 'verified' | 'gold' | 'diamond';
+
 export type Profile = {
   id: number;
   name: string;
@@ -30,6 +32,13 @@ export type Profile = {
   pronouns: string | null;
   city: string | null;
   verified: boolean;
+  /**
+   * Which seal, when there is one. 'verified' is the ordinary badge; 'gold' is
+   * earned; 'diamond' belongs to the company's own account and to nothing else.
+   */
+  badgeTier?: BadgeTier;
+  /** Keep Close — Crushly's follow. True when they keep *you* close. */
+  keepsYou?: boolean;
   distance: string | null;
   online: boolean | null;
   activity: string | null;
@@ -126,6 +135,10 @@ export type Circle = {
   name: string;
   about: string;
   coverUrl: string | null;
+  /** What kind of room it is — a slug from `lib/circleThemes`, or the owner's words. */
+  theme?: string | null;
+  /** `public` means findable on the owner's Space. A Circle is never readable. */
+  visibility?: 'connections' | 'public';
   createdAt: number;
   ownerId: number;
   myRole: CircleRole;
@@ -308,7 +321,9 @@ export type Moment = MomentSummary & {
   reactions?: { kind: string; userId: number; name: string }[];
 };
 
-export type MomentAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
+export type MomentAuthor = {
+  id: number; name: string; verified: boolean; badgeTier?: BadgeTier; photo: string | null; mutual: boolean;
+};
 
 export type MomentGroup = { user: MomentAuthor; moments: Moment[]; hasUnseen: boolean; latestAt: number };
 

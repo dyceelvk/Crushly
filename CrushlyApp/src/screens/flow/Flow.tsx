@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { CircleStrip } from '../../components/CircleStrip';
 import { LinkText } from '../../components/LinkText';
+import { KeepsYouChip } from '../../components/KeepsYouChip';
 import { Rise } from '../../components/Rise';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -349,11 +350,14 @@ export function PostCard({
               <Txt variant="bodyStrong" numberOfLines={1}>
                 {authorName}
               </Txt>
-              {p.author.verified ? <VerifiedBadge size={14} /> : null}
+              <VerifiedBadge size={14} tier={p.author.badgeTier ?? (p.author.verified ? 'verified' : 'none')} />
             </View>
-            <Txt variant="caption" color="textMuted" numberOfLines={1}>
-              {[p.author.username ? `@${p.author.username}` : null, timeAgo(p.createdAt)].filter(Boolean).join(' · ')}
-            </Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                {[p.author.username ? `@${p.author.username}` : null, timeAgo(p.createdAt)].filter(Boolean).join(' · ')}
+              </Txt>
+              {p.author.keepsYou ? <KeepsYouChip /> : null}
+            </View>
           </View>
         </Pressable>
         <Pill label={p.audience === 'everyone' ? 'Everyone' : 'Connections'} tone={p.audience === 'everyone' ? 'open' : 'quiet'} />
@@ -634,9 +638,12 @@ function CommentRow({ comment: c, onDelete }: { comment: PostComment; onDelete: 
     >
       <Avatar uri={c.author.photos[0]?.url ?? null} name={c.author.name} size={32} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="caption" color="textMuted">
-          {c.mine ? 'You' : c.author.name} · {timeAgo(c.createdAt)}
-        </Txt>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Txt variant="caption" color="textMuted">
+            {c.mine ? 'You' : c.author.name} · {timeAgo(c.createdAt)}
+          </Txt>
+          {c.author.keepsYou ? <KeepsYouChip compact /> : null}
+        </View>
         <Txt variant="body" selectable>
           {c.body}
         </Txt>

@@ -566,7 +566,21 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                   {text.trim() ? (
                     <IconButton icon="arrow-up" variant="crush" label="Send Whisper" onPress={sendText} color={colors.crush} />
                   ) : (
-                    <IconButton icon="mic-outline" label="Record a voice note" onPress={startRecording} />
+                    <>
+                      {/* The camera is two tools in one control: a tap takes a
+                          photo, a hold records a video note. Both were already
+                          in the composer — one behind a tray, one behind a menu
+                          — which is a lot of reaching for the two things a
+                          Whisper is most often made of. */}
+                      <IconButton
+                        icon="camera-outline"
+                        label="Camera — tap for a photo, hold for a video note"
+                        onPress={() => void sendPhoto(true)}
+                        onLongPress={() => void sendVideoNote()}
+                        disabled={recording || callState !== 'idle'}
+                      />
+                      <IconButton icon="mic-outline" label="Record a voice note" onPress={startRecording} />
+                    </>
                   )}
                 </>
               )}

@@ -502,6 +502,15 @@ export function useLetGo() {
   });
 }
 
+/** The Circles on somebody's Space. Keyed by member, not by circle. */
+export const useMemberCircles = (memberId: number | null) =>
+  useQuery({
+    queryKey: ['member-circles', memberId],
+    queryFn: () => service.memberCircles(memberId as number),
+    enabled: memberId !== null,
+    staleTime: 30_000,
+  });
+
 export function useCreateCircle() {
   const qc = useQueryClient();
   return useMutation({

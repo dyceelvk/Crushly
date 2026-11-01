@@ -8,6 +8,12 @@ import { HIT } from '../theme/tokens';
 type Props = {
   icon: keyof typeof Ionicons.glyphMap;
   onPress?: () => void;
+  /**
+   * The same control, held. Used where one button is two tools — a camera that
+   * takes a photo when tapped and a video note when held — so the second action
+   * costs no extra chrome on a screen that is already busy.
+   */
+  onLongPress?: () => void;
   /** Required: icon-only controls must be described for screen readers. */
   label: string;
   variant?: 'plain' | 'surface' | 'glass' | 'gold' | 'crush';
@@ -20,7 +26,7 @@ type Props = {
   children?: React.ReactNode;
 };
 
-export function IconButton({ icon, onPress, label, variant = 'surface', size = HIT, iconSize, color, badge, disabled, style, children }: Props) {
+export function IconButton({ icon, onPress, onLongPress, label, variant = 'surface', size = HIT, iconSize, color, badge, disabled, style, children }: Props) {
   const { colors } = useTheme();
   const bg = {
     plain: 'transparent',
@@ -33,6 +39,7 @@ export function IconButton({ icon, onPress, label, variant = 'surface', size = H
   return (
     <PressableScale
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={disabled}
       accessibilityLabel={label}
       hitSlop={size < HIT ? (HIT - size) / 2 : undefined}

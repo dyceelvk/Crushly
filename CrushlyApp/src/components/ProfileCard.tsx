@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { Pressable, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import type { Profile } from '../api/types';
+import type { BadgeTier, Profile } from '../api/types';
 import { Photo, OnlineDot } from './Photo';
 import { Txt } from './Txt';
 import { VerifiedBadge, Pill } from './Badges';
@@ -14,7 +14,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
 import { intentionLabel } from '../lib/catalog';
 
-export function NameLine({ profile, size = 'lg', light }: { profile: Pick<Profile, 'name' | 'age' | 'verified'>; size?: 'lg' | 'md' | 'sm'; light?: boolean }) {
+export function NameLine({ profile, size = 'lg', light }: { profile: Pick<Profile, 'name' | 'age' | 'verified'> & { badgeTier?: BadgeTier }; size?: 'lg' | 'md' | 'sm'; light?: boolean }) {
   const variant = size === 'lg' ? 'display' : size === 'md' ? 'heading' : 'bodyStrong';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
@@ -22,7 +22,10 @@ export function NameLine({ profile, size = 'lg', light }: { profile: Pick<Profil
         {profile.name}
         {profile.age ? <Txt variant={variant} color={light ? 'rgba(255,255,255,0.86)' : 'textSecondary'} style={{ fontFamily: size === 'lg' ? undefined : undefined }}>{`, ${profile.age}`}</Txt> : null}
       </Txt>
-      {profile.verified ? <VerifiedBadge size={size === 'lg' ? 22 : size === 'md' ? 18 : 15} /> : null}
+      <VerifiedBadge
+        size={size === 'lg' ? 22 : size === 'md' ? 18 : 15}
+        tier={'badgeTier' in profile && profile.badgeTier ? profile.badgeTier : profile.verified ? 'verified' : 'none'}
+      />
     </View>
   );
 }

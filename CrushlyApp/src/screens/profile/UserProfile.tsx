@@ -10,8 +10,12 @@ import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { Segmented } from '../../components/Segmented';
+import { BlurView } from 'expo-blur';
+import { useMemberCircles } from '../../api/hooks';
+import { resolveTheme } from '../../lib/circleThemes';
+import { ThemeTile } from '../../components/ThemePicker';
 import { Pill, VerifiedBadge } from '../../components/Badges';
-import { ErrorState, Skeleton, EmptyState } from '../../components/States';
+import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { useOpenConversation, useSpacePosts, useSpaceVibes, useUndoCrush, useUser } from '../../api/hooks';
@@ -78,7 +82,12 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
    * and their Moments. It used to be one long page of facts about a person with
    * nothing they had actually made on it.
    */
-  const [tab, setTab] = useState<'posts' | 'vibes' | 'moments'>('posts');
+  // Flow, Vibes, Moments, Circles — everything somebody has made or joined, in
+  // the vocabulary the product uses everywhere else. It used to say "Posts",
+  // which is a hashtag's word for a Flow.
+  const [tab, setTab] = useState<'flow' | 'vibes' | 'moments' | 'circles'>('flow');
+  // The Circles this member made public, and the ones you share with them.
+  const circles = useMemberCircles(p?.id ?? null);
   const posts = useSpacePosts(id);
   const vibes = useSpaceVibes(id);
 
@@ -157,6 +166,15 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             ))}
           </ScrollView>
           <LinearGradient colors={['rgba(7,7,8,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 120 }} pointerEvents="none" />
+          {/* The bottom of the cover blurs and fades into the page — the picture
+              ends, the person's name begins, and no hard edge is asked to do
+              that job on its own. */}
+          <BlurView
+            intensity={26}
+            tint="dark"
+            pointerEvents="none"
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '42%' }}
+          />
           <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.75, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} pointerEvents="none" />
           <View style={{ position: 'absolute', top: insets.top + space.sm, left: gutter, right: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <IconButton icon="chevron-back" variant="glass" label="Go back" onPress={() => navigation.goBack()} />
@@ -175,34 +193,6 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
               {p.crush.mutual ? <Pill tone="glass" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
               {keep.data?.keepsYou ? <Pill tone="glass" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} /> : null}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {p.moments.length > 0 && (
-                /*
-                 * The ring around the face is the way into their Moments — the
-                 * shape everybody already knows from every other app, and the
-                 * one thing on this hero that says "there is something new".
-                 * It used to be a speech bubble, which said "message them".
-                 */
-                <Pressable
-                  onPress={() => navigation.navigate('MomentViewer', { userId: p.id })}
-                  accessibilityLabel={`View ${p.name}’s ${p.moments.length === 1 ? 'Moment' : 'Moments'}`}
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  style={{ marginLeft: 6 }}
-                >
-                  <LinearGradient
-                    colors={[colors.gold, colors.crush, colors.goldDeep]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-                      <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={32} />
-                    </View>
-                  </LinearGradient>
-                </Pressable>
-              )}
             </View>
           </View>
         </View>
@@ -240,7 +230,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                   {p.name}
                   {p.age ? <Txt variant="title" color="textSecondary">{`, ${p.age}`}</Txt> : null}
                 </Txt>
-                {p.verified ? <VerifiedBadge size={18} /> : null}
+                <VerifiedBadge size={18} tier={p.badgeTier ?? (p.verified ? 'verified' : 'none')} />
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 <Pressable
@@ -308,49 +298,12 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             looking for, interests) sit under the content, because what someone
             has made is the reason to be on this page.
           */}
-          <View style={{ marginTop: space.lg }}>
-            <Segmented<'posts' | 'vibes' | 'moments'>
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'posts', label: 'Posts', count: posts.data?.items.length ?? undefined },
-                { value: 'vibes', label: 'Vibes', count: vibes.data?.items.length ?? undefined },
-                { value: 'moments', label: 'Moments', count: p.moments.length || undefined },
-              ]}
-            />
-          </View>
-
-          <View style={{ marginTop: space.md }}>
-            {tab === 'posts' ? (
-              <SpacePosts
-                items={posts.data?.items ?? []}
-                loading={posts.isLoading}
-                failed={posts.isError}
-                name={p.name}
-                onRetry={() => void posts.refetch()}
-              />
-            ) : null}
-            {tab === 'vibes' ? (
-              <SpaceVibes
-                items={vibes.data?.items ?? []}
-                loading={vibes.isLoading}
-                failed={vibes.isError}
-                name={p.name}
-                onOpen={(id) => navigation.navigate('VibeViewer', { id })}
-                onRetry={() => void vibes.refetch()}
-                gutter={gutter}
-              />
-            ) : null}
-            {tab === 'moments' ? (
-              <SpaceMoments
-                moments={p.moments}
-                name={p.name}
-                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id })}
-              />
-            ) : null}
-          </View>
-
-          {p.bio ? (
+          {/* Who they are, before what they made: the cover, then the words
+              about them, then their work. The facts used to sit under three
+              tabs' worth of content, which meant a visitor read everything
+              somebody posted before learning one thing about them. */}
+          <View style={{ marginTop: space.lg, gap: space.md }}>
+                      {p.bio ? (
             <Section title={`About ${p.name}`}>
               <Txt variant="body">
                 {p.bio}
@@ -383,6 +336,53 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               ) : null}
             </Section>
           ) : null}
+          </View>
+
+          <View style={{ marginTop: space.lg }}>
+            <Segmented<'flow' | 'vibes' | 'moments' | 'circles'>
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'flow', label: 'Flow', count: posts.data?.items.length ?? undefined },
+                { value: 'vibes', label: 'Vibes', count: vibes.data?.items.length ?? undefined },
+                { value: 'moments', label: 'Moments', count: p.moments.length || undefined },
+                { value: 'circles', label: 'Circles', count: circles.data?.items.length || undefined },
+              ]}
+            />
+          </View>
+
+          <View style={{ marginTop: space.md }}>
+            {tab === 'flow' ? (
+              <SpacePosts
+                items={posts.data?.items ?? []}
+                loading={posts.isLoading}
+                failed={posts.isError}
+                name={p.name}
+                onRetry={() => void posts.refetch()}
+              />
+            ) : null}
+            {tab === 'vibes' ? (
+              <SpaceVibes
+                items={vibes.data?.items ?? []}
+                loading={vibes.isLoading}
+                failed={vibes.isError}
+                name={p.name}
+                onOpen={(id) => navigation.navigate('VibeViewer', { id })}
+                onRetry={() => void vibes.refetch()}
+                gutter={gutter}
+              />
+            ) : null}
+            {tab === 'moments' ? (
+              <SpaceMoments
+                moments={p.moments}
+                name={p.name}
+                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id })}
+              />
+            ) : null}
+            {tab === 'circles' ? (
+              <SpaceCircles items={circles.data?.items ?? []} loading={circles.isLoading} onOpen={(id) => navigation.navigate('Circle', { circleId: id })} />
+            ) : null}
+          </View>
 
           {lifestyle.length ? (
             <Section title="About me">
@@ -556,6 +556,83 @@ function SpaceVibes({
           </View>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Their Circles.
+ *
+ * Only what they made findable, plus anything you already share with them — the
+ * server decides, and this draws what it is given. A Circle is a room; being
+ * able to see that a room exists is not the same as being able to read it, so
+ * each card says how many are inside instead of what they have been saying.
+ */
+function SpaceCircles({
+  items,
+  loading,
+  onOpen,
+}: {
+  items: { id: number; name: string; about: string; theme?: string | null; visibility?: string; memberCount: number; joined?: boolean }[];
+  loading?: boolean;
+  onOpen: (id: number) => void;
+}) {
+  const { colors } = useTheme();
+  if (loading) return <LoadingBlock label="Loading their Circles" />;
+  if (!items.length) {
+    return (
+      <Txt variant="small" color="textMuted" style={{ paddingVertical: space.md }}>
+        No Circles to show. A Circle appears here when its owner makes it public.
+      </Txt>
+    );
+  }
+  return (
+    <View style={{ gap: space.sm }}>
+      {items.map((c) => {
+        const theme = resolveTheme(c.theme);
+        return (
+          <Pressable
+            key={c.id}
+            onPress={() => onOpen(c.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`${c.name}, ${c.memberCount} members`}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space.sm,
+              padding: space.sm,
+              borderRadius: radius.lg,
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            {theme ? (
+              <ThemeTile theme={theme} size={64} />
+            ) : (
+              <View style={{ width: 64, height: 40, borderRadius: radius.md, backgroundColor: colors.elevated }} />
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Txt variant="subheading" numberOfLines={1} style={{ flexShrink: 1 }}>
+                  {c.name}
+                </Txt>
+                {c.joined ? (
+                  <Txt variant="caption" color="gold">
+                    Yours
+                  </Txt>
+                ) : null}
+              </View>
+              <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                {[theme?.label, `${c.memberCount} ${c.memberCount === 1 ? 'member' : 'members'}`, c.visibility === 'public' ? 'Public' : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Txt>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

@@ -12,6 +12,9 @@ import { BottomSheet } from '../../components/BottomSheet';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
+import { ThemePicker } from '../../components/ThemePicker';
+import { Segmented } from '../../components/Segmented';
+import { setCircleLook } from '../../api/service';
 import { useToast } from '../../components/Toast';
 import { useCreateCircle, useCrushes, useMyCircles } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -160,6 +163,9 @@ function CreateCircleSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const [name, setName] = useState('');
   const [about, setAbout] = useState('');
   const [picked, setPicked] = useState<number[]>([]);
+  // What kind of room it is, and whether people outside it may find it.
+  const [theme, setTheme] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState<'connections' | 'public'>('connections');
 
   // You can only bring in people you have Clicked with — that is the rule the
   // database enforces, so the picker only offers those.
@@ -171,9 +177,23 @@ function CreateCircleSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const submit = async () => {
     try {
       const space = await create.mutateAsync({ name, about, memberIds: picked });
+      // The theme and the visibility are set straight after, on the Circle that
+      // now exists: the create call is the one old builds still make, so it is
+      // not the place to add two more parameters.
+      if (theme || visibility === 'public') {
+        try {
+          await setCircleLook(space.circle.id, { theme, visibility });
+        } catch {
+          // A room without a label is still a room. The owner can set it again
+          // from the Circle screen; failing the whole creation over it would be
+          // the wrong trade.
+        }
+      }
       setName('');
       setAbout('');
       setPicked([]);
+      setTheme(null);
+      setVisibility('connections');
       onClose();
       navigation.navigate('Circle', { circleId: space.circle.id });
     } catch (e) {
@@ -199,6 +219,29 @@ function CreateCircleSheet({ visible, onClose }: { visible: boolean; onClose: ()
           placeholder="The usual suspects, every Sunday."
           maxLength={160}
         />
+
+        <ThemePicker value={theme} onChange={setTheme} />
+
+        {/* Who can find it. A Circle is never readable by outsiders: this is
+            about whether it appears on your Space at all. */}
+        <View style={{ gap: 8 }}>
+          <Txt variant="label" color="textSecondary">
+            Who can find it
+          </Txt>
+          <Segmented<'connections' | 'public'>
+            options={[
+              { value: 'connections', label: 'People I’ve clicked with' },
+              { value: 'public', label: 'Anyone' },
+            ]}
+            value={visibility}
+            onChange={setVisibility}
+          />
+          <Txt variant="caption" color="textMuted">
+            {visibility === 'public'
+              ? 'It shows on your Space. Only members can read what is posted in it.'
+              : 'It stays off other people’s screens unless they are in it.'}
+          </Txt>
+        </View>
 
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
