@@ -1177,6 +1177,16 @@ export async function createVibe(input: {
 
 /* ----------------------------------------------------------------- search */
 
+/** People whose handle or name starts with what is being typed after `@`. */
+export async function mentionSuggest(query: string): Promise<{ id: number; name: string; username: string; photo: string | null; connected: boolean }[]> {
+  return rpc('mention_suggest', { p_query: String(query ?? '').slice(0, 30) });
+}
+
+/** Tags already used in Flows this member can open, most used first. */
+export async function tagSuggest(query: string): Promise<{ tag: string; uses: number }[]> {
+  return rpc('tag_suggest', { p_query: String(query ?? '').slice(0, 30) });
+}
+
 /** Members you can already see, plus the Flows, Vibes and Moments you may see. */
 export async function searchAll(query: string): Promise<SearchResults> {
   const q = String(query ?? '').trim();

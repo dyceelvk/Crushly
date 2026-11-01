@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -283,11 +284,19 @@ export function VideoEditorModal({
           }}
         >
           <IconButton icon="close" label="Discard edits" variant="plain" color="#fff" onPress={onCancel} />
-          <Txt variant="title" style={{ flex: 1, color: '#fff' }} accessibilityRole="header">
-            {CATEGORY_LABEL[category]} editor
-          </Txt>
+          {/* The bar reads left to right the way an editor does: out, what it
+              is, and how much of it you have used. Export is the only thing on
+              the right, because it is the only thing you cannot undo. */}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Txt variant="subheading" style={{ color: '#fff' }} accessibilityRole="header" numberOfLines={1}>
+              {CATEGORY_LABEL[category]}
+            </Txt>
+            <Txt variant="caption" style={{ color: '#8b8b95' }} numberOfLines={1}>
+              {`${formatTime(clipTime)} / ${formatTime(length)}  ·  ${Math.round((length / Math.max(0.1, limit.maxSeconds)) * 100)}%`}
+            </Txt>
+          </View>
           <Button
-            title="Done"
+            title="Export"
             size="sm"
             variant="primary"
             onPress={() => {
@@ -299,61 +308,65 @@ export function VideoEditorModal({
           />
         </View>
 
-        {Platform.OS === 'web' ? <WebEditorNotice /> : null}
-
-        {/* View screen at top */}
-        <View style={{ alignItems: 'center', paddingHorizontal: space.md }}>
-          <VideoEditCanvas
-            player={player}
-            edit={edit}
-            clipTime={clipTime}
-            naturalRatio={naturalRatio}
-            interactive
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onMoveCaption={(id, x, y) =>
-              update({ ...edit, captions: edit.captions.map((c) => (c.id === id ? { ...c, x, y } : c)) })
-            }
-            onMoveSticker={(id, x, y) =>
-              update({ ...edit, stickers: edit.stickers.map((s) => (s.id === id ? { ...s, x, y } : s)) })
-            }
-            style={{ width: frameW, height: frameH, borderRadius: radius.md }}
-          />
-        </View>
-
-        <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, gap: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <IconButton
-              icon={playing ? 'pause' : 'play'}
-              label={playing ? 'Pause' : 'Play'}
-              variant="plain"
-              color="#fff"
-              onPress={togglePlay}
+        {/* The stage. Nothing on it but the frame and the play control — an
+            editor should look like the thing being edited. */}
+        <View style={{ alignItems: 'center', paddingHorizontal: space.md, paddingTop: space.xs }}>
+          <View style={{ width: frameW, height: frameH }}>
+            <VideoEditCanvas
+              player={player}
+              edit={edit}
+              clipTime={clipTime}
+              naturalRatio={naturalRatio}
+              interactive
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onMoveCaption={(id, x, y) =>
+                update({ ...edit, captions: edit.captions.map((c) => (c.id === id ? { ...c, x, y } : c)) })
+              }
+              onMoveSticker={(id, x, y) =>
+                update({ ...edit, stickers: edit.stickers.map((s) => (s.id === id ? { ...s, x, y } : s)) })
+              }
+              style={{ width: frameW, height: frameH, borderRadius: radius.md }}
             />
-            <View style={{ flex: 1 }}>
-              <RangeSlider
-                min={0}
-                max={Math.max(0.1, length)}
-                low={Math.min(clipTime, length)}
-                step={0.01}
-                onChange={(v) => seek(v)}
-                label="Playhead"
-                formatValue={(v) => formatTime(v)}
-              />
-            </View>
-            <Txt variant="caption" color="textMuted" style={{ color: '#9a9aa2', minWidth: 62, textAlign: 'right' }}>
-              {formatTime(clipTime)} / {formatTime(length)}
-            </Txt>
+            {/* Tapping the picture is play/pause, the way it is in every editor
+                people already know. */}
+            <Pressable
+              onPress={togglePlay}
+              accessibilityRole="button"
+              accessibilityLabel={playing ? 'Pause preview' : 'Play preview'}
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}
+            >
+              {!playing ? (
+                <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(8,8,10,0.55)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' }}>
+                  <Ionicons name="play" size={24} color="#fff" style={{ marginLeft: 3 }} />
+                </View>
+              ) : null}
+            </Pressable>
           </View>
-          <Txt variant="caption" style={{ color: ready ? '#7c7c86' : '#9a9aa2' }}>
+          <Txt variant="caption" style={{ color: ready ? '#7c7c86' : '#9a9aa2', marginTop: 4 }}>
             {limit.note}
           </Txt>
         </View>
 
-        {/* Editors panel aligned above the tabs */}
+        {/* The timeline: a strip of the clip with the part you kept lit, a
+            playhead, and handles you can drag. Above it a ruler, because "one
+            third of the way in" is a place, and a percentage is not. */}
+        <ClipTimeline
+          total={total}
+          start={edit.trimStart}
+          end={edit.trimEnd}
+          playhead={edit.trimStart + clipTime}
+          onSeek={(t) => seek(t - edit.trimStart)}
+          onTrim={(nextStart, nextEnd) =>
+            update({ ...edit, trimStart: nextStart, trimEnd: Math.max(nextStart + 0.4, nextEnd) })
+          }
+        />
+
+        {/* The sheet for whichever tool is open, directly above the rail. */}
         <View
           style={{
             flex: 1,
+            minHeight: 0,
             backgroundColor: '#141418',
             borderTopLeftRadius: radius.lg,
             borderTopRightRadius: radius.lg,
@@ -411,42 +424,49 @@ export function VideoEditorModal({
           )}
         </View>
 
-        {/* Tabs below editors */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: 8 }}
-        >
-          {TOOLS.map((t) => {
-            const active = tool === t.id;
-            return (
-              <Pressable
-                key={t.id}
-                onPress={() => {
-                  haptic.tap();
-                  setTool(active ? null : t.id);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={t.label}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: radius.pill,
-                  backgroundColor: active ? colors.gold : 'rgba(255,255,255,0.08)',
-                }}
-              >
-                <Ionicons name={t.icon} size={16} color={active ? colors.onGold : '#e8e8ee'} />
-                <Txt variant="smallStrong" style={{ color: active ? colors.onGold : '#e8e8ee' }} maxFontSizeMultiplier={1.2}>
-                  {t.label}
-                </Txt>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* The tool rail. One row, icon over name, the way the apps people
+            already edit in lay it out — and the panel for the chosen tool
+            opens directly above it, so the finger never has to travel. */}
+        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: 4 }}
+          >
+            {TOOLS.map((t) => {
+              const active = tool === t.id;
+              return (
+                <Pressable
+                  key={t.id}
+                  onPress={() => {
+                    haptic.tap();
+                    setTool(active ? null : t.id);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={t.label}
+                  style={{ alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, minWidth: 62, borderRadius: radius.md }}
+                >
+                  <View
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 17,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: active ? colors.gold : 'rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <Ionicons name={t.icon} size={17} color={active ? colors.onGold : '#e8e8ee'} />
+                  </View>
+                  <Txt variant="caption" style={{ color: active ? colors.gold : '#9a9aa2' }} maxFontSizeMultiplier={1.2}>
+                    {t.label}
+                  </Txt>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
 
         {/* Add text bar below tabs */}
         {tool !== 'captions' && edit.captions.length < EDIT_LIMITS[category].maxCaptions ? (
@@ -473,9 +493,150 @@ export function VideoEditorModal({
           </View>
         ) : null}
 
+        {/* What the web build cannot do, said once, quietly, at the bottom —
+            not a banner on top of the picture you are trying to edit. */}
+        {Platform.OS === 'web' ? <WebEditorNotice /> : null}
+
         <View style={{ height: insets.bottom + space.sm }} />
       </View>
     </Modal>
+  );
+}
+
+/**
+ * The clip, drawn as a piece of time.
+ *
+ * A slider says "somewhere in the middle"; a timeline says *where*, and how much
+ * you kept. The strip is the whole clip, the lit window is what survives the
+ * trim, and the two handles are the only decisions that matter in this tool.
+ *
+ * Drag the body to scrub, drag a handle to move the cut. Both are rounded to a
+ * tenth of a second, because nobody trims to the millisecond and a number that
+ * jitters is a number nobody trusts.
+ */
+function ClipTimeline({
+  total,
+  start,
+  end,
+  playhead,
+  onSeek,
+  onTrim,
+}: {
+  total: number;
+  start: number;
+  end: number;
+  playhead: number;
+  onSeek: (seconds: number) => void;
+  onTrim: (start: number, end: number) => void;
+}) {
+  const { colors } = useTheme();
+  const [width, setWidth] = useState(0);
+  const live = useRef({ total, start, end, width, onSeek, onTrim });
+  live.current = { total, start, end, width, onSeek, onTrim };
+  const grab = useRef<{ kind: 'body' | 'left' | 'right'; startX: number; from: number; to: number } | null>(null);
+
+  const pct = (t: number) => (live.current.total > 0 ? Math.min(1, Math.max(0, t / live.current.total)) : 0);
+  const snap = (t: number) => Math.round(t * 10) / 10;
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e: { nativeEvent: { locationX: number } }) => {
+        const { width: w, total: tt, start: a, end: b, onSeek: seek } = live.current;
+        if (!w || !tt) return;
+        const x = e.nativeEvent.locationX;
+        // Within 18 px of a handle, that handle is what you grabbed.
+        const leftPx = pct(a) * w;
+        const rightPx = pct(b) * w;
+        const kind = Math.abs(x - leftPx) <= 18 ? 'left' : Math.abs(x - rightPx) <= 18 ? 'right' : 'body';
+        grab.current = { kind, startX: x, from: a, to: b };
+        if (kind === 'body') seek(snap((x / w) * tt));
+      },
+      onPanResponderMove: (e: { nativeEvent: { locationX: number } }) => {
+        const g = grab.current;
+        const { width: w, total: tt, start: a, end: b, onTrim: trim, onSeek: seek } = live.current;
+        if (!g || !w || !tt) return;
+        const dx = ((e.nativeEvent.locationX - g.startX) / w) * tt;
+        if (g.kind === 'left') {
+          trim(snap(Math.min(Math.max(0, g.from + dx), b - 0.4)), b);
+        } else if (g.kind === 'right') {
+          trim(a, snap(Math.min(Math.max(a + 0.4, g.to + dx), tt)));
+        } else {
+          seek(snap(Math.min(Math.max(g.from, (e.nativeEvent.locationX / w) * tt), tt)));
+        }
+      },
+      onPanResponderRelease: () => {
+        grab.current = null;
+      },
+      onPanResponderTerminate: () => {
+        grab.current = null;
+      },
+    }),
+  ).current;
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(total * f));
+
+  return (
+    <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, gap: 6 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        {ticks.map((t, i) => (
+          <Txt key={i} variant="caption" style={{ color: '#63636d', fontSize: 10 }}>
+            {formatTime(t)}
+          </Txt>
+        ))}
+      </View>
+      <View
+        {...responder.panHandlers}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        accessibilityLabel="Timeline. Drag to scrub, drag the handles to trim."
+        style={{ height: 46, borderRadius: radius.sm, backgroundColor: '#17171c', overflow: 'hidden', justifyContent: 'center' }}
+      >
+        {width > 0 ? (
+          <>
+            {/* The whole clip, unlit. */}
+            <View style={{ position: 'absolute', left: 0, right: 0, height: 34, backgroundColor: '#202027' }} />
+            {/* What survived the trim. */}
+            <View
+              style={{
+                position: 'absolute',
+                left: pct(start) * width,
+                width: Math.max(2, (pct(end) - pct(start)) * width),
+                height: 34,
+                backgroundColor: colors.goldSoft,
+                borderColor: colors.gold,
+                borderTopWidth: 1.5,
+                borderBottomWidth: 1.5,
+              }}
+            />
+            {/* The two things you can grab. */}
+            {[pct(start), pct(end)].map((x, i) => (
+              <View
+                key={i}
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: Math.min(Math.max(0, x * width - 4), width - 8),
+                  width: 8,
+                  height: 34,
+                  backgroundColor: colors.gold,
+                  borderRadius: 3,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <View style={{ width: 1.5, height: 12, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+              </View>
+            ))}
+            {/* The playhead. */}
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', left: Math.min(Math.max(0, pct(playhead) * width - 1), width - 2), width: 2, height: 46, backgroundColor: '#fff', borderRadius: 1 }}
+            />
+          </>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -487,35 +648,31 @@ export function VideoEditorModal({
 function WebEditorNotice() {
   const { colors } = useTheme();
   return (
-    <View
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel="Install Crushly on Android"
+      onPress={() => {
+        haptic.tap();
+        Linking.openURL('/download/').catch(() => undefined);
+      }}
       style={{
         marginHorizontal: space.md,
-        marginBottom: space.xs,
-        padding: space.md,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.goldLine,
-        backgroundColor: colors.goldSoft,
-        gap: 6,
+        marginTop: space.xs,
+        paddingHorizontal: space.sm,
+        paddingVertical: 8,
+        borderRadius: radius.sm,
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
       }}
-      accessibilityRole="alert"
     >
-      <Txt variant="bodyStrong">Full video editing is only available in the app version</Txt>
-      <Txt variant="small" color="textSecondary">
-        Get the latest Android version now
+      <Ionicons name="download-outline" size={13} color={colors.gold} />
+      <Txt variant="caption" style={{ color: '#9a9aa2', flex: 1 }} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+        Trimming, text and sound are applied in the app. Install Crushly to cut the actual clip.
       </Txt>
-      <Button
-        title="Install Crushly"
-        size="sm"
-        variant="primary"
-        icon="download-outline"
-        onPress={() => {
-          haptic.tap();
-          Linking.openURL('/download/').catch(() => undefined);
-        }}
-        accessibilityLabel="Install Crushly on Android"
-      />
-    </View>
+      <Ionicons name="chevron-forward" size={13} color="#63636d" />
+    </Pressable>
   );
 }
 

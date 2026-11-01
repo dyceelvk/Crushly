@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { ThemePicker } from '../../components/ThemePicker';
+import { CircleCover } from '../../components/CircleCover';
 import { Segmented } from '../../components/Segmented';
 import { setCircleLook } from '../../api/service';
 import { useToast } from '../../components/Toast';
@@ -95,14 +96,10 @@ export function CirclesScreen() {
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View
-                    style={{
-                      width: 44, height: 44, borderRadius: 22, backgroundColor: colors.elevated,
-                      alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.unreadCount ? colors.gold : colors.textSecondary} />
-                  </View>
+                  {/* The theme's cover, not a grey bubble: this list is a row
+                      of rooms and they should be recognisable before they are
+                      read. */}
+                  <CircleCover circle={c} size={44} radius={14} />
                   <View style={{ flex: 1, flexShrink: 1 }}>
                     <Txt variant="bodyStrong" numberOfLines={1}>
                       {c.name}

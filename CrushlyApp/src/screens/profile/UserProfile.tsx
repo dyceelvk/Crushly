@@ -10,6 +10,7 @@ import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { Segmented } from '../../components/Segmented';
+import { SwipeTabs } from '../../components/SwipeTabs';
 import { BlurView } from 'expo-blur';
 import { useMemberCircles } from '../../api/hooks';
 import { resolveTheme } from '../../lib/circleThemes';
@@ -278,6 +279,32 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           <Txt variant="small" color="textSecondary" style={{ marginTop: space.sm }}>
             {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
           </Txt>
+
+          {/* The state pills used to sit on the bottom of the cover, which put
+              them directly behind the face — a rounded rectangle poking out at
+              the corners of a circle, unreadable and untappable. They are on
+              the page now, where they can be read and pressed. */}
+          {p.online || p.activity || p.crush.mutual || p.crush.received || keep.data?.keepsYou ? (
+            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: space.sm }}>
+              {p.online ? (
+                <Pill tone="neutral" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} />
+              ) : p.activity ? (
+                <Pill tone="neutral" label={p.activity} />
+              ) : null}
+              {p.crush.mutual ? (
+                <Pill tone="crush" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
+              ) : p.crush.received ? (
+                <Pill
+                  tone="crush"
+                  label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'}
+                  icon={<Ionicons name="heart" size={11} color={colors.crush} />}
+                />
+              ) : null}
+              {keep.data?.keepsYou ? (
+                <Pill tone="gold" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} />
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
@@ -352,6 +379,12 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           </View>
 
           <View style={{ marginTop: space.md }}>
+            <SwipeTabs
+              options={['flow', 'vibes', 'moments', 'circles'] as const}
+              value={tab}
+              onChange={setTab}
+              width={contentWidth - gutter * 2}
+            >
             {tab === 'flow' ? (
               <SpacePosts
                 items={posts.data?.items ?? []}
@@ -382,6 +415,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
             {tab === 'circles' ? (
               <SpaceCircles items={circles.data?.items ?? []} loading={circles.isLoading} onOpen={(id) => navigation.navigate('Circle', { circleId: id })} />
             ) : null}
+            </SwipeTabs>
           </View>
 
           {lifestyle.length ? (

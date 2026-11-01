@@ -10,6 +10,8 @@ import { VerifiedBadge } from '../../components/Badges';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Segmented } from '../../components/Segmented';
+import { SwipeTabs } from '../../components/SwipeTabs';
+import { Dimensions } from 'react-native';
 import { BottomSheet } from '../../components/BottomSheet';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
@@ -123,9 +125,12 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
         />
       </View>
 
+      {/* Chat is a live room, not a page — it is not swiped away from. Posts and
+          People are pages, and slide. */}
       {tab === 'chat' ? (
         <RoomChat circleId={circleId} members={members} bottomInset={insets.bottom} />
       ) : (
+        <SwipeTabs options={['posts', 'people'] as const} value={tab as 'posts' | 'people'} onChange={setTab as (v: 'posts' | 'people') => void} width={Dimensions.get('window').width}>
         <ScrollView
           contentContainerStyle={{
             paddingHorizontal: gutter,
@@ -143,6 +148,7 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
           {tab === 'posts' ? <RoomPosts circleId={circleId} /> : null}
           {tab === 'people' ? <RoomPeople circleId={circleId} members={members} isOwner={circle.myRole === 'owner'} /> : null}
         </ScrollView>
+        </SwipeTabs>
       )}
 
       <CircleMenu

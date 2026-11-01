@@ -17,6 +17,8 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Input } from '../../components/Input';
 import { Segmented } from '../../components/Segmented';
+import { Suggestions } from '../../components/Suggestions';
+import { activeToken, applyToken, tokenKey } from '../../lib/mentions';
 import { Pill } from '../../components/Badges';
 import { PressableScale } from '../../components/PressableScale';
 import { Rise } from '../../components/Rise';
@@ -88,6 +90,9 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const [kind, setKind] = useState<PostKind | null>(route.params?.type ?? null);
 
   const [body, setBody] = useState('');
+  // Where the caret is, so `@` and `#` know which word is being built.
+  const [caret, setCaret] = useState<number | null>(null);
+  const token = activeToken(body, caret);
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
   // A board knows what it is; there is nothing left to choose underneath it.
   const postType: PostType = 'Flows';
@@ -538,6 +543,17 @@ function ComposerLeft({
   setFontIndex: React.Dispatch<React.SetStateAction<number>>;
   fontOptions: readonly string[];
 }) {
+  // The caret lives here, beside the words it moves through: the input, the
+  // suggestion list and the @ / # buttons are all in this column.
+  const [caret, setCaret] = useState<number | null>(null);
+  const token = activeToken(body, caret);
+  const insertSigil = (sigil: '@' | '#') => {
+    const sep = body && !/\s$/.test(body) ? ' ' : '';
+    const next = `${body}${sep}${sigil}`;
+    setBody(next);
+    setCaret(next.length);
+  };
+
   const { colors } = useTheme();
 
   const insertText = (text: string) => {
@@ -590,11 +606,28 @@ function ComposerLeft({
         <Input
           multiline
           value={body}
-          onChangeText={setBody}
+          onChangeText={(t) => {
+            setBody(t);
+            // Typing replaces the selection, so the caret is at the end of what
+            // was just typed unless the platform says otherwise.
+            setCaret(t.length);
+          }}
+          onSelectionChange={(e) => setCaret(e.nativeEvent.selection.end)}
           placeholder="Good energy, better days. Same me, just more focused."
           maxLength={500}
           showCount
           style={{ minHeight: 150, fontFamily: fontOptions[fontIndex] }}
+        />
+
+        {/* The list that answers a `@` or a `#`, right where the words are. */}
+        <Suggestions
+          token={token}
+          onPick={(choice) => {
+            if (!token) return;
+            const next = applyToken(body, token, choice);
+            setBody(next.text);
+            setCaret(next.caret);
+          }}
         />
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, flexWrap: 'wrap' }}>
           {/* Media Settings — line up under the text bar */}
@@ -623,12 +656,22 @@ function ComposerLeft({
           </Pressable>
 
           {/* Tag people */}
-          <Pressable onPress={() => insertText('@')} accessibilityLabel="Tag someone" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+          <Pressable
+            onPress={() => insertSigil('@')}
+            accessibilityLabel="Tag someone"
+            hitSlop={12}
+            style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}
+          >
             <Txt variant="caption" style={{ color: colors.text }}>@</Txt>
           </Pressable>
 
           {/* Hashtag */}
-          <Pressable onPress={() => insertText('#')} accessibilityLabel="Add hashtag" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+          <Pressable
+            onPress={() => insertSigil('#')}
+            accessibilityLabel="Add hashtag"
+            hitSlop={12}
+            style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}
+          >
             <Txt variant="caption" style={{ color: colors.text }}>#</Txt>
           </Pressable>
 

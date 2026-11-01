@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Txt } from './Txt';
 import { Photo } from './Photo';
+import { CircleCover } from './CircleCover';
 import { Skeleton } from './States';
 import { useMyCircles } from '../api/hooks';
 import { useTheme } from '../theme/ThemeProvider';
@@ -121,13 +122,8 @@ function CircleCard({ circle, onPress }: { circle: CircleSummary; onPress: () =>
         borderColor: colors.gold,
       }}
     >
-      {circle.coverUrl ? (
-        <Photo uri={circle.coverUrl} style={{ width: '100%', height: '100%' }} />
-      ) : (
-        <View style={{ flex: 1, backgroundColor: colors.elevated, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="people-outline" size={22} color={colors.textMuted} />
-        </View>
-      )}
+      {/* The cover fills the card; the theme stands in until there is a photo. */}
+      <CircleCover circle={circle} size={CARD_W} radius={radius.md} />
       <View
         style={{
           position: 'absolute',
