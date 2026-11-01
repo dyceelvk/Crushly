@@ -1,10 +1,17 @@
 # Migrations
 
-`supabase/migrations/` now contains **41 files whose versions and names match
-the 41 rows recorded in `supabase_migrations.schema_migrations` on production**
+`supabase/migrations/` now contains **43 files whose versions and names match
+the 43 rows recorded in `supabase_migrations.schema_migrations` on production**
 (project `yzcssyebozfkmojqqdhc`). That means `supabase db push` sees production
 as fully up to date, and a fresh project can be brought to the same schema by
 replaying the directory in order.
+
+The count moved from 41 to 43 on 2026-11-01 with
+`20261101000000_share_post_to_whisper` and `20261101000100_edit_post`, both
+applied to production and recorded with the same versions the files carry.
+While applying them we found that `messages_kind_check` did not admit `'post'`,
+so the sharing half would have failed at the insert; that constraint is widened
+inside the share migration's own file so a fresh replay gets it too.
 
 Until 2026-10-30 it could not: 12 applied migrations had no file in the repo,
 and four files carried the wrong version number. Both are fixed.

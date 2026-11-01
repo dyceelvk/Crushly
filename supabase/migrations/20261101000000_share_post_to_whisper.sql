@@ -9,6 +9,15 @@
 -- a recipient always gets the author's real name and media, not whatever the
 -- sender's phone put in the payload.
 
+-- The kind has to be legal first. `messages_kind_check` listed every kind the
+-- app had shipped up to `moment_reply`, so a `post` row was rejected by the
+-- table before `send_message` could return it. Found while applying this to
+-- production; the function alone is not enough.
+alter table public.messages drop constraint if exists messages_kind_check;
+alter table public.messages add constraint messages_kind_check
+  check (kind in ('text', 'photo', 'voice', 'video', 'call', 'sticker',
+                  'profile', 'moment_reply', 'post'));
+
 create or replace function public.send_message(
   p_conversation_id bigint, p_kind text default 'text', p_body text default '',
   p_media_url text default null, p_meta jsonb default '{}'
