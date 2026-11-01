@@ -17,6 +17,19 @@ import type { ScreenProps } from '../../navigation/types';
 const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
 
 /**
+ * Google sign-in is switched off until the OAuth consent screen is published.
+ *
+ * The screen is set to "Internal", so Google answers every attempt from outside
+ * the organisation with *403 org_internal* — a dead end wearing the costume of a
+ * working button. Until that setting is changed to External and published, the
+ * honest thing is not to offer it: the email form below always works.
+ *
+ * Flip this to false once the consent screen is live; nothing else needs to
+ * change, because the handler below is untouched.
+ */
+const GOOGLE_SIGN_IN_OFF = true;
+
+/**
  * "Continue with Google", shown only when the project has the provider on.
  *
  * It is the one sign-in path with no email in it: nothing to rate-limit, nothing
@@ -53,7 +66,7 @@ function useGoogleSignIn(setError: (m: string | null) => void) {
   const { signInWithGoogle } = useAuth();
   const providers = useAuthProviders();
   const [busy, setBusy] = useState(false);
-  const enabled = Platform.OS === 'web' && Boolean(providers.data?.google);
+  const enabled = !GOOGLE_SIGN_IN_OFF && Platform.OS === 'web' && Boolean(providers.data?.google);
   const start = async () => {
     setError(null);
     setBusy(true);

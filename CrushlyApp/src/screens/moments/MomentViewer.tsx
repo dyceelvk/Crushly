@@ -266,7 +266,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             caption={false}
             style={{ flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
             textSize={26}
-            autoPlay={moment.kind === 'video'}
+            autoPlay={moment.kind === 'video' && !paused}
           />
         </View>
 

@@ -414,6 +414,7 @@ export function PostCard({
                 uri={p.mediaUrl}
                 live={p.edit}
                 autoPlay={active}
+                holdToPause
                 loop={active}
                 // In the corner, not over the picture: this clip sits inside the
                 // card's own "open the post" pressable, and a full-surface

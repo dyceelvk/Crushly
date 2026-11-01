@@ -29,6 +29,8 @@ import { motion } from '../theme/tokens';
 export function PlayPauseFlash({
   playing,
   onPress,
+  onPressIn,
+  onPressOut,
   reduced,
   compact = false,
   inline = false,
@@ -36,6 +38,9 @@ export function PlayPauseFlash({
 }: {
   playing: boolean;
   onPress: () => void;
+  /** Holding the picture pauses it; letting go carries on. */
+  onPressIn?: () => void;
+  onPressOut?: () => void;
   /** Reduce Motion: keep the state change, drop the movement. */
   reduced?: boolean;
   /** A tile or a small player: smaller disc, no word. */
@@ -101,6 +106,8 @@ export function PlayPauseFlash({
     return (
       <Pressable
         onPress={press}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
         accessibilityRole="button"
         accessibilityLabel={label ?? (playing ? 'Pause video' : 'Play video')}
         accessibilityState={{ selected: playing }}
@@ -128,6 +135,8 @@ export function PlayPauseFlash({
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
       accessibilityRole="button"
       accessibilityLabel={label ?? (playing ? 'Pause video' : 'Play video')}
       accessibilityState={{ selected: playing }}

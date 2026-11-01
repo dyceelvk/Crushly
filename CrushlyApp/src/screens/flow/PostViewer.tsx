@@ -377,6 +377,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               fill
               fit={stageFitMode}
               controls
+              holdToPause
               onDoubleTap={() => void reactWith('crush')}
               style={{ width: '100%', height: '100%' }}
               accessibilityLabel={`Video by ${authorName}`}

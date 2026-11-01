@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleProp, View, ViewStyle } from 'react-native';
+import { AppState, Platform, StyleProp, View, ViewStyle } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, type VideoPlayer } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { PlayPauseFlash } from './PlayPauseFlash';
@@ -89,6 +90,7 @@ export function EditedClip({
   live,
   style,
   autoPlay = false,
+  holdToPause = false,
   loop = true,
   controls = false,
   fill = false,
@@ -102,6 +104,8 @@ export function EditedClip({
   live: LiveEdit | null;
   style?: StyleProp<ViewStyle>;
   autoPlay?: boolean;
+  /** Hold the picture to pause it, let go to carry on. */
+  holdToPause?: boolean;
   /** A full-screen player loops; a tile in a grid does not. */
   loop?: boolean;
   /**
@@ -205,9 +209,26 @@ export function EditedClip({
     if (musicPlayer && look.music) musicPlayer.volume = look.music.volume;
   }, [musicPlayer, look.music]);
 
+  /**
+   * Off-screen means silent.
+   *
+   * A clip that is playing when you open a chat, tap a profile or put the phone
+   * in your pocket should not keep talking from somewhere behind the screen. So
+   * the rule is: play only while this clip's screen is the one in front of you
+   * *and* the app is in the foreground. Coming back resumes it, because the
+   * reason it stopped was that you left, not that you wanted it stopped.
+   */
+  const onScreen = useIsFocused();
+  const [foreground, setForeground] = useState(() => (AppState.currentState ?? 'active') === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => setForeground(state === 'active'));
+    return () => sub.remove();
+  }, []);
+  const allowed = autoPlay && onScreen && foreground;
+
   useEffect(() => {
     if (!player) return;
-    if (autoPlay) {
+    if (allowed) {
       // One clip holds the sound. Claiming it pauses every other clip that is
       // already playing, so a feed cannot talk over itself.
       takeFocus(player);
@@ -220,7 +241,7 @@ export function EditedClip({
       setPlaying(false);
       musicPlayer?.pause();
     }
-  }, [player, musicPlayer, autoPlay, look.music]);
+  }, [player, musicPlayer, allowed, look.music]);
 
   /**
    * Play/pause.
@@ -243,6 +264,54 @@ export function EditedClip({
     musicPlayer?.play();
     setPlaying(true);
   };
+
+  /**
+   * Hold to pause, let go to carry on.
+   *
+   * A long press is not a second kind of tap — it is the same hand staying put.
+   * After 220 ms of contact the clip pauses where it is; lifting the finger
+   * starts it again, and no toggle fires, because the hold already answered the
+   * question the tap would have asked.
+   */
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const held = useRef<boolean | null>(null);
+  const onHoldStart = () => {
+    if (!holdToPause) return;
+    holdTimer.current = setTimeout(() => {
+      if (!player) return;
+      held.current = player.playing;
+      if (player.playing) {
+        player.pause();
+        musicPlayer?.pause();
+      }
+    }, 220);
+  };
+  const onHoldEnd = () => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (held.current === null) return;
+    const wasPlaying = held.current;
+    held.current = null;
+    if (wasPlaying) {
+      takeFocus(player!);
+      player?.play();
+      musicPlayer?.play();
+    }
+    // Swallow the tap that follows a hold.
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+    }
+    lastTap.current = 0;
+  };
+  useEffect(
+    () => () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
 
   // A double tap must not also register as a single tap; the gesture is decided
   // by waiting out the double-tap window once, not by firing both.
@@ -328,6 +397,8 @@ export function EditedClip({
         <PlayPauseFlash
           playing={playing}
           onPress={onTap}
+          onPressIn={onHoldStart}
+          onPressOut={onHoldEnd}
           reduced={reduceMotion}
           inline={controls === 'corner'}
           compact={controls === 'corner'}
