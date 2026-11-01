@@ -67,7 +67,10 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
       >
         <View
           style={{
-            position: 'absolute', top: -8, width: 26, height: 2, borderRadius: 1, backgroundColor: focused ? colors.gold : 'transparent',
+            // Centred by hand: an absolutely-positioned box with no offsets in RN starts
+            // at the left edge, so the glow line drifted out of its own tab.
+            position: 'absolute', top: -8, left: '50%', marginLeft: -13, width: 26, height: 2, borderRadius: 1,
+            backgroundColor: focused ? colors.gold : 'transparent',
             shadowColor: colors.gold, shadowOpacity: focused ? 0.9 : 0, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
           }}
         />

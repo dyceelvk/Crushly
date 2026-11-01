@@ -112,6 +112,10 @@ function GlassChip({
   );
 }
 
+/** Diameter of the round face on the cover. One number, so the ring, the
+ *  overlap and the name beside it cannot drift apart. */
+const FACE = 76;
+
 function Dot() {
   const { colors } = useTheme();
   return <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.5)' }} />;
@@ -164,9 +168,11 @@ export function ProfileTabScreen() {
       </View>
 
       {/*
-        The hero. A photo the person chose, at the size the product is actually
-        about, with their name on it rather than above it. Tapping it opens the
-        photo editor, which is the thing most people come here to do.
+        A cover, not a page. The first photo used to be a 4:5 block with the
+        name printed on it, which made it the tallest thing on the screen and
+        hid the picture underneath the words. It is now the shape of a cover —
+        shallow enough that the name, the face and the first of the tabs fit on
+        one screen — and the name has been taken off the photograph.
       */}
       <PressableScale
         onPress={edit}
@@ -186,9 +192,9 @@ export function ProfileTabScreen() {
           }}
         >
           {hero ? (
-            <Photo uri={hero} aspectRatio={4 / 5} maxHeight={400} alt={`${p.name}'s main photo`} priority="high" />
+            <Photo uri={hero} aspectRatio={0.98} maxHeight={440} alt={`${p.name}'s main photo`} priority="high" />
           ) : (
-            <View style={{ height: 320, alignItems: 'center', justifyContent: 'center', gap: space.xs }}>
+            <View style={{ height: 240, alignItems: 'center', justifyContent: 'center', gap: space.xs }}>
               <Ionicons name="camera-outline" size={30} color={colors.textMuted} />
               <Txt variant="small" color="textMuted">
                 Add your first photo
@@ -201,14 +207,9 @@ export function ProfileTabScreen() {
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             pointerEvents="none"
-            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '58%' }}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '46%' }}
           />
 
-          {/*
-            A word, not a glyph. A bare pencil on a photo is ambiguous at 17pt
-            and reads as a scratch; "Edit" says what the tap does and survives a
-            light photo behind it.
-          */}
           {/*
             Words, not glyphs. A bare pencil on a photo is ambiguous at 17pt and
             renders as a scratch; "Moment" and "Edit" say what the tap does and
@@ -219,39 +220,74 @@ export function ProfileTabScreen() {
             <GlassChip icon="add" label="Moment" accessibilityLabel="New Moment" onPress={() => navigation.navigate('MomentComposer')} />
             <GlassChip label="Edit" accessibilityLabel="Edit Space" onPress={edit} />
           </View>
+        </View>
+      </PressableScale>
 
-          <View style={{ position: 'absolute', left: space.md, right: space.md, bottom: space.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Txt variant="title" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1 }}>
-                {p.name}
-                {p.age ? `, ${p.age}` : ''}
+      {/*
+        The face, on the cover's bottom edge rather than in a band of its own.
+        The ring is the same ring other people's Spaces carry, so the shape is
+        one shape across the product.
+      */}
+      <View style={{ marginTop: -FACE / 2 - 6, paddingLeft: space.xs, flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }}>
+        <PressableScale
+          onPress={edit}
+          pressedScale={0.96}
+          accessibilityRole="button"
+          accessibilityLabel="Change your photos"
+        >
+          <View
+            style={{
+              width: FACE + 8,
+              height: FACE + 8,
+              borderRadius: 999,
+              borderWidth: 2,
+              borderColor: colors.gold,
+              backgroundColor: colors.bg,
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...elevation.soft,
+            }}
+          >
+            {hero ? (
+              <Photo uri={hero} style={{ width: FACE - 2, height: FACE - 2, borderRadius: 999 }} alt={`${p.name}'s photo`} priority="high" />
+            ) : (
+              <Ionicons name="person" size={FACE / 2} color={colors.textMuted} />
+            )}
+          </View>
+        </PressableScale>
+
+        <View style={{ flex: 1, paddingBottom: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {p.name}
+              {p.age ? `, ${p.age}` : ''}
+            </Txt>
+            {v === 'verified' ? <VerifiedBadge size={18} /> : null}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1, flexWrap: 'wrap' }}>
+            {p.username ? (
+              <Txt variant="smallStrong" color="textSecondary">
+                {`@${p.username}`}
               </Txt>
-              {v === 'verified' ? <VerifiedBadge size={20} /> : null}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
-              {p.username ? (
-                <Txt variant="smallStrong" color="#FFFFFF">
-                  {`@${p.username}`}
-                </Txt>
-              ) : null}
-              {p.username && meta ? <Dot /> : null}
-              {meta ? (
-                <Txt variant="small" color="rgba(255,255,255,0.78)" numberOfLines={1}>
-                  {meta}
-                </Txt>
-              ) : null}
-            </View>
-            {me.status === 'paused' || p.intentions.length ? (
-              <View style={{ flexDirection: 'row', gap: 6, marginTop: space.sm, flexWrap: 'wrap' }}>
-                {me.status === 'paused' ? <Pill tone="glass" label="Hidden from Discover" /> : null}
-                {p.intentions.slice(0, 2).map((i) => (
-                  <Pill key={i} tone="glass" label={intentionLabel(i)} />
-                ))}
-              </View>
+            ) : null}
+            {p.username && meta ? <Dot /> : null}
+            {meta ? (
+              <Txt variant="small" color="textMuted" numberOfLines={1}>
+                {meta}
+              </Txt>
             ) : null}
           </View>
         </View>
-      </PressableScale>
+      </View>
+
+      {me.status === 'paused' || p.intentions.length ? (
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: space.sm, flexWrap: 'wrap' }}>
+          {me.status === 'paused' ? <Pill tone="neutral" label="Hidden from Discover" /> : null}
+          {p.intentions.slice(0, 2).map((i) => (
+            <Pill key={i} tone="neutral" label={intentionLabel(i)} />
+          ))}
+        </View>
+      ) : null}
 
       {/*
         The rest of the gallery. Six slots is the product's shape, so the rail
@@ -327,7 +363,7 @@ export function ProfileTabScreen() {
               </Txt>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                 <Txt variant="smallStrong" color="gold">
-                  {me.completion.missing.length ? `Add ${me.completion.missing[0]}` : 'Finish'}
+                  {me.completion.missing.length ? (me.completion.missing[0].startsWith('Add') ? me.completion.missing[0] : `Add ${me.completion.missing[0]}`) : 'Finish'}
                 </Txt>
                 <Ionicons name="chevron-forward" size={14} color={colors.gold} />
               </View>

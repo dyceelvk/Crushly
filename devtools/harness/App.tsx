@@ -51,6 +51,7 @@ import { MomentComposerScreen } from '../src/screens/moments/MomentComposer';
 import { MessagesScreen } from '../src/screens/messages/Messages';
 import { ChatScreen } from '../src/screens/messages/Chat';
 import { SettingsScreen } from '../src/screens/settings/Settings';
+import { TabBar } from '../src/navigation/TabBar';
 
 /**
  * Navigation is real here, not a stub.
@@ -156,6 +157,35 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   mutualnophoto: (p: any) => <MutualCrushScreen route={{ key: 'mc', name: 'MutualCrush', params: { userId: 2, name: 'Ngozi' } } as any} navigation={p.navigation} />,
   // Your own post: the dots menu offers Edit and Delete, not Report.
   viewermine: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 101 } } as any} navigation={p.navigation} />,
+  // The tab bar on its own. The bar is part of the navigator, and the harness
+  // mounts screens rather than navigators — so the props it expects are stood up
+  // by hand and the bar is drawn over a real screen.
+  tabs: (p: any) => (
+    <View style={{ flex: 1 }}>
+      {SCREENS.flow(p)}
+      <TabBar
+        state={{
+          index: 0,
+          routes: [
+            { key: 'Flows', name: 'Flows' },
+            { key: 'Crushes', name: 'Crushes' },
+            { key: 'Messages', name: 'Messages' },
+            { key: 'Profile', name: 'Profile' },
+          ],
+        } as any}
+        descriptors={
+          {
+            Flows: { options: { title: 'Flows' } },
+            Crushes: { options: { title: 'Crushes' } },
+            Messages: { options: { title: 'Messages' } },
+            Profile: { options: { title: 'Profile' } },
+          } as any
+        }
+        navigation={{ emit: () => ({ defaultPrevented: false }), navigate: () => {} } as any}
+        onCreate={() => {}}
+      />
+    </View>
+  ),
   intentions: OnboardingIntentionsScreen,
   basics: OnboardingBasicsScreen,
   photos: OnboardingPhotosScreen,
