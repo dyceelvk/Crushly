@@ -102,8 +102,14 @@ export function EditedClip({
   autoPlay?: boolean;
   /** A full-screen player loops; a tile in a grid does not. */
   loop?: boolean;
-  /** Tap to play/pause, with the state drawn. Off for decorative tiles. */
-  controls?: boolean;
+  /**
+   * Tap to play/pause, with the state drawn. Off for decorative tiles.
+   *
+   * `'corner'` puts the control in a disc at the bottom-right instead of over the
+   * whole picture — for a card that is itself a button, where the whole surface
+   * has to keep meaning "open this".
+   */
+  controls?: boolean | 'corner';
   /**
    * The caller has already decided the box (a full-screen stage, a tile in a
    * grid). The clip then fills it and letterboxes inside it rather than shaping
@@ -300,7 +306,14 @@ export function EditedClip({
       />
 
       {controls ? (
-        <PlayPauseFlash playing={playing} onPress={onTap} reduced={reduceMotion} label={accessibilityLabel} />
+        <PlayPauseFlash
+          playing={playing}
+          onPress={onTap}
+          reduced={reduceMotion}
+          inline={controls === 'corner'}
+          compact={controls === 'corner'}
+          label={accessibilityLabel}
+        />
       ) : null}
     </View>
   );

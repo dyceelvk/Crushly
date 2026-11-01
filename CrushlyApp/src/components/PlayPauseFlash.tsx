@@ -31,6 +31,7 @@ export function PlayPauseFlash({
   onPress,
   reduced,
   compact = false,
+  inline = false,
   label,
 }: {
   playing: boolean;
@@ -39,6 +40,16 @@ export function PlayPauseFlash({
   reduced?: boolean;
   /** A tile or a small player: smaller disc, no word. */
   compact?: boolean;
+  /**
+   * A disc in the corner instead of a surface over the whole picture.
+   *
+   * The full-surface version is right in a player that owns the screen. It is
+   * wrong in a feed card, where that surface is already the "open this post"
+   * affordance: covering it meant a tap on a video toggled playback and the
+   * poster could not be opened at all. Here the disc is the control and the rest
+   * of the picture still belongs to whatever it sits inside.
+   */
+  inline?: boolean;
   label?: string;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -78,6 +89,41 @@ export function PlayPauseFlash({
   }, [playing, reduced, opacity, scale]);
 
   const size = compact ? 44 : 68;
+
+  /** A tap on the disc must not also reach the card underneath it. */
+  const press = (e?: { stopPropagation?: () => void }) => {
+    e?.stopPropagation?.();
+    onPress();
+  };
+
+  if (inline) {
+    const d = compact ? 38 : 44;
+    return (
+      <Pressable
+        onPress={press}
+        accessibilityRole="button"
+        accessibilityLabel={label ?? (playing ? 'Pause video' : 'Play video')}
+        accessibilityState={{ selected: playing }}
+        hitSlop={10}
+        style={({ pressed }) => ({
+          position: 'absolute',
+          right: 10,
+          bottom: 10,
+          width: d,
+          height: d,
+          borderRadius: d / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(10,10,12,0.55)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.22)',
+          opacity: pressed ? 0.75 : 1,
+        })}
+      >
+        <Ionicons name={playing ? 'pause' : 'play'} size={compact ? 16 : 18} color="#FFFFFF" style={playing ? undefined : { marginLeft: 2 }} />
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable

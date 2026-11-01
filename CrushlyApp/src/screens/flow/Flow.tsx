@@ -402,7 +402,10 @@ export function PostCard({
                 live={p.edit}
                 autoPlay={active}
                 loop={active}
-                controls
+                // In the corner, not over the picture: this clip sits inside the
+                // card's own "open the post" pressable, and a full-surface
+                // control here swallowed every tap meant for the post view.
+                controls="corner"
                 fallbackRatio={0.8}
                 maxHeight={520}
                 accessibilityLabel={`Video by ${authorName}`}
