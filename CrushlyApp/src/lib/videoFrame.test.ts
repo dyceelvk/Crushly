@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { aspectRatioOf, clampRatio, frameHeight, videoFrame, videoRatio } from './videoFrame';
+import { aspectRatioOf, clampRatio, frameHeight, leavesBands, stageFit, videoFrame, videoRatio } from './videoFrame';
 
 test('videoRatio reads a real size and refuses nonsense', () => {
   assert.equal(videoRatio({ width: 1280, height: 720 }), 16 / 9);
@@ -80,4 +80,27 @@ test('frameHeight caps a tall clip so it cannot own the viewport', () => {
   assert.equal(frameHeight(2, 400, 520), 200);
   // Degenerate ratio must not divide by zero.
   assert.equal(frameHeight(0, 400), 40000);
+});
+
+test('a stage shows the whole frame, and fills the space with the clip itself', () => {
+  // Default: nothing cropped, and the letterbox is not black.
+  assert.deepEqual(stageFit(undefined), { contentFit: 'contain', backdrop: true });
+  assert.deepEqual(stageFit('fit'), { contentFit: 'contain', backdrop: true });
+  // Chosen: no letterbox at all, so nothing to draw behind it.
+  assert.deepEqual(stageFit('fill'), { contentFit: 'cover', backdrop: false });
+});
+
+test('leavesBands only says yes when there is actually a band to fill', () => {
+  // A 16:9 clip on a 9:19.5 phone stage: yes, a great deal of it.
+  assert.equal(leavesBands(9 / 19.5, 16 / 9), true);
+  // A portrait clip on a portrait stage: nearly, but not quite, the same box.
+  assert.equal(leavesBands(9 / 19.5, 9 / 19.5), false);
+  // Within a couple of percent is a crop no one would see, and not worth a
+  // second decoder.
+  assert.equal(leavesBands(0.5, 0.51), false);
+  // Unmeasurable is not a reason to draw anything extra.
+  assert.equal(leavesBands(null, 16 / 9), false);
+  assert.equal(leavesBands(0.5, null), false);
+  assert.equal(leavesBands(0, 0.5), false);
+  assert.equal(leavesBands(Number.NaN, 0.5), false);
 });

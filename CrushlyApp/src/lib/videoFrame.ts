@@ -94,3 +94,49 @@ export function frameHeight(ratio: number, width: number, maxHeight?: number): n
   const h = width / Math.max(0.01, ratio);
   return maxHeight ? Math.min(h, maxHeight) : h;
 }
+
+/* ------------------------------------------------------------------- stage */
+
+/**
+ * A full-screen stage is not a feed card.
+ *
+ * In the feed the frame follows the file, so the reserved box is the picture's
+ * shape and there is nothing left over. A stage has no such freedom: the box is
+ * the screen, and the picture is whatever the author shot. Handing a 16:9 clip
+ * to a 9:19.5 screen with `contain` leaves a band of nothing above and below it,
+ * which is what people read as "the video is broken".
+ *
+ * So a stage picks a mode, and the mode decides two things at once:
+ *
+ *   `'fit'`     the whole picture, nothing cropped. The space either side of it
+ *               is filled by a blurred copy of the same clip, so the letterbox
+ *               is made of the video rather than of black.
+ *   `'fill'`    no letterbox at all: the picture is cropped to the stage, the way
+ *               a photo already is.
+ *
+ * `'fit'` is the default because the stage is one post, not a deck — silently
+ * cutting a third off each side of what somebody filmed is a worse lie than a
+ * soft band. `'fill'` is there for anyone who wants the edges gone.
+ */
+export type StageFit = 'fit' | 'fill';
+
+export function stageFit(mode: StageFit | undefined): { contentFit: 'cover' | 'contain'; backdrop: boolean } {
+  return mode === 'fill'
+    ? { contentFit: 'cover', backdrop: false }
+    : { contentFit: 'contain', backdrop: true };
+}
+
+/**
+ * Does the picture actually leave bands in this box?
+ *
+ * Measured, not assumed: a portrait clip on a portrait screen fills it, and
+ * paying for a blurred copy of it behind nothing would be wasted work. A
+ * tolerance is required because layout widths are fractional — 0.02 of a ratio
+ * is about eight pixels on a phone, well under a band anyone would notice.
+ */
+export function leavesBands(stageRatio: number | null | undefined, pictureRatio: number | null | undefined): boolean {
+  if (!stageRatio || !pictureRatio) return false;
+  if (!Number.isFinite(stageRatio) || !Number.isFinite(pictureRatio)) return false;
+  if (stageRatio <= 0 || pictureRatio <= 0) return false;
+  return Math.abs(stageRatio - pictureRatio) > 0.02;
+}

@@ -13,6 +13,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
+import { celebrated } from '../crushes/MutualCrush';
 import type { ScreenProps } from '../../navigation/types';
 
 const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphMap; tone: 'crush' | 'gold' | 'success' | 'textSecondary' }> = {
@@ -74,6 +75,12 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       case 'deep_crush':
         return navigation.navigate('Main', { screen: 'Crushes', params: { tab: 'incoming' } });
       case 'mutual':
+        // An unseen match opens the moment; one you have already been shown is
+        // just a way back to the person.
+        if (n.actor && !celebrated.has(n.actor.id)) {
+          celebrated.add(n.actor.id);
+          return navigation.navigate('MutualCrush', { userId: n.actor.id, name: n.actor.name, photo: n.actor.photo });
+        }
         return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Crushes', params: { tab: 'mutual' } });
       case 'message':
       case 'moment_reply':

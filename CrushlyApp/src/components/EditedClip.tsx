@@ -4,7 +4,8 @@ import { useVideoPlayer, type VideoPlayer } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { PlayPauseFlash } from './PlayPauseFlash';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
-import { frameHeight, videoFrame, videoRatio } from '../lib/videoFrame';
+import { VideoView } from 'expo-video';
+import { frameHeight, leavesBands, stageFit, videoFrame, videoRatio, type StageFit } from '../lib/videoFrame';
 import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -91,6 +92,7 @@ export function EditedClip({
   loop = true,
   controls = false,
   fill = false,
+  fit,
   maxHeight,
   fallbackRatio = 4 / 5,
   onDoubleTap,
@@ -116,6 +118,13 @@ export function EditedClip({
    * itself — the opposite of the feed, where the frame must follow the file.
    */
   fill?: boolean;
+  /**
+   * How the picture sits in a `fill` box, and therefore what the leftover space
+   * is made of. Only the full-screen stage passes this; a tile never has space
+   * left over. See `stageFit` in `lib/videoFrame.ts` for why `'fit'` is the
+   * default and why it is not the same thing as a black letterbox.
+   */
+  fit?: StageFit;
   /**
    * Ceiling on the frame's height. The frame keeps its shape and narrows instead
    * of being squashed into a shorter box — clamping the height alone would turn a
@@ -152,12 +161,20 @@ export function EditedClip({
   // The frame must know its width before it can honour `maxHeight` without
   // changing its shape, so the wrapper measures itself once.
   const [available, setAvailable] = useState(0);
+  // The stage needs both sides of its box to know whether the picture will leave
+  // bands in it; a feed card only ever needs the width.
+  const [boxH, setBoxH] = useState(0);
   const box = useMemo(() => {
     if (fill) return { width: '100%' as const, height: '100%' as const };
     if (!available) return { width: '100%' as const, aspectRatio: frame.ratio };
     const h = frameHeight(frame.ratio, available, maxHeight);
     return { width: Math.min(available, h * frame.ratio), height: h };
   }, [fill, available, frame.ratio, maxHeight]);
+
+  // What the stage does with a picture that is not its own shape.
+  const stage = fill ? stageFit(fit) : null;
+  const bands = !!stage && stage.backdrop &&
+    leavesBands(available && boxH ? available / boxH : null, frame.ratio);
 
   // Only the live half is replayed here, so the edit is rebuilt from it and the
   // cut stays at its defaults — the file is already trimmed, and trimming it a
@@ -279,9 +296,10 @@ export function EditedClip({
 
   return (
     <View
-      onLayout={fill ? undefined : (e) => {
-        const w = e.nativeEvent.layout.width;
+      onLayout={(e) => {
+        const { width: w, height: h } = e.nativeEvent.layout;
         setAvailable((prev) => (Math.abs(prev - w) > 0.5 ? w : prev));
+        setBoxH((prev) => (Math.abs(prev - h) > 0.5 ? h : prev));
       }}
       style={[
         // The frame is the picture's shape, so `contain` fills it exactly and
@@ -295,13 +313,14 @@ export function EditedClip({
       accessibilityLabel={!controls ? accessibilityLabel : undefined}
     >
       <VideoEditCanvas
+        backdrop={bands ? <BackdropClip uri={uri} /> : null}
         player={player}
         edit={edit}
         clipTime={clipTime}
         naturalRatio={frame.ratio}
         // A chosen shape crops, and the canvas honours it; otherwise the box and
         // the picture already agree and `contain` simply fills.
-        fit={fill ? 'contain' : frame.fit}
+        fit={stage ? stage.contentFit : frame.fit}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
 
@@ -316,5 +335,46 @@ export function EditedClip({
         />
       ) : null}
     </View>
+  );
+}
+
+/**
+ * The band above and below a clip that is not the screen's shape.
+ *
+ * It used to be black, and black is what made a landscape clip look like a fault
+ * rather than a frame. This is the same clip again — its own muted player, blown
+ * up to cover the stage, softened — so the space around the picture is still the
+ * picture. Slow, low-detail frames; nothing is asked of it except colour.
+ *
+ * It is deliberately not registered with the focus system: it has no sound to
+ * take, and pausing it whenever another clip claims the audio would leave the
+ * stage half black again while the clip on top kept playing.
+ */
+function BackdropClip({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  useEffect(() => {
+    player?.play();
+  }, [player]);
+
+  return (
+    <VideoView
+      player={player}
+      style={[
+        { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
+        // The phone has no cheap blur on a video surface, so it is faked the
+        // other way round: oversized and dim, which reads as light rather than
+        // detail. The web does it properly.
+        Platform.OS === 'web'
+          ? ({ filter: 'blur(30px) saturate(1.15)', transform: [{ scale: 1.15 }], opacity: 0.6 } as ViewStyle)
+          : ({ transform: [{ scale: 1.4 }], opacity: 0.42 } as ViewStyle),
+      ]}
+      contentFit="cover"
+      nativeControls={false}
+      pointerEvents="none"
+    />
   );
 }

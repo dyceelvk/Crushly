@@ -36,6 +36,7 @@ import {
 } from '../src/screens/onboarding/Onboarding';
 import { FlowScreen } from '../src/screens/flow/Flow';
 import { PostViewerScreen } from '../src/screens/flow/PostViewer';
+import { MutualCrushScreen } from '../src/screens/crushes/MutualCrush';
 import { ProfileTabScreen } from '../src/screens/profile/ProfileTab';
 import { EditProfileScreen } from '../src/screens/profile/EditProfile';
 import { UserProfileScreen } from '../src/screens/profile/UserProfile';
@@ -148,6 +149,11 @@ const SCREENS: Record<string, (p: any) => React.ReactElement> = {
   settings: SettingsScreen,
   viewer: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 102 } } as any} navigation={p.navigation} />,
   viewerportrait: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 103 } } as any} navigation={p.navigation} />,
+  // The match moment, as the person who felt it second sees it.
+  mutual: (p: any) => <MutualCrushScreen route={{ key: 'mc', name: 'MutualCrush', params: { userId: 2, name: 'Ngozi', photo: 'http://127.0.0.1:8097/media/face2.jpg' } } as any} navigation={p.navigation} />,
+  // The same moment reached through a notification, which carries no photo —
+  // the screen has to go and get the face rather than draw an initial.
+  mutualnophoto: (p: any) => <MutualCrushScreen route={{ key: 'mc', name: 'MutualCrush', params: { userId: 2, name: 'Ngozi' } } as any} navigation={p.navigation} />,
   // Your own post: the dots menu offers Edit and Delete, not Report.
   viewermine: (p: any) => <PostViewerScreen route={{ key: 'v', name: 'PostViewer', params: { postId: 101 } } as any} navigation={p.navigation} />,
   intentions: OnboardingIntentionsScreen,

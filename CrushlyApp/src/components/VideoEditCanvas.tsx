@@ -36,6 +36,7 @@ export function VideoEditCanvas({
   onMoveCaption,
   onMoveSticker,
   onFrame,
+  backdrop,
 }: {
   player: VideoPlayer;
   edit: VideoEdit;
@@ -56,6 +57,12 @@ export function VideoEditCanvas({
   onMoveCaption?: (id: string, x: number, y: number) => void;
   onMoveSticker?: (id: string, x: number, y: number) => void;
   onFrame?: (frame: Frame) => void;
+  /**
+   * Drawn behind the picture, and the reason the frame stops being opaque: a
+   * caller that puts something there is saying the space around the picture is
+   * not empty. Without it the frame paints black over whatever it was given.
+   */
+  backdrop?: React.ReactNode;
 }) {
   const frame = useRef<Frame>({ width: 0, height: 0 });
   const { captions, stickers } = overlaysAt(edit, clipTime);
@@ -102,10 +109,12 @@ export function VideoEditCanvas({
 
   return (
     <View
-      style={[{ overflow: 'hidden', backgroundColor: '#000' }, style]}
+      style={[{ overflow: 'hidden', backgroundColor: backdrop ? 'transparent' : '#000' }, style]}
       onLayout={onLayout}
       collapsable={false}
     >
+      {backdrop}
+
       <VideoView
         player={player}
         style={videoStyle}

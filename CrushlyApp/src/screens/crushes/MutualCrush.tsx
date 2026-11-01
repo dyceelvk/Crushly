@@ -7,7 +7,7 @@ import { Avatar } from '../../components/Photo';
 import { CrushlyMark } from '../../components/Logo';
 import { Glow, Particles } from '../../components/Ambient';
 import { useToast } from '../../components/Toast';
-import { useMe, useOpenConversation } from '../../api/hooks';
+import { useMe, useOpenConversation, useUser } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { palettes, space } from '../../theme/tokens';
 import { haptic } from '../../lib/haptics';
@@ -18,7 +18,13 @@ export const celebrated = new Set<number>();
 
 /** "It's a Crush." — a quiet celebration: soft glow, a few motes, two portraits leaning in. */
 export function MutualCrushScreen({ navigation, route }: ScreenProps<'MutualCrush'>) {
-  const { userId, name, photo } = route.params;
+  const { userId, name: routeName, photo: routePhoto } = route.params;
+  // A match that arrives through a notification knows the name but not the
+  // face — the badge payload carries no photo. Ask for the Space rather than
+  // drawing an initial where the person should be.
+  const member = useUser(userId);
+  const name = routeName || member.data?.name || 'Your match';
+  const photo = routePhoto ?? member.data?.photos?.[0]?.url ?? null;
   const { reduceMotion } = useTheme();
   const c = palettes.dark;
   const insets = useSafeAreaInsets();
@@ -100,6 +106,9 @@ export function MutualCrushScreen({ navigation, route }: ScreenProps<'MutualCrus
         </Txt>
         <Txt variant="accent" color={c.textSecondary} align="center" style={{ marginTop: space.xs }}>
           You and {name} both felt something.
+        </Txt>
+        <Txt variant="caption" color={c.textMuted} align="center" style={{ marginTop: space.sm, maxWidth: 300 }}>
+          A Whisper is open between you. Nobody else can see it.
         </Txt>
       </Animated.View>
 

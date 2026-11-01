@@ -39,6 +39,7 @@ import {
 import type { Post, PostComment, ReactionKind } from '../../api/types';
 import { REACTION_KINDS } from '../../api/types';
 import { EditedClip } from '../../components/EditedClip';
+import type { StageFit } from '../../lib/videoFrame';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -127,6 +128,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const [shareOpen, setShareOpen] = useState(false);
   // The three dots: everything you can do to a post that isn't a reaction.
   const [moreOpen, setMoreOpen] = useState(false);
+  // How a clip sits on the full-screen stage. `fit` shows the whole frame and
+  // fills the space around it with a soft copy of itself; `fill` crops to the
+  // screen and leaves no space at all. See `stageFit` in lib/videoFrame.
+  const [stageFitMode, setStageFitMode] = useState<StageFit>('fit');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const { openActions } = useMemberActions();
@@ -307,9 +312,12 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       >
         {post.mediaUrl ? (
           post.mediaKind === 'video' ? (
-            /* The stage is the box here, so the clip fills it and letterboxes
-               inside it rather than shaping itself — a 16:9 clip on a phone
-               screen is a band with black above and below, which is correct.
+            /* The stage is the box here, so the clip fills it rather than shaping
+               itself. What fills the leftover space is the decision the stage
+               makes: a landscape clip used to be letterboxed in black, which
+               read as a fault rather than a frame. Now the whole picture sits on
+               a blurred copy of itself, and the button in the top bar swaps that
+               for a crop that leaves no space at all.
                `controls` gives it the tap-to-pause it never had, and double tap
                still reacts: both gestures are decided in one place so a double
                tap cannot also fire the pause. */
@@ -319,6 +327,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               autoPlay
               loop
               fill
+              fit={stageFitMode}
               controls
               onDoubleTap={() => void reactWith('crush')}
               style={{ width: '100%', height: '100%' }}
@@ -383,6 +392,14 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             sending it to somebody, reporting it and deleting it all live here.
             Delete used to be the only thing in this corner, which meant the one
             destructive action in the app was also the easiest one to hit. */}
+        {post.mediaKind === 'video' ? (
+          <IconButton
+            icon={stageFitMode === 'fit' ? 'expand-outline' : 'contract-outline'}
+            label={stageFitMode === 'fit' ? 'Fill the screen' : 'See the whole frame'}
+            variant="glass"
+            onPress={() => setStageFitMode(stageFitMode === 'fit' ? 'fill' : 'fit')}
+          />
+        ) : null}
         <IconButton icon="ellipsis-horizontal" label="More for this post" variant="glass" onPress={() => setMoreOpen(true)} />
       </View>
 
