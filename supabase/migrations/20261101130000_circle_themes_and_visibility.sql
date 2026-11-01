@@ -98,17 +98,18 @@ begin
   end if;
   connected := public.is_connected_pair(me, p_member_id);
 
+  -- `circle_members` keys people by `member_id`, not `user_id`: the first
+  -- version of this function said user_id and failed the moment it was called.
   for r in
     select c.*,
            (select count(*) from circle_members cm2 where cm2.circle_id = c.id) as member_count,
-           exists (select 1 from circle_members cm3 where cm3.circle_id = c.id and cm3.user_id = me) as i_am_in,
-           (select cm4.role from circle_members cm4 where cm4.circle_id = c.id and cm4.user_id = p_member_id) as their_role
+           exists (select 1 from circle_members cm3 where cm3.circle_id = c.id and cm3.member_id = me) as i_am_in
       from circles c
-     where exists (select 1 from circle_members cm where cm.circle_id = c.id and cm.user_id = p_member_id)
+     where exists (select 1 from circle_members cm where cm.circle_id = c.id and cm.member_id = p_member_id)
        and (
          c.visibility = 'public'
          or connected
-         or exists (select 1 from circle_members cm5 where cm5.circle_id = c.id and cm5.user_id = me)
+         or exists (select 1 from circle_members cm5 where cm5.circle_id = c.id and cm5.member_id = me)
        )
      order by i_am_in desc, member_count desc, c.created_at desc
      limit 30
@@ -122,8 +123,8 @@ begin
       'visibility', r.visibility,
       'createdAt', r.created_at,
       'ownerId', r.owner_id,
-      'myRole', case when r.i_am_in then 'member' else 'visitor' end,
-      'muted', false,
+      'myRole', case when r.i_am_in then coalesce((select cm6.role from circle_members cm6 where cm6.circle_id = r.id and cm6.member_id = me), 'member') else 'visitor' end,
+      'muted', coalesce((select cm7.muted from circle_members cm7 where cm7.circle_id = r.id and cm7.member_id = me), false),
       'memberCount', r.member_count,
       'joined', r.i_am_in
     ));
