@@ -24,9 +24,16 @@ type TagHit = { tag: string; uses: number };
 export function Suggestions({
   token,
   onPick,
+  quiet = false,
 }: {
   token: ActiveToken;
   onPick: (choice: string) => void;
+  /**
+   * Say nothing when there is nothing to suggest. On the search screen the rows
+   * underneath are already the answer, so a "nobody called that" line above them
+   * contradicts what the member can see.
+   */
+  quiet?: boolean;
 }) {
   const { colors } = useTheme();
   const [people, setPeople] = useState<MentionHit[] | null>(null);
@@ -95,6 +102,7 @@ export function Suggestions({
           {kind === 'mention' ? 'Looking for people…' : 'Looking for tags…'}
         </Txt>
       ) : rows.length === 0 ? (
+        quiet ? null : (
         <Txt variant="small" color="textMuted" style={{ padding: space.sm }}>
           {kind === 'mention'
             ? query
@@ -104,6 +112,7 @@ export function Suggestions({
               ? `No Flows with #${query} yet. Post it and you start it.`
               : 'No tags yet. Yours would be the first.'}
         </Txt>
+        )
       ) : (
         <ScrollView style={{ maxHeight: 184 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {rows.map((r) => (

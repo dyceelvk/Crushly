@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
 import { KeepsYouChip } from '../../components/KeepsYouChip';
+import { Suggestions } from '../../components/Suggestions';
+import { useMentionInput } from '../../components/useMentionInput';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -122,6 +124,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const openWhisper = useOpenConversation();
 
   const [draft, setDraft] = useState('');
+  // A comment is words too: `@` names somebody, `#` reaches a tag.
+  const commentInput = useMentionInput(draft, setDraft);
   const [replyTo, setReplyTo] = useState<PostComment | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -801,7 +805,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         subtitle={`${post.commentCount} under this post · ${post.audience === 'everyone' ? 'everyone' : 'connections only'}`}
         maxHeight={0.86}
         footer={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <>
+            {/* The list opens above the box it belongs to, not over it. */}
+            <Suggestions token={commentInput.token} onPick={commentInput.pick} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: commentInput.token ? 8 : 0 }}>
             <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={30} />
             <View
               style={{
@@ -819,7 +826,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             >
               <TextInput
                 value={draft}
-                onChangeText={setDraft}
+                onChangeText={commentInput.onChangeText}
+                onSelectionChange={commentInput.onSelectionChange}
                 placeholder={replyTo ? `Reply to ${replyTo.author.name}…` : 'Add a thought…'}
                 placeholderTextColor={colors.textMuted}
                 onSubmitEditing={() => void submitComment()}
@@ -853,6 +861,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               )}
             </Pressable>
           </View>
+          </>
         }
       >
         {replyTo ? (
@@ -1125,9 +1134,17 @@ function CommentBody({
           </Txt>
         </View>
 
-        <Txt variant="small" style={{ marginTop: 3, color: c.hidden ? colors.textMuted : colors.text }}>
-          {c.hidden ? 'This comment was removed.' : c.body}
-        </Txt>
+        {/* A comment can name somebody and reach a tag, so it is read the same
+            way a post is: handles and hashtags are tappable. */}
+        {c.hidden ? (
+          <Txt variant="small" color="textMuted" style={{ marginTop: 3 }}>
+            This comment was removed.
+          </Txt>
+        ) : (
+          <View style={{ marginTop: 3 }}>
+            <LinkText text={c.body} variant="small" />
+          </View>
+        )}
 
         {c.hidden ? null : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: 7 }}>

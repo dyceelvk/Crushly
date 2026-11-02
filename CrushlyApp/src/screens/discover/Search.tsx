@@ -12,6 +12,8 @@ import { Input } from '../../components/Input';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useSearch } from '../../api/hooks';
+import { Suggestions } from '../../components/Suggestions';
+import { useMentionInput } from '../../components/useMentionInput';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
@@ -48,14 +50,20 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
     return () => clearTimeout(t);
   }, [text, query]);
 
-  const results = useSearch(query);
+  // `@` and `#` mean the same thing here as they do in a post: this is a
+  // person, or this is a tag. The sigil is ours, not the catalogue's, so it is
+  // dropped before the words go looking.
+  const searchInput = useMentionInput(text, setText);
+  // The sigil is ours, not the catalogue's: `@ada` searches for ada.
+  const words = query.replace(/^[@#]/, '').trim();
+  const results = useSearch(words);
   const data = results.data;
 
   const total = useMemo(
     () => (data ? data.members.length + data.posts.length + data.vibes.length + data.moments.length : 0),
     [data],
   );
-  const asked = query.length >= 2;
+  const asked = words.length >= 2;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -76,7 +84,8 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
         <View style={{ flex: 1 }}>
           <Input
             value={text}
-            onChangeText={setText}
+            onChangeText={searchInput.onChangeText}
+            onSelectionChange={searchInput.onSelectionChange}
             placeholder="Search people, or words they’ve shared"
             icon="search"
             autoFocus
@@ -87,6 +96,15 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
         </View>
         {text ? <IconButton icon="close" label="Clear search" onPress={() => setText('')} /> : null}
       </View>
+
+      {/* Typing `@` or `#` turns the box into the same two lists it opens
+          everywhere else — and picking one leaves the finished word in the
+          search box, so the results are for that person or that tag. */}
+      {searchInput.token ? (
+        <View style={{ paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
+          <Suggestions token={searchInput.token} onPick={searchInput.pick} quiet />
+        </View>
+      ) : null}
 
       <ScrollView
         contentContainerStyle={{
@@ -120,7 +138,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
         ) : total === 0 ? (
           <EmptyState
             icon="search-outline"
-            title={`Nothing for “${query}”`}
+            title={`Nothing for “${words}”`}
             message="Try a shorter word, or a name."
           />
         ) : (
