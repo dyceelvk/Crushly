@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { errorLine, errorTitle, isOffline, OFFLINE_ERROR, GENERIC_ERROR } from './errors';
+import { errorLine, errorTitle, isMissingFunctionResponse, isOffline, OFFLINE_ERROR, GENERIC_ERROR } from './errors';
 
 test('error toast headings read like clear, member-facing sentences', () => {
   assert.equal(errorTitle('Not saved'), 'Couldn’t save your changes');
@@ -54,4 +54,19 @@ test('empty, overlong, or opaque values use clean retry copy', () => {
   const long = 'Could not complete the operation because ' + 'x'.repeat(400);
   assert.equal(errorLine(long), GENERIC_ERROR);
   assert.equal(errorLine(new Error('relation "x" does not exist'), 'This Space isn’t available.'), 'This Space isn’t available.');
+});
+
+test('a missing database function is recognised, not mistaken for a broken schema', () => {
+  // The exact shape PostgREST returns when the RPC in the app is newer than the
+  // database it is talking to. This used to be swallowed by the "schema cache"
+  // branch, which is how the home feed ended up showing an error over itself
+  // instead of falling back to the timeline it already had.
+  assert.equal(
+    isMissingFunctionResponse('Could not find the function public.flow_ranked_feed(p_cursor, p_limit) in the schema cache', 'PGRST202'),
+    true,
+  );
+  assert.equal(isMissingFunctionResponse('function public.flow_ranked_feed(jsonb, integer) does not exist', '42883'), true);
+  assert.equal(isMissingFunctionResponse('permission denied for function flow_feed', '42501'), false);
+  assert.equal(isMissingFunctionResponse('Could not find the table public.nope in the schema cache', 'PGRST205'), false);
+  assert.equal(isMissingFunctionResponse(undefined), false);
 });

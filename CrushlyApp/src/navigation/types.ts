@@ -12,6 +12,8 @@ export type TabParamList = {
 export type InfoPage = 'guidelines' | 'privacy' | 'terms' | 'help' | 'safety-tips' | 'contact';
 
 export type RootStackParamList = {
+  /** The opening surface: "Follow the feelings", one tap from Welcome. */
+  Follow: undefined;
   Welcome: undefined;
   SignIn: undefined;
   SignUp: undefined;

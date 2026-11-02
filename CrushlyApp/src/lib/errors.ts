@@ -86,3 +86,20 @@ export function isOffline(error: unknown): boolean {
   const raw = rawMessage(error);
   return !!raw && /Failed to fetch|Network request failed|Load failed|NetworkError|offline|ECONN|ENOTFOUND|timed out/i.test(raw);
 }
+
+/**
+ * Did the database say "I don't have that function"?
+ *
+ * PostgREST answers an unknown RPC with PGRST202 and a message that ends
+ * "... in the schema cache"; Postgres itself says 42883 / "does not exist".
+ * The distinction matters: a function that is missing because a migration has
+ * not been applied yet is a case the app can survive by using an older
+ * function, and treating it as a general "something broke" is what put an error
+ * screen over the home feed.
+ */
+export function isMissingFunctionResponse(message: unknown, code?: unknown): boolean {
+  const c = code == null ? '' : String(code);
+  if (c === 'PGRST202' || c === '42883') return true;
+  return /could not find the function|function .* does not exist/i.test(String(message ?? ''));
+}
+

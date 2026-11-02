@@ -1,59 +1,26 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
-import { CrushlyMark } from '../../components/Logo';
-import { Glow, LightSweep } from '../../components/Ambient';
-import { useTheme } from '../../theme/ThemeProvider';
-import { palettes, fonts } from '../../theme/tokens';
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Glow } from '../../components/Ambient';
+import { palettes } from '../../theme/tokens';
 
 /**
- * Cinematic but brief: the mark fades up through the brand's own light while a
- * single sweep passes. Shown only while the session restores.
+ * The canvas behind a session restore.
  *
- * It uses the same two-colour glow and the same line as the Welcome screen, so
- * the first frame and the second frame are the same product — the splash used
- * to sit on a single cyan disc and say a different sentence from the screen it
- * handed off to.
+ * This used to be a logo screen — mark, wordmark, tagline, a light sweep. It was
+ * removed on purpose: it was the first frame of the product and it said nothing,
+ * so every launch began with a screen you had to wait out. What is left is the
+ * brand's own light on the brand's own black, held only for as long as the stored
+ * session takes to come back, and then the app is either on the feed (returning
+ * member) or on "Follow the feelings" (first launch).
+ *
+ * Deliberately no text and no animation: this is not a screen, it is a breath.
  */
-export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
-  const { reduceMotion } = useTheme();
-  const c = palettes.dark; // the splash is always noir, matching the native splash
-  const fade = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
-  const lift = useRef(new Animated.Value(reduceMotion ? 0 : 10)).current;
-  const tagline = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const native = Platform.OS !== 'web';
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(fade, { toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: native }),
-        Animated.timing(lift, { toValue: 0, duration: 620, easing: Easing.out(Easing.cubic), useNativeDriver: native }),
-      ]),
-      Animated.timing(tagline, { toValue: 1, duration: 360, useNativeDriver: native }),
-    ]).start();
-  }, [fade, lift, tagline, reduceMotion]);
-
+export function BootCanvas() {
+  const c = palettes.dark;
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Follow the feeling.">
-      <Glow size={460} color={c.primary} opacity={0.8} style={{ position: 'absolute' }} />
-      <Glow size={380} color={c.crush} opacity={0.5} style={{ position: 'absolute', top: -140, right: -120 }} />
-      <LightSweep duration={1300} />
-      <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
-        <CrushlyMark size={92} />
-        {fontsReady ? (
-          <Animated.Text style={{ fontFamily: fonts.display, fontSize: 40, color: c.text, marginTop: 18, letterSpacing: -0.4 }}>Crushly</Animated.Text>
-        ) : (
-          <View style={{ height: 66 }} />
-        )}
-        <Animated.Text
-          style={{
-            fontFamily: fontsReady ? fonts.medium : undefined, fontSize: 15, color: c.textSecondary, marginTop: 8, letterSpacing: 0.4,
-            opacity: tagline,
-          }}
-        >
-          Follow the feeling.
-        </Animated.Text>
-      </Animated.View>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, overflow: 'hidden' }]}>
+      <Glow size={520} color={c.primary} opacity={0.45} style={{ position: 'absolute', top: -260, left: -200 }} />
+      <Glow size={520} color={c.crush} opacity={0.3} style={{ position: 'absolute', bottom: -280, right: -220 }} />
     </View>
   );
 }

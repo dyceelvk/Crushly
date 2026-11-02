@@ -13,6 +13,7 @@ import {
 } from '../lib/mediaHost';
 import type { MediaKind } from '../lib/mediaHost';
 import { storage } from '../lib/storage';
+import { isMissingFunctionResponse } from '../lib/errors';
 
 /**
  * Supabase client and shared transport helpers.
@@ -115,6 +116,21 @@ export function toApiError(err: unknown): ApiError {
       0,
       'The Supabase URL in this build is wrong. Use the bare Project URL — https://<ref>.supabase.co — not /rest/v1 or a connection string.',
     );
+  }
+  /**
+   * A missing *function* also arrives as "... in the schema cache", and it used
+   * to be caught by the branch below and rewritten into "The database schema
+   * isn't set up on this Supabase project yet" with the code thrown away. That
+   * made the ranked feed's graceful fallback impossible: `flow_ranked_feed` is
+   * newer than the database it talks to, so it answers PGRST202, and by the time
+   * `isMissingFunction` looked at it the code was gone and the rethrown error
+   * painted "That didn't load" over the entire home screen.
+   *
+   * PostgREST says PGRST202 / "Could not find the function"; Postgres says 42883.
+   * Those keep their code so the caller can degrade instead of fail.
+   */
+  if (isMissingFunctionResponse(message, e?.code)) {
+    return new ApiError(404, message, 'PGRST202');
   }
   if (/could not find the table|schema cache/i.test(message)) {
     return new ApiError(

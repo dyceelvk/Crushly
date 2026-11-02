@@ -14,7 +14,7 @@ import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import { AuthProvider, useAuth } from './src/state/auth';
 import { ToastProvider } from './src/components/Toast';
 import { MemberActionsProvider } from './src/state/memberActions';
-import { SplashScreen } from './src/screens/auth/Splash';
+import { BootCanvas } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import type { RootStackParamList } from './src/navigation/types';
 import { ApiError } from './src/api/client';
@@ -107,7 +107,7 @@ function Shell() {
     },
   };
 
-  if (status === 'restoring' || !fontsReady || !themeReady) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
+  if (status === 'restoring' || !fontsReady || !themeReady) return <BootCanvas />;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

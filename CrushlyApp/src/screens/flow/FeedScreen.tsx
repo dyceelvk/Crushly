@@ -11,8 +11,8 @@ import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMe, useMyCircles } from '../../api/hooks';
-import { useTheme } from '../../theme/ThemeProvider';
-import { space } from '../../theme/tokens';
+import { NoirScope } from '../../theme/ThemeProvider';
+import { palettes, space } from '../../theme/tokens';
 import { openSpan, settleDwell, type ActiveSpan } from '../../lib/dwell';
 import type { Post } from '../../api/types';
 import type { RootStackParamList } from '../../navigation/types';
@@ -38,7 +38,9 @@ export function FeedScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const { colors } = useTheme();
+  // The feed is always noir, so it reads the noir palette directly instead of the
+  // appearance the rest of the app is using (see NoirScope).
+  const colors = palettes.dark;
   const { data: me } = useMe();
   const { data: circles } = useMyCircles();
   const reportDwell = usePostDwell();
@@ -120,6 +122,7 @@ export function FeedScreen() {
   ];
 
   return (
+    <NoirScope>
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       {feed.isLoading ? (
         <View style={{ flex: 1, padding: space.lg, gap: space.md, justifyContent: 'center' }}>
@@ -223,6 +226,7 @@ export function FeedScreen() {
 
       {shareFor ? <ShareToWhisper visible post={shareFor} onClose={() => setShareFor(null)} /> : null}
     </View>
+    </NoirScope>
   );
 }
 

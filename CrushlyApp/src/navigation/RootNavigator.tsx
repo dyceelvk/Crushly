@@ -15,7 +15,8 @@ import { TabBar } from './TabBar';
 import type { RootStackParamList, TabParamList } from './types';
 import { notificationText } from '../screens/notifications/Notifications';
 
-import { SplashScreen } from '../screens/auth/Splash';
+import { BootCanvas } from '../screens/auth/Splash';
+import { FollowScreen } from '../screens/auth/Follow';
 import { WelcomeScreen } from '../screens/auth/Welcome';
 import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } from '../screens/auth/AuthForms';
 import {
@@ -151,7 +152,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   const { status } = useAuth();
   const { colors, reduceMotion } = useTheme();
 
-  if (status === 'restoring' || !fontsReady) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
+  if (status === 'restoring' || !fontsReady) return <BootCanvas />;
 
   return (
     <Stack.Navigator
@@ -165,6 +166,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
     >
       {status === 'signedOut' ? (
         <Stack.Group screenOptions={{ animation: reduceMotion ? 'none' : 'fade' }}>
+          <Stack.Screen name="Follow" component={FollowScreen} />
           <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="SignIn" component={SignInScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="SignUp" component={SignUpScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
