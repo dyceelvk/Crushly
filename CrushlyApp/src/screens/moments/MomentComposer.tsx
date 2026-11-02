@@ -50,9 +50,8 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
 
   const cam = useLiveCamera();
 
-  // When returning from the dedicated trim screen, apply the chosen trim to the
-  // clip and its edit. If the user cancelled, clear the pending clip so they can
-  // pick again.
+  // Returning from the shared workbench preserves the complete edit recipe.
+  // If the user cancelled, clear the pending clip so they can pick again.
   useFocusEffect(
     useCallback(() => {
       const result = takeTrimResult();
@@ -60,11 +59,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         setClip(pendingClip);
         setPendingClip(null);
         setMode('video');
-        setClipEdit({
-          ...emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0),
-          trimStart: result.trimStart,
-          trimEnd: result.trimEnd,
-        });
+        setClipEdit(result.edit ?? emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0));
       } else if (!result && pendingClip) {
         setPendingClip(null);
       }
@@ -92,13 +87,22 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
+      let sourceUri = asset.uri;
+      if (Platform.OS === 'web') {
+        try {
+          const response = await fetch(asset.uri, { cache: 'no-store' });
+          if (response.ok) sourceUri = URL.createObjectURL(await response.blob());
+        } catch {
+          // Retain the picker URI if pinning the browser blob is unavailable.
+        }
+      }
       setPendingClip({
-        uri: asset.uri,
+        uri: sourceUri,
         mimeType: asset.mimeType || 'video/mp4',
         durationMs: asset.duration ?? 0,
       });
       navigation.navigate('VideoTrim', {
-        sourceUri: asset.uri,
+        sourceUri,
         sourceDuration: (asset.duration ?? 0) / 1000,
         category: 'moment',
       });
@@ -272,6 +276,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         sourceUri={clip?.uri ?? null}
         sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
         category="moment"
+        initialEdit={clipEdit}
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           // Only the words and stickers are kept. The cut is baked in on the

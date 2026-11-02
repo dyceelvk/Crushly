@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
@@ -64,20 +64,15 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
     p.loop = true;
   });
 
-  // When returning from the dedicated trim screen, apply the chosen trim to the
-  // clip and its edit. If the user cancelled, clear the pending clip so they can
-  // pick again.
+  // Returning from the shared workbench preserves the complete edit recipe.
+  // If the user cancelled, clear the pending clip so they can pick again.
   useFocusEffect(
     useCallback(() => {
       const result = takeTrimResult();
       if (result && pendingClip) {
         setClip(pendingClip);
         setPendingClip(null);
-        setClipEdit({
-          ...emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0),
-          trimStart: result.trimStart,
-          trimEnd: result.trimEnd,
-        });
+        setClipEdit(result.edit ?? emptyEdit(pendingClip.durationMs ? pendingClip.durationMs / 1000 : 0));
       } else if (!result && pendingClip) {
         setPendingClip(null);
       }
@@ -93,6 +88,15 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
+      let sourceUri = asset.uri;
+      if (Platform.OS === 'web') {
+        try {
+          const response = await fetch(asset.uri, { cache: 'no-store' });
+          if (response.ok) sourceUri = URL.createObjectURL(await response.blob());
+        } catch {
+          // Retain the picker URI if pinning the browser blob is unavailable.
+        }
+      }
       const sizeBytes = asset.fileSize ?? 0;
 
       if (asset.duration && asset.duration > MAX_SECONDS * 1000) {
@@ -105,13 +109,13 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
       }
 
       setPendingClip({
-        uri: asset.uri,
+        uri: sourceUri,
         mimeType: asset.mimeType || 'video/mp4',
         durationMs: asset.duration ?? 0,
         sizeBytes,
       });
       navigation.navigate('VideoTrim', {
-        sourceUri: asset.uri,
+        sourceUri,
         sourceDuration: (asset.duration ?? 0) / 1000,
         category: 'vibe',
       });
@@ -306,6 +310,7 @@ export function VibeComposerScreen({ navigation }: ScreenProps<'VibeComposer'>) 
         sourceUri={clip?.uri ?? null}
         sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
         category="vibe"
+        initialEdit={clipEdit}
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           setClipEdit(r.edit);

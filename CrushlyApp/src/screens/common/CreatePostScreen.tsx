@@ -32,7 +32,7 @@ import { VideoEditorModal } from '../../components/VideoEditor';
 import type { LiveEdit, VideoEdit } from '../../lib/videoEdit';
 import { emptyEdit, splitForUpload } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
-import { setTrimResult, takeTrimResult, TrimResult } from './VideoTrimScreen';
+import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -122,22 +122,17 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const primaryMedia = media[0];
   const videoMedia = media.find((m) => m.type === 'video');
 
-  // When returning from the dedicated trim screen, apply the chosen trim.
+  // When returning from the shared video workbench, keep its full edit recipe.
   useFocusEffect(
     useCallback(() => {
       const result = takeTrimResult();
       if (result && pendingMedia) {
-        // The trim was cut from the real clip, so the edit must carry its true
-        // duration — otherwise clampEdit collapses the trim window to nothing
-        // and the full, untrimmed clip is posted. (VibeComposer and
-        // MomentComposer do the same thing with pendingClip.durationMs.)
+        // Keep the complete workbench recipe, not just its outer trim, so cuts,
+        // text, stickers and looks survive the trip back to the composer.
         const sourceDuration = (pendingMedia.durationMs ?? 0) / 1000;
         setMedia((prev) => [
           ...prev,
-          {
-            ...pendingMedia,
-            edit: { ...emptyEdit(sourceDuration), trimStart: result.trimStart, trimEnd: result.trimEnd },
-          },
+          { ...pendingMedia, edit: result.edit ?? emptyEdit(sourceDuration) },
         ]);
         setPendingMedia(null);
       } else if (!result && pendingMedia) {
@@ -197,7 +192,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           // Videos go trim-first before anything else.
           setPendingMedia(item);
           navigation.navigate('VideoTrim', {
-            sourceUri: asset.uri,
+            sourceUri: item.uri,
             sourceDuration: durationMs / 1000,
             category: 'post',
           });
@@ -491,6 +486,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         sourceDuration={primaryMedia?.durationMs ? primaryMedia.durationMs / 1000 : 0}
         category="post"
         initialTool={editorTool}
+        initialEdit={primaryMedia?.edit ?? null}
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           setMedia((prev) =>

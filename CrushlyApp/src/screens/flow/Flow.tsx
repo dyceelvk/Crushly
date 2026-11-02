@@ -778,6 +778,7 @@ function Composer({ visible, onClose, onPosted }: { visible: boolean; onClose: (
         sourceUri={photo?.uri ?? clip?.uri ?? null}
         sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
         category="post"
+        initialEdit={clipEdit}
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           if (photo) {

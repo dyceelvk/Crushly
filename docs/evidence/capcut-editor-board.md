@@ -36,18 +36,20 @@ variant of the same shelf.
 
 ## What we took from it
 
-- **Export, not "Done".** The only filled button on the board is the one that
-  finishes the job, and it lives top-right.
-- **Timecode in the header.** `0:00.00 / 0:12.00 · 20%` — where you are, how
-  long it is, how much of the allowance it uses, all before you touch anything.
+- **The finish action is top-right.** CapCut calls it Export. Crushly calls it
+  **Save**, because the current `onDone` contract stores an edit recipe beside
+  the original URI; it does not render a new video file.
+- **Timecode in the header.** `0:00.00 / 0:12.00` keeps the current output time
+  and total visible before the user touches anything.
 - **A real timeline.** A slider says "somewhere in the middle"; a ruler with a
-  lit window and two grab handles says where you cut. Ours is
-  `ClipTimeline` in `VideoEditor.tsx`.
+  playhead and two grab handles says where you cut. Crushly uses the two-lane
+  `Timeline.tsx` surface.
 - **The rail is a shelf.** Icon over label, active item in gold, the panel
-  opening above it rather than replacing it.
-- **The stage stays clean.** Anything that is not the clip (including our
-  "install the app" line) belongs below the rail as a footnote, not on top of
-  the picture.
+  opening above it on mobile; on desktop the same tool IDs sit in a 58 px left
+  rail and the inspector opens at the right.
+- **The stage stays clean.** Anything that is not the clip belongs below the
+  header and outside the preview. The play affordance is only 54 px wide while
+  paused; it never blankets the canvas or blocks overlay drag handles.
 
 ## Limits, stated plainly
 

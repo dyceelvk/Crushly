@@ -388,6 +388,7 @@ function RoomChat({
         sourceUri={clip?.uri ?? null}
         sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
         category="circle"
+        initialEdit={clipEdit}
         onCancel={() => setEditorOpen(false)}
         onDone={(r) => {
           const edit = r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0);

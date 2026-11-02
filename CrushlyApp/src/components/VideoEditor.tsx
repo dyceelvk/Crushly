@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Linking,
+  Animated,
   Modal,
   PanResponder,
   Platform,
@@ -15,7 +15,6 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { Timeline, TimelineOverlay } from './Timeline';
-import { Rise } from './Rise';
 import { RangeSlider } from './Slider';
 import { Segmented } from './Segmented';
 import { Txt } from './Txt';
@@ -65,8 +64,8 @@ import {
   startHistory,
   undo,
 } from '../lib/editHistory';
-import { lengthOf, locate } from '../lib/timeline';
-import { TRAVEL } from '../lib/motion';
+import { MIN_SEGMENT, lengthOf, locate } from '../lib/timeline';
+import { EASE_OUT, TRAVEL } from '../lib/motion';
 
 type ToolId = 'trim' | 'captions' | 'filters' | 'speed' | 'crop' | 'stickers' | 'music' | 'adjust';
 
@@ -80,6 +79,13 @@ const TOOLS: { id: ToolId; label: string; icon: keyof typeof Ionicons.glyphMap }
   { id: 'stickers', label: 'Stickers', icon: 'happy-outline' },
   { id: 'music', label: 'Sound', icon: 'musical-notes-outline' },
 ];
+
+function startingEdit(sourceDuration: number | undefined, previous: VideoEdit | null | undefined, category: EditCategory): VideoEdit {
+  const duration = sourceDuration && sourceDuration > 0 ? sourceDuration : previous?.sourceDuration ?? 0;
+  return previous
+    ? clampEdit({ ...previous, sourceDuration: duration }, category)
+    : emptyEdit(duration);
+}
 
 const STICKERS = [
   '🔥', '💜', '😂', '🥹', '✨', '🩷', '👀', '🙌', '💯', '🌙',
@@ -119,6 +125,8 @@ export function VideoEditorModal({
   category = 'post',
   naturalRatio = 9 / 16,
   initialTool,
+  initialEdit,
+  modalAnimation = 'slide',
   onCancel,
   onDone,
 }: {
@@ -130,6 +138,10 @@ export function VideoEditorModal({
   naturalRatio?: number;
   /** Tool to pre-select when the editor opens. */
   initialTool?: ToolId | null;
+  /** Existing recipe to reopen without losing the earlier edit. */
+  initialEdit?: VideoEdit | null;
+  /** A route-hosted editor can disable its inner transition to avoid double-sliding. */
+  modalAnimation?: 'none' | 'slide' | 'fade';
   onCancel: () => void;
   onDone: (result: VideoEditorResult) => void;
 }) {
@@ -139,13 +151,12 @@ export function VideoEditorModal({
 
   // Every change goes through the history, so there is always a way back and
   // no control has to know about it.
-  const [history, setHistory] = useState<History<VideoEdit>>(() => startHistory(emptyEdit(sourceDuration ?? 0)));
+  const [history, setHistory] = useState<History<VideoEdit>>(() => startHistory(startingEdit(sourceDuration, initialEdit, category)));
   const edit = history.present;
   const [clipTime, setClipTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [tool, setTool] = useState<ToolId | null>(initialTool ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
 
   const player = useVideoPlayer(visible && sourceUri ? sourceUri : null, (p) => {
     p.loop = false;
@@ -156,13 +167,22 @@ export function VideoEditorModal({
 
   // A fresh clip resets everything: an edit belongs to one clip and one place.
   useEffect(() => {
-    if (!visible) return;
-    setHistory(startHistory(emptyEdit(sourceDuration ?? 0)));
+    if (!visible) {
+      player?.pause();
+      musicPlayer?.pause();
+      setPlaying(false);
+      return;
+    }
+    setHistory(startHistory(startingEdit(sourceDuration, initialEdit, category)));
     setClipTime(0);
     setPlaying(false);
-    setTool(null);
+    // A caller can open directly into the control they asked for (for example,
+    // the crop action from the composer). Do not erase that route on mount.
+    setTool(initialTool ?? null);
     setSelectedId(null);
-    setReady(false);
+  // `initialTool` is read when the editor opens; changing a parent prop while
+  // an edit is already in progress must not reset the edit history.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, sourceUri, sourceDuration]);
 
   // Some browsers will not read a video's length until it has been played once.
@@ -173,7 +193,6 @@ export function VideoEditorModal({
     const poll = () => {
       const d = player.duration ?? 0;
       if (d > 0.2) {
-        setReady(true);
         setHistory((h) => {
           const e = h.present;
           if (Math.abs(e.sourceDuration - d) < 0.25) return h;
@@ -264,6 +283,16 @@ export function VideoEditorModal({
     if (musicPlayer && edit.music) musicPlayer.volume = edit.music.volume;
   }, [musicPlayer, edit.music]);
 
+  // The preview sound is a real second player. It follows transport state and
+  // is always stopped when the editor is not active (including route dismissal).
+  useEffect(() => {
+    if (!visible || !playing || !edit.music) {
+      musicPlayer?.pause();
+      return;
+    }
+    if (!musicPlayer?.playing) musicPlayer?.play();
+  }, [visible, playing, edit.music, musicPlayer]);
+
   const total = edit.sourceDuration || 0;
   const length = clipLength(edit);
   const limit = EDIT_LIMITS[category];
@@ -272,21 +301,30 @@ export function VideoEditorModal({
   const seek = (cutSeconds: number) => {
     const t = Math.min(Math.max(cutSeconds, 0), length);
     if (player) player.currentTime = sourceTimeAt(edit, t);
+    if (edit.music && musicPlayer) {
+      const musicTime = edit.music.offset + t / Math.max(0.1, edit.speed);
+      if (Math.abs(musicPlayer.currentTime - musicTime) > 0.35) musicPlayer.currentTime = musicTime;
+    }
     setClipTime(t);
   };
 
   const togglePlay = () => {
     if (!player) return;
-    if (player.playing) {
+    const shouldPlay = !player.playing;
+    if (!shouldPlay) {
       player.pause();
-      if (edit.music) musicPlayer?.pause();
+      musicPlayer?.pause();
     } else {
-      if (clipTime >= length - 0.02) seek(0);
+      const startAt = clipTime >= length - 0.02 ? 0 : clipTime;
+      if (startAt !== clipTime) seek(0);
+      if (edit.music && musicPlayer) {
+        musicPlayer.currentTime = edit.music.offset + startAt / Math.max(0.1, edit.speed);
+        musicPlayer.play();
+      }
       player.play();
-      if (edit.music) musicPlayer?.play();
     }
     haptic.tap();
-    setPlaying(!player.playing);
+    setPlaying(shouldPlay);
   };
 
   /**
@@ -311,9 +349,18 @@ export function VideoEditorModal({
 
   // Cut operations. They act on the selected piece, or on the playhead, which
   // is the only other place a cut can mean anything.
-  const selectedPiece = segmentsOf(edit).find((p) => p.id === selectedId) ?? null;
-  const playheadIndex = locate(segmentsOf(edit), clipTime)?.index ?? 0;
-  const pieceCount = segmentsOf(edit).length;
+  const pieces = segmentsOf(edit);
+  const selectedPiece = pieces.find((p) => p.id === selectedId) ?? null;
+  const playheadPosition = locate(pieces, clipTime);
+  const playheadIndex = playheadPosition?.index ?? 0;
+  const activePiece = selectedPiece ?? pieces[playheadIndex] ?? null;
+  const activePieceIndex = activePiece ? pieces.findIndex((p) => p.id === activePiece.id) : -1;
+  const pieceCount = pieces.length;
+  const canSplit = !!playheadPosition &&
+    playheadPosition.into >= MIN_SEGMENT &&
+    lengthOf(playheadPosition.segment) - playheadPosition.into >= MIN_SEGMENT;
+  const canMoveEarlier = activePieceIndex > 0;
+  const canMoveLater = activePieceIndex >= 0 && activePieceIndex < pieceCount - 1;
 
   // What the second lane draws: everything written over the picture, in the
   // same cut seconds the timeline works in.
@@ -394,13 +441,17 @@ export function VideoEditorModal({
   const selectedCaption = edit.captions.find((c) => c.id === selectedId) ?? null;
   const selectedSticker = edit.stickers.find((s) => s.id === selectedId) ?? null;
 
-  // Size the frame to the crop, then shrink it if it would crowd the tools.
-  const availW = Math.min(winW - space.lg * 2, 520);
-  // The stage gets a third of the screen, not half. The timeline, the cut bar
-  // and the tool sheet all live below it now, and a preview that eats the room
-  // the controls need is how the last version ended up with a rail on top of a
-  // sheet.
-  const availH = Math.max(150, winH * 0.33);
+  // CapCut's measured workbench maps to three stable regions: the preview,
+  // timeline command strip and tracks. At desktop widths, tools live in the
+  // measured 58px sider and the inspector opens on the right; on a phone the
+  // same tools become a bottom rail and inspector.
+  const isWide = winW >= 900;
+  const mobilePanelHeight = Math.min(248, Math.max(156, winH * 0.3));
+  const availW = Math.min(winW - space.lg * 2 - (isWide && tool ? 340 : 0), isWide ? 720 : 520);
+  // Mobile preview height is calculated after the actual fixed workbench rows,
+  // not as a percentage of the screen that can push the preview under them.
+  const mobileRows = insets.top + 58 + 44 + 48 + 114 + (tool ? mobilePanelHeight : 0) + insets.bottom + 70 + space.md;
+  const availH = isWide ? Math.min(winH * 0.62, 620) : Math.max(144, winH - mobileRows);
   const ratio = edit.aspect === 'original' ? naturalRatio : (ASPECTS[edit.aspect].ratio ?? naturalRatio);
   let frameW = availW;
   let frameH = frameW / ratio;
@@ -409,368 +460,248 @@ export function VideoEditorModal({
     frameW = frameH * ratio;
   }
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancel} statusBarTranslucent>
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-            paddingTop: insets.top + space.sm,
-            paddingHorizontal: space.md,
-            paddingBottom: space.sm,
-          }}
+  const panelTitle = TOOLS.find((t) => t.id === tool)?.label ?? '';
+  const panelContent = (
+    <>
+      {tool === 'trim' ? <TrimPanel edit={edit} total={total} category={category} update={update} /> : null}
+      {tool === 'captions' ? (
+        <CaptionsPanel
+          edit={edit}
+          caption={selectedCaption}
+          playhead={clipTime}
+          onSelect={setSelectedId}
+          update={update}
+          colors={colors}
+          category={category}
+        />
+      ) : null}
+      {tool === 'filters' ? <FiltersPanel edit={edit} update={update} /> : null}
+      {tool === 'adjust' ? <AdjustPanel edit={edit} update={update} /> : null}
+      {tool === 'speed' ? <SpeedPanel edit={edit} update={update} /> : null}
+      {tool === 'crop' ? <CropPanel edit={edit} update={update} /> : null}
+      {tool === 'stickers' ? (
+        <StickersPanel
+          edit={edit}
+          sticker={selectedSticker}
+          playhead={clipTime}
+          onSelect={setSelectedId}
+          update={update}
+          category={category}
+        />
+      ) : null}
+      {tool === 'music' ? <MusicPanel edit={edit} update={update} onPick={pickMusic} /> : null}
+    </>
+  );
+
+  const toolPanel = tool === null ? null : (
+    <View
+      style={[
+        {
+          minHeight: 0,
+          overflow: 'hidden',
+          backgroundColor: colors.bgSecondary,
+          borderColor: colors.border,
+        },
+        isWide
+          ? { width: 320, borderLeftWidth: 1 }
+          : { height: mobilePanelHeight, borderTopWidth: 1, borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md },
+      ]}
+    >
+      <View style={{ height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <Txt variant="smallStrong" style={{ flex: 1, color: colors.text }} accessibilityRole="header">
+          {panelTitle}
+          {tool === 'captions' && selectedCaption ? ` · Text ${edit.captions.findIndex((c) => c.id === selectedCaption.id) + 1}` : ''}
+          {tool === 'stickers' && selectedSticker ? ' · Selected' : ''}
+        </Txt>
+        <IconButton icon="close" label={`Close ${panelTitle} panel`} size={36} variant="plain" onPress={() => setTool(null)} />
+      </View>
+      <PanelSlide key={tool} wide={isWide}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: space.md, paddingBottom: insets.bottom + space.md, gap: space.md }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <IconButton icon="close" label="Discard edits" variant="plain" color={colors.text} onPress={onCancel} />
-          {/* The bar reads left to right the way an editor does: out, what it
-              is, and how much of it you have used. Export is the only thing on
-              the right, because it is the only thing you cannot undo. */}
+          <PanelNote>
+            Save stores edits, not a new file. Some trims may be applied on share; other edits stay live in this build.
+          </PanelNote>
+          {panelContent}
+        </ScrollView>
+      </PanelSlide>
+    </View>
+  );
+
+  const transport = (
+    <View style={{ height: 44, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, borderTopWidth: 1, borderTopColor: colors.border }}>
+      <IconButton
+        icon={playing ? 'pause' : 'play'}
+        label={playing ? 'Pause preview' : 'Play preview'}
+        size={40}
+        variant="plain"
+        disabled={!sourceUri}
+        onPress={togglePlay}
+      />
+      <Txt variant="numeric" style={{ color: colors.text }}>
+        {clock(clipTime / edit.speed)} <Txt variant="caption" color="textMuted">/ {clock(playbackLength(edit))}</Txt>
+      </Txt>
+      <View style={{ flex: 1 }} />
+      <Txt variant="caption" style={{ color: colors.textMuted }}>
+        {playing ? 'Preview playing' : 'Preview paused'}
+      </Txt>
+    </View>
+  );
+
+  const timelineCommands = (
+    <View style={{ height: 48, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: space.sm, borderTopWidth: 1, borderTopColor: colors.border }}>
+      <TimelineCommand icon="cut" label="Split at playhead" disabled={!canSplit} onPress={splitNow} />
+      <TimelineCommand icon="copy-outline" label="Duplicate selected clip" disabled={!activePiece} onPress={duplicateNow} />
+      <TimelineCommand icon="trash-outline" label="Delete selected clip" disabled={pieceCount < 2 || !activePiece} onPress={deletePieceNow} />
+      <View style={{ width: 1, height: 24, backgroundColor: colors.border, marginHorizontal: 4 }} />
+      <TimelineCommand icon="chevron-back" label="Move clip earlier" disabled={!canMoveEarlier} onPress={() => moveNow(-1)} />
+      <TimelineCommand icon="chevron-forward" label="Move clip later" disabled={!canMoveLater} onPress={() => moveNow(1)} />
+      <View style={{ flex: 1 }} />
+      <Txt variant="caption" style={{ color: colors.textSecondary }} numberOfLines={1}>
+        {activePiece ? `Clip ${activePieceIndex + 1}  ·  ${lengthOf(activePiece).toFixed(1)}s` : `${pieceCount} clips`}
+      </Txt>
+    </View>
+  );
+
+  const stage = (
+    <View style={{ flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md, paddingVertical: space.xs }}>
+      <View style={{ width: frameW, height: frameH }}>
+        <VideoEditCanvas
+          player={player}
+          edit={edit}
+          clipTime={clipTime}
+          naturalRatio={naturalRatio}
+          interactive
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onMoveCaption={(id, x, y) => update(
+            { ...edit, captions: edit.captions.map((c) => (c.id === id ? { ...c, x, y } : c)) },
+            `caption-move-${id}`,
+          )}
+          onMoveSticker={(id, x, y) => update(
+            { ...edit, stickers: edit.stickers.map((s) => (s.id === id ? { ...s, x, y } : s)) },
+            `sticker-move-${id}`,
+          )}
+          style={{ width: frameW, height: frameH, borderRadius: radius.md }}
+        />
+        {/* A small play affordance appears only while paused. It never blankets
+            the canvas, so caption/sticker handles remain directly draggable. */}
+        {!playing && sourceUri ? (
+          <Pressable
+            onPress={togglePlay}
+            accessibilityRole="button"
+            accessibilityLabel="Play preview"
+            style={{ position: 'absolute', left: '50%', top: '50%', width: 54, height: 54, marginLeft: -27, marginTop: -27, borderRadius: 27, backgroundColor: 'rgba(8,8,10,0.55)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' }}
+          >
+            <Ionicons name="play" size={24} color="#fff" style={{ marginLeft: 3 }} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  const toolRail = <EditorToolRail vertical={isWide} value={tool} onChange={setTool} />;
+
+  return (
+    <Modal visible={visible} animationType={modalAnimation} onRequestClose={() => { player?.pause(); musicPlayer?.pause(); setPlaying(false); onCancel(); }} statusBarTranslucent>
+      <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.bg }}>
+        <View style={{ minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: insets.top + 4, paddingHorizontal: space.md, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <IconButton icon="close" label="Discard edits" variant="plain" color={colors.text} onPress={() => { player?.pause(); musicPlayer?.pause(); setPlaying(false); onCancel(); }} />
+          <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 4 }}>
+            <Txt variant="subheading" style={{ color: colors.text }} accessibilityRole="header" numberOfLines={1}>
+              {CATEGORY_LABEL[category]} editor
+            </Txt>
+            <Txt variant="caption" style={{ color: colors.textSecondary }} numberOfLines={1}>
+              {`${formatTime(clipTime / edit.speed)} / ${formatTime(playbackLength(edit))}  ·  Clip ${Math.max(1, activePieceIndex + 1)} of ${pieceCount}`}
+            </Txt>
+          </View>
           <IconButton
             icon="arrow-undo"
             label={`Undo${canUndo(history) ? `, ${depth(history).undo} step${depth(history).undo === 1 ? '' : 's'}` : ''}`}
             variant="plain"
             color={canUndo(history) ? colors.text : colors.textMuted}
-            onPress={() => {
-              if (canUndo(history)) stepBack();
-            }}
+            disabled={!canUndo(history)}
+            onPress={() => canUndo(history) && stepBack()}
           />
           <IconButton
             icon="arrow-redo"
-            label="Redo"
+            label={`Redo${canRedo(history) ? `, ${depth(history).redo} step${depth(history).redo === 1 ? '' : 's'}` : ''}`}
             variant="plain"
             color={canRedo(history) ? colors.text : colors.textMuted}
-            onPress={() => {
-              if (canRedo(history)) stepForward();
-            }}
+            disabled={!canRedo(history)}
+            onPress={() => canRedo(history) && stepForward()}
           />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt variant="subheading" style={{ color: colors.text }} accessibilityRole="header" numberOfLines={1}>
-              {CATEGORY_LABEL[category]}
-            </Txt>
-            <Txt variant="caption" style={{ color: colors.textSecondary }} numberOfLines={1}>
-              {`${clock(clipTime)} / ${clock(length)}  ·  ${pieceCount === 1 ? '1 piece' : `${pieceCount} pieces`}`}
-            </Txt>
-          </View>
           <Button
-            title="Export"
+            title="Save"
             size="sm"
             variant="primary"
+            disabled={!sourceUri}
             onPress={() => {
               if (!sourceUri) return;
+              player?.pause();
+              musicPlayer?.pause();
+              setPlaying(false);
               haptic.success();
               onDone(exportEdit(sourceUri, edit, category));
             }}
-            accessibilityLabel="Keep this edit"
+            accessibilityLabel="Save edit and return to composer"
+            accessibilityHint="Saves the edit recipe with your clip. This does not render a new video file."
           />
         </View>
 
-        {/* The stage. Nothing on it but the frame and the play control — an
-            editor should look like the thing being edited. */}
-        <View style={{ alignItems: 'center', paddingHorizontal: space.md, paddingTop: space.xs }}>
-          <View style={{ width: frameW, height: frameH }}>
-            <VideoEditCanvas
-              player={player}
-              edit={edit}
-              clipTime={clipTime}
-              naturalRatio={naturalRatio}
-              interactive
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onMoveCaption={(id, x, y) =>
-                update(
-                  { ...edit, captions: edit.captions.map((c) => (c.id === id ? { ...c, x, y } : c)) },
-                  `caption-move-${id}`,
-                )
-              }
-              onMoveSticker={(id, x, y) =>
-                update(
-                  { ...edit, stickers: edit.stickers.map((s) => (s.id === id ? { ...s, x, y } : s)) },
-                  `sticker-move-${id}`,
-                )
-              }
-              style={{ width: frameW, height: frameH, borderRadius: radius.md }}
-            />
-            {/* Tapping the picture is play/pause, the way it is in every editor
-                people already know. */}
-            <Pressable
-              onPress={togglePlay}
-              accessibilityRole="button"
-              accessibilityLabel={playing ? 'Pause preview' : 'Play preview'}
-              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}
-            >
-              {!playing ? (
-                <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(8,8,10,0.55)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' }}>
-                  <Ionicons name="play" size={24} color="#fff" style={{ marginLeft: 3 }} />
-                </View>
-              ) : null}
-            </Pressable>
-          </View>
-          <Txt variant="caption" style={{ color: ready ? colors.textMuted : colors.textSecondary, marginTop: 4 }}>
-            {limit.note}
-          </Txt>
-        </View>
-
-        {/* The timeline, and the five things you can do to a piece of it. The
-            bar is directly under the lanes because a cut is a decision about
-            what is in front of you, and the tool sheet below is a decision
-            about how it looks. */}
-        <Timeline
-          pieces={segmentsOf(edit)}
-          duration={length}
-          playhead={clipTime}
-          overlays={timelineOverlays}
-          selectedId={selectedId}
-          onSeek={seek}
-          onSelect={setSelectedId}
-          onTrim={(id, start, end) => update(trimPiece(edit, id, start, end, category), 'trim')}
-        />
-
-        <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: space.md, paddingTop: space.sm }}>
-          <CutChip icon="cut" label="Split" onPress={splitNow} />
-          <CutChip icon="copy-outline" label="Copy" onPress={duplicateNow} />
-          <CutChip
-            icon="trash-outline"
-            label="Delete"
-            disabled={pieceCount < 2}
-            onPress={deletePieceNow}
-          />
-          <CutChip icon="chevron-back" label="Earlier" compact disabled={pieceCount < 2} onPress={() => moveNow(-1)} />
-          <CutChip icon="chevron-forward" label="Later" compact disabled={pieceCount < 2} onPress={() => moveNow(1)} />
-        </View>
-
-        {/* The sheet for whichever tool is open, directly above the rail. */}
-        <View
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflow: 'hidden',
-            backgroundColor: colors.bgSecondary,
-            borderTopLeftRadius: radius.lg,
-            borderTopRightRadius: radius.lg,
-          }}
-        >
-          {tool === null ? (
-            <View style={{ paddingHorizontal: space.md, paddingTop: space.sm }}>
-              <Txt variant="small" style={{ color: colors.textSecondary }} numberOfLines={2}>
-                Split at the playhead, then drag a piece's ends to trim it. Nothing here is final —
-                Undo is the arrow at the top.
-              </Txt>
+        {isWide ? (
+          <View style={{ flex: 1, minHeight: 0, flexDirection: 'row' }}>
+            {toolRail}
+            <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              <View style={{ flex: 1, minHeight: 0, flexDirection: 'row' }}>
+                {stage}
+                {toolPanel}
+              </View>
+              {transport}
+              {timelineCommands}
+              <Timeline
+                pieces={pieces}
+                duration={length}
+                playhead={clipTime}
+                overlays={timelineOverlays}
+                selectedId={selectedId}
+                onSeek={seek}
+                onSelect={setSelectedId}
+                onTrim={(id, start, end) => update(trimPiece(edit, id, start, end, category), 'trim')}
+              />
             </View>
-          ) : (
-            <Rise key={tool} distance={TRAVEL.card}>
-            <ScrollView
-              contentContainerStyle={{
-                padding: space.md,
-                paddingBottom: insets.bottom + space.xxl,
-                gap: space.md,
-              }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {tool === 'trim' ? (
-                <TrimPanel edit={edit} total={total} category={category} update={update} />
-              ) : null}
-              {tool === 'captions' ? (
-                <CaptionsPanel
-                  edit={edit}
-                  caption={selectedCaption}
-                  onSelect={setSelectedId}
-                  update={update}
-                  colors={colors}
-                  category={category}
-                />
-              ) : null}
-              {tool === 'filters' ? <FiltersPanel edit={edit} update={update} /> : null}
-              {tool === 'adjust' ? <AdjustPanel edit={edit} update={update} /> : null}
-              {tool === 'speed' ? <SpeedPanel edit={edit} update={update} /> : null}
-              {tool === 'crop' ? <CropPanel edit={edit} update={update} /> : null}
-              {tool === 'stickers' ? (
-                <StickersPanel
-                  edit={edit}
-                  sticker={selectedSticker}
-                  onSelect={setSelectedId}
-                  update={update}
-                  category={category}
-                />
-              ) : null}
-              {tool === 'music' ? (
-                <MusicPanel edit={edit} update={update} onPick={pickMusic} />
-              ) : null}
-            </ScrollView>
-            </Rise>
-          )}
-        </View>
-
-        {/* The tool rail. One row, icon over name, the way the apps people
-            already edit in lay it out — and the panel for the chosen tool
-            opens directly above it, so the finger never has to travel. */}
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: space.md, paddingVertical: space.sm, gap: 4 }}
-          >
-            {TOOLS.map((t) => {
-              const active = tool === t.id;
-              return (
-                <Pressable
-                  key={t.id}
-                  onPress={() => {
-                    haptic.tap();
-                    setTool(active ? null : t.id);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={t.label}
-                  style={{ alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, minWidth: 62, borderRadius: radius.md }}
-                >
-                  <View
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 17,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: active ? colors.gold : colors.elevated,
-                    }}
-                  >
-                    <Ionicons name={t.icon} size={17} color={active ? colors.onGold : colors.textSecondary} />
-                  </View>
-                  <Txt variant="caption" style={{ color: active ? colors.gold : colors.textSecondary }} maxFontSizeMultiplier={1.2}>
-                    {t.label}
-                  </Txt>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Add text bar below tabs */}
-        {tool !== 'captions' && edit.captions.length < EDIT_LIMITS[category].maxCaptions ? (
-          <View
-            style={{
-              paddingHorizontal: space.md,
-              paddingVertical: space.sm,
-              gap: 6,
-            }}
-          >
-            <Button
-              title="Add text"
-              icon="add"
-              size="sm"
-              variant="secondary"
-              onPress={() => {
-                const c = newCaption(edit, clipTime);
-                update({ ...edit, captions: [...edit.captions, c] });
-                setSelectedId(c.id);
-                setTool('captions');
-              }}
-              accessibilityLabel="Add caption text"
-            />
           </View>
-        ) : null}
-
-        {/* What the web build cannot do, said once, quietly, at the bottom —
-            not a banner on top of the picture you are trying to edit. */}
-        {Platform.OS === 'web' ? <WebEditorNotice /> : null}
-
-        <View style={{ height: insets.bottom + space.sm }} />
+        ) : (
+          <View style={{ flex: 1, minHeight: 0 }}>
+            {stage}
+            {transport}
+            {timelineCommands}
+            <Timeline
+              pieces={pieces}
+              duration={length}
+              playhead={clipTime}
+              overlays={timelineOverlays}
+              selectedId={selectedId}
+              onSeek={seek}
+              onSelect={setSelectedId}
+              onTrim={(id, start, end) => update(trimPiece(edit, id, start, end, category), 'trim')}
+            />
+            {toolPanel}
+            {toolRail}
+          </View>
+        )}
       </View>
     </Modal>
   );
 }
 
-/**
- * One cut action, as a chip.
- *
- * Five of these fit on one row of a phone, which is the whole reason they are
- * chips and not a menu: split, copy, delete and the two moves are used together
- * and often, and anything behind a long press may as well not exist.
- */
-/** Minutes and seconds only — the subtitle has one line and Export sits on it. */
+/** Minutes and seconds for the transport and ruler. */
 function clock(seconds: number): string {
   const s = Math.max(0, seconds);
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-}
-
-function CutChip({
-  icon,
-  label,
-  onPress,
-  disabled,
-  compact,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  /** Icon only: the two moves sit beside three words and a row has to fit. */
-  compact?: boolean;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={() => {
-        if (disabled) return;
-        onPress();
-      }}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: compact ? 10 : 10,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: disabled ? colors.bgSecondary : colors.elevated,
-      }}
-    >
-      <Ionicons name={icon} size={14} color={disabled ? colors.textMuted : colors.textSecondary} />
-      {compact ? null : (
-        <Txt variant="caption" style={{ color: disabled ? colors.textMuted : colors.textSecondary }} maxFontSizeMultiplier={1.2}>
-          {label}
-        </Txt>
-      )}
-    </Pressable>
-  );
-}
-
-/**
- * On the web every tool here works, but the clip that gets posted is the one
- * you picked — the encoder that makes a trimmed clip genuinely smaller lives in
- * the app. Rather than quietly offering less, we say so and point at the app.
- */
-function WebEditorNotice() {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="link"
-      accessibilityLabel="Install Crushly on Android"
-      onPress={() => {
-        haptic.tap();
-        Linking.openURL('/download/').catch(() => undefined);
-      }}
-      style={{
-        marginHorizontal: space.md,
-        marginTop: space.xs,
-        paddingHorizontal: space.sm,
-        paddingVertical: 8,
-        borderRadius: radius.sm,
-        backgroundColor: colors.bgSecondary,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-      }}
-    >
-      <Ionicons name="download-outline" size={13} color={colors.gold} />
-      <Txt variant="caption" style={{ color: colors.textSecondary, flex: 1 }} numberOfLines={2} maxFontSizeMultiplier={1.2}>
-        Trimming, text and sound are applied in the app. Install Crushly to cut the actual clip.
-      </Txt>
-      <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />
-    </Pressable>
-  );
 }
 
 function PanelNote({ children }: { children: React.ReactNode }) {
@@ -779,6 +710,125 @@ function PanelNote({ children }: { children: React.ReactNode }) {
     <Txt variant="small" style={{ color: colors.textSecondary }}>
       {children}
     </Txt>
+  );
+}
+
+function TimelineCommand({
+  icon,
+  label,
+  onPress,
+  disabled = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <IconButton
+      icon={icon}
+      label={label}
+      size={40}
+      variant="plain"
+      disabled={disabled}
+      color={disabled ? colors.textMuted : colors.textSecondary}
+      style={{ backgroundColor: disabled ? 'transparent' : colors.elevated, borderRadius: radius.sm }}
+      onPress={onPress}
+    />
+  );
+}
+
+function EditorToolRail({
+  vertical,
+  value,
+  onChange,
+}: {
+  vertical: boolean;
+  value: ToolId | null;
+  onChange: (tool: ToolId | null) => void;
+}) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[
+        { backgroundColor: colors.bgSecondary, borderColor: colors.border },
+        vertical
+          ? { width: 72, borderRightWidth: 1, flexShrink: 0 }
+          : { borderTopWidth: 1, flexShrink: 0 },
+      ]}
+    >
+      <ScrollView
+        horizontal={!vertical}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          { alignItems: 'center', gap: 6 },
+          vertical
+            ? { paddingVertical: space.sm, width: 72 }
+            : { paddingHorizontal: space.sm, paddingTop: 6, paddingBottom: Math.max(insets.bottom, 6) },
+        ]}
+      >
+        {TOOLS.map((item) => {
+          const active = value === item.id;
+          return (
+            <Pressable
+              key={item.id}
+              onPress={() => {
+                haptic.tap();
+                onChange(active ? null : item.id);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.label}${active ? ' panel open' : ''}`}
+              accessibilityState={{ selected: active }}
+              style={{
+                width: vertical ? 58 : 64,
+                height: 58,
+                borderRadius: radius.sm,
+                backgroundColor: active ? colors.goldSoft : 'transparent',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 3,
+              }}
+            >
+              <Ionicons name={item.icon} size={19} color={active ? colors.gold : colors.textSecondary} />
+              <Txt variant="caption" style={{ color: active ? colors.gold : colors.textSecondary }} maxFontSizeMultiplier={1.1}>
+                {item.label}
+              </Txt>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+function PanelSlide({ children, wide }: { children: React.ReactNode; wide: boolean }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 200,
+      easing: EASE_OUT,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [progress, wide]);
+
+  const travel = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [TRAVEL.panel, 0],
+  });
+  return (
+    <Animated.View
+      style={[
+        { flex: 1, minHeight: 0, opacity: progress },
+        { transform: wide ? [{ translateX: travel }] : [{ translateY: travel }] },
+      ]}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -844,6 +894,7 @@ function TrimPanel({
 function CaptionsPanel({
   edit,
   caption,
+  playhead,
   onSelect,
   update,
   colors,
@@ -851,8 +902,9 @@ function CaptionsPanel({
 }: {
   edit: VideoEdit;
   caption: VideoEdit['captions'][number] | null;
+  playhead: number;
   onSelect: (id: string | null) => void;
-  update: (e: VideoEdit) => void;
+  update: (e: VideoEdit, mergeKey?: string | null) => void;
   colors: ReturnType<typeof useTheme>['colors'];
   category: EditCategory;
 }) {
@@ -866,8 +918,9 @@ function CaptionsPanel({
         icon="add"
         size="sm"
         variant="secondary"
+        full={false}
         onPress={() => {
-          const c = newCaption(edit, 0);
+          const c = newCaption(edit, playhead);
           update({ ...edit, captions: [...edit.captions, c] });
           onSelect(c.id);
         }}
@@ -912,7 +965,7 @@ function CaptionsPanel({
               update({
                 ...edit,
                 captions: edit.captions.map((c) => (c.id === caption.id ? { ...c, text } : c)),
-              })
+              }, `caption-text-${caption.id}`)
             }
             placeholder="Say it here"
             maxLength={120}
@@ -974,7 +1027,7 @@ function CaptionsPanel({
             low={caption.size}
             step={0.005}
             onChange={(v) =>
-              update({ ...edit, captions: edit.captions.map((c) => (c.id === caption.id ? { ...c, size: v } : c)) })
+              update({ ...edit, captions: edit.captions.map((c) => (c.id === caption.id ? { ...c, size: v } : c)) }, `caption-size-${caption.id}`)
             }
             label="Size"
             formatValue={(v) => `${Math.round(v * 1000)}`}
@@ -990,7 +1043,7 @@ function CaptionsPanel({
               update({
                 ...edit,
                 captions: edit.captions.map((c) => (c.id === caption.id ? { ...c, start: l, end: h } : c)),
-              })
+              }, `caption-time-${caption.id}`)
             }
             label="On screen from"
             formatValue={(v) => `${v.toFixed(1)}s`}
@@ -1016,7 +1069,12 @@ function FiltersPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit
   const { colors } = useTheme();
   return (
     <>
-      <PanelNote>Tap a look. These sit over the clip, so they never damage the picture underneath.</PanelNote>
+      <PanelNote>
+        Tap a look. These sit over the clip, so they never damage the picture underneath.
+      </PanelNote>
+      {Platform.OS === 'web' ? null : (
+        <PanelNote>On-device preview uses a tint approximation; this editor does not bake the filter into a new video file.</PanelNote>
+      )}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
         {FILTER_ORDER.map((id) => {
           const f = FILTERS[id];
@@ -1068,39 +1126,45 @@ function FiltersPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit
   );
 }
 
-function AdjustPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit) => void }) {
+function AdjustPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit, mergeKey?: string | null) => void }) {
   return (
     <>
       <PanelNote>
-        Light and colour. On the web these are true grades; on the phone they are drawn over the clip.
+        {Platform.OS === 'web'
+          ? 'Brightness, contrast and saturation are previewed as real grades.'
+          : 'Brightness uses a light overlay here. Contrast and saturation are unavailable because this device preview cannot render them accurately.'}
       </PanelNote>
       <RangeSlider
         min={-1}
         max={1}
         low={edit.brightness}
         step={0.02}
-        onChange={(v) => update({ ...edit, brightness: v })}
+        onChange={(v) => update({ ...edit, brightness: v }, 'brightness')}
         label="Brightness"
         formatValue={(v) => `${Math.round(v * 100)}`}
       />
-      <RangeSlider
-        min={-1}
-        max={1}
-        low={edit.contrast}
-        step={0.02}
-        onChange={(v) => update({ ...edit, contrast: v })}
-        label="Contrast"
-        formatValue={(v) => `${Math.round(v * 100)}`}
-      />
-      <RangeSlider
-        min={-1}
-        max={1}
-        low={edit.saturation}
-        step={0.02}
-        onChange={(v) => update({ ...edit, saturation: v })}
-        label="Saturation"
-        formatValue={(v) => `${Math.round(v * 100)}`}
-      />
+      {Platform.OS === 'web' ? (
+        <>
+          <RangeSlider
+            min={-1}
+            max={1}
+            low={edit.contrast}
+            step={0.02}
+            onChange={(v) => update({ ...edit, contrast: v }, 'contrast')}
+            label="Contrast"
+            formatValue={(v) => `${Math.round(v * 100)}`}
+          />
+          <RangeSlider
+            min={-1}
+            max={1}
+            low={edit.saturation}
+            step={0.02}
+            onChange={(v) => update({ ...edit, saturation: v }, 'saturation')}
+            label="Saturation"
+            formatValue={(v) => `${Math.round(v * 100)}`}
+          />
+        </>
+      ) : null}
       <Button
         title="Reset light and colour"
         size="sm"
@@ -1144,14 +1208,16 @@ function CropPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit) =
 function StickersPanel({
   edit,
   sticker,
+  playhead,
   onSelect,
   update,
   category,
 }: {
   edit: VideoEdit;
   sticker: VideoEdit['stickers'][number] | null;
+  playhead: number;
   onSelect: (id: string | null) => void;
-  update: (e: VideoEdit) => void;
+  update: (e: VideoEdit, mergeKey?: string | null) => void;
   category: EditCategory;
 }) {
   const { colors } = useTheme();
@@ -1171,7 +1237,7 @@ function StickersPanel({
             key={g}
             onPress={() => {
               if (full) return;
-              const s = newSticker(edit, g, 0);
+              const s = newSticker(edit, g, playhead);
               update({ ...edit, stickers: [...edit.stickers, s] });
               onSelect(s.id);
               haptic.tap();
@@ -1202,7 +1268,7 @@ function StickersPanel({
             low={sticker.scale}
             step={0.05}
             onChange={(v) =>
-              update({ ...edit, stickers: edit.stickers.map((s) => (s.id === sticker.id ? { ...s, scale: v } : s)) })
+              update({ ...edit, stickers: edit.stickers.map((s) => (s.id === sticker.id ? { ...s, scale: v } : s)) }, `sticker-size-${sticker.id}`)
             }
             label="Size"
             formatValue={(v) => `${Math.round(v * 100)}%`}
@@ -1213,7 +1279,7 @@ function StickersPanel({
             low={sticker.rotation}
             step={1}
             onChange={(v) =>
-              update({ ...edit, stickers: edit.stickers.map((s) => (s.id === sticker.id ? { ...s, rotation: v } : s)) })
+              update({ ...edit, stickers: edit.stickers.map((s) => (s.id === sticker.id ? { ...s, rotation: v } : s)) }, `sticker-rotation-${sticker.id}`)
             }
             label="Rotation"
             formatValue={(v) => `${Math.round(v)}°`}
@@ -1228,7 +1294,7 @@ function StickersPanel({
               update({
                 ...edit,
                 stickers: edit.stickers.map((s) => (s.id === sticker.id ? { ...s, start: l, end: h } : s)),
-              })
+              }, `sticker-time-${sticker.id}`)
             }
             label="On screen from"
             formatValue={(v) => `${v.toFixed(1)}s`}
@@ -1255,7 +1321,7 @@ function MusicPanel({
   onPick,
 }: {
   edit: VideoEdit;
-  update: (e: VideoEdit) => void;
+  update: (e: VideoEdit, mergeKey?: string | null) => void;
   onPick: () => void;
 }) {
   const { colors } = useTheme();
@@ -1271,7 +1337,7 @@ function MusicPanel({
             max={1}
             low={edit.music.volume}
             step={0.02}
-            onChange={(v) => update({ ...edit, music: { ...edit.music!, volume: v } })}
+            onChange={(v) => update({ ...edit, music: { ...edit.music!, volume: v } }, 'music-volume')}
             label="Music volume"
             formatValue={(v) => `${Math.round(v * 100)}%`}
           />
@@ -1300,7 +1366,7 @@ function MusicPanel({
         max={1}
         low={edit.clipVolume}
         step={0.02}
-        onChange={(v) => update({ ...edit, clipVolume: v })}
+        onChange={(v) => update({ ...edit, clipVolume: v }, 'clip-volume')}
         label="Clip's own sound"
         formatValue={(v) => (v === 0 ? 'Muted' : `${Math.round(v * 100)}%`)}
       />

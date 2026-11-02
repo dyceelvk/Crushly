@@ -91,13 +91,14 @@ returns `null` for a join, so a joined timeline never takes the lossless path.
 Two lanes — the picture, and what is written over it — with one playhead across
 both. Numbers taken from the measurement in `capcut.md`:
 
-| thing | CapCut | ours |
+| thing | CapCut evidence | Crushly workbench |
 |---|---|---|
-| tool strip height | 48 px | 48 px region (chips 32 px inside) |
+| desktop tool shelf | 58 × 58 items, panel-specific sider | 72 px vertical rail with 58 × 58 icon-over-label items |
+| mobile tool shelf | Bottom shelf, icon over label | Horizontally scrollable bottom rail; same tool IDs and state |
 | first track inset | `left: 6px` | 2 px gutter between pieces |
-| ruler | 10 px, canvas-drawn, `top: 38px` | 18 px, view-drawn |
-| panel swap | `translateY(-48px)`, `.25s ease-out` | `Rise`, 260 ms, measured curve |
-| sider button | 58 × 58, radius 12 | tool rail: 34 px circle + label |
+| ruler | 10 px, canvas-drawn, `top: 38px` | 18 px, view-drawn; fit-to-width, no zoom |
+| panel transition | 56 px travel, ~200 ms ease-out | 56 px travel, 200 ms ease-out; horizontal on desktop, vertical on mobile |
+| top-right action | Export | Save — it stores the edit recipe; it does not render a video file |
 
 The ruler is a **view**, not a canvas, and the reason is stated rather than
 copied: at forty seconds and one lane there are five labels to draw, and a
@@ -142,8 +143,25 @@ is exactly the "bad settings" this round was meant to end.
   today is read as a one-piece timeline (`parseEdit`).
 - New: `splitEdit`, `removePiece`, `duplicatePiece`, `movePiece`,
   `trimPiece`, `piecesOf`, `sourceTimeAt`, `cutTimeOfSource`.
-- `VideoEditor` is now history-driven; the header carries Undo and Redo with a
-  step count, and a five-chip bar sits under the lanes: Split · Copy · Delete ·
-  Back · On.
+- `VideoEditor` is history-driven; the header carries CapCut-style hundredth
+  timecode plus Undo/Redo, and the only filled header action is **Save**. Save
+  returns the original URI and edit recipe to its composer; it is not an export
+  or a render operation.
+- The board is responsive: desktop uses a left 58 px tool shelf and right
+  inspector; mobile uses the same icon-over-label tools on a bottom shelf, with
+  the inspector above it. The panel arrives over 56 px in 200 ms.
+- The existing `VideoTrim` route now opens this same workbench on the Trim tab;
+  it returns the complete recipe to Post, Vibe and Moment instead of a trim-only
+  pair of numbers. Reopening a clip passes `initialEdit`, so prior work survives.
+- A compact command strip is attached to the timeline: Split · Duplicate ·
+  Delete · Earlier · Later. Eligibility follows the playhead/selected segment,
+  and every discrete operation enters the same bounded undo history.
+- Text creation is a small **Add text** action in the Text inspector only. It
+  starts at the current playhead; the rejected global add-text bar is gone.
 - The trim panel says how many pieces there are, and that its handles move only
   the two outer ends.
+- The preview is explicitly non-destructive. At publish time `preparedClip`
+  attempts a native lossless trim where that module is available; the general
+  encoder reports unavailable in this build, so unsupported baking falls back
+  to the source plus a live edit recipe. Web contrast/saturation remain
+  available; native controls that cannot preview accurately are not shown.
