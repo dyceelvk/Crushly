@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -21,7 +21,7 @@ import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/Toast';
 import {
-  useCommentOnPost, useCreatePost, useDeletePost, useDeletePostComment, useFlow, useMe, useMyCircles,
+  useCommentOnPost, useCreatePost, useDeletePost, useDeletePostComment, useMe, useMyCircles, usePostDwell, useRankedFlow,
   useOpenConversation, usePostComments, useReactToPost,
 } from '../../api/hooks';
 import type { Post, PostComment } from '../../api/types';
@@ -32,6 +32,7 @@ import { timeAgo } from '../../lib/format';
 import { formatCount, spokenCount } from '../../lib/counts';
 import { activeIdAt, visibleIndices, type CardBox } from '../../lib/viewability';
 import { feedRange, feedWindow } from '../../lib/feedWindow';
+import { openSpan, settleDwell, type ActiveSpan } from '../../lib/dwell';
 import { pickImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoEditorModal } from '../../components/VideoEditor';
@@ -60,7 +61,14 @@ export function FlowScreen() {
   const { colors } = useTheme();
   const toast = useToast();
   const { data: me } = useMe();
-  const flow = useFlow();
+  // The home feed is ranked now, not sorted by date: every impression and every
+  // dwell is fed back, and the server decides what comes next. `useRankedFlow`
+  // has the same surface as `useFlow`, so the screen below is unchanged.
+  const flow = useRankedFlow();
+  const reportDwell = usePostDwell();
+  // The span the reader is currently inside. Settled only when they move to a
+  // different post — an interruption is not a skip (see lib/dwell).
+  const dwellSpan = useRef<ActiveSpan | null>(null);
   const [composer, setComposer] = useState(false);
 
   // Which card is in front of the reader. Only that one is allowed to play;
@@ -78,6 +86,18 @@ export function FlowScreen() {
     const flat = [...boxes.current.values()].sort((a, b) => a.y - b.y);
     setActiveId(activeIdAt(flat, nextY, nextH));
   }, []);
+
+  // When the post in front of the reader changes, the one they left is measured
+  // and reported. This is the signal the ranked feed is scored from: without it
+  // the feed can only ever know what people tapped, never what they read.
+  useEffect(() => {
+    const settled = settleDwell(dwellSpan.current, activeId, Date.now());
+    if (settled) reportDwell(settled.postId, settled.ms, settled.completed, settled.position);
+    if (activeId !== null && dwellSpan.current?.postId !== activeId) {
+      const position = flow.posts.findIndex((p) => p.id === activeId);
+      dwellSpan.current = openSpan(activeId, Date.now(), position >= 0 ? position : null);
+    }
+  }, [activeId, flow.posts, reportDwell]);
 
   // Which cards stay alive.
   //

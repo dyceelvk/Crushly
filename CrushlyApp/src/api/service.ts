@@ -14,7 +14,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type { AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe } from './types';
+import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe, FlowCursor, RankedFlowPage} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -339,6 +339,49 @@ const PRIVACY_FIELDS: Record<string, [string, 'bool' | readonly string[]]> = {
 export async function flowFeed(limit = 20, after?: number | null): Promise<FlowPage> {
   const page = await rpc<FlowPage>('flow_feed', { p_limit: limit, p_after: after ?? null });
   return { items: page?.items ?? [] };
+}
+
+/**
+ * The ranked Flow.
+ *
+ * `flow_feed` is a timeline; this is the scored stream that replaces it on the
+ * home screen: engagement velocity, recency, affinity and an exploration boost,
+ * with the reason attached to every item. The cursor is opaque — round-trip it.
+ */
+export async function rankedFlow(limit = 8, cursor: FlowCursor | null = null): Promise<RankedFlowPage> {
+  const page = await rpc<RankedFlowPage>('flow_ranked_feed', { p_limit: limit, p_cursor: cursor });
+  return {
+    items: page?.items ?? [],
+    nextCursor: page?.nextCursor ?? null,
+    ranking: page?.ranking,
+  };
+}
+
+/**
+ * Report how long a post was in front of the reader. Fire-and-forget: the feed
+ * must never wait on its own telemetry, and a dropped signal is worth less than
+ * a stutter. `record_post_view` throttles itself server-side.
+ */
+export async function recordPostView(
+  postId: number,
+  dwellMs: number,
+  completed: boolean,
+  position: number | null,
+): Promise<{ recorded: boolean; reason?: string }> {
+  return rpc('record_post_view', {
+    p_post_id: postId,
+    p_dwell_ms: Math.round(dwellMs),
+    p_completed: completed,
+    p_position: position,
+  });
+}
+
+/** A deliberate act — like, comment, save, share, or "not interested". */
+export async function recordPostFeedback(
+  postId: number,
+  kind: 'like' | 'comment' | 'save' | 'share' | 'hide',
+): Promise<{ recorded: boolean; kind?: string }> {
+  return rpc('record_post_feedback', { p_post_id: postId, p_kind: kind });
 }
 
 /**

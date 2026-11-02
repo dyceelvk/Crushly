@@ -185,6 +185,33 @@ export type FlowPage = {
   items: Post[];
 };
 
+/**
+ * Why a post is where it is. Returned with every item from the ranked Flow so a
+ * "why am I seeing this" sheet can be honest, and so the ranking can be debugged
+ * from the client without a database session.
+ */
+export type PostRank = {
+  position: number;
+  score: number;
+  velocity: number;
+  recency: number;
+  affinity: number;
+  explore: number;
+  diversityRank: number;
+  seenBefore: boolean;
+};
+
+export type RankedPost = Post & { rank?: PostRank };
+
+/** The cursor is opaque to the client: hand it back exactly as it arrived. */
+export type FlowCursor = { score: number; id: number };
+
+export type RankedFlowPage = {
+  items: RankedPost[];
+  nextCursor: FlowCursor | null;
+  ranking?: { candidates: number; fresh: number; returned: number };
+};
+
 /** A stored quote of the message a Whisper is answering — built server-side. */
 export type ReplyQuote = {
   id: number;

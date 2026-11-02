@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
 import type { SendDraft } from './service';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
-  Post, PostComment, ReactionKind,
+  Post, PostComment, ReactionKind, RankedPost, FlowCursor,
 } from './types';
 
 export const keys = {
@@ -273,6 +273,63 @@ export function useFlow(limit = 20) {
       void query.refetch();
     },
   };
+}
+
+/**
+ * The ranked Flow — the home feed, scored rather than sorted by date.
+ *
+ * It is an infinite query keyed on a *cursor* rather than an "after this id",
+ * because a ranked page has no stable column to page on: the order is the score,
+ * and the server hands back the exact point to resume from. `postRankedFlow`
+ * keeps the pages in order and hands `loadOlder` the cursor of the last one.
+ *
+ * `keys.flow` is shared with the timeline hook on purpose: posting a post
+ * invalidates both, so a new post appears at the top of whichever feed is open.
+ */
+export function useRankedFlow(limit = 8) {
+  const query = useInfiniteQuery({
+    queryKey: [...keys.flow, 'ranked', limit],
+    initialPageParam: null as FlowCursor | null,
+    queryFn: ({ pageParam }) => service.rankedFlow(limit, pageParam),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+  const posts = useMemo<RankedPost[]>(
+    () => (query.data?.pages ?? []).flatMap((p) => p.items),
+    [query.data],
+  );
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      if (!query.isFetchingNextPage && query.hasNextPage) void query.fetchNextPage();
+    },
+    refresh: () => void query.refetch(),
+    // The screen asks for `isRefetching` to drive the pull-to-refresh spinner;
+    // on an infinite query the equivalent is the background refetch of page one.
+    isRefetching: query.isRefetching,
+    isFetching: query.isFetching || query.isFetchingNextPage,
+  };
+}
+
+/**
+ * Reports how long a post was in front of the reader. Never throws and never
+ * blocks: telemetry that can break a feed is worse than no telemetry.
+ */
+export function usePostDwell() {
+  return useCallback((postId: number, dwellMs: number, completed: boolean, position: number | null) => {
+    void service.recordPostView(postId, dwellMs, completed, position).catch(() => undefined);
+  }, []);
+}
+
+/**
+ * A deliberate act on a post, reported as ranking signal in addition to whatever
+ * it did to the post itself. "Not interested" is the one that changes what you
+ * see next, so it is reported even if the rest is throttled.
+ */
+export function usePostSignal() {
+  return useCallback((postId: number, kind: 'like' | 'comment' | 'save' | 'share' | 'hide') => {
+    void service.recordPostFeedback(postId, kind).catch(() => undefined);
+  }, []);
 }
 
 export function useCreatePost() {
