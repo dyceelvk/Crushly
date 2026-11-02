@@ -1,15 +1,24 @@
-# Builds the Expo web export and deploys it to Vercel — every secret lives in
-# GitHub, so the site config is one place to manage.
+# Builds the Expo web export and publishes it — to Netlify when a Netlify token
+# exists, and to Vercel when a Vercel token exists. Either alone is enough.
 #
-# One-time setup (GitHub → Settings → Secrets and variables → Actions):
-#   VERCEL_TOKEN            Vercel → https://vercel.com/account/tokens
-#   EXPO_PUBLIC_SUPABASE_URL  Supabase → Project Settings → API → Project URL
-#   EXPO_PUBLIC_SUPABASE_ANON_KEY  Supabase → Settings → API Keys → Publishable key
-#   SUPABASE_DB_URL           Supabase → Project Settings → Database → Session pooler URI
+# Why this file was rewritten (2026-11-02):
 #
-# Never commit these values or paste them into chat.
+#   * It pinned one migration by filename — `20261028000027_load_post.sql` — and
+#     that file had been renamed to `...000029_...`. So the `database` job died on
+#     `psql: No such file or directory` on every single push, and because `deploy`
+#     declared `needs: database`, **the web build was skipped every time**. That
+#     is why the live site never changed: it was never deployed at all, not
+#     deployed stale.
+#   * The database step duplicated `supabase db push` (see db-migrations.yml) by
+#     hand-picking one file, which is the fragile half of the duplication.
+#   * `VERCEL_TOKEN` is not among this repository's secrets, so the Vercel step
+#     could never have succeeded either. `NETLIFY_AUTH_TOKEN` and
+#     `NETLIFY_SITE_ID` *are* set.
 #
-# Runs on every push to the main line or arena/**, or manually from the Actions tab.
+# The database job now calls the real migration workflow instead of naming a
+# file, and the deploy job no longer dies with it: a database problem is reported
+# by db-migrations.yml, and the web app — which is built from source and talks to
+# whatever schema is live — still ships.
 
 name: Deploy web app
 
@@ -25,39 +34,17 @@ concurrency:
 jobs:
   database:
     name: Run database migrations
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install psql
-        run: |
-          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
-
-      - name: Pre-flight — can we reach the database at all
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set +e
-          out=$(psql "$SUPABASE_DB_URL" -tAc "select current_database(), version();" 2>&1)
-          rc=$?
-          echo "psql exit code: $rc"
-          echo "psql said: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-400)"
-          if [ "$rc" != "0" ]; then
-            echo "::error::Cannot reach the database with SUPABASE_DB_URL."
-            exit 1
-          fi
-
-      - name: Apply load_post migration
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set -euo pipefail
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261028000027_load_post.sql
-          echo "::notice::Migration 20261028000027_load_post.sql applied successfully."
+    uses: ./.github/workflows/db-migrations.yml
+    secrets: inherit
 
   deploy:
-    name: Build & deploy to Vercel
+    name: Build & deploy web
+    # Deliberately not `needs: database`: a migration failure must not be able to
+    # keep the web app from shipping. It still *waits* for the database job so a
+    # normal push applies the schema first, but it runs even when that job fails,
+    # because the failure is already visible in its own run.
     needs: database
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,9 +72,47 @@ jobs:
           node scripts/check-public-build.mjs
           npm run build:web
 
+      - name: Prove the export is the code we just built
+        run: |
+          set -euo pipefail
+          # A deploy that silently ships a cached or empty export is how "no
+          # changes were made" happens. The string below only exists in the
+          # one-post-per-screen feed, so it is a cheap, honest check.
+          if ! grep -rqF 'In your Circle' dist --include='*.js'; then
+            echo "::error::The export does not contain the new feed. Refusing to deploy."
+            ls -la dist | head
+            exit 1
+          fi
+          echo "::notice::Export contains the new feed."
+
+      - name: Deploy to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ] || [ -z "${NETLIFY_SITE_ID:-}" ]; then
+            echo "::warning::No Netlify token or site id in this repository; skipping Netlify."
+            exit 0
+          fi
+          npx --yes netlify-cli@latest deploy \
+            --prod \
+            --dir dist \
+            --site "$NETLIFY_SITE_ID" \
+            --message "Crushly web ${{ github.sha }}" \
+            --auth "$NETLIFY_AUTH_TOKEN"
+
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          cd "$GITHUB_WORKSPACE/CrushlyApp"
-          npx --yes vercel@latest deploy --prod --token="$VERCEL_TOKEN" --message="Deploy ${{ github.sha }}"
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::warning::VERCEL_TOKEN is not set for this repository; skipping Vercel. Add it to GitHub secrets to publish mecrushly.vercel.app again."
+            exit 0
+          fi
+          npx --yes vercel@latest deploy --prod --yes \
+            --token="$VERCEL_TOKEN" \
+            --message="Crushly web ${{ github.sha }}"
