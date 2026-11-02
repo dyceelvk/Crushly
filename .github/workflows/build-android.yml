@@ -8,6 +8,9 @@ on:
       - '.github/workflows/build-android.yml'
 permissions:
   contents: write
+  # `gh workflow run` at the end of this job: a push made with the bot token
+  # starts no workflows, so the Worker has to be asked to deploy explicitly.
+  actions: write
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -226,6 +229,32 @@ jobs:
           # was just published is the one /version points at. The push cannot
           # retrigger this workflow: it only watches CrushlyApp/**.
           git push
+
+      - name: Deploy the media Worker, because a bot's push starts nothing
+        if: steps.announce.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          code=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['android']['versionCode'])")
+          # Every push made with the bot token is invisible to `on: push`, so
+          # committing release.json announced nothing and /version kept serving
+          # the previous build until somebody deployed by hand. Ask, then check
+          # the answer — the release is not finished until a phone would be told
+          # about it.
+          gh workflow run deploy-worker.yml --ref "${GITHUB_REF_NAME}"
+          for _ in $(seq 1 30); do
+            sleep 10
+            got=$(curl -fsS https://crushly-media.dyceelvk.workers.dev/version || true)
+            if printf '%s' "$got" | grep -q "\"version\":\"$version\"" \
+               && printf '%s' "$got" | grep -q "\"versionCode\":$code,"; then
+              echo "The Worker now offers $version (versionCode $code)."
+              exit 0
+            fi
+          done
+          echo "::error::/version never showed $version / code $code. The APK is published but not announced, so no phone will be offered it."
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:

@@ -10,9 +10,14 @@ Without this the release is a two-step, easy-to-forget job: publish the APK,
 then remember to edit the Worker by hand. Forget the second step and the app
 keeps offering the old build, or offers a file that is not there.
 
-The version code is derived from the version itself, so it only ever rises:
-1.0.2 becomes 100002, and 1.0.3 becomes 100003. A code that went backwards
-would make an update invisible to a phone that already had the newer one.
+The version code is `android.versionCode` from `app.json`, because that is the
+number compiled into the APK's manifest and the only one a phone compares
+against. It used to be derived from the version string (`1.0.20` became
+100020), which meant `/version` advertised 100020 while the APK it pointed at
+declared 20 — so a phone already running that build was told an update existed,
+forever, and installing it changed nothing. A code must still only rise; that
+is enforced against the previous *manifest* code, and the fix for a regression
+is to bump `android.versionCode`, not to invent a bigger number here.
 
 `minVersionCode` is deliberately left alone. Raising it tells every phone below
 that number it *must* update rather than merely may, which is a decision a
@@ -32,15 +37,15 @@ RELEASE_JSON = ROOT / 'cloudflare' / 'media-worker' / 'src' / 'release.json'
 REPO = 'dyceelvk/Crushly'
 
 
-def version_code(version: str) -> int:
-    """A monotonic integer derived from a semver-ish version."""
-    parts = (version.split('-')[0] + '.0.0').split('.')[:3]
-    out = []
-    for part in parts:
-        m = re.match(r'\d+', part.strip())
-        out.append(int(m.group()) if m else 0)
-    major, minor, patch = out
-    return major * 100_000 + minor * 1_000 + patch
+def version_code(app: dict) -> int:
+    """The code a phone actually compares: the one in the APK's manifest."""
+    code = (app.get('expo', {}).get('android') or {}).get('versionCode')
+    if not isinstance(code, int):
+        raise SystemExit(
+            'app.json has no integer android.versionCode. A phone compares that '
+            'number against /version, so there is nothing to publish without it.'
+        )
+    return code
 
 
 def main() -> int:
@@ -65,10 +70,18 @@ def main() -> int:
         print('changed=false')
         return 0
 
-    code = version_code(version)
-    # Never go backwards, and never reuse a code.
-    if code <= int(release['versionCode']):
-        code = int(release['versionCode']) + 1
+    code = version_code(app)
+    # A code that went backwards would make an update invisible to a phone that
+    # already had the newer one. Values of 100000 and up are from the retired
+    # scheme that multiplied the version out; they were never a manifest code,
+    # so they say nothing about what a phone is running.
+    previous = int(release['versionCode'])
+    if version != release['version'] and code <= previous < 100_000:
+        raise SystemExit(
+            f'android.versionCode is {code} but {previous} was published for '
+            f'{release["version"]}. Bump android.versionCode in app.json; it must '
+            'only ever go up.'
+        )
 
     file_name = f'Crushly-{version}-Android9plus.apk'
 
