@@ -45,9 +45,10 @@ test('every category is capped at the seconds its limit allows', () => {
   }
 });
 
-test('a Moment can never run longer than fifteen seconds', () => {
+test('a Moment clip can run up to one minute, never longer', () => {
   const e = clampEdit({ ...emptyEdit(300), trimEnd: 300 }, 'moment');
-  assert.ok(clipLength(e) <= 15.001);
+  assert.equal(EDIT_LIMITS.moment.maxSeconds, 60);
+  assert.ok(clipLength(e) <= 60.001);
 });
 
 test('trimming drags overlays back inside the window', () => {

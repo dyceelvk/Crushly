@@ -22,6 +22,7 @@ import { useAuth } from '../../state/auth';
 import { useTheme, type Appearance } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
+import { errorLine } from '../../lib/errors';
 import { COMPANY_NAME } from '../../lib/company';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -164,7 +165,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
             : undefined,
       });
     },
-    onError: (e) => setError((e as Error).message),
+    onError: (e) => setError(errorLine(e)),
   });
   const status = useMutation({
     mutationFn: (s: 'active' | 'paused') => service.setStatus(s),
@@ -190,7 +191,7 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
       close();
       await forget();
     },
-    onError: (e) => setError((e as Error).message),
+    onError: (e) => setError(errorLine(e)),
   });
 
   if (!me) return <LoadingBlock />;

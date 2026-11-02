@@ -1017,6 +1017,7 @@ export async function createMoment(input: {
   photoMime?: string;
   videoUri?: string;
   videoMime?: string;
+  durationMs?: number | null;
   edit?: LiveEdit | null;
 }): Promise<Moment> {
   const max = input.kind === 'text' ? 280 : 200;
@@ -1033,6 +1034,9 @@ export async function createMoment(input: {
   }
   if (input.kind === 'video') {
     if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');
+    if (!input.durationMs || input.durationMs < 100 || input.durationMs > 60_000) {
+      throw new ApiError(400, 'Choose a clip that is no longer than 1 minute.');
+    }
     const type = (input.videoMime || 'video/mp4').toLowerCase();
     const id = await meId();
     // Same reason as a Vibe: extensionFor() maps mp4 to m4a, which is right for
@@ -1051,6 +1055,7 @@ export async function createMoment(input: {
     p_style: input.style,
     p_audience: input.audience,
     ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
+    ...(input.kind === 'video' ? { p_duration_ms: input.durationMs } : {}),
   });
   return moment;
 }

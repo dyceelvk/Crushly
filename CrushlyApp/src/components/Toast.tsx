@@ -6,7 +6,7 @@ import { Txt } from './Txt';
 import { Avatar } from './Photo';
 import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
-import { errorLine } from '../lib/errors';
+import { errorLine, errorTitle } from '../lib/errors';
 import { radius, space } from '../theme/tokens';
 import { haptic } from '../lib/haptics';
 
@@ -28,9 +28,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     // `(e as Error).message`, and that can be `TypeError: Failed to fetch` just as
     // easily as a sentence written for a person. A message survives only if it is
     // one we wrote.
+    const title = t.kind === 'error' ? errorTitle(t.title) : t.title;
     const message = t.message ? errorLine(t.message) : undefined;
-    AccessibilityInfo.announceForAccessibility(`${t.title}${message ? `. ${message}` : ''}`);
-    setToast({ ...t, message, id: counter.current });
+    AccessibilityInfo.announceForAccessibility(`${title}${message ? `. ${message}` : ''}`);
+    setToast({ ...t, title, message, id: counter.current });
   }, []);
   return (
     <ToastContext.Provider value={show}>

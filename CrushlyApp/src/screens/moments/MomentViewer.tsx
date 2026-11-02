@@ -27,6 +27,10 @@ import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
 const DURATION = 6000;
+const formatDuration = (ms: number) => {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+};
 /** How long a finger must stay down before the Moment freezes. */
 const HOLD_TO_PAUSE_MS = 300;
 type Group = { user: MomentAuthor; moments: Moment[] };
@@ -74,6 +78,9 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const group = groups?.[gi];
   const moment = group?.moments[mi];
   const paused = focused || reactOpen || confirmDelete || holding;
+  const playbackDurationMs = moment?.kind === 'video'
+    ? Math.max(100, Math.min(60_000, moment.durationMs ?? DURATION))
+    : DURATION;
 
   // Start each person's sequence at their first unseen Moment.
   useEffect(() => {
@@ -159,8 +166,12 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   // unpaused, so the elapsed time (and the progress bar) freezes with it.
   const elapsedMs = useRef(0);
   const lastTick = useRef(0);
+  const lastLabelMs = useRef(0);
+  const [elapsedLabelMs, setElapsedLabelMs] = useState(0);
   useEffect(() => {
     elapsedMs.current = 0;
+    lastLabelMs.current = 0;
+    setElapsedLabelMs(0);
     progress.setValue(0);
   }, [moment?.id, progress]);
   // Mirror the React pause state into the ref the loop reads, so pausing from
@@ -176,8 +187,12 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     const tick = () => {
       const now = Date.now();
       if (!pausedRef.current) {
-        elapsedMs.current = Math.min(DURATION, elapsedMs.current + (now - lastTick.current));
-        const p = elapsedMs.current / DURATION;
+        elapsedMs.current = Math.min(playbackDurationMs, elapsedMs.current + (now - lastTick.current));
+        if (elapsedMs.current - lastLabelMs.current >= 250 || elapsedMs.current >= playbackDurationMs) {
+          lastLabelMs.current = elapsedMs.current;
+          setElapsedLabelMs(elapsedMs.current);
+        }
+        const p = elapsedMs.current / playbackDurationMs;
         progress.setValue(p);
         if (p >= 1) {
           next();
@@ -191,7 +206,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [moment, progress, next]);
+  }, [moment, progress, next, playbackDurationMs]);
 
   const myReaction = moment ? (moment.id in localReaction ? localReaction[moment.id] : moment.myReaction) : null;
 
@@ -317,6 +332,13 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
               </View>
             ))}
           </View>
+          {moment.kind === 'video' ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 4 }} accessibilityLiveRegion="polite">
+              <Txt variant="caption" color="rgba(255,255,255,0.82)" accessibilityLabel={`Clip ${formatDuration(elapsedLabelMs)} of ${formatDuration(playbackDurationMs)}`}>
+                {formatDuration(elapsedLabelMs)} / {formatDuration(playbackDurationMs)}
+              </Txt>
+            </View>
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }} pointerEvents="box-none">
             <Pressable
               onPress={() => !mine && navigation.navigate('UserProfile', { id: group.user.id })}

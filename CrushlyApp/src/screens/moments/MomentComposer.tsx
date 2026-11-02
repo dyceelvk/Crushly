@@ -16,9 +16,9 @@ import type { MomentStyle } from '../../api/types';
 import { MOMENT_STYLES } from '../../lib/catalog';
 import { pickImage, type PickedImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
-import { VideoEditorModal } from '../../components/VideoEditor';
 import { EditedClip } from '../../components/EditedClip';
-import { splitForUpload, emptyEdit, type LiveEdit, type VideoEdit } from '../../lib/videoEdit';
+import { ProgressBar } from '../../components/States';
+import { splitForUpload, emptyEdit, playbackLength, type VideoEdit } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { takeTrimResult } from '../common/VideoTrimScreen';
@@ -38,7 +38,6 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
   const [pendingClip, setPendingClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
   const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
   const [busy, setBusy] = useState(false);
 
@@ -50,7 +49,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
 
   const cam = useLiveCamera();
 
-  // Returning from the shared workbench preserves the complete edit recipe.
+  // Returning from the simple Moment trim keeps the selected video section.
   // If the user cancelled, clear the pending clip so they can pick again.
   useFocusEffect(
     useCallback(() => {
@@ -82,7 +81,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
-        videoMaxDuration: 15, // a Moment is a glance; the editor caps it here too
+        videoMaxDuration: 60, // Moments allow up to one minute
         quality: 0.8,
       });
       if (result.canceled || !result.assets?.length) return;
@@ -115,6 +114,9 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
     setBusy(true);
     try {
       const prepared = clip ? await preparedClip(clipEdit, clip.uri, 'moment') : null;
+      const durationMs = clip
+        ? Math.max(100, Math.min(60_000, Math.round(playbackLength(clipEdit ?? emptyEdit((clip.durationMs || 0) / 1000)) * 1000)))
+        : null;
       await createMoment({
         kind: mode,
         body: body.trim(),
@@ -124,6 +126,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         photoMime: photo?.mimeType,
         videoUri: prepared ? prepared.uri ?? undefined : clip?.uri,
         videoMime: clip?.mimeType,
+        durationMs,
         edit: prepared ? prepared.live : null,
       });
       qc.invalidateQueries({ queryKey: keys.moments });
@@ -244,15 +247,34 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
 
       {mode === 'video' && clip ? (
         <View style={{ marginTop: space.md, gap: 8 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <Txt variant="smallStrong">Clip length</Txt>
+            <Txt variant="smallStrong" color="gold">
+              {`${Math.floor((clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) / 60)}:${String(Math.floor((clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) % 60)).padStart(2, '0')} / 1:00`}
+            </Txt>
+          </View>
+          <ProgressBar
+            value={Math.min(1, (clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) / 60)}
+            label="Moment clip length, up to one minute"
+            style={{ height: 6 }}
+          />
           <Button
-            title={clipEdit ? 'Edit your clip again' : 'Edit your clip'}
-            icon="color-wand-outline"
+            title="Adjust clip length"
+            icon="resize-outline"
             variant="secondary"
-            onPress={() => setEditorOpen(true)}
-            accessibilityLabel="Open the video editor"
+            onPress={() => {
+              setPendingClip(clip);
+              navigation.navigate('VideoTrim', {
+                sourceUri: clip.uri,
+                sourceDuration: (clip.durationMs || 0) / 1000,
+                category: 'moment',
+                initialEdit: clipEdit ?? undefined,
+              });
+            }}
+            accessibilityLabel="Adjust Moment clip length"
           />
           <Txt variant="caption" color="textMuted">
-            Fifteen seconds. Gone in 24 hours, like every Moment.
+            Choose up to 1 minute. Your Moment disappears in 24 hours.
           </Txt>
         </View>
       ) : null}
@@ -271,20 +293,6 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
         />
       </View>
 
-      <VideoEditorModal
-        visible={editorOpen}
-        sourceUri={clip?.uri ?? null}
-        sourceDuration={clip?.durationMs ? clip.durationMs / 1000 : 0}
-        category="moment"
-        initialEdit={clipEdit}
-        onCancel={() => setEditorOpen(false)}
-        onDone={(r) => {
-          // Only the words and stickers are kept. The cut is baked in on the
-          // phone, and a Moment is final the moment it is posted.
-          setClipEdit(r.edit ?? emptyEdit(clip?.durationMs ? clip.durationMs / 1000 : 0));
-          setEditorOpen(false);
-        }}
-      />
     </Screen>
   );
 }

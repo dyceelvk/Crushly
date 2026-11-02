@@ -8,7 +8,8 @@ import { Button } from '../../components/Button';
 import * as service from '../../api/service';
 import { useAuthProviders } from '../../api/providers';
 import { sanitizeOtp, passwordStrength } from '../../lib/auth';
-import { ApiError, configProblem, isConfigured } from '../../api/client';
+import { errorLine } from '../../lib/errors';
+import { ApiError, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { HIT, rhythm, space, stroke } from '../../theme/tokens';
@@ -16,16 +17,8 @@ import type { ScreenProps } from '../../navigation/types';
 
 const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
 
-/**
- * Google sign-in is switched off until the OAuth consent screen is published.
- *
- * The screen is set to "Internal", so Google answers every attempt from outside
- * the organisation with *403 org_internal* — a dead end wearing the costume of a
- * working button. Until that setting is changed to External and published, the
- * honest thing is not to offer it: the email form below always works.
- *
- * Flip this to false once the consent screen is live; nothing else needs to
- * change, because the handler below is untouched.
+/** Gmail confirmation codes and links are email/password verification, not OAuth.
+ * Google authentication stays hidden until the product explicitly re-enables it.
  */
 const GOOGLE_SIGN_IN_OFF = true;
 
@@ -74,7 +67,7 @@ function useGoogleSignIn(setError: (m: string | null) => void) {
       await signInWithGoogle();
       // On success the browser is already leaving for Google.
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorLine(err));
       setBusy(false);
     }
   };
@@ -83,24 +76,16 @@ function useGoogleSignIn(setError: (m: string | null) => void) {
 
 function NotConfiguredNotice() {
   const { colors } = useTheme();
-  const badUrl = configProblem === 'bad-url';
-  const secretKey = configProblem === 'secret-key';
   return (
     <View
       accessibilityRole="alert"
       style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: colors.goldSoft, borderRadius: 14, padding: 14, marginBottom: space.md }}
     >
-      <Ionicons name="link-outline" size={20} color={colors.gold} />
+      <Ionicons name="cloud-offline-outline" size={20} color={colors.gold} />
       <View style={{ flex: 1 }}>
-        <Txt variant="smallStrong">
-          {secretKey ? 'Wrong Supabase key — secret key detected' : badUrl ? 'Supabase URL looks wrong' : 'Backend not connected'}
-        </Txt>
+        <Txt variant="smallStrong">We can’t connect to Crushly right now</Txt>
         <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-          {secretKey
-            ? 'EXPO_PUBLIC_SUPABASE_ANON_KEY holds the SECRET key (sb_secret_… or service_role) — that one bypasses all security and must never ship in the app. Supabase → Settings → API Keys → copy the Publishable key (or the legacy anon public key) instead.'
-            : badUrl
-              ? 'EXPO_PUBLIC_SUPABASE_URL should be the bare Project URL — https://<ref>.supabase.co — with nothing after it (not /rest/v1, not a connection string). Fix it in Netlify: Site settings → Environment variables, then clear-cache redeploy.'
-              : 'This build has no Supabase project behind it yet. In Netlify: Site settings → Environment variables → add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then redeploy. On a deploy-preview URL, also make sure both variables apply to Deploy Previews (Netlify scopes env vars per deploy context — a Production-only value leaves previews disconnected). The README walks through the whole setup.'}
+          Please try again in a little while.
         </Txt>
       </View>
     </View>
@@ -142,7 +127,7 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
     try {
       await signIn(e.trim(), p);
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorLine(err));
       setLoading(false);
     }
   };
@@ -271,7 +256,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
         setLoading(false);
         return;
       }
-      setErrors({ form: (err as Error).message });
+      setErrors({ form: errorLine(err) });
       setLoading(false);
     }
   };
@@ -284,7 +269,7 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
       await verifySignupOtp(sentTo, c);
       // Success flips auth state to onboarding/ready — the navigator takes over.
     } catch (err) {
-      setVerifyError((err as Error).message);
+      setVerifyError(errorLine(err));
       setVerifying(false);
     }
   };
@@ -508,7 +493,7 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
       await service.sendPasswordReset(target);
       setSentTo(target.trim().toLowerCase());
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorLine(e));
     } finally {
       setBusy(false);
     }
@@ -526,7 +511,7 @@ export function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword
       await setNewPassword(password);
       // Success flips auth state — the navigator takes over.
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorLine(e));
       setBusy(false);
     }
   };
@@ -663,7 +648,7 @@ export function SetPasswordScreen() {
       await setNewPassword(password);
       // Success flips auth state — the navigator takes over.
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorLine(e));
       setBusy(false);
     }
   };

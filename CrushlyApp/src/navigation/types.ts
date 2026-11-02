@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { VideoEdit } from '../lib/videoEdit';
 
 export type TabParamList = {
   Flows: undefined;
@@ -41,7 +42,7 @@ export type RootStackParamList = {
   Moments: undefined;
   MomentComposer: undefined;
   VibeComposer: undefined;
-  VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle' };
+  VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle'; initialEdit?: VideoEdit };
   /** `type` skips the "what are you sharing?" board — used by entry points
    *  that already are one thing, like the Moment button on a Space. */
   CreatePost: { type?: 'flow' | 'vibe' | 'moment' } | undefined;

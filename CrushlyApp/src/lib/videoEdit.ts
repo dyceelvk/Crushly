@@ -173,10 +173,10 @@ export const CAPTION_COLORS = ['#ffffff', '#000000', '#ffd166', '#ff5f8f', '#7ee
  */
 export const EDIT_LIMITS: Record<EditCategory, { maxSeconds: number; maxCaptions: number; maxStickers: number; note: string }> = {
   moment: {
-    maxSeconds: 15,
+    maxSeconds: 60,
     maxCaptions: 4,
     maxStickers: 6,
-    note: 'Moments are a glance — fifteen seconds, and gone tomorrow.',
+    note: 'A Moment clip can be up to one minute, and disappears tomorrow.',
   },
   vibe: {
     maxSeconds: 30,

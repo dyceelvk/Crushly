@@ -70,6 +70,7 @@ const moments = (v: unknown): MomentSummary[] =>
           mediaUrl: nilableStr(m.mediaUrl),
           style: (typeof m.style === 'string' ? m.style : 'noir') as MomentSummary['style'],
           edit: isObject(m.edit) ? (m.edit as MomentSummary['edit']) : null,
+          durationMs: m.durationMs == null ? null : num(m.durationMs),
           createdAt: num(m.createdAt),
         }))
     : [];

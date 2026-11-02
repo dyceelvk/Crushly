@@ -201,6 +201,8 @@ export type MomentSummary = {
   style: MomentStyle;
   /** Words and stickers drawn over a clip. Null when the Moment is not a clip. */
   edit: LiveEdit | null;
+  /** Clip playback length after trimming and speed, in milliseconds. */
+  durationMs: number | null;
   createdAt: number;
 };
 
