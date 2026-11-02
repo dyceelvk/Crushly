@@ -104,6 +104,10 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
             <Animated.Text style={{ fontFamily: fonts.displayItalic ?? fonts.display, color: noir.primary }}>feelings.</Animated.Text>
           </Animated.Text>
 
+          {/* No animated value in here. `Txt` renders a plain Text, and an
+              Animated.Value in a non-animated style is a hard crash on Android
+              release builds — it took the app down on cold start. The paragraph
+              fades with the block above it instead, which is the same picture. */}
           <Txt
             variant="body"
             style={{
@@ -113,7 +117,6 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
               fontSize: 15,
               lineHeight: 22,
               color: noir.textSecondary,
-              opacity: words,
             }}
           >
             Not the follower count. Not the algorithm&rsquo;s opinion. What the room is actually feeling, one post at a time.
