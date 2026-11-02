@@ -17,13 +17,25 @@ import shutil
 import sys
 import tempfile
 
-import pgserver
 import psycopg2
 
 ROOT = pathlib.Path(__file__).resolve().parent
 MIGRATIONS = ROOT.parent / 'migrations'
+# Only the SQL. `migrations/` also holds a README, and feeding that to psql
+# fails with a syntax error that has nothing to do with any migration.
+MIGRATION_FILES = sorted(p for p in MIGRATIONS.iterdir() if p.suffix == '.sql')
 SEED = ROOT.parent / 'seed.sql'
 STUBS = not bool(__import__('os').environ.get('TEST_DATABASE_URL'))
+
+# `pgserver` is only needed to conjure a throwaway Postgres. When
+# TEST_DATABASE_URL points at a server we were given, the import is dead weight
+# — and on a machine where pgserver has no wheel (no wheel for this Python, or
+# an offline box) it turns a working test run into an ImportError. Import it
+# where it is used, not at the top.
+if STUBS:
+    import pgserver
+else:
+    pgserver = None
 
 
 def main() -> int:
@@ -52,12 +64,12 @@ def main() -> int:
     try:
         if STUBS and not run_file(ROOT / 'stubs.sql'):
             return 1
-        for f in sorted(MIGRATIONS.iterdir()):
+        for f in MIGRATION_FILES:
             if not run_file(f):
                 return 1
         # Re-apply every migration: the SQL is intentionally re-runnable so
         # setup.sql can be pasted into a live project again without errors.
-        for f in sorted(MIGRATIONS.iterdir()):
+        for f in MIGRATION_FILES:
             if not run_file(f):
                 return 1
         print('migrations applied twice (idempotent)')
@@ -68,6 +80,21 @@ def main() -> int:
             cur.execute(f'select count(*) from {table}')
             print(f'  {table}: {cur.fetchone()[0]}')
         if not run_file(ROOT / 'smoke.sql'):
+            return 1
+        # Comments are a conversation now: likes, one level of replies, and a
+        # delete that cannot take somebody else's words with it.
+        if not run_file(ROOT / 'comments.sql'):
+            return 1
+        # Saving a post is a row now, not a local flag that forgets.
+        if not run_file(ROOT / 'saves.sql'):
+            return 1
+        # Every function that returns a post must return a whole one.
+        if not run_file(ROOT / 'post_shape.sql'):
+            return 1
+        # Vibe reactions must persist without exposing their private rows.
+        if not run_file(ROOT / 'vibe_reactions.sql'):
+            return 1
+        if not run_file(ROOT / 'shared_post.sql'):
             return 1
         print('ALL TESTS PASSED')
         return 0

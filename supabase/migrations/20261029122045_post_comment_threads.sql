@@ -15,6 +15,16 @@
 alter table public.post_comments
   add column if not exists parent_id bigint;
 
+-- `hidden` is what "delete" means for a comment that still has replies: the
+-- body is emptied and this flag is set, so the thread survives under it. The
+-- functions below read and write it, `post_saves.sql` filters comments by it,
+-- and production has had it since 2026-10-29 — but the 2026-10-30
+-- reconstruction of this file from the live catalog dropped the `add column`,
+-- so a database built from these migrations could not run `saved_posts` at
+-- all. Restored here; idempotent, and a no-op against production.
+alter table public.post_comments
+  add column if not exists hidden boolean not null default false;
+
 alter table public.post_comments
   drop constraint if exists post_comments_parent_fk;
 alter table public.post_comments
