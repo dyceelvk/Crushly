@@ -1,5 +1,11 @@
-# Builds the Expo web export and publishes it — to Netlify when a Netlify token
-# exists, and to Vercel when a Vercel token exists. Either alone is enough.
+# Builds the Expo web export, proves it contains the code that was just written,
+# and publishes it to Vercel when a Vercel token exists.
+#
+# Netlify was removed on 2026-11-02. It had not deployed anything successfully in
+# a long time, and its step failed with exit 127 — `bash build.sh` looked for the
+# script inside CrushlyApp/ because of this job's working-directory, while the
+# script lives at the repository root. Vercel is where mecrushly.vercel.app is
+# served from, so Netlify is no longer a target.
 #
 # Why this file was rewritten (2026-11-02):
 #
@@ -84,23 +90,6 @@ jobs:
             exit 1
           fi
           echo "::notice::Export contains the new feed."
-
-      - name: Deploy to Netlify
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ] || [ -z "${NETLIFY_SITE_ID:-}" ]; then
-            echo "::warning::No Netlify token or site id in this repository; skipping Netlify."
-            exit 0
-          fi
-          npx --yes netlify-cli@latest deploy \
-            --prod \
-            --dir dist \
-            --site "$NETLIFY_SITE_ID" \
-            --message "Crushly web ${{ github.sha }}" \
-            --auth "$NETLIFY_AUTH_TOKEN"
 
       - name: Deploy to Vercel
         env:

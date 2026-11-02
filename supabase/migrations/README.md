@@ -112,3 +112,29 @@ over RPC (they take a composite row type or are trigger helpers), so this is
 not exploitable, but it is inconsistent with the rest of the directory and is
 worth a deliberate follow-up rather than a silent change smuggled into a
 reconstruction commit.
+
+## 2026-11-02 — the drift that was stopping every web deploy
+
+`supabase db push` had been failing with
+
+    Remote migration versions not found in local migrations directory
+
+so the `database` job died, and because the deploy job declared `needs: database`
+**the web app was never deployed once**. Two separate causes:
+
+* five migrations had been applied to production by an earlier run but recorded
+  there under CLI timestamps (`20261101213023`, `20261101213321`,
+  `20261101224620`, `20261102073849`) while the files still carried round
+  numbers (`20261101120000`, …). The files were renamed to the versions
+  production actually holds;
+* `20261101214349_member_circles_uses_member_id` was applied to production but
+  its file never existed in the repository at all. It has been restored from the
+  statement stored in `supabase_migrations.schema_migrations`.
+
+The directory is now exactly equal to production's history: **49 files, 49
+versions, no version in one place that is not in the other.** `supabase db push`
+therefore reports "up to date" and the workflow can run on every push without
+pretending anything was applied.
+
+The ranked feed (`20261102151155_ranked_feed`) was the one migration production
+was genuinely missing. It is applied now, which is why the feed loads.
