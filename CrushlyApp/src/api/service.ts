@@ -341,6 +341,17 @@ export async function flowFeed(limit = 20, after?: number | null): Promise<FlowP
   return { items: page?.items ?? [] };
 }
 
+/**
+ * The saved drawer: the posts you kept, newest save first, in the same shape as
+ * the Flow. `saved_posts` applies `can_view_post` before returning a row, so a
+ * post you can no longer see drops out of the list instead of sitting in it as
+ * a dead tap.
+ */
+export async function savedPosts(limit = 20, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('saved_posts', { p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
 /** Shares a post. Photos and clips go to the object store like any other media. */
 export async function createPost(input: {
   body: string;

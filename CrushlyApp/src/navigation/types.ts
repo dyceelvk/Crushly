@@ -47,6 +47,8 @@ export type RootStackParamList = {
    *  that already are one thing, like the Moment button on a Space. */
   CreatePost: { type?: 'flow' | 'vibe' | 'moment' } | undefined;
   PostViewer: { postId: number };
+  /** What you kept, newest first. Private: nobody else can read this list. */
+  SavedPosts: undefined;
   WebPreview: { url: string };
   Safety: undefined;
   Privacy: undefined;
