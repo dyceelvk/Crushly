@@ -7,7 +7,7 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#070708",
+    "backgroundColor": "#000000",
     "primaryColor": "#00C6FF",
     "description": "Crushly \u2014 a private, modern social space to meet people and make connections.",
     "ios": {
@@ -23,7 +23,7 @@
     "android": {
       "package": "app.crushly",
       "adaptiveIcon": {
-        "backgroundColor": "#070708",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -44,8 +44,8 @@
       "favicon": "./assets/favicon.png",
       "name": "Crushly",
       "shortName": "Crushly",
-      "themeColor": "#070708",
-      "backgroundColor": "#070708",
+      "themeColor": "#000000",
+      "backgroundColor": "#000000",
       "bundler": "metro",
       "output": "single"
     },
@@ -62,7 +62,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#070708",
+          "backgroundColor": "#000000",
           "image": "./assets/splash-icon.png",
           "imageWidth": 120
         }

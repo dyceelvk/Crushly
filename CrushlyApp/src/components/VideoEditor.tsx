@@ -411,7 +411,7 @@ export function VideoEditorModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel} statusBarTranslucent>
-      <View style={{ flex: 1, backgroundColor: '#0b0b0d' }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <View
           style={{
             flexDirection: 'row',
@@ -422,7 +422,7 @@ export function VideoEditorModal({
             paddingBottom: space.sm,
           }}
         >
-          <IconButton icon="close" label="Discard edits" variant="plain" color="#fff" onPress={onCancel} />
+          <IconButton icon="close" label="Discard edits" variant="plain" color={colors.text} onPress={onCancel} />
           {/* The bar reads left to right the way an editor does: out, what it
               is, and how much of it you have used. Export is the only thing on
               the right, because it is the only thing you cannot undo. */}
@@ -430,7 +430,7 @@ export function VideoEditorModal({
             icon="arrow-undo"
             label={`Undo${canUndo(history) ? `, ${depth(history).undo} step${depth(history).undo === 1 ? '' : 's'}` : ''}`}
             variant="plain"
-            color={canUndo(history) ? '#fff' : '#4a4a55'}
+            color={canUndo(history) ? colors.text : colors.textMuted}
             onPress={() => {
               if (canUndo(history)) stepBack();
             }}
@@ -439,16 +439,16 @@ export function VideoEditorModal({
             icon="arrow-redo"
             label="Redo"
             variant="plain"
-            color={canRedo(history) ? '#fff' : '#4a4a55'}
+            color={canRedo(history) ? colors.text : colors.textMuted}
             onPress={() => {
               if (canRedo(history)) stepForward();
             }}
           />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt variant="subheading" style={{ color: '#fff' }} accessibilityRole="header" numberOfLines={1}>
+            <Txt variant="subheading" style={{ color: colors.text }} accessibilityRole="header" numberOfLines={1}>
               {CATEGORY_LABEL[category]}
             </Txt>
-            <Txt variant="caption" style={{ color: '#8b8b95' }} numberOfLines={1}>
+            <Txt variant="caption" style={{ color: colors.textSecondary }} numberOfLines={1}>
               {`${clock(clipTime)} / ${clock(length)}  ·  ${pieceCount === 1 ? '1 piece' : `${pieceCount} pieces`}`}
             </Txt>
           </View>
@@ -506,7 +506,7 @@ export function VideoEditorModal({
               ) : null}
             </Pressable>
           </View>
-          <Txt variant="caption" style={{ color: ready ? '#7c7c86' : '#9a9aa2', marginTop: 4 }}>
+          <Txt variant="caption" style={{ color: ready ? colors.textMuted : colors.textSecondary, marginTop: 4 }}>
             {limit.note}
           </Txt>
         </View>
@@ -545,14 +545,14 @@ export function VideoEditorModal({
             flex: 1,
             minHeight: 0,
             overflow: 'hidden',
-            backgroundColor: '#141418',
+            backgroundColor: colors.bgSecondary,
             borderTopLeftRadius: radius.lg,
             borderTopRightRadius: radius.lg,
           }}
         >
           {tool === null ? (
             <View style={{ paddingHorizontal: space.md, paddingTop: space.sm }}>
-              <Txt variant="small" style={{ color: '#9a9aa2' }} numberOfLines={2}>
+              <Txt variant="small" style={{ color: colors.textSecondary }} numberOfLines={2}>
                 Split at the playhead, then drag a piece's ends to trim it. Nothing here is final —
                 Undo is the arrow at the top.
               </Txt>
@@ -604,7 +604,7 @@ export function VideoEditorModal({
         {/* The tool rail. One row, icon over name, the way the apps people
             already edit in lay it out — and the panel for the chosen tool
             opens directly above it, so the finger never has to travel. */}
-        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -631,12 +631,12 @@ export function VideoEditorModal({
                       borderRadius: 17,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: active ? colors.gold : 'rgba(255,255,255,0.07)',
+                      backgroundColor: active ? colors.gold : colors.elevated,
                     }}
                   >
-                    <Ionicons name={t.icon} size={17} color={active ? colors.onGold : '#e8e8ee'} />
+                    <Ionicons name={t.icon} size={17} color={active ? colors.onGold : colors.textSecondary} />
                   </View>
-                  <Txt variant="caption" style={{ color: active ? colors.gold : '#9a9aa2' }} maxFontSizeMultiplier={1.2}>
+                  <Txt variant="caption" style={{ color: active ? colors.gold : colors.textSecondary }} maxFontSizeMultiplier={1.2}>
                     {t.label}
                   </Txt>
                 </Pressable>
@@ -724,12 +724,12 @@ function CutChip({
         paddingHorizontal: compact ? 10 : 10,
         height: 32,
         borderRadius: 16,
-        backgroundColor: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.08)',
+        backgroundColor: disabled ? colors.bgSecondary : colors.elevated,
       }}
     >
-      <Ionicons name={icon} size={14} color={disabled ? '#46464f' : '#e8e8ee'} />
+      <Ionicons name={icon} size={14} color={disabled ? colors.textMuted : colors.textSecondary} />
       {compact ? null : (
-        <Txt variant="caption" style={{ color: disabled ? '#46464f' : '#e8e8ee' }} maxFontSizeMultiplier={1.2}>
+        <Txt variant="caption" style={{ color: disabled ? colors.textMuted : colors.textSecondary }} maxFontSizeMultiplier={1.2}>
           {label}
         </Txt>
       )}
@@ -758,24 +758,25 @@ function WebEditorNotice() {
         paddingHorizontal: space.sm,
         paddingVertical: 8,
         borderRadius: radius.sm,
-        backgroundColor: 'rgba(255,255,255,0.04)',
+        backgroundColor: colors.bgSecondary,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
       }}
     >
       <Ionicons name="download-outline" size={13} color={colors.gold} />
-      <Txt variant="caption" style={{ color: '#9a9aa2', flex: 1 }} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+      <Txt variant="caption" style={{ color: colors.textSecondary, flex: 1 }} numberOfLines={2} maxFontSizeMultiplier={1.2}>
         Trimming, text and sound are applied in the app. Install Crushly to cut the actual clip.
       </Txt>
-      <Ionicons name="chevron-forward" size={13} color="#63636d" />
+      <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />
     </Pressable>
   );
 }
 
 function PanelNote({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
   return (
-    <Txt variant="small" style={{ color: '#8d8d97' }}>
+    <Txt variant="small" style={{ color: colors.textSecondary }}>
       {children}
     </Txt>
   );
@@ -887,11 +888,11 @@ function CaptionsPanel({
                   paddingVertical: 8,
                   borderRadius: radius.pill,
                   borderWidth: 1,
-                  borderColor: active ? colors.gold : 'rgba(255,255,255,0.18)',
+                  borderColor: active ? colors.gold : colors.borderStrong,
                   maxWidth: 160,
                 }}
               >
-                <Txt variant="small" numberOfLines={1} style={{ color: active ? colors.gold : '#d8d8e0' }}>
+                <Txt variant="small" numberOfLines={1} style={{ color: active ? colors.gold : colors.text }}>
                   {c.text || `Text ${i + 1}`}
                 </Txt>
               </Pressable>
@@ -918,7 +919,7 @@ function CaptionsPanel({
           />
 
           <View style={{ gap: 8 }}>
-            <Txt variant="label" style={{ color: '#9a9aa2' }}>
+            <Txt variant="label" style={{ color: colors.textSecondary }}>
               Colour
             </Txt>
             <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
@@ -939,7 +940,7 @@ function CaptionsPanel({
                     borderRadius: 16,
                     backgroundColor: c,
                     borderWidth: caption.color === c ? 2 : 1,
-                    borderColor: caption.color === c ? colors.gold : 'rgba(255,255,255,0.25)',
+                    borderColor: caption.color === c ? colors.gold : colors.borderStrong,
                   }}
                 />
               ))}
@@ -1038,8 +1039,8 @@ function FiltersPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit
                   borderRadius: 12,
                   overflow: 'hidden',
                   borderWidth: active ? 2 : 1,
-                  borderColor: active ? colors.gold : 'rgba(255,255,255,0.18)',
-                  backgroundColor: '#3a3a44',
+                  borderColor: active ? colors.gold : colors.borderStrong,
+                  backgroundColor: colors.bgSecondary,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -1056,7 +1057,7 @@ function FiltersPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit
                   }}
                 />
               </View>
-              <Txt variant="caption" style={{ color: active ? colors.gold : '#b9b9c4' }} numberOfLines={1}>
+              <Txt variant="caption" style={{ color: active ? colors.gold : colors.textSecondary }} numberOfLines={1}>
                 {f.label}
               </Txt>
             </Pressable>
@@ -1153,6 +1154,7 @@ function StickersPanel({
   update: (e: VideoEdit) => void;
   category: EditCategory;
 }) {
+  const { colors } = useTheme();
   const width = clipLength(edit);
   const limit = EDIT_LIMITS[category].maxStickers;
   const full = edit.stickers.length >= limit;
@@ -1182,7 +1184,7 @@ function StickersPanel({
               width: 44,
               height: 44,
               borderRadius: 12,
-              backgroundColor: 'rgba(255,255,255,0.08)',
+              backgroundColor: colors.elevated,
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -1256,11 +1258,12 @@ function MusicPanel({
   update: (e: VideoEdit) => void;
   onPick: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <>
       {edit.music ? (
         <View style={{ gap: space.md }}>
-          <Txt variant="bodyStrong" style={{ color: '#fff' }} numberOfLines={1}>
+          <Txt variant="bodyStrong" style={{ color: colors.text }} numberOfLines={1}>
             {edit.music.title}
           </Txt>
           <RangeSlider
@@ -1290,7 +1293,7 @@ function MusicPanel({
         <Button title="Add sound from your device" icon="musical-notes-outline" size="sm" variant="secondary" onPress={onPick} />
       )}
 
-      <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)' }} />
+      <View style={{ height: 1, backgroundColor: colors.borderStrong }} />
 
       <RangeSlider
         min={0}

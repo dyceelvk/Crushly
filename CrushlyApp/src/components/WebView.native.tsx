@@ -1,6 +1,7 @@
 import React from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useTheme } from '../theme/ThemeProvider';
 import type { AppWebViewProps } from './WebView';
 
 /**
@@ -17,10 +18,11 @@ import type { AppWebViewProps } from './WebView';
  * sheet can always show which site the member is actually looking at.
  */
 export function AppWebView({ uri, style, onLoadingChange, onUrlChange, onError }: AppWebViewProps) {
+  const { colors } = useTheme();
   return (
     <WebView
       source={{ uri }}
-      style={[{ flex: 1, backgroundColor: '#fff' }, style]}
+      style={[{ flex: 1, backgroundColor: colors.bg }, style]}
       onLoadStart={() => onLoadingChange?.(true)}
       onLoadEnd={() => onLoadingChange?.(false)}
       onError={() => {

@@ -8,6 +8,7 @@ export type Appearance = 'dark' | 'light' | 'system';
 type ThemeContextValue = {
   colors: Palette;
   appearance: Appearance;
+  ready: boolean;
   setAppearance: (a: Appearance) => void;
   reduceMotion: boolean;
 };
@@ -15,6 +16,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue>({
   colors: palettes.dark,
   appearance: 'dark',
+  ready: false,
   setAppearance: () => {},
   reduceMotion: false,
 });
@@ -24,12 +26,13 @@ const APPEARANCE_KEY = 'crushly.appearance';
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const system = useColorScheme();
   const [appearance, setAppearanceState] = useState<Appearance>('dark');
+  const [ready, setReady] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
     storage.get(APPEARANCE_KEY).then((v) => {
       if (v === 'dark' || v === 'light' || v === 'system') setAppearanceState(v);
-    });
+    }).catch(() => {}).finally(() => setReady(true));
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
     return () => sub.remove();
@@ -40,13 +43,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return {
       colors: palettes[scheme],
       appearance,
+      ready,
       reduceMotion,
       setAppearance: (a) => {
         setAppearanceState(a);
         storage.set(APPEARANCE_KEY, a);
       },
     };
-  }, [appearance, system, reduceMotion]);
+  }, [appearance, ready, system, reduceMotion]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

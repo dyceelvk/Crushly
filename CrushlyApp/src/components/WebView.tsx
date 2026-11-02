@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { useTheme } from '../theme/ThemeProvider';
 
 export type AppWebViewProps = {
   uri: string;
@@ -20,13 +21,14 @@ export type AppWebViewProps = {
  * open a tab instead, which is still a choice the member makes.
  */
 export function AppWebView({ uri, style, onLoadingChange, onUrlChange, onError }: AppWebViewProps) {
+  const { colors } = useTheme();
   React.useEffect(() => {
     onLoadingChange?.(true);
     onUrlChange?.(uri);
   }, [uri, onLoadingChange, onUrlChange]);
 
   return (
-    <View style={[{ flex: 1, backgroundColor: '#fff' }, style]}>
+    <View style={[{ flex: 1, backgroundColor: colors.bg }, style]}>
       {React.createElement('iframe', {
         key: uri,
         src: uri,
@@ -34,7 +36,7 @@ export function AppWebView({ uri, style, onLoadingChange, onUrlChange, onError }
         // A framed page must not be able to touch our app.
         sandbox: 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox',
         referrerPolicy: 'no-referrer',
-        style: { width: '100%', height: '100%', border: '0', backgroundColor: '#fff' },
+        style: { width: '100%', height: '100%', border: '0', backgroundColor: colors.bg },
         onLoad: () => onLoadingChange?.(false),
         onError: () => {
           onLoadingChange?.(false);

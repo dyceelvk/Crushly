@@ -62,7 +62,7 @@ export function VideoTrimScreen({ navigation, route }: ScreenProps<'VideoTrim'>)
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0b0b0d' }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View
         style={{
           flexDirection: 'row',
@@ -74,7 +74,7 @@ export function VideoTrimScreen({ navigation, route }: ScreenProps<'VideoTrim'>)
         }}
       >
         <IconButton icon="chevron-back" label="Back" onPress={() => navigation.pop()} />
-        <Txt variant="title" style={{ flex: 1, color: '#fff' }} accessibilityRole="header">
+        <Txt variant="title" style={{ flex: 1, color: colors.text }} accessibilityRole="header">
           Trim your clip
         </Txt>
         <Button title="Done" size="sm" variant="primary" onPress={done} accessibilityLabel="Keep this trim" />
@@ -89,13 +89,13 @@ export function VideoTrimScreen({ navigation, route }: ScreenProps<'VideoTrim'>)
           accessibilityLabel="Your clip"
         />
         <View style={{ marginTop: 8, flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          <Txt variant="caption" color="#9a9aa2">
+          <Txt variant="caption" color="textSecondary">
             {formatTime(trimStart)}
           </Txt>
-          <Txt variant="caption" color="#7c7c86" style={{ flex: 1, textAlign: 'center' }}>
+          <Txt variant="caption" color="textMuted" style={{ flex: 1, textAlign: 'center' }}>
             {formatTime(trimEnd - trimStart)} of {formatTime(sourceDuration)}
           </Txt>
-          <Txt variant="caption" color="#9a9aa2">
+          <Txt variant="caption" color="textSecondary">
             {formatTime(trimEnd)}
           </Txt>
         </View>
@@ -117,7 +117,7 @@ export function VideoTrimScreen({ navigation, route }: ScreenProps<'VideoTrim'>)
             formatValue={(v) => `${formatTime(v)}s`}
           />
         </View>
-        <Txt variant="caption" style={{ color: '#7c7c86' }}>
+        <Txt variant="caption" color="textSecondary">
           Keep {formatTime(trimEnd - trimStart)} of {formatTime(sourceDuration)}. Trimmed-away video is hidden, not
           deleted — you can widen it again later.
         </Txt>
@@ -169,7 +169,7 @@ export function VideoTrimScreen({ navigation, route }: ScreenProps<'VideoTrim'>)
           accessibilityLabel="Cancel trim"
           style={{ paddingVertical: space.sm }}
         >
-          <Txt variant="bodyStrong" color="#9a9aa2" align="center">
+          <Txt variant="bodyStrong" color="textSecondary" align="center">
             Cancel
           </Txt>
         </Pressable>

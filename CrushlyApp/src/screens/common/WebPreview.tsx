@@ -97,7 +97,7 @@ export function WebPreviewScreen({ route, navigation }: ScreenProps<'WebPreview'
         </View>
       ) : null}
 
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
         {Platform.OS === 'web' && failed ? (
           <EmptyState
             icon="close-circle-outline"

@@ -9,7 +9,7 @@ import { Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
-import { AppState } from 'react-native';
+import { AppState, View } from 'react-native';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import { AuthProvider, useAuth } from './src/state/auth';
 import { ToastProvider } from './src/components/Toast';
@@ -64,7 +64,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 function Shell() {
   const { status } = useAuth();
-  const { colors } = useTheme();
+  const { colors, ready: themeReady } = useTheme();
   const [fontsLoaded, fontError] = useFonts({
     Fraunces_600SemiBold, Fraunces_500Medium_Italic,
     Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
@@ -84,6 +84,21 @@ function Shell() {
     SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
   }, [colors.bg]);
 
+  // Transparent screen transitions and modals reveal the app canvas beneath
+  // them. Keep the browser page itself in the selected scheme too; otherwise
+  // the first frame of a fade can expose the browser's default white page.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const root = document.documentElement;
+    root.style.backgroundColor = colors.bg;
+    root.style.colorScheme = colors.scheme;
+    root.dataset.crushlyScheme = colors.scheme;
+    document.body.style.backgroundColor = colors.bg;
+    document.body.style.color = colors.text;
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.setAttribute('content', colors.bg);
+  }, [colors.bg, colors.scheme, colors.text]);
+
   const navTheme = {
     ...(colors.scheme === 'light' ? DefaultTheme : DarkTheme),
     colors: {
@@ -92,19 +107,21 @@ function Shell() {
     },
   };
 
-  if (status === 'restoring' || !fontsReady) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
+  if (status === 'restoring' || !fontsReady || !themeReady) return <SplashScreen fontsReady={fontsReady && status !== 'restoring'} />;
 
   return (
-    <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Crushly' }}>
-      <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
-      <MemberActionsProvider>
-        {/* A render error unmounts the tree and leaves a white page. The boundary
-            makes that a sentence and a "Try again" instead. */}
-        <ErrorBoundary>
-          <RootNavigator fontsReady={fontsReady} />
-        </ErrorBoundary>
-      </MemberActionsProvider>
-    </NavigationContainer>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Crushly' }}>
+        <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
+        <MemberActionsProvider>
+          {/* A render error unmounts the tree and leaves a white page. The boundary
+              makes that a sentence and a "Try again" instead. */}
+          <ErrorBoundary>
+            <RootNavigator fontsReady={fontsReady} />
+          </ErrorBoundary>
+        </MemberActionsProvider>
+      </NavigationContainer>
+    </View>
   );
 }
 

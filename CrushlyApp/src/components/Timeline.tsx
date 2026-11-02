@@ -195,7 +195,7 @@ export function Timeline({
                     position: 'absolute',
                     left: Math.min(Math.max(0, f * width - 14), width - 30),
                     fontSize: 10,
-                    color: '#63636d',
+                    color: colors.textMuted,
                   }}
                 >
                   {mmss(duration * f)}
@@ -225,9 +225,9 @@ export function Timeline({
                         width: Math.max(4, w - GAP),
                         height: LANE_HEIGHT,
                         borderRadius: 4,
-                        backgroundColor: selected ? colors.goldSoft : '#2a2a33',
+                        backgroundColor: selected ? colors.goldSoft : colors.elevated,
                         borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? colors.gold : '#3a3a45',
+                        borderColor: selected ? colors.gold : colors.borderStrong,
                         justifyContent: 'center',
                         // Room for the grab handle at either end, so the first
                         // piece's number is not printed underneath it.
@@ -235,7 +235,7 @@ export function Timeline({
                         overflow: 'hidden',
                       }}
                     >
-                      <Txt variant="caption" style={{ fontSize: 9, color: selected ? '#fff' : '#8b8b95' }} numberOfLines={1}>
+                      <Txt variant="caption" style={{ fontSize: 9, color: selected ? colors.text : colors.textSecondary }} numberOfLines={1}>
                         {`${i + 1} · ${lengthOf(p).toFixed(1)}s`}
                       </Txt>
                     </View>
@@ -264,7 +264,7 @@ export function Timeline({
                         justifyContent: 'center',
                       }}
                     >
-                      <View style={{ width: 1.5, height: 14, backgroundColor: 'rgba(0,0,0,0.4)' }} />
+                      <View style={{ width: 1.5, height: 14, backgroundColor: colors.borderStrong }} />
                     </View>
                   ));
                 })}
@@ -274,7 +274,7 @@ export function Timeline({
 
         {/* Lane two: what is written over it. Empty is a real state, and saying
             so is better than a lane that silently appears. */}
-        <View style={{ height: LANE_HEIGHT, borderRadius: 4, backgroundColor: '#141418' }}>
+        <View style={{ height: LANE_HEIGHT, borderRadius: 4, backgroundColor: colors.bgSecondary }}>
           {width > 0 && overlays.length
             ? overlays.map((o) => {
                 const left = xOfCut(Math.max(0, o.start));
@@ -297,7 +297,7 @@ export function Timeline({
                       overflow: 'hidden',
                     }}
                   >
-                    <Txt variant="caption" style={{ fontSize: 9, color: '#e9e9ef' }} numberOfLines={1}>
+                    <Txt variant="caption" style={{ fontSize: 9, color: colors.text }} numberOfLines={1}>
                       {o.label}
                     </Txt>
                   </View>
@@ -305,7 +305,7 @@ export function Timeline({
               })
             : width > 0 && (
                 <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 6 }}>
-                  <Txt variant="caption" style={{ fontSize: 9, color: '#4a4a55' }}>
+                  <Txt variant="caption" style={{ fontSize: 9, color: colors.textMuted }}>
                     Text and stickers land here
                   </Txt>
                 </View>
@@ -322,7 +322,7 @@ export function Timeline({
               top: RAIL_HEIGHT,
               bottom: 0,
               width: 2,
-              backgroundColor: '#ffffff',
+              backgroundColor: colors.text,
               borderRadius: 1,
             }}
           />

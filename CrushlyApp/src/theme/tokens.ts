@@ -1,18 +1,19 @@
 /**
  * Crushly design tokens.
  *
- * Dark is the signature experience ("Noir"); light ("Ivory") is a fully
- * supported alternative. Components never hard-code colors — they read the
- * active palette from `useTheme()`.
+ * Dark and light are complete neutral schemes: black canvas for dark, white
+ * canvas for light. Accents stay in the existing Crushly palette. Components
+ * read the active palette from `useTheme()` so transitions never reveal a
+ * mismatched page behind them.
  */
 
 export const palettes = {
   dark: {
     scheme: 'dark' as const,
-    bg: '#0A0E27',
-    bgSecondary: '#121633',
-    card: '#17171A',
-    elevated: '#202024',
+    bg: '#000000',
+    bgSecondary: '#121212',
+    card: '#121212',
+    elevated: '#1E1E1E',
     text: '#FFFFFF',
     textSecondary: '#A6A6AD',
     textMuted: '#7C7C85',
@@ -52,10 +53,10 @@ export const palettes = {
   },
   light: {
     scheme: 'light' as const,
-    bg: '#F6F4EF',
-    bgSecondary: '#EEEBE4',
+    bg: '#FFFFFF',
+    bgSecondary: '#F8F8F8',
     card: '#FFFFFF',
-    elevated: '#FFFFFF',
+    elevated: '#F5F5F5',
     text: '#111113',
     textSecondary: '#55555E',
     textMuted: '#7A7A84',

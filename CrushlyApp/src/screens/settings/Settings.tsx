@@ -306,8 +306,8 @@ export function NotificationSettingsScreen() {
 export function AppearanceScreen() {
   const { appearance, setAppearance, colors } = useTheme();
   const options: { value: Appearance; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-    { value: 'dark', label: 'Dark', description: 'The signature Crushly look.', icon: 'moon-outline' },
-    { value: 'light', label: 'Light', description: 'Warm ivory, for daylight.', icon: 'sunny-outline' },
+    { value: 'dark', label: 'Dark', description: 'Black canvas, dark surfaces, light text.', icon: 'moon-outline' },
+    { value: 'light', label: 'Light', description: 'White canvas, light surfaces, dark text.', icon: 'sunny-outline' },
     { value: 'system', label: 'System', description: 'Follow your device setting.', icon: 'phone-portrait-outline' },
   ];
   return (

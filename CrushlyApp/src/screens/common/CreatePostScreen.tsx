@@ -781,7 +781,7 @@ function ComposerRight({
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
           <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.card }} />
           <View style={{ flex: 1 }}>
-            <Txt variant="bodyStrong" style={{ color: '#fff' }} numberOfLines={1}>
+            <Txt variant="bodyStrong" color="text" numberOfLines={1}>
               Crushly
             </Txt>
             <Txt variant="caption" color="textMuted" style={{ marginTop: 1 }}>
@@ -791,7 +791,7 @@ function ComposerRight({
         </View>
         <View style={{ marginTop: 10, gap: 6 }}>
           {body ? (
-            <Txt variant="body" style={{ color: '#fff' }} numberOfLines={3}>
+            <Txt variant="body" color="text" numberOfLines={3}>
               {body}
             </Txt>
           ) : null}
@@ -803,17 +803,17 @@ function ComposerRight({
         </View>
         <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
           <Pressable accessibilityLabel="Like" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="heart-outline" size={20} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
           </Pressable>
           <Pressable accessibilityLabel="Comment" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
           </Pressable>
           <Pressable accessibilityLabel="Share" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="share-social-outline" size={20} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="share-social-outline" size={20} color={colors.textSecondary} />
           </Pressable>
           <View style={{ flex: 1 }} />
           <Pressable accessibilityLabel="More" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="ellipsis-vertical-outline" size={20} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="ellipsis-vertical-outline" size={20} color={colors.textSecondary} />
           </Pressable>
         </View>
       </Card>
@@ -834,7 +834,7 @@ function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: stri
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Ionicons name={icon} size={20} color={colors.textMuted} />
         <View style={{ gap: 2 }}>
-          <Txt variant="bodyStrong" style={{ color: '#fff' }} numberOfLines={1}>
+          <Txt variant="bodyStrong" color="text" numberOfLines={1}>
             {label}
           </Txt>
           <Txt variant="caption" color="textMuted">
@@ -842,7 +842,7 @@ function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: stri
           </Txt>
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
