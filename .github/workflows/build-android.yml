@@ -194,8 +194,21 @@ jobs:
               --title "Crushly ${version} — Android 9+ testing" \
               --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM."
           fi
-          # Never silently replace a published APK at a version that already exists.
-          if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "$file"; then
+          # Release tags are immutable in the app: never silently point an
+          # existing version at different bytes. If an APK already exists, its
+          # GitHub-computed digest must match this build exactly; otherwise the
+          # version must be bumped before publishing.
+          expected_digest="sha256:$(sha256sum "apk/${file}" | cut -d' ' -f1)"
+          existing_digest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+            | jq -r --arg name "$file" '.assets[] | select(.name == $name) | .digest // empty' \
+            | head -n 1)
+          if [ -n "$existing_digest" ]; then
+            if [ "$existing_digest" != "$expected_digest" ]; then
+              echo "::error::${tag} already contains ${file} with ${existing_digest}; this build is ${expected_digest}. Bump app.json version and versionCode instead of shipping a mismatched APK."
+              exit 1
+            fi
+            echo "::notice::${file} already exists with the exact SHA-256; keeping the immutable asset."
+          else
             gh release upload "$tag" "apk/${file}" apk/SHA256SUMS.txt apk/SECURITY-CHECK.txt apk/COMPATIBILITY.txt
           fi
 
@@ -238,22 +251,24 @@ jobs:
           set -euo pipefail
           version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
           code=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['android']['versionCode'])")
+          file="Crushly-${version}-Android9plus.apk"
+          bytes=$(wc -c < "apk/${file}" | tr -d ' ')
+          sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
           # Every push made with the bot token is invisible to `on: push`, so
           # committing release.json announced nothing and /version kept serving
           # the previous build until somebody deployed by hand. Ask, then check
-          # the answer — the release is not finished until a phone would be told
-          # about it.
+          # the answer — version, code, bytes and SHA must all describe the APK
+          # this job built before the release is called complete.
           gh workflow run deploy-worker.yml --ref "${GITHUB_REF_NAME}"
           for _ in $(seq 1 30); do
             sleep 10
             got=$(curl -fsS https://crushly-media.dyceelvk.workers.dev/version || true)
-            if printf '%s' "$got" | grep -q "\"version\":\"$version\"" \
-               && printf '%s' "$got" | grep -q "\"versionCode\":$code,"; then
-              echo "The Worker now offers $version (versionCode $code)."
+            if printf '%s' "$got" | python3 -c 'import json,sys; d=json.load(sys.stdin); v,c,b,h=sys.argv[1:]; sys.exit(0 if d.get("version")==v and str(d.get("versionCode"))==c and str(d.get("bytes"))==b and d.get("sha256")==h else 1)' "$version" "$code" "$bytes" "$sha"; then
+              echo "The Worker now offers $version (versionCode $code, ${bytes} bytes, SHA-256 ${sha})."
               exit 0
             fi
           done
-          echo "::error::/version never showed $version / code $code. The APK is published but not announced, so no phone will be offered it."
+          echo "::error::/version did not match $version / code $code / ${bytes} bytes / SHA-256 ${sha}. The APK is not confirmed as the offered build."
           exit 1
 
       - uses: actions/upload-artifact@v4
