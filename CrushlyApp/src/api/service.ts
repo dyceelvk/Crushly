@@ -349,12 +349,36 @@ export async function flowFeed(limit = 20, after?: number | null): Promise<FlowP
  * with the reason attached to every item. The cursor is opaque — round-trip it.
  */
 export async function rankedFlow(limit = 8, cursor: FlowCursor | null = null): Promise<RankedFlowPage> {
-  const page = await rpc<RankedFlowPage>('flow_ranked_feed', { p_limit: limit, p_cursor: cursor });
-  return {
-    items: page?.items ?? [],
-    nextCursor: page?.nextCursor ?? null,
-    ranking: page?.ranking,
-  };
+  try {
+    const page = await rpc<RankedFlowPage>('flow_ranked_feed', { p_limit: limit, p_cursor: cursor });
+    return {
+      items: page?.items ?? [],
+      nextCursor: page?.nextCursor ?? null,
+      ranking: page?.ranking,
+    };
+  } catch (e) {
+    /**
+     * The ranked feed is a new database function, and an app can reach a phone
+     * before the migration that creates it has been applied. That must degrade to
+     * the timeline the app already had, not to an error screen over the whole
+     * feed — so a missing function is caught here and the old `flow_feed` answers
+     * instead. Anything else (a real permission or network fault) still throws.
+     */
+    if (!isMissingFunction(e)) throw e;
+    const page = await flowFeed(limit, cursor?.id ?? null);
+    const items = page.items;
+    return {
+      items,
+      nextCursor: items.length ? { score: 0, id: items[items.length - 1].id } : null,
+    };
+  }
+}
+
+/** PostgREST says PGRST202; Postgres itself says 42883. Either means "no such function". */
+function isMissingFunction(e: unknown): boolean {
+  if (!(e instanceof ApiError)) return false;
+  const text = `${e.code ?? ''} ${e.message ?? ''}`;
+  return /PGRST202|42883|Could not find the function|does not exist/i.test(text);
 }
 
 /**

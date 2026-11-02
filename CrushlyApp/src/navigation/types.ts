@@ -27,6 +27,10 @@ export type RootStackParamList = {
   Chat: { conversationId: number };
   MutualCrush: { userId: number; name: string; photo?: string | null };
   Discover: undefined;
+  /** The pre-feed list: every post in the Flow, with the Circle strip and the
+   *  public/to-everyone switch. Kept reachable from the feed's menu rather than
+   *  deleted, because it is the only place those two things live. */
+  FlowList: undefined;
   Search: { q?: string } | undefined;
   Filters: undefined;
   Notifications: undefined;
