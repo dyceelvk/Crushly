@@ -14,7 +14,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe, FlowCursor, RankedFlowPage} from './types';
+import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe, FlowCursor, RankedFlowPage, PostLiker} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -520,6 +520,18 @@ export async function likePostComment(
 /** One post by id, enforcing the same audience and block rules as the Feed. */
 export async function loadPost(postId: number): Promise<Post> {
   return rpc<Post>('load_post', { p_post_id: postId });
+}
+
+/**
+ * The people who reacted to a post.
+ *
+ * The sheet over a post has two tabs — what was said, and who felt something —
+ * and until this existed there was no way to answer the second one from the
+ * client: the count was in `post_engagement`, the names were not.
+ */
+export async function postLikers(postId: number, limit = 40): Promise<PostLiker[]> {
+  const res = await rpc<{ items: PostLiker[] }>('post_likers', { p_post_id: postId, p_limit: limit });
+  return res?.items ?? [];
 }
 
 export async function postComments(postId: number, limit = 50): Promise<{ items: PostComment[] }> {

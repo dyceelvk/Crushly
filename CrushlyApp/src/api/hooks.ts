@@ -526,6 +526,15 @@ export function usePost(postId: number | null) {
   });
 }
 
+/** The people who reacted to a post — the Likes tab over a post. */
+export function usePostLikers(postId: number | null) {
+  return useQuery({
+    queryKey: ['postLikers', postId ?? 0],
+    queryFn: () => service.postLikers(postId as number),
+    enabled: postId !== null,
+  });
+}
+
 export function usePostComments(postId: number | null) {
   return useQuery({
     queryKey: keys.postComments(postId ?? 0),

@@ -9,6 +9,7 @@ import { Avatar } from '../../components/Photo';
 import { FeedPost } from '../../components/feed/FeedPost';
 import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
+import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMe, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
@@ -54,6 +55,7 @@ export function FeedScreen() {
   const like = useReactToPost();
   const save = useSavePost();
   const [shareFor, setShareFor] = useState<Post | null>(null);
+  const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
   /**
@@ -108,7 +110,7 @@ export function FeedScreen() {
         }
         onCircle={item.circleId ? () => navigation.navigate('Circle', { circleId: item.circleId as number }) : undefined}
         onLike={() => like.mutate({ postId: item.id, liked: !item.liked })}
-        onComment={() => navigation.navigate('PostViewer', { postId: item.id })}
+        onComment={() => setCommentsFor(item)}
         onSave={() => save.mutate({ postId: item.id, saved: !item.saved })}
         onShare={() => setShareFor(item)}
       />
@@ -225,6 +227,15 @@ export function FeedScreen() {
       </Pressable>
 
       {shareFor ? <ShareToWhisper visible post={shareFor} onClose={() => setShareFor(null)} /> : null}
+      <CommentsSheet
+        post={commentsFor}
+        visible={!!commentsFor}
+        onClose={() => setCommentsFor(null)}
+        onOpenAuthor={(id) => {
+          setCommentsFor(null);
+          navigation.navigate('UserProfile', { id });
+        }}
+      />
     </View>
     </NoirScope>
   );

@@ -113,6 +113,13 @@ export type PostComment = {
   canDelete?: boolean;
 };
 
+/** One person who reacted to a post, for the Likes tab over a post. */
+export type PostLiker = {
+  kind: ReactionKind;
+  createdAt: number;
+  author: Profile;
+};
+
 /** What Keep Close looks like from one member's Space. */
 export type KeepState = {
   keeps: boolean;
