@@ -38,7 +38,11 @@ for attempt in range(2):
             root = ET.fromstring(xml)
         except ET.ParseError:
             continue
-        labels = [n.get('text', '') + ' ' + n.get('content-desc', '') for n in root.iter('node')]
+        # Whitespace-collapsed: the rebuilt Welcome screen sets its headline as
+        # `Welcome to\nCrushly`, and a literal substring match on a hard line
+        # break failed a build whose welcome UI was on screen the whole time.
+        labels = [' '.join((n.get('text', '') + ' ' + n.get('content-desc', '')).split())
+                  for n in root.iter('node')]
         if any('Welcome to Crushly' in s for s in labels) and any('Get Started' in s for s in labels):
             welcome = True
             break
