@@ -96,6 +96,10 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'shared_post.sql'):
             return 1
+        # The Flow is ranked: scored from what people read, resumable by cursor,
+        # and able to say why each post is where it is.
+        if not run_file(ROOT / 'ranked_feed.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:
