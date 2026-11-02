@@ -3,7 +3,7 @@
   "versionCode": 24,
   "minVersionCode": 3,
   "file": "Crushly-1.0.24-Android9plus.apk",
-  "notes": "Save posts for later, and Vibes play with the captions their author drew.",
+  "notes": "Opens on Follow the feelings, then Welcome. For You is the ranked feed, and a post is one screen at a time.",
   "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.24/Crushly-1.0.24-Android9plus.apk",
   "bytes": 95200251,
   "sha256": "10bf7f33c9bbb140c1c545c3386a8baccdd4c438c882014e5de2f455d10aab6f"
