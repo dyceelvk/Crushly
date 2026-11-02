@@ -17,8 +17,44 @@
  */
 
 import {
-  BakedEdit, EDIT_LIMITS, EditCategory, FILTERS, LiveEdit, NEUTRAL_LOOK, VideoEdit, clipLength, splitForUpload,
+  BakedEdit, EDIT_LIMITS, EditCategory, FILTERS, LiveEdit, NEUTRAL_LOOK, VideoEdit, clipLength,
+  liveWithCuts, segmentsOf, splitForUpload,
 } from './videoEdit';
+import { Segment, lengthOf } from './timeline';
+
+/**
+ * The ranges of the file the timeline keeps, in order.
+ *
+ * A single range is a trim and can be done with a seek. Anything else is a
+ * *join*: pieces of the file that were not next to each other have to be cut
+ * out one by one and stuck back together, which is a different operation
+ * entirely — and the reason `planEncode` has two shapes.
+ */
+export function keptRanges(baked: BakedEdit): Segment[] {
+  const all = segmentsOf(baked as unknown as VideoEdit);
+  const segs = all.filter((s) => lengthOf(s) > 0.01);
+  const whole =
+    segs.length === 1 &&
+    segs[0].start <= 0.01 &&
+    segs[0].end >= Math.max(0, baked.sourceDuration) - 0.01;
+
+  // An edit written before the timeline existed carries a trim window instead
+  // of pieces. It means the same thing, so it is read as one piece.
+  if (whole && (baked.trimStart > 0.01 || baked.trimEnd < baked.sourceDuration - 0.01)) {
+    return [{ id: segs[0].id, start: baked.trimStart, end: Math.min(baked.trimEnd, baked.sourceDuration) }];
+  }
+  if (segs.length) return segs;
+  return [{ id: 'whole', start: 0, end: Math.max(0, baked.sourceDuration) }];
+}
+
+/** True when the kept pieces are one unbroken run of the file. */
+export function isContiguous(ranges: Segment[]): boolean {
+  if (ranges.length <= 1) return true;
+  for (let i = 1; i < ranges.length; i++) {
+    if (Math.abs(ranges[i].start - ranges[i - 1].end) > 0.02) return false;
+  }
+  return true;
+}
 
 /**
  * The trimmer is reached by dynamic import, never at load time.
@@ -77,23 +113,31 @@ export function planEncode(
   const cap = MAX_EDGE[category];
   const length = clipLength(baked as unknown as VideoEdit);
   const steps: string[] = [];
+  const music = opts.music ?? null;
+  const ranges = keptRanges(baked);
+  const joined = ranges.length > 1;
 
   const args: string[] = ['-y'];
 
   // Seeking before -i lets FFmpeg skip decoding the part we cut away, which is
-  // most of the speed on a long clip.
-  if (baked.trimStart > 0.01) {
-    args.push('-ss', trim(baked.trimStart));
-    steps.push(`Start at ${baked.trimStart.toFixed(1)}s`);
+  // most of the speed on a long clip. It only works for one unbroken range —
+  // a join needs every piece decoded, so those are cut in the filter graph
+  // instead.
+  if (!joined && baked.trimStart > 0.01) {
+    args.push('-ss', trim(ranges[0].start));
+    steps.push(`Start at ${ranges[0].start.toFixed(1)}s`);
   }
-  if (length > 0) args.push('-t', trim(length));
+  if (!joined && length > 0) args.push('-t', trim(lengthOf(ranges[0])));
   args.push('-i', opts.input);
 
-  const music = opts.music ?? null;
   if (music) {
     args.push('-ss', trim(baked.music?.offset ?? 0));
     args.push('-i', music);
     steps.push('Mix in your sound');
+  }
+
+  if (joined) {
+    steps.push(`Join ${ranges.length} pieces`);
   }
 
   const vf: string[] = [];
@@ -137,18 +181,23 @@ export function planEncode(
     steps.push(baked.clipVolume === 0 ? 'Mute the clip' : 'Set the clip’s volume');
   }
 
-  if (vf.length) args.push('-vf', vf.join(','));
-  if (af.length || music) {
-    const chain = af.length ? af.join(',') : 'anull';
-    if (music) {
-      const mv = fixed(baked.music?.volume ?? 0.6);
-      args.push(
-        '-filter_complex',
-        `[1:a]volume=${mv}[music];[0:a]${chain}[clip];[clip][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`,
-      );
-      args.push('-map', '0:v:0', '-map', '[aout]');
-    } else {
-      args.push('-af', chain);
+  if (joined) {
+    args.push('-filter_complex', joinGraph(ranges, vf, af, music ? fixed(baked.music?.volume ?? 0.6) : null));
+    args.push('-map', '[vout]', '-map', music ? '[aout]' : '[aclip]');
+  } else {
+    if (vf.length) args.push('-vf', vf.join(','));
+    if (af.length || music) {
+      const chain = af.length ? af.join(',') : 'anull';
+      if (music) {
+        const mv = fixed(baked.music?.volume ?? 0.6);
+        args.push(
+          '-filter_complex',
+          `[1:a]volume=${mv}[music];[0:a]${chain}[clip];[clip][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`,
+        );
+        args.push('-map', '0:v:0', '-map', '[aout]');
+      } else {
+        args.push('-af', chain);
+      }
     }
   }
 
@@ -164,7 +213,8 @@ export function planEncode(
   );
 
   const noop =
-    baked.trimStart <= 0.01 &&
+    !joined &&
+    ranges[0].start <= 0.01 &&
     length >= baked.sourceDuration - 0.01 &&
     baked.speed === 1 &&
     baked.aspect === 'original' &&
@@ -176,6 +226,41 @@ export function planEncode(
     !music;
 
   return { args, steps, noop };
+}
+
+/**
+ * The graph that cuts the pieces out and sticks them back together.
+ *
+ * `concat` wants its inputs interleaved — video n then audio n — and every
+ * piece is reset to start at zero before joining, or the second piece would
+ * begin at its own timestamp in the file and the join would be a jump.
+ */
+export function joinGraph(
+  ranges: Segment[],
+  vf: string[],
+  af: string[],
+  musicVolume: string | null,
+): string {
+  const parts: string[] = [];
+  ranges.forEach((r, i) => {
+    parts.push(`[0:v]trim=start=${trim(r.start)}:end=${trim(r.end)},setpts=PTS-STARTPTS[v${i}]`);
+    parts.push(`[0:a]atrim=start=${trim(r.start)}:end=${trim(r.end)},asetpts=PTS-STARTPTS[a${i}]`);
+  });
+
+  const pairs = ranges.map((_, i) => `[v${i}][a${i}]`).join('');
+  parts.push(`${pairs}concat=n=${ranges.length}:v=1:a=1[vc][ac]`);
+
+  const video = vf.length ? `[vc]${vf.join(',')}[vout]` : '[vc]null[vout]';
+  parts.push(video);
+
+  const audio = af.length ? `[ac]${af.join(',')}[aclip]` : '[ac]anull[aclip]';
+  parts.push(audio);
+
+  if (musicVolume !== null) {
+    parts.push(`[1:a]volume=${musicVolume}[music]`);
+    parts.push('[aclip][music]amix=inputs=2:duration=first:dropout_transition=0[aout]');
+  }
+  return parts.join(';');
 }
 
 function aspectRatio(aspect: string): number | null {
@@ -216,6 +301,11 @@ export type EncodeResult = {
  * worth the work or the risk of a re-mux; more than that is a real trim.
  */
 export function cutRange(baked: BakedEdit): { startMs: number; endMs: number } | null {
+  // A join cannot be done by copying a run of the file, so it never takes the
+  // lossless path — it has to be re-encoded.
+  const ranges = keptRanges(baked);
+  if (ranges.length > 1) return null;
+
   const startMs = Math.max(0, baked.trimStart * 1000);
   const sourceMs = Math.max(0, baked.sourceDuration * 1000);
   const endMs = Math.min(baked.trimEnd * 1000, sourceMs) || sourceMs;
@@ -357,7 +447,12 @@ export async function preparedClip(
   // second time, so it is dropped from the half that travels as data.
   const stored = live && result.via === 're-encode' ? { ...live, look: NEUTRAL_LOOK } : live;
 
-  return { uri: result.uri, live: stored, encoded: result.encoded };
+  // When nothing encoded, the file still has every frame in it — including the
+  // ones that were cut away. The cut then has to travel as data, or the clip
+  // that gets posted is the clip that was picked.
+  const withCuts = result.encoded ? stored : liveWithCuts(stored, edit);
+
+  return { uri: result.uri, live: withCuts, encoded: result.encoded };
 }
 
 export function encodeUnavailableNote(): string {

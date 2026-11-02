@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +9,8 @@ import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { Input } from '../../components/Input';
+import { Rise } from '../../components/Rise';
+import { Tabs, TabItem } from '../../components/Tabs';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useSearch } from '../../api/hooks';
@@ -17,9 +19,23 @@ import { useMentionInput } from '../../components/useMentionInput';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
+import {
+  RECENT_KEY,
+  parseRecents,
+  pushRecent,
+  removeRecent,
+  serializeRecents,
+} from '../../lib/recentSearches';
+import { stagger } from '../../lib/motion';
+import { storage } from '../../lib/storage';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+type Tab = 'top' | 'people' | 'flows' | 'vibes' | 'moments';
+
+/** How many results of each kind "Top" shows before it offers the full list. */
+const PREVIEW = 3;
 
 /**
  * Search — members, and what they have shared.
@@ -29,7 +45,19 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * in these results has already been through the same rules as the feed it came
  * from, so the search box is not a way round an audience, a Circle, or a block.
  *
- * A result leads somewhere you could already have gone — a member's Space.
+ * The shape of the screen is copied from the search everyone already knows,
+ * because the shape is the part that costs nothing to get right:
+ *
+ *   The words you typed become the heading, at heading size. Searching is a
+ *   place you go, and a place has a name.
+ *
+ *   A tab per kind of result, with Top first — Top is a little of everything,
+ *   which is what you want before you know what you are looking for. Each tab
+ *   carries its own count, so you can see that there were four people and one
+ *   Vibe before you spend a tap finding out.
+ *
+ *   Nothing to search yet shows what you searched for last, not an advert for
+ *   the search box.
  */
 export function SearchScreen({ route }: { route?: { params?: { q?: string } } }) {
   const navigation = useNavigation<Nav>();
@@ -42,6 +70,8 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const seed = route?.params?.q ?? '';
   const [text, setText] = useState(seed);
   const [query, setQuery] = useState(seed.trim());
+  const [tab, setTab] = useState<Tab>('top');
+  const [recents, setRecents] = useState<string[]>([]);
 
   // Typing shouldn't cost a round trip per letter.
   useEffect(() => {
@@ -50,20 +80,133 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
     return () => clearTimeout(t);
   }, [text, query]);
 
+  useEffect(() => {
+    let alive = true;
+    storage.get(RECENT_KEY).then((raw) => {
+      if (alive) setRecents(parseRecents(raw));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const remember = useCallback((word: string) => {
+    setRecents((current) => {
+      const next = pushRecent(current, word);
+      if (next !== current) storage.set(RECENT_KEY, serializeRecents(next));
+      return next;
+    });
+  }, []);
+
+  const forget = useCallback((word: string) => {
+    setRecents((current) => {
+      const next = removeRecent(current, word);
+      storage.set(RECENT_KEY, serializeRecents(next));
+      return next;
+    });
+  }, []);
+
   // `@` and `#` mean the same thing here as they do in a post: this is a
   // person, or this is a tag. The sigil is ours, not the catalogue's, so it is
   // dropped before the words go looking.
   const searchInput = useMentionInput(text, setText);
-  // The sigil is ours, not the catalogue's: `@ada` searches for ada.
   const words = query.replace(/^[@#]/, '').trim();
   const results = useSearch(words);
   const data = results.data;
 
-  const total = useMemo(
-    () => (data ? data.members.length + data.posts.length + data.vibes.length + data.moments.length : 0),
+  const counts = useMemo(
+    () => ({
+      people: data?.members.length ?? 0,
+      flows: data?.posts.length ?? 0,
+      vibes: data?.vibes.length ?? 0,
+      moments: data?.moments.length ?? 0,
+    }),
     [data],
   );
+  const total = counts.people + counts.flows + counts.vibes + counts.moments;
   const asked = words.length >= 2;
+
+  // Switching tabs is a change of content, not a new screen: the tab row stays
+  // put and only the list below it is replaced. It is remounted by key so the
+  // rows arrive again, which is the whole feedback the tap needs.
+  const tabs: TabItem<Tab>[] = [
+    { id: 'top', label: 'Top', count: total },
+    { id: 'people', label: 'People', count: counts.people },
+    { id: 'flows', label: 'Flows', count: counts.flows },
+    { id: 'vibes', label: 'Vibes', count: counts.vibes },
+    { id: 'moments', label: 'Moments', count: counts.moments },
+  ];
+
+  const go = (fn: () => void, rememberWord = true) => () => {
+    if (rememberWord) remember(words);
+    fn();
+  };
+
+  const peopleList = (limit?: number) =>
+    (data?.members ?? []).slice(0, limit ?? undefined).map((p, i) => (
+      <Rise key={`m-${p.id}`} delay={stagger(i)}>
+        <MemberRow
+          name={p.name}
+          handle={p.username}
+          sub={[p.city, p.age ? `${p.age}` : null].filter(Boolean).join(' · ')}
+          verified={p.verified}
+          photo={p.photos?.[0]?.url ?? null}
+          onPress={go(() => navigation.navigate('UserProfile', { id: p.id }))}
+        />
+      </Rise>
+    ));
+
+  const flowList = (limit?: number) =>
+    (data?.posts ?? []).slice(0, limit ?? undefined).map((post, i) => (
+      <Rise key={`p-${post.id}`} delay={stagger(i)}>
+        <TextRow
+          kind="Flow"
+          icon="chatbubbles-outline"
+          body={post.body}
+          author={post.author?.name ?? 'Member'}
+          verified={!!post.author?.verified}
+          photo={post.author?.photo ?? null}
+          when={post.createdAt}
+          /* A result you searched for should open what matched, not the person
+             who wrote it. Every row here used to go to the author's Space, so a
+             post you found by its words was unreachable from the one screen
+             that found it. */
+          onPress={go(() => navigation.navigate('PostViewer', { postId: post.id }))}
+        />
+      </Rise>
+    ));
+
+  const vibeList = (limit?: number) =>
+    (data?.vibes ?? []).slice(0, limit ?? undefined).map((v, i) => (
+      <Rise key={`v-${v.id}`} delay={stagger(i)}>
+        <TextRow
+          kind="Vibe"
+          icon="play-circle-outline"
+          body={v.body}
+          author={v.author?.name ?? 'Member'}
+          verified={!!v.author?.verified}
+          photo={v.author?.photo ?? null}
+          when={v.createdAt}
+          onPress={go(() => navigation.navigate('VibeViewer', { id: v.id }))}
+        />
+      </Rise>
+    ));
+
+  const momentList = (limit?: number) =>
+    (data?.moments ?? []).slice(0, limit ?? undefined).map((m, i) => (
+      <Rise key={`mo-${m.id}`} delay={stagger(i)}>
+        <TextRow
+          kind="Moment"
+          icon="sparkles-outline"
+          body={m.body}
+          author={m.author?.name ?? 'Member'}
+          verified={!!m.author?.verified}
+          photo={m.author?.photo ?? null}
+          when={m.createdAt}
+          onPress={go(() => navigation.navigate('Moments'))}
+        />
+      </Rise>
+    ));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -86,6 +229,9 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             value={text}
             onChangeText={searchInput.onChangeText}
             onSelectionChange={searchInput.onSelectionChange}
+            onSubmitEditing={() => {
+              if (asked) remember(words);
+            }}
             placeholder="Search people, or words they’ve shared"
             icon="search"
             autoFocus
@@ -94,7 +240,17 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             accessibilityLabel="Search"
           />
         </View>
-        {text ? <IconButton icon="close" label="Clear search" onPress={() => setText('')} /> : null}
+        {text ? (
+          <IconButton
+            icon="close"
+            label="Clear search"
+            onPress={() => {
+              setText('');
+              setQuery('');
+              setTab('top');
+            }}
+          />
+        ) : null}
       </View>
 
       {/* Typing `@` or `#` turns the box into the same two lists it opens
@@ -118,11 +274,77 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
         showsVerticalScrollIndicator={false}
       >
         {!asked ? (
-          <EmptyState
-            icon="search-outline"
-            title="Search Crushly"
-            message="Type a name, a handle, a city or an interest — or a word somebody shared in a Flow, a Vibe or a Moment."
-          />
+          <>
+            {/* What you looked for before. Eight words, on this device, gone
+                with one tap — the cheapest improvement to a search box there
+                is, and the only one that needs no server. */}
+            {recents.length ? (
+              <View style={{ marginTop: space.md }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Txt variant="label" color="textSecondary">
+                    RECENT
+                  </Txt>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear recent searches"
+                    onPress={() => {
+                      setRecents([]);
+                      storage.remove(RECENT_KEY);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Txt variant="caption" color="textMuted">
+                      Clear
+                    </Txt>
+                  </Pressable>
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: space.sm }}>
+                  {recents.map((word) => (
+                    <Pressable
+                      key={word}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Search again for ${word}`}
+                      onPress={() => {
+                        setText(word);
+                        setQuery(word);
+                        remember(word);
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingLeft: 12,
+                        paddingRight: 8,
+                        height: 34,
+                        borderRadius: radius.pill,
+                        backgroundColor: colors.card,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }}
+                    >
+                      <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+                      <Txt variant="small" numberOfLines={1} style={{ maxWidth: 180 }}>
+                        {word}
+                      </Txt>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${word} from recent searches`}
+                        hitSlop={8}
+                        onPress={() => forget(word)}
+                      >
+                        <Ionicons name="close" size={13} color={colors.textMuted} />
+                      </Pressable>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+            <EmptyState
+              icon="search-outline"
+              title="Search Crushly"
+              message="Type a name, a handle, a city or an interest — or a word somebody shared in a Flow, a Vibe or a Moment. Start with @ for a person, # for a tag."
+            />
+          </>
         ) : results.isLoading ? (
           <View style={{ gap: space.sm, marginTop: space.md }}>
             <Skeleton style={{ height: 56, borderRadius: radius.md }} />
@@ -130,92 +352,57 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             <Skeleton style={{ height: 56, borderRadius: radius.md }} />
           </View>
         ) : results.isError ? (
-          <ErrorState
-            error={results.error}
-            message="Search didn’t load."
-            onRetry={results.refetch}
-          />
+          <ErrorState error={results.error} message="Search didn’t load." onRetry={results.refetch} />
         ) : total === 0 ? (
-          <EmptyState
-            icon="search-outline"
-            title={`Nothing for “${words}”`}
-            message="Try a shorter word, or a name."
-          />
+          <EmptyState icon="search-outline" title={`Nothing for “${words}”`} message="Try a shorter word, or a name." />
         ) : (
           <>
-            {data && data.members.length ? (
-              <Section title="People">
-                {data.members.map((p) => (
-                  <MemberRow
-                    key={`m-${p.id}`}
-                    name={p.name}
-                    handle={p.username}
-                    sub={[p.city, p.age ? `${p.age}` : null].filter(Boolean).join(' · ')}
-                    verified={p.verified}
-                    photo={p.photos?.[0]?.url ?? null}
-                    onPress={() => navigation.navigate('UserProfile', { id: p.id })}
-                  />
-                ))}
-              </Section>
-            ) : null}
+            {/* The words you typed, as a place, with its name on it. */}
+            <Txt variant="title" style={{ marginTop: space.sm }} numberOfLines={2} accessibilityRole="header">
+              {words}
+            </Txt>
+            <Txt variant="caption" color="textSecondary" style={{ marginBottom: space.sm }}>
+              {total === 1 ? '1 result' : `${total} results`}
+            </Txt>
 
-            {data && data.posts.length ? (
-              <Section title="Flows">
-                {data.posts.map((post) => (
-                  <TextRow
-                    key={`p-${post.id}`}
-                    kind="Flow"
-                    icon="chatbubbles-outline"
-                    body={post.body}
-                    author={post.author?.name ?? 'Member'}
-                    verified={!!post.author?.verified}
-                    photo={post.author?.photo ?? null}
-                    when={post.createdAt}
-                    /* A result you searched for should open what matched, not
-                       the person who wrote it. Every row here used to go to the
-                       author's Space, so a post you found by its words was
-                       unreachable from the one screen that found it. */
-                    onPress={() => navigation.navigate('PostViewer', { postId: post.id })}
-                  />
-                ))}
-              </Section>
-            ) : null}
+            <Tabs tabs={tabs} active={tab} onChange={setTab} accessibilityLabel="Result types" />
 
-            {data && data.vibes.length ? (
-              <Section title="Vibes">
-                {data.vibes.map((v) => (
-                  <TextRow
-                    key={`v-${v.id}`}
-                    kind="Vibe"
-                    icon="play-circle-outline"
-                    body={v.body}
-                    author={v.author?.name ?? 'Member'}
-                    verified={!!v.author?.verified}
-                    photo={v.author?.photo ?? null}
-                    when={v.createdAt}
-                    onPress={() => navigation.navigate('VibeViewer', { id: v.id })}
-                  />
-                ))}
-              </Section>
-            ) : null}
+            <View style={{ height: 1, backgroundColor: colors.border, marginTop: space.xs, marginBottom: space.md }} />
 
-            {data && data.moments.length ? (
-              <Section title="Moments">
-                {data.moments.map((m) => (
-                  <TextRow
-                    key={`mo-${m.id}`}
-                    kind="Moment"
-                    icon="sparkles-outline"
-                    body={m.body}
-                    author={m.author?.name ?? 'Member'}
-                    verified={!!m.author?.verified}
-                    photo={m.author?.photo ?? null}
-                    when={m.createdAt}
-                    onPress={() => navigation.navigate('Moments')}
-                  />
-                ))}
-              </Section>
-            ) : null}
+            <View key={tab}>
+              {tab === 'top' ? (
+                <>
+                  {counts.people ? (
+                    <Section title="People" more={counts.people > PREVIEW ? counts.people : 0} onMore={() => setTab('people')}>
+                      {peopleList(PREVIEW)}
+                    </Section>
+                  ) : null}
+                  {counts.flows ? (
+                    <Section title="Flows" more={counts.flows > PREVIEW ? counts.flows : 0} onMore={() => setTab('flows')}>
+                      {flowList(PREVIEW)}
+                    </Section>
+                  ) : null}
+                  {counts.vibes ? (
+                    <Section title="Vibes" more={counts.vibes > PREVIEW ? counts.vibes : 0} onMore={() => setTab('vibes')}>
+                      {vibeList(PREVIEW)}
+                    </Section>
+                  ) : null}
+                  {counts.moments ? (
+                    <Section
+                      title="Moments"
+                      more={counts.moments > PREVIEW ? counts.moments : 0}
+                      onMore={() => setTab('moments')}
+                    >
+                      {momentList(PREVIEW)}
+                    </Section>
+                  ) : null}
+                </>
+              ) : null}
+              {tab === 'people' ? <Section title="People">{peopleList()}</Section> : null}
+              {tab === 'flows' ? <Section title="Flows">{flowList()}</Section> : null}
+              {tab === 'vibes' ? <Section title="Vibes">{vibeList()}</Section> : null}
+              {tab === 'moments' ? <Section title="Moments">{momentList()}</Section> : null}
+            </View>
           </>
         )}
       </ScrollView>
@@ -223,16 +410,44 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  more = 0,
+  onMore,
+}: {
+  title: string;
+  children: React.ReactNode;
+  /** Total available, when this section is only a preview of them. */
+  more?: number;
+  onMore?: () => void;
+}) {
   const { colors } = useTheme();
   return (
-    <View style={{ marginTop: space.lg }}>
-      <Txt variant="label" color="textSecondary" accessibilityRole="header">
-        {title.toUpperCase()}
-      </Txt>
+    <View style={{ marginBottom: space.lg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.sm }}>
+        <Txt variant="label" color="textSecondary" accessibilityRole="header">
+          {title.toUpperCase()}
+        </Txt>
+        {/* A preview says so. The alternative — a list that just ends — reads
+            as "that was all there was". */}
+        {more > 0 && onMore ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`See all ${more} ${title.toLowerCase()}`}
+            onPress={onMore}
+            hitSlop={8}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
+          >
+            <Txt variant="caption" color="textSecondary">
+              {`See all ${more}`}
+            </Txt>
+            <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} />
+          </Pressable>
+        ) : null}
+      </View>
       <View
         style={{
-          marginTop: space.sm,
           backgroundColor: colors.card,
           borderRadius: radius.lg,
           borderWidth: 1,

@@ -5,6 +5,7 @@ import { useVideoPlayer, type VideoPlayer } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { PlayPauseFlash } from './PlayPauseFlash';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
+import { followCuts } from '../lib/timeline';
 import { VideoView } from 'expo-video';
 import { frameHeight, leavesBands, stageFit, videoFrame, videoRatio, type StageFit } from '../lib/videoFrame';
 import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
@@ -157,6 +158,11 @@ export function EditedClip({
 
   const [clipTime, setClipTime] = useState(0);
   const [playing, setPlaying] = useState(false);
+
+  // A clip whose file could not be cut carries its pieces instead. The player
+  // then has to skip what was cut away, or everybody watching would see the
+  // part its author removed.
+  const cuts = live?.cuts && live.cuts.length ? live.cuts : null;
 
   const webRatio = useWebRatio(uri);
   const nativeRatio = useNativeRatio(player, webRatio != null);
@@ -348,7 +354,14 @@ export function EditedClip({
     let raf = 0;
     let last = -1;
     const tick = () => {
-      const t = player?.currentTime ?? 0;
+      const raw = player?.currentTime ?? 0;
+      let t = raw;
+      if (cuts) {
+        const step = followCuts(cuts, raw, loop);
+        if (step.seekTo !== null) player!.currentTime = step.seekTo;
+        if (step.ended) player!.pause();
+        t = step.cut;
+      }
       if (Math.abs(t - last) > 0.02) {
         last = t;
         setClipTime(t);
@@ -361,7 +374,7 @@ export function EditedClip({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [player]);
+  }, [player, cuts, loop]);
 
   return (
     <View
@@ -449,3 +462,4 @@ function BackdropClip({ uri }: { uri: string }) {
     />
   );
 }
+

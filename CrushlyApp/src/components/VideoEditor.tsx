@@ -14,6 +14,8 @@ import { useVideoPlayer } from 'expo-video';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoEditCanvas } from './VideoEditCanvas';
+import { Timeline, TimelineOverlay } from './Timeline';
+import { Rise } from './Rise';
 import { RangeSlider } from './Slider';
 import { Segmented } from './Segmented';
 import { Txt } from './Txt';
@@ -37,14 +39,34 @@ import {
   VideoEdit,
   clipLength,
   clampEdit,
+  duplicatePiece,
   emptyEdit,
   exportEdit,
   formatTime,
+  movePiece,
   newCaption,
   newSticker,
   playbackLength,
+  removePiece,
+  segmentsOf,
   setTrim,
+  sourceTimeAt,
+  splitEdit,
+  trimPiece,
 } from '../lib/videoEdit';
+import {
+  HISTORY_LIMIT,
+  History,
+  canRedo,
+  canUndo,
+  depth,
+  record,
+  redo,
+  startHistory,
+  undo,
+} from '../lib/editHistory';
+import { lengthOf, locate } from '../lib/timeline';
+import { TRAVEL } from '../lib/motion';
 
 type ToolId = 'trim' | 'captions' | 'filters' | 'speed' | 'crop' | 'stickers' | 'music' | 'adjust';
 
@@ -115,7 +137,10 @@ export function VideoEditorModal({
   const { colors } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
 
-  const [edit, setEdit] = useState<VideoEdit>(() => emptyEdit(sourceDuration ?? 0));
+  // Every change goes through the history, so there is always a way back and
+  // no control has to know about it.
+  const [history, setHistory] = useState<History<VideoEdit>>(() => startHistory(emptyEdit(sourceDuration ?? 0)));
+  const edit = history.present;
   const [clipTime, setClipTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [tool, setTool] = useState<ToolId | null>(initialTool ?? null);
@@ -132,7 +157,7 @@ export function VideoEditorModal({
   // A fresh clip resets everything: an edit belongs to one clip and one place.
   useEffect(() => {
     if (!visible) return;
-    setEdit(emptyEdit(sourceDuration ?? 0));
+    setHistory(startHistory(emptyEdit(sourceDuration ?? 0)));
     setClipTime(0);
     setPlaying(false);
     setTool(null);
@@ -149,11 +174,13 @@ export function VideoEditorModal({
       const d = player.duration ?? 0;
       if (d > 0.2) {
         setReady(true);
-        setEdit((e) =>
-          Math.abs(e.sourceDuration - d) < 0.25
-            ? e
-            : clampEdit({ ...e, sourceDuration: d, trimEnd: Math.min(e.trimEnd || d, d) }, category),
-        );
+        setHistory((h) => {
+          const e = h.present;
+          if (Math.abs(e.sourceDuration - d) < 0.25) return h;
+          // The length arriving late must not count as an edit somebody made.
+          const grown = clampEdit({ ...e, sourceDuration: d }, category);
+          return { ...h, present: grown };
+        });
         return;
       }
       raf = requestAnimationFrame(poll);
@@ -162,8 +189,13 @@ export function VideoEditorModal({
     return () => cancelAnimationFrame(raf);
   }, [visible, player, category]);
 
-  // The driver. Keeps the playhead inside the trim window, loops it there, and
-  // reports clip time for the overlays to follow.
+  // The driver.
+  //
+  // The player only knows the file; the timeline is a set of pieces of that
+  // file laid end to end. So each frame asks: which piece is this frame in, and
+  // how far into the made clip does that put us? When the frame falls inside a
+  // piece we have thrown away, the playhead is pushed to the start of the next
+  // piece — which is what makes a cut play as a cut rather than as a skip.
   useEffect(() => {
     if (!visible) return;
     let raf = 0;
@@ -171,19 +203,46 @@ export function VideoEditorModal({
     const tick = () => {
       const p = player;
       if (p) {
+        const pieces = segmentsOf(edit);
+        const total = clipLength(edit);
         const t = p.currentTime ?? 0;
-        if (t < edit.trimStart - 0.06 || t >= edit.trimEnd - 0.02) {
-          p.currentTime = edit.trimStart;
-          if (last !== 0) {
-            last = 0;
-            setClipTime(0);
+        let cut = 0;
+
+        // Walk the pieces to find the one this frame belongs to.
+        let walked = 0;
+        let placed = false;
+        for (let i = 0; i < pieces.length; i++) {
+          const piece = pieces[i];
+          const len = lengthOf(piece);
+          if (t >= piece.start - 0.06 && t < piece.end - 0.02) {
+            cut = walked + Math.max(0, t - piece.start);
+            placed = true;
+            break;
           }
-        } else {
-          const next = t - edit.trimStart;
-          if (Math.abs(next - last) > 0.02) {
-            last = next;
-            setClipTime(next);
+          if (t < piece.start - 0.06) {
+            // The frame is in a gap — jump to the beginning of this piece.
+            p.currentTime = piece.start;
+            cut = walked;
+            placed = true;
+            break;
           }
+          walked += len;
+        }
+
+        if (!placed) {
+          // Past the end of the last piece: back to the top, like a loop.
+          const first = pieces[0];
+          if (first && (t >= pieces[pieces.length - 1].end - 0.02 || t < first.start)) {
+            if (playing) p.currentTime = first.start;
+            cut = 0;
+          } else {
+            cut = Math.min(total, walked);
+          }
+        }
+
+        if (Math.abs(cut - last) > 0.02) {
+          last = cut;
+          setClipTime(cut);
         }
         if (p.playing !== playing) setPlaying(p.playing);
       }
@@ -191,7 +250,7 @@ export function VideoEditorModal({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [visible, player, edit.trimStart, edit.trimEnd, playing]);
+  }, [visible, player, edit, playing]);
 
   useEffect(() => {
     if (player) player.playbackRate = edit.speed;
@@ -209,9 +268,10 @@ export function VideoEditorModal({
   const length = clipLength(edit);
   const limit = EDIT_LIMITS[category];
 
-  const seek = (clipSeconds: number) => {
-    const t = Math.min(Math.max(clipSeconds, 0), length);
-    if (player) player.currentTime = edit.trimStart + t;
+  /** Move the playhead to a point in the made clip. */
+  const seek = (cutSeconds: number) => {
+    const t = Math.min(Math.max(cutSeconds, 0), length);
+    if (player) player.currentTime = sourceTimeAt(edit, t);
     setClipTime(t);
   };
 
@@ -221,8 +281,7 @@ export function VideoEditorModal({
       player.pause();
       if (edit.music) musicPlayer?.pause();
     } else {
-      const t = player.currentTime ?? 0;
-      if (t < edit.trimStart || t >= edit.trimEnd - 0.02) player.currentTime = edit.trimStart;
+      if (clipTime >= length - 0.02) seek(0);
       player.play();
       if (edit.music) musicPlayer?.play();
     }
@@ -230,7 +289,83 @@ export function VideoEditorModal({
     setPlaying(!player.playing);
   };
 
-  const update = (next: VideoEdit) => setEdit(clampEdit(next, category));
+  /**
+   * Every change to the edit goes through here.
+   *
+   * `mergeKey` names gestures that arrive as many updates — a dragged handle, a
+   * slider — so they become one undo step rather than forty. Anything discrete
+   * passes nothing and gets its own step.
+   */
+  const update = (next: VideoEdit, mergeKey: string | null = null) => {
+    setHistory((h) => record(h, clampEdit(next, category), mergeKey));
+  };
+
+  const stepBack = () => {
+    setHistory((h) => undo(h));
+    haptic.tap();
+  };
+  const stepForward = () => {
+    setHistory((h) => redo(h));
+    haptic.tap();
+  };
+
+  // Cut operations. They act on the selected piece, or on the playhead, which
+  // is the only other place a cut can mean anything.
+  const selectedPiece = segmentsOf(edit).find((p) => p.id === selectedId) ?? null;
+  const playheadIndex = locate(segmentsOf(edit), clipTime)?.index ?? 0;
+  const pieceCount = segmentsOf(edit).length;
+
+  // What the second lane draws: everything written over the picture, in the
+  // same cut seconds the timeline works in.
+  const timelineOverlays: TimelineOverlay[] = [
+    ...edit.captions.map((c) => ({
+      id: c.id,
+      kind: 'caption' as const,
+      start: c.start,
+      end: c.end,
+      label: c.text.trim() || 'Text',
+    })),
+    ...edit.stickers.map((k) => ({
+      id: k.id,
+      kind: 'sticker' as const,
+      start: k.start,
+      end: k.end,
+      label: k.glyph,
+    })),
+  ];
+
+  const splitNow = () => {
+    const next = splitEdit(edit, clipTime, category);
+    if (next === edit) {
+      haptic.tap();
+      return;
+    }
+    update(next);
+    haptic.success();
+  };
+
+  const deletePieceNow = () => {
+    if (pieceCount < 2) return;
+    const target = selectedPiece ?? segmentsOf(edit)[playheadIndex];
+    if (!target) return;
+    update(removePiece(edit, target.id, category));
+    setSelectedId(null);
+    haptic.tap();
+  };
+
+  const duplicateNow = () => {
+    const target = selectedPiece ?? segmentsOf(edit)[playheadIndex];
+    if (!target) return;
+    update(duplicatePiece(edit, target.id, category));
+    haptic.success();
+  };
+
+  const moveNow = (by: -1 | 1) => {
+    const target = selectedPiece ?? segmentsOf(edit)[playheadIndex];
+    if (!target) return;
+    update(movePiece(edit, target.id, by, category));
+    haptic.tap();
+  };
 
   const pickMusic = async () => {
     try {
@@ -261,7 +396,11 @@ export function VideoEditorModal({
 
   // Size the frame to the crop, then shrink it if it would crowd the tools.
   const availW = Math.min(winW - space.lg * 2, 520);
-  const availH = Math.max(180, winH * 0.4);
+  // The stage gets a third of the screen, not half. The timeline, the cut bar
+  // and the tool sheet all live below it now, and a preview that eats the room
+  // the controls need is how the last version ended up with a rail on top of a
+  // sheet.
+  const availH = Math.max(150, winH * 0.33);
   const ratio = edit.aspect === 'original' ? naturalRatio : (ASPECTS[edit.aspect].ratio ?? naturalRatio);
   let frameW = availW;
   let frameH = frameW / ratio;
@@ -287,12 +426,30 @@ export function VideoEditorModal({
           {/* The bar reads left to right the way an editor does: out, what it
               is, and how much of it you have used. Export is the only thing on
               the right, because it is the only thing you cannot undo. */}
+          <IconButton
+            icon="arrow-undo"
+            label={`Undo${canUndo(history) ? `, ${depth(history).undo} step${depth(history).undo === 1 ? '' : 's'}` : ''}`}
+            variant="plain"
+            color={canUndo(history) ? '#fff' : '#4a4a55'}
+            onPress={() => {
+              if (canUndo(history)) stepBack();
+            }}
+          />
+          <IconButton
+            icon="arrow-redo"
+            label="Redo"
+            variant="plain"
+            color={canRedo(history) ? '#fff' : '#4a4a55'}
+            onPress={() => {
+              if (canRedo(history)) stepForward();
+            }}
+          />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Txt variant="subheading" style={{ color: '#fff' }} accessibilityRole="header" numberOfLines={1}>
               {CATEGORY_LABEL[category]}
             </Txt>
             <Txt variant="caption" style={{ color: '#8b8b95' }} numberOfLines={1}>
-              {`${formatTime(clipTime)} / ${formatTime(length)}  ·  ${Math.round((length / Math.max(0.1, limit.maxSeconds)) * 100)}%`}
+              {`${clock(clipTime)} / ${clock(length)}  ·  ${pieceCount === 1 ? '1 piece' : `${pieceCount} pieces`}`}
             </Txt>
           </View>
           <Button
@@ -321,10 +478,16 @@ export function VideoEditorModal({
               selectedId={selectedId}
               onSelect={setSelectedId}
               onMoveCaption={(id, x, y) =>
-                update({ ...edit, captions: edit.captions.map((c) => (c.id === id ? { ...c, x, y } : c)) })
+                update(
+                  { ...edit, captions: edit.captions.map((c) => (c.id === id ? { ...c, x, y } : c)) },
+                  `caption-move-${id}`,
+                )
               }
               onMoveSticker={(id, x, y) =>
-                update({ ...edit, stickers: edit.stickers.map((s) => (s.id === id ? { ...s, x, y } : s)) })
+                update(
+                  { ...edit, stickers: edit.stickers.map((s) => (s.id === id ? { ...s, x, y } : s)) },
+                  `sticker-move-${id}`,
+                )
               }
               style={{ width: frameW, height: frameH, borderRadius: radius.md }}
             />
@@ -348,41 +511,54 @@ export function VideoEditorModal({
           </Txt>
         </View>
 
-        {/* The timeline: a strip of the clip with the part you kept lit, a
-            playhead, and handles you can drag. Above it a ruler, because "one
-            third of the way in" is a place, and a percentage is not. */}
-        <ClipTimeline
-          total={total}
-          start={edit.trimStart}
-          end={edit.trimEnd}
-          playhead={edit.trimStart + clipTime}
-          onSeek={(t) => seek(t - edit.trimStart)}
-          onTrim={(nextStart, nextEnd) =>
-            update({ ...edit, trimStart: nextStart, trimEnd: Math.max(nextStart + 0.4, nextEnd) })
-          }
+        {/* The timeline, and the five things you can do to a piece of it. The
+            bar is directly under the lanes because a cut is a decision about
+            what is in front of you, and the tool sheet below is a decision
+            about how it looks. */}
+        <Timeline
+          pieces={segmentsOf(edit)}
+          duration={length}
+          playhead={clipTime}
+          overlays={timelineOverlays}
+          selectedId={selectedId}
+          onSeek={seek}
+          onSelect={setSelectedId}
+          onTrim={(id, start, end) => update(trimPiece(edit, id, start, end, category), 'trim')}
         />
+
+        <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: space.md, paddingTop: space.sm }}>
+          <CutChip icon="cut" label="Split" onPress={splitNow} />
+          <CutChip icon="copy-outline" label="Copy" onPress={duplicateNow} />
+          <CutChip
+            icon="trash-outline"
+            label="Delete"
+            disabled={pieceCount < 2}
+            onPress={deletePieceNow}
+          />
+          <CutChip icon="chevron-back" label="Earlier" compact disabled={pieceCount < 2} onPress={() => moveNow(-1)} />
+          <CutChip icon="chevron-forward" label="Later" compact disabled={pieceCount < 2} onPress={() => moveNow(1)} />
+        </View>
 
         {/* The sheet for whichever tool is open, directly above the rail. */}
         <View
           style={{
             flex: 1,
             minHeight: 0,
+            overflow: 'hidden',
             backgroundColor: '#141418',
             borderTopLeftRadius: radius.lg,
             borderTopRightRadius: radius.lg,
           }}
         >
           {tool === null ? (
-            <View style={{ padding: space.lg, gap: 10 }}>
-              <Txt variant="bodyStrong" style={{ color: '#fff' }}>
-                Pick a tool to start
-              </Txt>
-              <Txt variant="small" style={{ color: '#9a9aa2' }}>
-                Drag anything on the frame to move it. Everything you do here can be changed later —
-                nothing is written into the clip.
+            <View style={{ paddingHorizontal: space.md, paddingTop: space.sm }}>
+              <Txt variant="small" style={{ color: '#9a9aa2' }} numberOfLines={2}>
+                Split at the playhead, then drag a piece's ends to trim it. Nothing here is final —
+                Undo is the arrow at the top.
               </Txt>
             </View>
           ) : (
+            <Rise key={tool} distance={TRAVEL.card}>
             <ScrollView
               contentContainerStyle={{
                 padding: space.md,
@@ -421,6 +597,7 @@ export function VideoEditorModal({
                 <MusicPanel edit={edit} update={update} onPick={pickMusic} />
               ) : null}
             </ScrollView>
+            </Rise>
           )}
         </View>
 
@@ -504,139 +681,59 @@ export function VideoEditorModal({
 }
 
 /**
- * The clip, drawn as a piece of time.
+ * One cut action, as a chip.
  *
- * A slider says "somewhere in the middle"; a timeline says *where*, and how much
- * you kept. The strip is the whole clip, the lit window is what survives the
- * trim, and the two handles are the only decisions that matter in this tool.
- *
- * Drag the body to scrub, drag a handle to move the cut. Both are rounded to a
- * tenth of a second, because nobody trims to the millisecond and a number that
- * jitters is a number nobody trusts.
+ * Five of these fit on one row of a phone, which is the whole reason they are
+ * chips and not a menu: split, copy, delete and the two moves are used together
+ * and often, and anything behind a long press may as well not exist.
  */
-function ClipTimeline({
-  total,
-  start,
-  end,
-  playhead,
-  onSeek,
-  onTrim,
+/** Minutes and seconds only — the subtitle has one line and Export sits on it. */
+function clock(seconds: number): string {
+  const s = Math.max(0, seconds);
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+function CutChip({
+  icon,
+  label,
+  onPress,
+  disabled,
+  compact,
 }: {
-  total: number;
-  start: number;
-  end: number;
-  playhead: number;
-  onSeek: (seconds: number) => void;
-  onTrim: (start: number, end: number) => void;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  /** Icon only: the two moves sit beside three words and a row has to fit. */
+  compact?: boolean;
 }) {
   const { colors } = useTheme();
-  const [width, setWidth] = useState(0);
-  const live = useRef({ total, start, end, width, onSeek, onTrim });
-  live.current = { total, start, end, width, onSeek, onTrim };
-  const grab = useRef<{ kind: 'body' | 'left' | 'right'; startX: number; from: number; to: number } | null>(null);
-
-  const pct = (t: number) => (live.current.total > 0 ? Math.min(1, Math.max(0, t / live.current.total)) : 0);
-  const snap = (t: number) => Math.round(t * 10) / 10;
-
-  const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e: { nativeEvent: { locationX: number } }) => {
-        const { width: w, total: tt, start: a, end: b, onSeek: seek } = live.current;
-        if (!w || !tt) return;
-        const x = e.nativeEvent.locationX;
-        // Within 18 px of a handle, that handle is what you grabbed.
-        const leftPx = pct(a) * w;
-        const rightPx = pct(b) * w;
-        const kind = Math.abs(x - leftPx) <= 18 ? 'left' : Math.abs(x - rightPx) <= 18 ? 'right' : 'body';
-        grab.current = { kind, startX: x, from: a, to: b };
-        if (kind === 'body') seek(snap((x / w) * tt));
-      },
-      onPanResponderMove: (e: { nativeEvent: { locationX: number } }) => {
-        const g = grab.current;
-        const { width: w, total: tt, start: a, end: b, onTrim: trim, onSeek: seek } = live.current;
-        if (!g || !w || !tt) return;
-        const dx = ((e.nativeEvent.locationX - g.startX) / w) * tt;
-        if (g.kind === 'left') {
-          trim(snap(Math.min(Math.max(0, g.from + dx), b - 0.4)), b);
-        } else if (g.kind === 'right') {
-          trim(a, snap(Math.min(Math.max(a + 0.4, g.to + dx), tt)));
-        } else {
-          seek(snap(Math.min(Math.max(g.from, (e.nativeEvent.locationX / w) * tt), tt)));
-        }
-      },
-      onPanResponderRelease: () => {
-        grab.current = null;
-      },
-      onPanResponderTerminate: () => {
-        grab.current = null;
-      },
-    }),
-  ).current;
-
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(total * f));
-
   return (
-    <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, gap: 6 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        {ticks.map((t, i) => (
-          <Txt key={i} variant="caption" style={{ color: '#63636d', fontSize: 10 }}>
-            {formatTime(t)}
-          </Txt>
-        ))}
-      </View>
-      <View
-        {...responder.panHandlers}
-        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-        accessibilityLabel="Timeline. Drag to scrub, drag the handles to trim."
-        style={{ height: 46, borderRadius: radius.sm, backgroundColor: '#17171c', overflow: 'hidden', justifyContent: 'center' }}
-      >
-        {width > 0 ? (
-          <>
-            {/* The whole clip, unlit. */}
-            <View style={{ position: 'absolute', left: 0, right: 0, height: 34, backgroundColor: '#202027' }} />
-            {/* What survived the trim. */}
-            <View
-              style={{
-                position: 'absolute',
-                left: pct(start) * width,
-                width: Math.max(2, (pct(end) - pct(start)) * width),
-                height: 34,
-                backgroundColor: colors.goldSoft,
-                borderColor: colors.gold,
-                borderTopWidth: 1.5,
-                borderBottomWidth: 1.5,
-              }}
-            />
-            {/* The two things you can grab. */}
-            {[pct(start), pct(end)].map((x, i) => (
-              <View
-                key={i}
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: Math.min(Math.max(0, x * width - 4), width - 8),
-                  width: 8,
-                  height: 34,
-                  backgroundColor: colors.gold,
-                  borderRadius: 3,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <View style={{ width: 1.5, height: 12, backgroundColor: 'rgba(0,0,0,0.35)' }} />
-              </View>
-            ))}
-            {/* The playhead. */}
-            <View
-              pointerEvents="none"
-              style={{ position: 'absolute', left: Math.min(Math.max(0, pct(playhead) * width - 1), width - 2), width: 2, height: 46, backgroundColor: '#fff', borderRadius: 1 }}
-            />
-          </>
-        ) : null}
-      </View>
-    </View>
+    <Pressable
+      onPress={() => {
+        if (disabled) return;
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: compact ? 10 : 10,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.08)',
+      }}
+    >
+      <Ionicons name={icon} size={14} color={disabled ? '#46464f' : '#e8e8ee'} />
+      {compact ? null : (
+        <Txt variant="caption" style={{ color: disabled ? '#46464f' : '#e8e8ee' }} maxFontSizeMultiplier={1.2}>
+          {label}
+        </Txt>
+      )}
+    </Pressable>
   );
 }
 
@@ -693,9 +790,10 @@ function TrimPanel({
   edit: VideoEdit;
   total: number;
   category: EditCategory;
-  update: (e: VideoEdit) => void;
+  update: (e: VideoEdit, mergeKey?: string | null) => void;
 }) {
   const limit = EDIT_LIMITS[category];
+  const pieces = segmentsOf(edit).length;
   return (
     <>
       <RangeSlider
@@ -704,7 +802,7 @@ function TrimPanel({
         low={edit.trimStart}
         high={edit.trimEnd}
         step={0.1}
-        onChange={(l, h) => update(setTrim(edit, l, h, category))}
+        onChange={(l, h) => update(setTrim(edit, l, h, category), 'trim')}
         label="Start and end"
         formatValue={(v) => `${formatTime(v)}s`}
       />
@@ -734,8 +832,9 @@ function TrimPanel({
         />
       </View>
       <PanelNote>
-        Keeping {formatTime(clipLength(edit))} of {formatTime(total)}. Trimmed-away video is hidden, not
-        deleted, so you can always widen it again.
+        {pieces > 1
+          ? `Keeping ${formatTime(clipLength(edit))} of ${formatTime(total)} in ${pieces} pieces. These handles move the two outer ends; the cuts you made in between stay where you put them.`
+          : `Keeping ${formatTime(clipLength(edit))} of ${formatTime(total)}. Trimmed-away video is hidden, not deleted, so you can always widen it again — and Split on the timeline cuts the middle out.`}
       </PanelNote>
     </>
   );

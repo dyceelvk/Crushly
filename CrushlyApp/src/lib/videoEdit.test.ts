@@ -9,11 +9,16 @@ import {
   editWindowClosesAt,
   emptyEdit,
   formatTime,
+  hasCut,
   isEdited,
+  liveWithCuts,
   overlaysAt,
   parseEdit,
   parseLiveEdit,
+  piecesOf,
   playbackLength,
+  removePiece,
+  splitEdit,
   serializeEdit,
   setTrim,
   splitForUpload,
@@ -186,4 +191,56 @@ test('reopening a posted clip does not reset how it looks', () => {
   const reopened = editFromLive({ version: 2, captions: [], stickers: [], look }, d);
   assert.equal(reopened.filter, 'noir');
   assert.equal(reopened.speed, 2);
+});
+
+/* ------------------------------------ a cut that could not be baked into a file
+ *
+ * When there is no encoder, the file is uploaded whole — every frame of it,
+ * including the ones that were cut away. The cut then has to travel as data or
+ * the edit is lost for everybody watching. These pin that path down.
+ */
+
+test('a timeline that cuts nothing carries no cuts', () => {
+  assert.equal(hasCut(emptyEdit(30)), false);
+});
+
+test('a trim at either end counts as a cut', () => {
+  assert.equal(hasCut(clampEdit({ ...emptyEdit(30), trimStart: 4 }, 'post')), true);
+  assert.equal(hasCut(clampEdit({ ...emptyEdit(30), trimEnd: 20 }, 'post')), true);
+});
+
+test('a hole in the middle counts as a cut', () => {
+  const split = splitEdit(emptyEdit(30), 8, 'post');
+  assert.equal(piecesOf(split).length, 2);
+  assert.equal(hasCut(split), false, 'a split that removed nothing is not a cut');
+
+  const withHole = removePiece(split, piecesOf(split)[0].id, 'post');
+  assert.equal(hasCut(withHole), true);
+});
+
+test('an uncut clip keeps its live half exactly as it was', () => {
+  const live = toLiveEdit(emptyEdit(30));
+  assert.equal(liveWithCuts(live, emptyEdit(30)), live);
+});
+
+test('a cut clip that was not encoded carries its pieces', () => {
+  const edit = clampEdit({ ...emptyEdit(30), trimStart: 5, trimEnd: 20 }, 'post');
+  const live = liveWithCuts(null, edit);
+  assert.ok(live, 'a clip with nothing else to keep still needs a live half for the cut');
+  assert.equal(live?.cuts?.length, 1);
+  assert.deepEqual(live?.cuts?.map((c) => [c.start, c.end]), [[5, 20]]);
+  // Nothing else changed: the look is the untouched look.
+  assert.equal(live?.look.filter, 'none');
+});
+
+test('the cut survives being written down and read back', () => {
+  const edit = clampEdit({ ...emptyEdit(30), trimStart: 5, trimEnd: 20 }, 'post');
+  const live = liveWithCuts(null, edit)!;
+  const back = parseLiveEdit(JSON.stringify(live));
+  assert.deepEqual(back?.cuts?.map((c) => [c.start, c.end]), [[5, 20]]);
+});
+
+test('a stored clip with no cuts reads as no cuts', () => {
+  const back = parseLiveEdit(JSON.stringify({ version: 2, captions: [], stickers: [], look: {} }));
+  assert.equal(back?.cuts, undefined);
 });

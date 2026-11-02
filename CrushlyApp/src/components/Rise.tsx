@@ -1,13 +1,15 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform } from 'react-native';
+import { Animated, Platform } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
+import { DUR, EASE_OUT, TRAVEL, duration } from '../lib/motion';
 
 /**
  * Content arrives rather than appearing.
  *
  * A screen that pops into place reads as a flicker; the same screen rising a few
  * points while it fades reads as the app having gone and got it. The movement is
- * deliberately small — ten points and a quarter of a second — because this runs
+ * deliberately small — ten points and a quarter of a second, both taken from
+ * `lib/motion` where they were measured rather than chosen — because this runs
  * on every card in a feed, and a transition you notice forty times is a
  * transition in the way.
  *
@@ -18,7 +20,7 @@ import { useTheme } from '../theme/ThemeProvider';
 export function Rise({
   children,
   delay = 0,
-  distance = 10,
+  distance = TRAVEL.card,
   style,
 }: {
   children: React.ReactNode;
@@ -36,9 +38,9 @@ export function Rise({
     }
     const a = Animated.timing(anim, {
       toValue: 1,
-      duration: 260,
+      duration: duration(DUR.enter, reduceMotion),
       delay,
-      easing: Easing.out(Easing.cubic),
+      easing: EASE_OUT,
       // Opacity and transform only: this is a wrapper around everything, so it
       // must be able to run off the JS thread.
       useNativeDriver: Platform.OS !== 'web',

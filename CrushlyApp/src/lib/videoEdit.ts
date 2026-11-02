@@ -22,6 +22,22 @@
  * `trimStart + clipTime`. Wall-clock time is `clipTime / speed`.
  */
 
+import {
+  MIN_SEGMENT,
+  Segment,
+  clampOverlays,
+  cutTimeAt,
+  durationOf,
+  duplicateSegment,
+  lengthOf,
+  moveSegment,
+  removeSegment,
+  snapFrame,
+  sourceAt,
+  splitAt,
+  trimSegment,
+} from './timeline';
+
 export type EditCategory = 'post' | 'vibe' | 'moment' | 'circle';
 
 export type FilterId =
@@ -101,6 +117,17 @@ export type VideoEdit = {
   music: MusicTrack | null;
   /** The clip's own audio, 0..1. */
   clipVolume: number;
+  /**
+   * The timeline: the pieces of the file you kept, in the order you kept them.
+   *
+   * One piece is the ordinary trim. Several pieces mean you cut the clip in
+   * two and threw a bit away, or put a piece in twice — which is what an editor
+   * is for, and what a single window over one file could never express.
+   *
+   * `trimStart` and `trimEnd` are kept in step with the ends of this list so
+   * that everything written before the timeline existed still reads correctly.
+   */
+  segments: Segment[];
 };
 
 export const SPEEDS = [0.5, 0.75, 1, 1.5, 2] as const;
@@ -201,12 +228,35 @@ export function emptyEdit(sourceDuration: number): VideoEdit {
     stickers: [],
     music: null,
     clipVolume: 1,
+    segments: [{ id: 'whole', start: 0, end: d }],
   };
 }
 
-/** Seconds kept after trimming. */
+/** The pieces this edit keeps. An edit written before timelines reads as one. */
+export function segmentsOf(edit: VideoEdit): Segment[] {
+  const segs = edit.segments;
+  if (Array.isArray(segs) && segs.length) return segs;
+  return [{ id: 'whole', start: Math.max(0, edit.trimStart ?? 0), end: Math.max(0, edit.trimEnd ?? 0) }];
+}
+
+/** Seconds kept, after cutting. */
 export function clipLength(edit: VideoEdit): number {
-  return Math.max(0, edit.trimEnd - edit.trimStart);
+  return durationOf(segmentsOf(edit));
+}
+
+/**
+ * The frame on disk to show at a point in the finished clip.
+ *
+ * Cut time and source time are the same thing only while the timeline is one
+ * unbroken piece; this is the one function that knows the difference.
+ */
+export function sourceTimeAt(edit: VideoEdit, cutTime: number): number {
+  return sourceAt(segmentsOf(edit), cutTime);
+}
+
+/** Where a frame of the file has ended up, or null when it was cut away. */
+export function cutTimeOfSource(edit: VideoEdit, sourceTime: number): number | null {
+  return cutTimeAt(segmentsOf(edit), sourceTime);
 }
 
 /** Seconds the finished clip actually runs for, after speed. */
@@ -215,9 +265,13 @@ export function playbackLength(edit: VideoEdit): number {
 }
 
 export function isEdited(edit: VideoEdit): boolean {
+  const segs = segmentsOf(edit);
+  const cut =
+    segs.length > 1 ||
+    segs[0].start > 0.001 ||
+    segs[segs.length - 1].end < (edit.sourceDuration || 0) - 0.001;
   return (
-    edit.trimStart > 0.001 ||
-    edit.trimEnd < edit.sourceDuration - 0.001 ||
+    cut ||
     edit.speed !== 1 ||
     edit.aspect !== 'original' ||
     edit.filter !== 'none' ||
@@ -242,67 +296,162 @@ function clamp(n: number, lo: number, hi: number): number {
  */
 export function clampEdit(edit: VideoEdit, category: EditCategory): VideoEdit {
   const limit = EDIT_LIMITS[category];
-  const cap = Math.min(limit.maxSeconds, Math.max(1, edit.sourceDuration || limit.maxSeconds));
+  const total = Math.max(0, edit.sourceDuration || 0);
+  const cap = Math.min(limit.maxSeconds, Math.max(MIN_SEGMENT, total || limit.maxSeconds));
 
-  let trimStart = clamp(edit.trimStart, 0, Math.max(0, (edit.sourceDuration || 0) - 0.2));
-  let trimEnd = clamp(edit.trimEnd, trimStart + 0.2, edit.sourceDuration || trimStart + 0.2);
+  // Everything written before the timeline existed sets a trim window and
+  // nothing else, and plenty of code still builds an edit that way. When those
+  // two numbers describe a window the whole-file timeline does not, the window
+  // wins — once, at the moment the edit is normalised — and after that the
+  // pieces are the truth. A timeline that has actually been cut is never
+  // second-guessed.
+  const raw = segmentsOf(edit);
+  const untouched =
+    raw.length === 1 && raw[0].start <= 0.001 && raw[0].end >= Math.max(0, (total || raw[0].end) - 0.001);
+  const windowDiffers =
+    !!total &&
+    (Math.abs((edit.trimStart ?? 0) - raw[0].start) > 0.001 ||
+      Math.abs((edit.trimEnd ?? total) - raw[0].end) > 0.001);
+  const source = untouched && windowDiffers ? [{ ...raw[0], start: edit.trimStart, end: edit.trimEnd }] : raw;
 
-  if (trimEnd - trimStart > cap) {
-    // Keep the head of the clip; that is where people start talking.
-    trimEnd = Math.min(trimEnd, trimStart + cap);
-    if (trimEnd - trimStart > cap) trimStart = trimEnd - cap;
+  // Pieces are forced inside the file, given a length, and then the sequence is
+  // cut back to the ceiling for this surface — from the end, because the end is
+  // where an over-long edit is least missed.
+  const fitted: Segment[] = source.map((s, i) => {
+    const start = clamp(snapFrame(s.start), 0, Math.max(0, total - MIN_SEGMENT));
+    const end = clamp(snapFrame(s.end), start + MIN_SEGMENT, total || start + MIN_SEGMENT);
+    return { id: s.id || `p${i}`, start, end: Math.max(start + MIN_SEGMENT, end) };
+  });
+
+  const kept: Segment[] = [];
+  let budget = cap;
+  for (const s of fitted) {
+    if (budget < MIN_SEGMENT) break;
+    const room = Math.min(lengthOf(s), budget);
+    kept.push({ ...s, end: s.start + Math.max(MIN_SEGMENT, room) });
+    budget -= room;
   }
+  const segments = kept.length ? kept : [{ id: 'whole', start: 0, end: Math.min(total || MIN_SEGMENT, cap) }];
 
-  const width = trimEnd - trimStart;
+  const width = durationOf(segments);
+  const bounds = {
+    trimStart: segments[0].start,
+    trimEnd: segments[segments.length - 1].end,
+  };
+
   return {
     ...edit,
     version: 1,
-    trimStart,
-    trimEnd,
+    ...bounds,
+    segments,
     speed: SPEEDS.includes(edit.speed as (typeof SPEEDS)[number]) ? edit.speed : 1,
     filter: edit.filter in FILTERS ? edit.filter : 'none',
     brightness: clamp(edit.brightness, -1, 1),
     contrast: clamp(edit.contrast, -1, 1),
     saturation: clamp(edit.saturation, -1, 1),
     clipVolume: clamp(edit.clipVolume, 0, 1),
-    captions: edit.captions.slice(0, limit.maxCaptions).map((c) => ({
-      ...c,
-      x: clamp(c.x, 0.04, 0.96),
-      y: clamp(c.y, 0.04, 0.96),
-      size: clamp(c.size, 0.02, 0.14),
-      start: clamp(c.start, 0, width),
-      end: clamp(c.end, 0, width),
-    })),
-    stickers: edit.stickers.slice(0, limit.maxStickers).map((s) => ({
-      ...s,
-      x: clamp(s.x, 0.04, 0.96),
-      y: clamp(s.y, 0.04, 0.96),
-      scale: clamp(s.scale, 0.4, 2.4),
-      start: clamp(s.start, 0, width),
-      end: clamp(s.end, 0, width),
-    })),
+    captions: clampOverlays(
+      edit.captions.slice(0, limit.maxCaptions).map((c) => ({
+        ...c,
+        x: clamp(c.x, 0.04, 0.96),
+        y: clamp(c.y, 0.04, 0.96),
+        size: clamp(c.size, 0.02, 0.14),
+      })),
+      width,
+    ),
+    stickers: clampOverlays(
+      edit.stickers.slice(0, limit.maxStickers).map((s) => ({
+        ...s,
+        x: clamp(s.x, 0.04, 0.96),
+        y: clamp(s.y, 0.04, 0.96),
+        scale: clamp(s.scale, 0.4, 2.4),
+      })),
+      width,
+    ),
   };
 }
 
-/** Move the trim window without letting it collapse or run past the file. */
+/**
+ * Move the trim window without letting it collapse or run past the file.
+ *
+ * With a timeline, "the trim window" means both ends of the sequence: the
+ * handle at the left moves the head of the first piece, the handle at the right
+ * moves the tail of the last one. Everything in between is left where you put
+ * it, because a cut you made is not a thing a range slider should undo.
+ */
 export function setTrim(edit: VideoEdit, start: number, end: number, category: EditCategory): VideoEdit {
   const limit = EDIT_LIMITS[category];
-  const cap = Math.min(limit.maxSeconds, Math.max(1, edit.sourceDuration || limit.maxSeconds));
+  const cap = Math.min(limit.maxSeconds, Math.max(MIN_SEGMENT, edit.sourceDuration || limit.maxSeconds));
   const total = edit.sourceDuration || 0;
+  const segs = segmentsOf(edit).map((s) => ({ ...s }));
 
-  let s = clamp(start, 0, Math.max(0, total - 0.2));
-  let e = clamp(end, s + 0.2, total || s + 0.2);
-  if (e - s > cap) e = s + cap;
+  let s0 = clamp(start, 0, Math.max(0, total - MIN_SEGMENT));
+  let e0 = clamp(end, s0 + MIN_SEGMENT, total || s0 + MIN_SEGMENT);
 
-  // Overlays live in clip time, so a shorter window has to carry them with it.
-  const width = e - s;
-  return {
-    ...edit,
-    trimStart: s,
-    trimEnd: e,
-    captions: edit.captions.map((c) => ({ ...c, start: clamp(c.start, 0, width), end: clamp(c.end, 0, width) })),
-    stickers: edit.stickers.map((k) => ({ ...k, start: clamp(k.start, 0, width), end: clamp(k.end, 0, width) })),
-  };
+  if (segs.length === 1) {
+    const keep = Math.min(e0 - s0, cap);
+    segs[0] = { ...segs[0], start: s0, end: s0 + Math.max(MIN_SEGMENT, keep) };
+  } else {
+    const head = segs[0];
+    const tail = segs[segs.length - 1];
+    head.start = clamp(s0, head.start - (lengthOf(head) - MIN_SEGMENT), head.end - MIN_SEGMENT);
+    head.end = Math.max(head.start + MIN_SEGMENT, head.end);
+    tail.end = Math.max(tail.start + MIN_SEGMENT, e0);
+  }
+
+  return clampEdit({ ...edit, segments: segs }, category);
+}
+
+/* ------------------------------------------------------------- the timeline
+ *
+ * Five operations, each of them a pure function from an edit to a new edit.
+ * They all go through clampEdit, because a cut is only correct if the result
+ * is still a valid edit — and the editor should never be able to hold one that
+ * is not.
+ */
+
+/** Cut at the playhead. Returns the same edit when there is nothing to cut. */
+export function splitEdit(edit: VideoEdit, cutTime: number, category: EditCategory): VideoEdit {
+  const next = splitAt(segmentsOf(edit), snapFrame(cutTime));
+  if (next === segmentsOf(edit)) return edit;
+  return clampEdit({ ...edit, segments: next }, category);
+}
+
+/** Take a piece out. The timeline always keeps at least one. */
+export function removePiece(edit: VideoEdit, id: string, category: EditCategory): VideoEdit {
+  const segs = segmentsOf(edit);
+  const next = removeSegment(segs, id);
+  if (next === segs) return edit;
+  return clampEdit({ ...edit, segments: next }, category);
+}
+
+/** Put a copy of a piece next to itself. */
+export function duplicatePiece(edit: VideoEdit, id: string, category: EditCategory): VideoEdit {
+  return clampEdit({ ...edit, segments: duplicateSegment(segmentsOf(edit), id) }, category);
+}
+
+/** Move a piece one place along. */
+export function movePiece(edit: VideoEdit, id: string, by: -1 | 1, category: EditCategory): VideoEdit {
+  const segs = segmentsOf(edit);
+  const next = moveSegment(segs, id, by);
+  if (next === segs) return edit;
+  return clampEdit({ ...edit, segments: next }, category);
+}
+
+/** Change what part of the file one piece shows. */
+export function trimPiece(
+  edit: VideoEdit,
+  id: string,
+  start: number,
+  end: number,
+  category: EditCategory,
+): VideoEdit {
+  return clampEdit({ ...edit, segments: trimSegment(segmentsOf(edit), id, start, end) }, category);
+}
+
+/** The pieces, without the mirrors — what the timeline UI draws. */
+export function piecesOf(edit: VideoEdit): Segment[] {
+  return segmentsOf(edit);
 }
 
 export function newCaption(edit: VideoEdit, at = 0): Caption {
@@ -434,10 +583,29 @@ export function parseEdit(json: string | null | undefined): VideoEdit | null {
     if (typeof raw !== 'object' || raw === null) return null;
     if (typeof raw.sourceDuration !== 'number' || !Number.isFinite(raw.sourceDuration)) return null;
     const base = emptyEdit(raw.sourceDuration);
+    const rawSegments = Array.isArray(raw.segments) ? raw.segments : null;
+    // An edit saved before timelines existed carries only a trim window, so
+    // that window becomes its single piece. Nothing is lost, nothing is guessed.
+    const segments: Segment[] = rawSegments?.length
+      ? rawSegments.map((s, i) => ({
+          id: typeof s?.id === 'string' ? s.id : `p${i}`,
+          start: Number(s?.start) || 0,
+          end: Number(s?.end) || 0,
+        }))
+      : [
+          {
+            id: 'whole',
+            start: Number(raw.trimStart) || 0,
+            end: Number(raw.trimEnd) || raw.sourceDuration,
+          },
+        ];
     return {
       ...base,
       ...raw,
       version: 1,
+      segments,
+      trimStart: segments[0].start,
+      trimEnd: segments[segments.length - 1].end,
       captions: Array.isArray(raw.captions) ? raw.captions : [],
       stickers: Array.isArray(raw.stickers) ? raw.stickers : [],
       music: raw.music ?? null,
@@ -517,6 +685,20 @@ export type LiveEdit = {
    * posted without one must still look the way its author made it.
    */
   look: Look;
+  /**
+   * The pieces of the file this clip is made of — **only present when the file
+   * itself was not cut.**
+   *
+   * The cut is normally the one edit written into the file, because it is the
+   * one that makes the clip smaller. When there is no encoder to do that (the
+   * web build, or a phone without the native module), the cut still has to
+   * survive — otherwise everything a person cut out is still in the clip they
+   * posted, and the trim was a lie. So it travels as data instead, and the
+   * player honours it exactly as the editor previewed it.
+   *
+   * Absence means "the file is already the clip", which is the normal case.
+   */
+  cuts?: Segment[];
 };
 
 /**
@@ -630,6 +812,33 @@ export function editWindowRemaining(createdAt: number, now: number = Date.now())
   return Math.max(0, editWindowClosesAt(createdAt) - now);
 }
 
+/**
+ * Whether this timeline actually cuts anything out — a trim at either end
+ * counts, and so does any hole in the middle.
+ */
+export function hasCut(edit: VideoEdit): boolean {
+  const segs = segmentsOf(edit);
+  const total = edit.sourceDuration || 0;
+  if (!segs.length) return false;
+
+  // A hole is the clearest cut there is: two pieces that were not next to each
+  // other in the file. Pieces that simply touch are one run, and removing a cut
+  // is not a thing you can do — so two touching pieces are not a cut at all.
+  for (let i = 1; i < segs.length; i++) {
+    if (Math.abs(segs[i].start - segs[i - 1].end) > 0.02) return true;
+  }
+  return segs[0].start > 0.05 || (total > 0 && segs[segs.length - 1].end < total - 0.05);
+}
+
+/** The cut, as data, for a clip whose file could not be cut. */
+export function liveWithCuts(live: LiveEdit | null, edit: VideoEdit): LiveEdit | null {
+  if (!hasCut(edit)) return live;
+  const cuts = segmentsOf(edit).map((s) => ({ ...s }));
+  return live
+    ? { ...live, cuts }
+    : { version: 2, captions: [], stickers: [], look: lookOf(edit), cuts };
+}
+
 /** The part that is kept after encoding and can still be changed. */
 export function toLiveEdit(edit: VideoEdit): LiveEdit {
   return { version: 2, captions: edit.captions, stickers: edit.stickers, look: lookOf(edit) };
@@ -651,6 +860,15 @@ export function parseLiveEdit(json: string | null | undefined): LiveEdit | null 
       // A clip stored before the look travelled simply has none, and is played
       // back as it was recorded.
       look: readLook(raw.look),
+      // The cut travels as data only when the file could not be cut. Anything
+      // unreadable here means "no cuts", which falls back to playing the file.
+      ...(Array.isArray(raw.cuts) && raw.cuts.length
+        ? {
+            cuts: raw.cuts
+              .filter((c) => c && Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start)
+              .map((c, i) => ({ id: typeof c.id === 'string' ? c.id : `c${i}`, start: c.start, end: c.end })),
+          }
+        : {}),
     };
   } catch {
     return null;
