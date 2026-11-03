@@ -1,10 +1,10 @@
 {
-  "version": "1.0.25",
-  "versionCode": 25,
+  "version": "1.0.26",
+  "versionCode": 26,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.25-Android9plus.apk",
+  "file": "Crushly-1.0.26-Android9plus.apk",
   "notes": "Tap the sound on a clip to open it, and post under somebody else's sound.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.25/Crushly-1.0.25-Android9plus.apk",
-  "bytes": 95211735,
-  "sha256": "bb5c4fa7794a1726a8d03e23d93ba7752df33d403fc02d210839ed537c9dac07"
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.26/Crushly-1.0.26-Android9plus.apk",
+  "bytes": 95214899,
+  "sha256": "f2339955b654c5af6a2b7026f5f6ae5e41c008f73d23bcb978549c91bc4aee9d"
 }
