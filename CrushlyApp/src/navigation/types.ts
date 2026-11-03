@@ -51,7 +51,16 @@ export type RootStackParamList = {
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle'; initialEdit?: VideoEdit };
   /** `type` skips the "what are you sharing?" board — used by entry points
    *  that already are one thing, like the Moment button on a Space. */
-  CreatePost: { type?: 'flow' | 'vibe' | 'moment' } | undefined;
+  CreatePost:
+    | {
+        type?: 'flow' | 'vibe' | 'moment';
+        /** Set when the composer was opened from a sound page. */
+        soundId?: number;
+        soundLabel?: string;
+      }
+    | undefined;
+  /** A sound: its owner, how many clips are on it, and the clips. */
+  Sound: { soundId: number };
   PostViewer: { postId: number };
   /** What you kept, newest first. Private: nobody else can read this list. */
   SavedPosts: undefined;

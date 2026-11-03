@@ -14,7 +14,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe, FlowCursor, RankedFlowPage, PostLiker} from './types';
+import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -529,6 +529,22 @@ export async function loadPost(postId: number): Promise<Post> {
  * and until this existed there was no way to answer the second one from the
  * client: the count was in `post_engagement`, the names were not.
  */
+/**
+ * A sound, and the clips on it.
+ *
+ * `sound_page` decides visibility with the same `can_view_post` rule the feeds
+ * use, so a clip you could not see in the feed cannot be reached through the
+ * sound it happens to sit on.
+ */
+export async function soundPage(soundId: number, limit = 24): Promise<SoundPage> {
+  return rpc<SoundPage>('sound_page', { p_sound_id: soundId, p_limit: limit });
+}
+
+/** Put somebody else's sound on a clip of your own. */
+export async function attachPostSound(postId: number, soundId: number): Promise<unknown> {
+  return rpc('attach_post_sound', { p_post_id: postId, p_sound_id: soundId });
+}
+
 export async function postLikers(postId: number, limit = 40): Promise<PostLiker[]> {
   const res = await rpc<{ items: PostLiker[] }>('post_likers', { p_post_id: postId, p_limit: limit });
   return res?.items ?? [];

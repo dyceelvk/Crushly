@@ -113,6 +113,7 @@ export function FeedScreen() {
         onComment={() => setCommentsFor(item)}
         onSave={() => save.mutate({ postId: item.id, saved: !item.saved })}
         onShare={() => setShareFor(item)}
+        onSound={item.sound ? () => navigation.navigate('Sound', { soundId: item.sound!.id }) : undefined}
       />
     ),
     [activeIndex, captionBottom, circleName, like, navigation, pageHeight, save],

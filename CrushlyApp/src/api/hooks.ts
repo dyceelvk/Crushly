@@ -526,6 +526,15 @@ export function usePost(postId: number | null) {
   });
 }
 
+/** A sound page: the sound, its owner, and the clips on it. */
+export function useSoundPage(soundId: number | null) {
+  return useQuery({
+    queryKey: ['soundPage', soundId ?? 0],
+    queryFn: () => service.soundPage(soundId as number),
+    enabled: soundId !== null,
+  });
+}
+
 /** The people who reacted to a post — the Likes tab over a post. */
 export function usePostLikers(postId: number | null) {
   return useQuery({

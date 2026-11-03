@@ -36,6 +36,7 @@ import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { PostViewerScreen } from '../screens/flow/PostViewer';
 import { SavedPostsScreen } from '../screens/flow/SavedPosts';
+import { SoundScreen } from '../screens/flow/SoundScreen';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VibeComposerScreen } from '../screens/discover/VibeComposer';
 import { VideoTrimScreen } from '../screens/common/VideoTrimScreen';
@@ -194,6 +195,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="FlowList" component={FlowScreen} options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="PostViewer" component={PostViewerScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+          <Stack.Screen name="Sound" component={SoundScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           <Stack.Screen name="Moments" component={MomentsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Discover" component={DiscoverScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />

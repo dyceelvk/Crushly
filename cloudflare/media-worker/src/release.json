@@ -3,7 +3,7 @@
   "versionCode": 25,
   "minVersionCode": 3,
   "file": "Crushly-1.0.25-Android9plus.apk",
-  "notes": "Comments over a post now show who said it, who reacted, and let you reply in place.",
+  "notes": "Tap the sound on a clip to open it, and post under somebody else's sound.",
   "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.25/Crushly-1.0.25-Android9plus.apk",
   "bytes": 95211735,
   "sha256": "bb5c4fa7794a1726a8d03e23d93ba7752df33d403fc02d210839ed537c9dac07"

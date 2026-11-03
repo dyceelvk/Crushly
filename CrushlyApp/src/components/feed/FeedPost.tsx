@@ -36,6 +36,7 @@ export function FeedPost({
   onComment,
   onSave,
   onShare,
+  onSound,
 }: {
   post: Post;
   height: number;
@@ -50,6 +51,8 @@ export function FeedPost({
   onComment: () => void;
   onSave: () => void;
   onShare: () => void;
+  /** Only supplied when the post carries a sound — see FeedCaption. */
+  onSound?: () => void;
 }) {
   const { colors } = useTheme();
   const isClip = post.mediaKind === 'video' && !!post.mediaUrl;
@@ -120,7 +123,7 @@ export function FeedPost({
         onFollow={onFollow}
       />
 
-      <FeedCaption post={post} onAuthor={onAuthor} onCircle={onCircle} circleName={circleName} bottom={bottomInset} />
+      <FeedCaption post={post} onAuthor={onAuthor} onCircle={onCircle} onSound={onSound} circleName={circleName} bottom={bottomInset} />
     </View>
   );
 }

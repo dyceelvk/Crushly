@@ -93,6 +93,8 @@ export type Post = {
   reactionKinds?: Partial<Record<ReactionKind, number>>;
   /** Whether you have kept this for later. */
   saved?: boolean;
+  /** The sound this clip is under, when it has one. */
+  sound?: PostSound | null;
 };
 
 /** One comment left on a post. */
@@ -111,6 +113,25 @@ export type PostComment = {
   replyCount?: number;
   /** Yours to remove, or the post is yours and the comment was left on it. */
   canDelete?: boolean;
+};
+
+/** The sound a clip is under. Null for a post that carries no audio. */
+export type PostSound = {
+  id: number;
+  title: string;
+  ownerId: number;
+};
+
+/** One page of a sound: who owns it, how much is on it, and the clips you may see. */
+export type SoundPage = {
+  sound: {
+    id: number;
+    title: string;
+    createdAt: number;
+    postCount: number;
+    owner: Profile;
+  };
+  items: Post[];
 };
 
 /** One person who reacted to a post, for the Likes tab over a post. */

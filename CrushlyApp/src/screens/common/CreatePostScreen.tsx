@@ -25,7 +25,7 @@ import { Rise } from '../../components/Rise';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { useCreatePost } from '../../api/hooks';
-import { createPost } from '../../api/service';
+import { attachPostSound, createPost } from '../../api/service';
 import { keys } from '../../api/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { VideoEditorModal } from '../../components/VideoEditor';
@@ -88,6 +88,17 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
    * each answer leads to the board that is actually that thing.
    */
   const [kind, setKind] = useState<PostKind | null>(route.params?.type ?? null);
+  /**
+   * Set when this composer was opened from a sound page. The sound is attached
+   * to the post *after* it exists — `create_post` keeps its signature, so a
+   * second, tiny call does the attribution instead of a new overload that
+   * PostgREST would have to choose between.
+   */
+  const [sound, setSound] = useState<{ id: number; label: string } | null>(
+    route.params?.soundId
+      ? { id: route.params.soundId, label: route.params.soundLabel ?? 'Original sound' }
+      : null,
+  );
 
   const [body, setBody] = useState('');
   // Where the caret is, so `@` and `#` know which word is being built.
@@ -234,7 +245,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         edit = first.edit ? splitForUpload(first.edit, 'post').live : null;
       }
 
-      await createPost({
+      const created = await createPost({
         body: body.trim(),
         audience,
         photoUri: first?.type === 'photo' ? first.uri : undefined,
@@ -243,6 +254,17 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         videoMime,
         edit,
       });
+
+      // The clip is posted either way; a sound that failed to attach is worth a
+      // warning, not a lie that the post was not shared.
+      if (sound && created?.id) {
+        try {
+          await attachPostSound(created.id, sound.id);
+        } catch (e) {
+          console.warn('attachPostSound failed:', e);
+          toast({ kind: 'error', title: 'Sound not attached', message: 'Your post is live, but without that sound.' });
+        }
+      }
 
       qc.invalidateQueries({ queryKey: keys.flow });
       qc.invalidateQueries({ queryKey: keys.me });
@@ -456,6 +478,32 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
             />
           </View>
         )}
+
+        {sound ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              marginHorizontal: gutter,
+              marginBottom: space.sm,
+              paddingHorizontal: 12,
+              paddingVertical: 9,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            }}
+          >
+            <Ionicons name="musical-notes" size={15} color={colors.gold} />
+            <Txt numberOfLines={1} style={{ flex: 1, fontSize: 13, color: colors.text }}>
+              {sound.label}
+            </Txt>
+            <Pressable onPress={() => setSound(null)} accessibilityRole="button" accessibilityLabel="Remove this sound" hitSlop={8}>
+              <Ionicons name="close" size={16} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+        ) : null}
 
         {busy ? (
           <View style={{ alignItems: 'center', paddingVertical: space.lg }}>

@@ -21,16 +21,26 @@ export function FeedCaption({
   post,
   onAuthor,
   onCircle,
+  onSound,
   circleName,
   bottom,
 }: {
   post: Post;
   onAuthor: () => void;
   onCircle?: () => void;
+  /** Opens the sound page. Only given when the post actually has a sound. */
+  onSound?: () => void;
   circleName?: string | null;
   bottom: number;
 }) {
   const { colors } = useTheme();
+  /**
+   * What the clip is under. The database names the sound now (`post_engagement`
+   * carries it), so this reads the row instead of asserting one: a clip with
+   * somebody else's sound on it says their name, not its author's.
+   */
+  const soundLabel = post.sound ? `${post.sound.title} — ${post.author.name}` : `original sound — ${post.author.name}`;
+
   const hashtags = post.body.match(/#[\p{L}\p{N}_]+/gu) ?? [];
   const words = hashtags.length
     ? post.body.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\s+/g, ' ').trim()
@@ -136,7 +146,13 @@ export function FeedCaption({
         </Txt>
       ) : null}
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 }}>
+      <Pressable
+        onPress={onSound}
+        disabled={!onSound}
+        accessibilityRole={onSound ? 'button' : undefined}
+        accessibilityLabel={onSound ? `Sound: ${soundLabel}` : undefined}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 }}
+      >
         <Ionicons name="musical-notes" size={13} color="#FFFFFF" />
         <Txt
           numberOfLines={1}
@@ -147,9 +163,10 @@ export function FeedCaption({
             textShadowRadius: 6,
           }}
         >
-          original sound — {post.author.name}
+          {soundLabel}
         </Txt>
-      </View>
+        {onSound ? <Ionicons name="chevron-forward" size={12} color="rgba(255,255,255,0.7)" /> : null}
+      </Pressable>
     </View>
   );
 }
