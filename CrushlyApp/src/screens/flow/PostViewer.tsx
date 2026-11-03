@@ -5,7 +5,6 @@ import {
   ScrollView,
   PanResponder,
   Share,
-  TextInput,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,8 +14,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
 import { KeepsYouChip } from '../../components/KeepsYouChip';
-import { Suggestions } from '../../components/Suggestions';
-import { useMentionInput } from '../../components/useMentionInput';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -25,22 +22,19 @@ import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { EditPostSheet } from '../../components/EditPostSheet';
 import { useMemberActions } from '../../state/memberActions';
 import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
+import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import {
-  useCommentOnPost,
   useDeletePost,
-  useDeletePostComment,
   useFlow,
-  useLikePostComment,
   useMe,
   useOpenConversation,
   usePost,
-  usePostComments,
   useReactToPost,
   useSavePost,
 } from '../../api/hooks';
-import type { Post, PostComment, ReactionKind } from '../../api/types';
+import type { Post, ReactionKind } from '../../api/types';
 import { REACTION_KINDS } from '../../api/types';
 import { EditedClip } from '../../components/EditedClip';
 import type { StageFit } from '../../lib/videoFrame';
@@ -114,19 +108,11 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const postQuery = usePost(postId);
   const post = postQuery.data ?? flow.data?.items.find((p) => p.id === postId) ?? null;
 
-  const query = usePostComments(postId);
   const react = useReactToPost();
   const keep = useSavePost();
   const remove = useDeletePost();
-  const removeComment = useDeletePostComment(postId);
-  const likeComment = useLikePostComment(postId);
-  const send = useCommentOnPost(postId);
   const openWhisper = useOpenConversation();
 
-  const [draft, setDraft] = useState('');
-  // A comment is words too: `@` names somebody, `#` reaches a tag.
-  const commentInput = useMentionInput(draft, setDraft);
-  const [replyTo, setReplyTo] = useState<PostComment | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
@@ -144,25 +130,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const lastTap = useRef(0);
 
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
-  const comments = query.data?.items ?? [];
-
-  // One level of threading: replies hang off their parent, and a reply to a
-  // reply is not allowed by the database either.
-  const { roots, repliesByParent } = useMemo(() => {
-    const roots: PostComment[] = [];
-    const repliesByParent = new Map<number, PostComment[]>();
-    for (const c of comments) {
-      if (c.parentId) {
-        const list = repliesByParent.get(c.parentId) ?? [];
-        list.push(c);
-        repliesByParent.set(c.parentId, list);
-      } else {
-        roots.push(c);
-      }
-    }
-    return { roots, repliesByParent };
-  }, [comments]);
-
   const close = useCallback(() => navigation.goBack(), [navigation]);
 
   // mediaSource() is a plain string on web but { uri, headers } on native when
@@ -214,21 +181,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       toast({ kind: 'error', title: 'Not kept', message: (e as Error).message });
     }
   }, [post, keep, toast]);
-
-  const submitComment = useCallback(async () => {
-    const body = draft.trim();
-    if (!body) return;
-    const parent = replyTo;
-    setDraft('');
-    setReplyTo(null);
-    try {
-      await send.mutateAsync({ body, parentId: parent?.id ?? null });
-    } catch (e) {
-      setDraft(body);
-      setReplyTo(parent);
-      toast({ kind: 'error', title: 'Comment not added', message: (e as Error).message });
-    }
-  }, [draft, replyTo, send, toast]);
 
   const deletePost = useCallback(async () => {
     if (!post) return;
@@ -794,129 +746,15 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         onCancel={() => setConfirmDelete(false)}
       />
 
-      {/* ---------------------------------------------------- the comment sheet */}
-      <BottomSheet
+      {/* One comment sheet in the app, not two. The feed's, which knows about
+          reactions and threading, so a post opened from a grid and a post
+          opened in the feed do not answer the same tap differently. */}
+      <CommentsSheet
+        post={post}
         visible={commentsOpen}
-        onClose={() => {
-          setCommentsOpen(false);
-          setReplyTo(null);
-        }}
-        title="Thoughts"
-        subtitle={`${post.commentCount} under this post · ${post.audience === 'everyone' ? 'everyone' : 'connections only'}`}
-        maxHeight={0.86}
-        footer={
-          <>
-            {/* The list opens above the box it belongs to, not over it. */}
-            <Suggestions token={commentInput.token} onPick={commentInput.pick} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: commentInput.token ? 8 : 0 }}>
-            <Avatar uri={me?.profile.photos[0]?.url ?? null} name={me?.profile.name || 'You'} size={30} />
-            <View
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                height: 40,
-                paddingHorizontal: 13,
-                borderRadius: radius.pill,
-                backgroundColor: colors.elevated,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <TextInput
-                value={draft}
-                onChangeText={commentInput.onChangeText}
-                onSelectionChange={commentInput.onSelectionChange}
-                placeholder={replyTo ? `Reply to ${replyTo.author.name}…` : 'Add a thought…'}
-                placeholderTextColor={colors.textMuted}
-                onSubmitEditing={() => void submitComment()}
-                returnKeyType="send"
-                style={{ flex: 1, color: colors.text, paddingVertical: 0 }}
-                accessibilityLabel="Write a comment"
-              />
-            </View>
-            <Pressable
-              onPress={() => void submitComment()}
-              disabled={!draft.trim() || send.isPending}
-              accessibilityRole="button"
-              accessibilityLabel="Send comment"
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 19,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: draft.trim() ? colors.gold : colors.elevated,
-              }}
-            >
-              {send.isPending ? (
-                <ActivityIndicator size="small" color={colors.onGold} />
-              ) : (
-                <Ionicons
-                  name="arrow-forward"
-                  size={17}
-                  color={draft.trim() ? colors.onGold : colors.textMuted}
-                />
-              )}
-            </Pressable>
-          </View>
-          </>
-        }
-      >
-        {replyTo ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              paddingVertical: 8,
-              paddingHorizontal: space.sm,
-              borderRadius: radius.sm,
-              backgroundColor: colors.primarySoft,
-              marginBottom: space.xs,
-            }}
-          >
-            <Txt variant="caption" color="textSecondary" style={{ flex: 1 }} numberOfLines={1}>
-              Replying to {replyTo.author.name}
-            </Txt>
-            <Pressable onPress={() => setReplyTo(null)} accessibilityLabel="Cancel reply" hitSlop={10}>
-              <Ionicons name="close" size={15} color={colors.textMuted} />
-            </Pressable>
-          </View>
-        ) : null}
-
-        {query.isLoading ? (
-          <View style={{ paddingVertical: space.xxl, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.gold} />
-          </View>
-        ) : roots.length === 0 ? (
-          <View style={{ paddingVertical: space.xxl, alignItems: 'center', gap: 6 }}>
-            <Ionicons name="chatbubble-outline" size={22} color={colors.textMuted} />
-            <Txt variant="small" color="textMuted">
-              No comments yet. Be the first.
-            </Txt>
-          </View>
-        ) : (
-          roots.map((c) => (
-            <CommentRow
-              key={c.id}
-              comment={c}
-              replies={repliesByParent.get(c.id) ?? []}
-              postAuthorId={post.author.id}
-              onReply={() => setReplyTo(c)}
-              onLike={() =>
-                void likeComment.mutate({ commentId: c.id, liked: !c.liked })
-              }
-              onLikeReply={(r) =>
-                void likeComment.mutate({ commentId: r.id, liked: !r.liked })
-              }
-              onDelete={() => void removeComment.mutate(c.id)}
-              onDeleteReply={(r) => void removeComment.mutate(r.id)}
-            />
-          ))
-        )}
-      </BottomSheet>
+        onClose={() => setCommentsOpen(false)}
+        onOpenAuthor={(id) => navigation.navigate('UserProfile', { id })}
+      />
     </View>
   );
 }
@@ -1034,152 +872,5 @@ function RailAction({
   );
 }
 
-function CommentRow({
-  comment,
-  replies,
-  postAuthorId,
-  onReply,
-  onLike,
-  onLikeReply,
-  onDelete,
-  onDeleteReply,
-}: {
-  comment: PostComment;
-  replies: PostComment[];
-  postAuthorId: number;
-  onReply: () => void;
-  onLike: () => void;
-  onLikeReply: (r: PostComment) => void;
-  onDelete: () => void;
-  onDeleteReply: (r: PostComment) => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={{ paddingVertical: space.sm, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-      <CommentBody
-        c={comment}
-        postAuthorId={postAuthorId}
-        onReply={onReply}
-        onLike={onLike}
-        onDelete={onDelete}
-      />
-      {replies.length > 0 ? (
-        <View
-          style={{
-            marginTop: space.sm,
-            marginLeft: space.lg,
-            paddingLeft: space.sm,
-            borderLeftWidth: 2,
-            borderLeftColor: colors.border,
-            gap: space.sm,
-          }}
-        >
-          {replies.map((r) => (
-            <CommentBody
-              key={r.id}
-              c={r}
-              postAuthorId={postAuthorId}
-              onReply={onReply}
-              onLike={() => onLikeReply(r)}
-              onDelete={() => onDeleteReply(r)}
-            />
-          ))}
-        </View>
-      ) : null}
-    </View>
-  );
-}
 
-function CommentBody({
-  c,
-  postAuthorId,
-  onReply,
-  onLike,
-  onDelete,
-}: {
-  c: PostComment;
-  postAuthorId: number;
-  onReply: () => void;
-  onLike: () => void;
-  onDelete: () => void;
-}) {
-  const { colors } = useTheme();
-  const isAuthor = c.author.id === postAuthorId;
-  return (
-    <View style={{ flexDirection: 'row', gap: 9 }}>
-      <Avatar uri={c.author.photos[0]?.url ?? null} name={c.author.name} size={30} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
-            {c.mine ? 'You' : c.author.name}
-          </Txt>
-          {isAuthor ? (
-            <View
-              style={{
-                paddingHorizontal: 5,
-                paddingVertical: 1,
-                borderRadius: 4,
-                backgroundColor: colors.primarySoft,
-                borderWidth: 1,
-                borderColor: colors.primaryLine,
-              }}
-            >
-              <Txt variant="caption" color="gold" style={{ fontSize: 9, letterSpacing: 0.6 }}>
-                AUTHOR
-              </Txt>
-            </View>
-          ) : null}
-          <Txt variant="caption" color="textMuted" style={{ marginLeft: 'auto' }}>
-            {timeAgo(c.createdAt)}
-          </Txt>
-        </View>
-
-        {/* A comment can name somebody and reach a tag, so it is read the same
-            way a post is: handles and hashtags are tappable. */}
-        {c.hidden ? (
-          <Txt variant="small" color="textMuted" style={{ marginTop: 3 }}>
-            This comment was removed.
-          </Txt>
-        ) : (
-          <View style={{ marginTop: 3 }}>
-            <LinkText text={c.body} variant="small" />
-          </View>
-        )}
-
-        {c.hidden ? null : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: 7 }}>
-            <Pressable
-              onPress={onLike}
-              accessibilityRole="button"
-              accessibilityLabel={c.liked ? 'Take back your like' : 'Like this comment'}
-              hitSlop={8}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-            >
-              <Ionicons
-                name={c.liked ? 'heart' : 'heart-outline'}
-                size={13}
-                color={c.liked ? colors.crush : colors.textMuted}
-              />
-              <Txt variant="caption" color={c.liked ? 'crush' : 'textMuted'} style={{ fontWeight: '700' }}>
-                {c.likeCount && c.likeCount > 0 ? String(c.likeCount) : 'Like'}
-              </Txt>
-            </Pressable>
-            <Pressable onPress={onReply} accessibilityRole="button" accessibilityLabel="Reply" hitSlop={8}>
-              <Txt variant="caption" color="textMuted" style={{ fontWeight: '700' }}>
-                Reply
-              </Txt>
-            </Pressable>
-            {c.canDelete ?? c.mine ? (
-              <Pressable onPress={onDelete} accessibilityRole="button" accessibilityLabel="Delete comment" hitSlop={8}>
-                <Txt variant="caption" color="textMuted" style={{ fontWeight: '700' }}>
-                  Delete
-                </Txt>
-              </Pressable>
-            ) : null}
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
 

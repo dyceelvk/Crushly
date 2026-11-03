@@ -17,7 +17,15 @@ import { Avatar } from '../Photo';
 import { Txt } from '../Txt';
 import { Suggestions } from '../Suggestions';
 import { useMentionInput } from '../useMentionInput';
-import { useCommentOnPost, useLikePostComment, useMe, usePostComments, usePostLikers } from '../../api/hooks';
+import { ConfirmSheet } from '../BottomSheet';
+import {
+  useCommentOnPost,
+  useDeletePostComment,
+  useLikePostComment,
+  useMe,
+  usePostComments,
+  usePostLikers,
+} from '../../api/hooks';
 import { formatCount } from '../../lib/counts';
 import { timeAgo } from '../../lib/format';
 import { fonts, radius } from '../../theme/tokens';
@@ -81,6 +89,7 @@ export function CommentsSheet({
   const likersQuery = usePostLikers(visible ? postId : null);
   const send = useCommentOnPost(postId ?? 0);
   const likeComment = useLikePostComment(postId ?? 0);
+  const removeComment = useDeletePostComment(postId ?? 0);
 
   const [tab, setTab] = useState<Tab>('comments');
   const [sort, setSort] = useState<Sort>('newest');
@@ -88,6 +97,7 @@ export function CommentsSheet({
   const [replyTo, setReplyTo] = useState<PostComment | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [doomed, setDoomed] = useState<PostComment | null>(null);
   const input = useRef<TextInput>(null);
   const slide = useRef(new Animated.Value(0)).current;
   const native = Platform.OS !== 'web';
@@ -97,6 +107,7 @@ export function CommentsSheet({
     setDraft('');
     setReplyTo(null);
     setEmojiOpen(false);
+    setDoomed(null);
     setTab('comments');
     Animated.timing(slide, { toValue: 1, duration: 240, useNativeDriver: native }).start();
   }, [visible, slide, native]);
@@ -170,14 +181,21 @@ export function CommentsSheet({
   const renderComment = (comment: PostComment, depth: number) => {
     const label = role(comment);
     return (
-      <View
+      <Pressable
         key={comment.id}
+        onLongPress={comment.mine && !comment.hidden ? () => setDoomed(comment) : undefined}
+        delayLongPress={420}
+        accessibilityRole="button"
+        accessibilityLabel={
+          comment.mine && !comment.hidden ? 'Your comment. Hold to delete it.' : `Comment by ${comment.author.name}`
+        }
         style={{
           flexDirection: 'row',
           gap: 10,
           paddingLeft: depth ? 46 : 16,
           paddingRight: 16,
           paddingVertical: 11,
+          backgroundColor: doomed?.id === comment.id ? NOIR.field : 'transparent',
         }}
       >
         <Pressable
@@ -247,7 +265,7 @@ export function CommentsSheet({
             </Pressable>
           </View>
         </View>
-      </View>
+      </Pressable>
     );
   };
 
@@ -309,6 +327,7 @@ export function CommentsSheet({
   const likeCount = post.likeCount;
 
   return (
+    <>
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} accessibilityLabel="Close comments" accessibilityRole="button" />
@@ -505,5 +524,20 @@ export function CommentsSheet({
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
+      <ConfirmSheet
+        visible={doomed !== null}
+        title="Delete this comment?"
+        message="It goes for everyone, replies included. You can say it again, but it starts over."
+        confirmLabel="Delete it"
+        destructive
+        loading={removeComment.isPending}
+        onCancel={() => setDoomed(null)}
+        onConfirm={() => {
+          const target = doomed;
+          setDoomed(null);
+          if (target) void removeComment.mutate(target.id);
+        }}
+      />
+    </>
   );
 }
