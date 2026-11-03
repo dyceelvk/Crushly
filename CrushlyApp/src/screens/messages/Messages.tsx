@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,10 +17,21 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { messagePreview } from '../../lib/messages';
-import type { RootStackParamList } from '../../navigation/types';
+import type { RootStackParamList, TabParamList } from '../../navigation/types';
+import { CloseOnesPane } from '../circles/CloseOnes';
 
 export function MessagesScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<TabParamList, 'Messages'>>();
+  /**
+   * Two lists under one heading. Whispers is the conversations; Close Ones is
+   * the people you have chosen to keep near — which is the same question (who do
+   * I talk to) and had no business being a separate room in a menu.
+   */
+  const [segment, setSegment] = useState<'whispers' | 'close'>(route.params?.tab === 'close' ? 'close' : 'whispers');
+  useEffect(() => {
+    if (route.params?.tab) setSegment(route.params.tab === 'close' ? 'close' : 'whispers');
+  }, [route.params?.tab]);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -73,6 +84,38 @@ export function MessagesScreen() {
         Where a Crush turns into a conversation.
       </Txt>
 
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: space.sm }}>
+        {([
+          ['whispers', 'Whispers'],
+          ['close', 'Close Ones'],
+        ] as const).map(([key, label]) => {
+          const on = segment === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setSegment(key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={label}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: radius.pill,
+                backgroundColor: on ? colors.gold : colors.elevated,
+              }}
+            >
+              <Txt variant="smallStrong" style={{ color: on ? colors.onGold : colors.textSecondary }}>
+                {label}
+              </Txt>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* The box searches conversations, so it is not on the list of people:
+          a search field that cannot find what is under it is a lie you can type
+          into. */}
+      {segment === 'whispers' ? (
       <Input
         icon="search"
         placeholder="Search your Whispers"
@@ -84,6 +127,7 @@ export function MessagesScreen() {
         containerStyle={{ marginTop: space.md }}
         returnKeyType="search"
       />
+      ) : null}
 
       {filteredFresh.length ? (
         <View style={{ marginTop: space.xl }}>
@@ -122,6 +166,19 @@ export function MessagesScreen() {
     </View>
   );
 
+  if (segment === 'close') {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={{ paddingTop: insets.top, paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
+          {header}
+        </View>
+        <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
+          <CloseOnesPane embedded />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <FlatList
@@ -152,7 +209,10 @@ export function MessagesScreen() {
               icon="chatbubbles-outline"
               title="No Whispers yet."
               message="Someone interesting is waiting to hear from you."
-              action={{ label: 'Start discovering', onPress: () => navigation.navigate('Discover') }}
+              action={{
+                label: 'Start discovering',
+                onPress: () => navigation.navigate('Main', { screen: 'Flows', params: undefined }),
+              }}
             />
           )
         }

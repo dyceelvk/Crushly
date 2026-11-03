@@ -22,7 +22,6 @@ import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } f
 import {
   OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
 } from '../screens/onboarding/Onboarding';
-import { DiscoverScreen } from '../screens/discover/Discover';
 import { SearchScreen } from '../screens/discover/Search';
 import { FeedScreen } from '../screens/flow/FeedScreen';
 import { FiltersScreen } from '../screens/discover/Filters';
@@ -44,7 +43,6 @@ import { WebPreviewScreen } from '../screens/common/WebPreview';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
 import { CircleScreen } from '../screens/circles/Circle';
-import { CloseOnesScreen } from '../screens/circles/CloseOnes';
 import { UserProfileScreen } from '../screens/profile/UserProfile';
 import { EditProfileScreen } from '../screens/profile/EditProfile';
 import { NotificationsScreen } from '../screens/notifications/Notifications';
@@ -196,11 +194,9 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Sound" component={SoundScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           <Stack.Screen name="Moments" component={MomentsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
-          <Stack.Screen name="Discover" component={DiscoverScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Search" component={SearchScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="Circles" component={CirclesScreen} />
           <Stack.Screen name="Circle" component={CircleScreen} />
-          <Stack.Screen name="CloseOnes" component={CloseOnesScreen} />
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />

@@ -399,7 +399,7 @@ export function ProfileTabScreen() {
         <Count
           value={closeOnes.data?.items.length}
           label="Close Ones"
-          onPress={() => navigation.navigate('CloseOnes')}
+          onPress={() => navigation.navigate('Main', { screen: 'Messages', params: { tab: 'close' } })}
         />
       </View>
 

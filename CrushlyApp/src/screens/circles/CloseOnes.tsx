@@ -24,7 +24,15 @@ import type { RootStackParamList } from '../../navigation/types';
  * The list is yours alone: nobody else can see who is on it, and letting
  * somebody go is silent. Keeping someone close asks nothing of them.
  */
-export function CloseOnesScreen() {
+/**
+ * The list itself, without a screen around it.
+ *
+ * Close Ones is a list of *people you talk to*, so it lives inside Whispers
+ * rather than as a destination of its own: it was a row in the menu, which put
+ * the people you have chosen to keep near one tap away from the people you are
+ * already whispering with, in a different room, with a different header.
+ */
+export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
@@ -37,7 +45,7 @@ export function CloseOnesScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + space.sm,
+          paddingTop: embedded ? 0 : insets.top + space.sm,
           paddingHorizontal: gutter,
           paddingBottom: space.xxxl,
           width: '100%',
@@ -49,17 +57,23 @@ export function CloseOnesScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
-          <View style={{ flex: 1 }}>
-            <Txt variant="display" accessibilityRole="header">
-              Close Ones
-            </Txt>
-            <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-              People you’ve chosen to keep near. Only you can see this list.
-            </Txt>
+        {embedded ? (
+          <Txt variant="small" color="textSecondary" style={{ marginTop: space.md, marginBottom: space.sm }}>
+            People you’ve chosen to keep near. Only you can see this list.
+          </Txt>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} />
+            <View style={{ flex: 1 }}>
+              <Txt variant="display" accessibilityRole="header">
+                Close Ones
+              </Txt>
+              <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
+                People you’ve chosen to keep near. Only you can see this list.
+              </Txt>
+            </View>
           </View>
-        </View>
+        )}
 
         <View style={{ marginTop: space.lg, gap: space.sm }}>
           {list.isLoading ? (
@@ -116,7 +130,7 @@ export function CloseOnesScreen() {
               icon="bookmark-outline"
               title="Nobody here yet"
               message="Keep someone close from their Space and they’ll show up here. It’s yours alone — they aren’t told, and nobody sees this list."
-              action={{ label: 'Find someone', onPress: () => navigation.navigate('Discover') }}
+              action={{ label: 'Find someone', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) }}
             />
           )}
         </View>

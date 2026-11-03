@@ -101,17 +101,17 @@ export function CrushesScreen() {
     incoming: {
       title: 'No crushes yet.',
       message: 'Your next Crush could be around the corner. A complete Space and a fresh Moment help you get noticed.',
-      action: { label: 'Discover people', onPress: () => navigation.navigate('Discover') },
+      action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) },
     },
     outgoing: {
       title: 'Nobody’s caught your eye — yet',
       message: 'When you Crush on someone, they’ll wait here until the feeling is mutual.',
-      action: { label: 'Start discovering', onPress: () => navigation.navigate('Discover') },
+      action: { label: 'Start discovering', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) },
     },
     mutual: {
       title: 'Your Mutual Crushes live here',
       message: 'When you both feel it, you’ll find each other here — ready to say hello.',
-      action: { label: 'Discover people', onPress: () => navigation.navigate('Discover') },
+      action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) },
     },
   }[tab];
 

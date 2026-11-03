@@ -63,7 +63,16 @@ export function useCrushFlow() {
  * public — and everything in it has already been through the same audience,
  * block and Circle rules as the feed it came from.
  */
-export function DiscoverScreen() {
+/**
+ * Discover, as a pane of the Flow.
+ *
+ * Discover used to be a screen you pushed — reachable from an empty state or
+ * from a menu — while the Flow was the page you landed on. That is backwards:
+ * what people are sharing publicly is one of the three things the top strip
+ * offers, next to your Flow and your Connections, so it is one of the three
+ * panes of that surface, and every "Discover people" in the app arrives here.
+ */
+export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
@@ -93,7 +102,7 @@ export function DiscoverScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top,
+          paddingTop: embedded ? STRIP_ROOM : insets.top,
           paddingHorizontal: gutter,
           paddingBottom: space.xxxl,
           width: '100%',
@@ -105,34 +114,32 @@ export function DiscoverScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingTop: space.sm }}>
-          {/* Discover is a pushed screen, and it had no way back: on the web
-              there is no system gesture to fall through to, so the only exit was
-              whatever had been underneath. */}
-          {navigation.canGoBack() ? (
-            <View style={{ marginLeft: -6, marginRight: 2 }}>
-              <IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />
+        {embedded ? null : (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingTop: space.sm }}>
+            {/* Discover is a pushed screen, and it had no way back: on the web
+                there is no system gesture to fall through to, so the only exit
+                was whatever had been underneath. */}
+            {navigation.canGoBack() ? (
+              <View style={{ marginLeft: -6, marginRight: 2 }}>
+                <IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />
+              </View>
+            ) : null}
+            <View style={{ flex: 1 }}>
+              <Txt variant="display" accessibilityRole="header">
+                Discover
+              </Txt>
+              <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
+                Vibes, Moments and public posts from people you have not met.
+              </Txt>
             </View>
-          ) : null}
-          <View style={{ flex: 1 }}>
-            <Txt variant="display" accessibilityRole="header">
-              Discover
-            </Txt>
-            <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-              Vibes, Moments and public posts from people you have not met.
-            </Txt>
+            <IconButton
+              icon="notifications-outline"
+              label={`Crush Alerts${badges?.notifications ? `, ${badges.notifications} unread` : ''}`}
+              badge={!!badges?.notifications}
+              onPress={() => navigation.navigate('Notifications')}
+            />
           </View>
-          {/* Search lived one screen away, behind an icon on Flow, and had no
-              entry point here at all — on the screen whose whole job is finding
-              people and things. */}
-          <IconButton icon="search-outline" label="Search people and posts" onPress={() => navigation.navigate('Search')} />
-          <IconButton
-            icon="notifications-outline"
-            label={`Crush Alerts${badges?.notifications ? `, ${badges.notifications} unread` : ''}`}
-            badge={!!badges?.notifications}
-            onPress={() => navigation.navigate('Notifications')}
-          />
-        </View>
+        )}
 
         {/* Vibes keeps its own heading (it owns the "share a clip" tile); the
             feed below is what gets quiet when there is nothing to watch. */}
@@ -184,3 +191,6 @@ export function DiscoverScreen() {
     </View>
   );
 }
+
+/** Height of the Flow's top strip, which the embedded pane sits under. */
+const STRIP_ROOM = 58;

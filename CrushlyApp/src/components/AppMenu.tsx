@@ -12,7 +12,7 @@ import type { RootStackParamList } from '../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-type Destination = 'Discover' | 'Circles' | 'CloseOnes' | 'Moments' | 'Notifications' | 'Settings' | 'SavedPosts';
+type Destination = 'Circles' | 'Moments' | 'Notifications' | 'Settings' | 'SavedPosts';
 
 type Row = {
   key: Destination;
@@ -38,9 +38,7 @@ export function AppMenu({ visible, onClose }: { visible: boolean; onClose: () =>
   const { data: badges } = useBadges(true);
 
   const rows: Row[] = [
-    { key: 'Discover', label: 'Discover', hint: 'People, Vibes and Moments you have not met yet', icon: 'compass-outline' },
     { key: 'Circles', label: 'Your Circles', hint: 'The small rooms you are in', icon: 'people-outline' },
-    { key: 'CloseOnes', label: 'Close Ones', hint: 'The people who see you first', icon: 'star-outline' },
     { key: 'Moments', label: 'Moments', hint: 'Today, then gone', icon: 'aperture-outline' },
     { key: 'SavedPosts', label: 'Kept', hint: 'What you saved from the Flow', icon: 'bookmark-outline' },
     { key: 'Notifications', label: 'Notifications', hint: 'Crushes, Whispers and everything else', icon: 'notifications-outline', badge: badges?.notifications || 0 },

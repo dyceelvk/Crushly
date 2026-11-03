@@ -1,23 +1,23 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, View, useWindowDimensions, type ViewToken } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
-import { Avatar } from '../../components/Photo';
 import { FeedPost } from '../../components/feed/FeedPost';
 import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { AppMenu } from '../../components/AppMenu';
+import { DiscoverPane } from '../discover/Discover';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
-import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMe, useMyCircles } from '../../api/hooks';
+import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
 import { palettes, space } from '../../theme/tokens';
 import { openSpan, settleDwell, type ActiveSpan } from '../../lib/dwell';
 import type { Post } from '../../api/types';
-import type { RootStackParamList } from '../../navigation/types';
+import type { RootStackParamList, TabParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -41,16 +41,21 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  */
 export function FeedScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<RouteProp<TabParamList, 'Flows'>>();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   // The feed is always noir, so it reads the noir palette directly instead of the
   // appearance the rest of the app is using (see NoirScope).
   const colors = palettes.dark;
-  const { data: me } = useMe();
   const { data: circles } = useMyCircles();
   const reportDwell = usePostDwell();
 
-  const [tab, setTab] = useState<'flow' | 'connections'>('flow');
+  const [tab, setTab] = useState<'discover' | 'flow' | 'connections'>(route.params?.segment ?? 'flow');
+  // Anything that says "Discover people" now arrives on the Discover segment of
+  // this surface rather than on a second copy of it.
+  useEffect(() => {
+    if (route.params?.segment) setTab(route.params.segment);
+  }, [route.params?.segment]);
   const ranked = useRankedFlow(8);
   const following = useFlow(20);
   const feed = tab === 'flow' ? ranked : following;
@@ -64,13 +69,25 @@ export function FeedScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   /**
-   * The screen height is the page height. The tab bar floats over the feed, so
-   * the caption stack is lifted by its height instead of the frame being shrunk —
-   * shrinking it would letterbox every clip twice.
+   * The page is as tall as the pane the feed is given, not as tall as the window.
+   *
+   * This is the bug behind three complaints at once. The tab bar is a custom bar
+   * inside the navigator, so it takes real layout space: the pane is 775 dp on a
+   * 844 dp phone. The old code sized each page to the window (844), so every
+   * page was 69 dp taller than the pane that clipped it — the caption stack hung
+   * below the fold, the sound row landed underneath the search bar, and the snap
+   * interval was 69 dp off, which is why a swipe settled in the wrong place.
+   *
+   * Measured, not assumed: `onLayout` on the pane.
    */
-  const pageHeight = height;
-  const tabBarSpace = insets.bottom + 56;
-  const captionBottom = tabBarSpace + 56;
+  const [paneHeight, setPaneHeight] = useState(0);
+  const pageHeight = paneHeight || height;
+  // The bar is outside this pane, so the only space to leave is breathing room.
+  const tabBarSpace = 8;
+  // The search bar is the last thing on the page: name, words, hashtags and the
+  // sound row all have to end above it.
+  const SEARCH_BAR = 52;
+  const captionBottom = tabBarSpace + SEARCH_BAR + 10;
 
   const span = useRef<ActiveSpan | null>(null);
 
@@ -124,15 +141,29 @@ export function FeedScreen() {
     [activeIndex, captionBottom, circleName, like, navigation, pageHeight, save],
   );
 
+  /**
+   * The strip: what the surface offers, in the order the surface offers it.
+   * Discover is public content, Flow is everything scored for you, Connections
+   * is the people you already know. Search is the magnifier at the far end.
+   */
   const tabs: FeedTab[] = [
+    { key: 'discover', label: 'Discover' },
     { key: 'flow', label: 'Flow' },
     { key: 'connections', label: 'Connections' },
   ];
 
   return (
     <NoirScope>
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {feed.isLoading ? (
+    <View
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      onLayout={(e) => {
+        const next = Math.round(e.nativeEvent.layout.height);
+        if (next > 0 && next !== paneHeight) setPaneHeight(next);
+      }}
+    >
+      {tab === 'discover' ? (
+        <DiscoverPane embedded />
+      ) : feed.isLoading ? (
         <View style={{ flex: 1, padding: space.lg, gap: space.md, justifyContent: 'center' }}>
           <Skeleton style={{ height: 380, borderRadius: 24 }} />
           <Skeleton style={{ height: 18, width: '60%' }} />
@@ -177,7 +208,13 @@ export function FeedScreen() {
         />
       )}
 
-      <FeedTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as typeof tab)} top={insets.top + 4} />
+      <FeedTabs
+        tabs={tabs}
+        active={tab}
+        onChange={(k) => setTab(k as typeof tab)}
+        top={insets.top + 4}
+        onSearch={() => navigation.navigate('Search')}
+      />
 
       {/* Top-left: the surfaces the tabs do not cover. Top-right: search, which
           is where the reference puts it. */}
@@ -191,30 +228,32 @@ export function FeedScreen() {
         <Ionicons name="menu" size={25} color="#FFFFFF" />
       </Pressable>
 
-      <Pressable
-        onPress={() => navigation.navigate('Search')}
-        accessibilityRole="button"
-        accessibilityLabel="Search Crushly"
-        hitSlop={10}
-        style={{ position: 'absolute', right: 14, top: insets.top + 14, zIndex: 22, flexDirection: 'row', alignItems: 'center', gap: 10 }}
-      >
-        {me ? <Avatar uri={me.profile.photos?.[0]?.url ?? null} name={me.profile.name} size={26} /> : null}
-        <Ionicons name="search" size={23} color="#FFFFFF" />
-      </Pressable>
+      {/* The corner used to hold the member's own face and a second magnifier.
+          The face is the Space tab and the magnifier is the end of the strip, so
+          both were the same two destinations drawn twice in a corner where the
+          thumb does not go. */}
 
+      {/* The hook belongs to a clip, so it has no business on Discover, which is
+          a list of cards rather than one thing on a screen. */}
+      {tab === 'discover' ? null : (
+      <>
       {/* The search hook. It is part of the feed in the reference, and it earns
           its 52 dp: it turns scrolling into a query without making anyone open a
-          search screen first. */}
+          search screen first.
+
+          It used to open a blank search. That is the one thing a suggestion
+          cannot do — it names the words, so it runs them: the query arrives in
+          the search box already answered, and you can edit it from there. */}
       <Pressable
-        onPress={() => navigation.navigate('Search')}
+        onPress={() => navigation.navigate('Search', { q: suggestedQuery(posts[activeIndex]) })}
         accessibilityRole="button"
-        accessibilityLabel="Search what you are seeing"
+        accessibilityLabel={`Search for “${suggestedQuery(posts[activeIndex])}”`}
         style={{
           position: 'absolute',
           left: 0,
           right: 0,
           bottom: tabBarSpace,
-          height: 52,
+          height: SEARCH_BAR,
           flexDirection: 'row',
           alignItems: 'center',
           gap: 10,
@@ -231,6 +270,8 @@ export function FeedScreen() {
         </Txt>
         <Txt style={{ fontSize: 13, fontFamily: 'Manrope_700Bold', color: '#FFFFFF' }}>See more ›</Txt>
       </Pressable>
+      </>
+      )}
 
       <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
       {shareFor ? <ShareToWhisper visible post={shareFor} onClose={() => setShareFor(null)} /> : null}

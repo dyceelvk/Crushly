@@ -3,9 +3,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { VideoEdit } from '../lib/videoEdit';
 
 export type TabParamList = {
-  Flows: undefined;
+  /** `segment` opens Flow already on that part of the strip. */
+  Flows: { segment?: 'discover' | 'flow' | 'connections' } | undefined;
   Crushes: { tab?: 'incoming' | 'outgoing' | 'mutual' } | undefined;
-  Messages: undefined;
+  /** `tab` opens Whispers already on Close Ones — see the Space's count. */
+  Messages: { tab?: 'whispers' | 'close' } | undefined;
   Profile: undefined;
 };
 
@@ -28,7 +30,6 @@ export type RootStackParamList = {
   UserProfile: { id: number };
   Chat: { conversationId: number };
   MutualCrush: { userId: number; name: string; photo?: string | null };
-  Discover: undefined;
   Search: { q?: string } | undefined;
   Filters: undefined;
   Notifications: undefined;
@@ -40,7 +41,6 @@ export type RootStackParamList = {
   VibeViewer: { id: number };
   Circles: undefined;
   Circle: { circleId: number };
-  CloseOnes: undefined;
   Moments: undefined;
   MomentComposer: undefined;
   VibeComposer: undefined;

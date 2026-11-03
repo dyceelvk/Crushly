@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space, stroke } from '../../theme/tokens';
@@ -26,11 +27,18 @@ export function FeedTabs({
   active,
   onChange,
   top = 0,
+  onSearch,
 }: {
   tabs: FeedTab[];
   active: string;
   onChange: (key: string) => void;
   top?: number;
+  /**
+   * The search at the far end of the strip. It belongs here rather than in a
+   * corner of its own: the strip is already the row of "where am I", and the
+   * magnifier is the fourth thing on that row in the reference too.
+   */
+  onSearch?: () => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -58,9 +66,11 @@ export function FeedTabs({
           backgroundColor: 'rgba(0,0,0,0.22)',
         }}
       />
+      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           flexGrow: 1,
           alignItems: 'center',
@@ -107,6 +117,18 @@ export function FeedTabs({
           );
         })}
       </ScrollView>
+      {onSearch ? (
+        <Pressable
+          onPress={onSearch}
+          accessibilityRole="button"
+          accessibilityLabel="Search Crushly"
+          hitSlop={10}
+          style={{ paddingHorizontal: 14, paddingVertical: 10 }}
+        >
+          <Ionicons name="search" size={21} color="#FFFFFF" />
+        </Pressable>
+      ) : null}
+      </View>
       {/* The active bar is drawn per-tab above; this keeps the theme honest for
           anyone reading the file and looking for the accent. */}
       <View style={{ height: 0, backgroundColor: colors.text }} />
