@@ -6,8 +6,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { Avatar, Photo } from '../../components/Photo';
+import { ClipThumb } from '../../components/ClipThumb';
+import { CrushIcon } from '../../components/Logo';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useSoundPage } from '../../api/hooks';
+import { mediaUrl } from '../../api/client';
+import { isVideoPath } from '../../lib/mediaHost';
 import { formatCount } from '../../lib/counts';
 import { fonts, palettes, radius, space } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
@@ -80,16 +84,6 @@ export function SoundScreen() {
             <Ionicons name="arrow-back" size={24} color={noir.text} />
           </Pressable>
           <View style={{ flex: 1 }} />
-          <Pressable
-            onPress={() => (sound ? navigation.navigate('UserProfile', { id: sound.owner.id }) : undefined)}
-            disabled={!sound}
-            accessibilityRole="button"
-            accessibilityLabel="Open the owner's Space"
-            hitSlop={10}
-            style={{ padding: 8 }}
-          >
-            <Ionicons name="person-outline" size={22} color={noir.text} />
-          </Pressable>
         </View>
 
         {/* --------------------------------------------------------- the sound */}
@@ -179,12 +173,16 @@ export function SoundScreen() {
                 style={{ width: tile, height: tile * 1.25, backgroundColor: noir.card, borderRadius: radius.xs, overflow: 'hidden' }}
               >
                 {post.mediaUrl ? (
-                  <Photo
-                    uri={post.mediaUrl}
-                    fit="cover"
-                    style={{ width: '100%', height: '100%' }}
-                    alt={post.body ? post.body.slice(0, 60) : 'A clip on this sound'}
-                  />
+                  isVideoPath(post.mediaUrl) ? (
+                    <ClipThumb uri={mediaUrl(post.mediaUrl) ?? ''} style={{ width: '100%', height: '100%' }} />
+                  ) : (
+                    <Photo
+                      uri={post.mediaUrl}
+                      fit="cover"
+                      style={{ width: '100%', height: '100%' }}
+                      alt={post.body ? post.body.slice(0, 60) : 'A clip on this sound'}
+                    />
+                  )
                 ) : (
                   <View style={{ flex: 1, padding: 12, justifyContent: 'flex-end' }}>
                     <Txt numberOfLines={5} style={{ fontFamily: fonts.medium, fontSize: 13, lineHeight: 18, color: noir.text }}>
@@ -197,7 +195,7 @@ export function SoundScreen() {
                     view count that is honest to show; the play triangle and the
                     count we do have (reactions) are. */}
                 <View style={{ position: 'absolute', left: 8, bottom: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Ionicons name="heart" size={13} color="#FFFFFF" />
+                  <CrushIcon size={13} color="#FFFFFF" filled />
                   <Txt style={{ fontFamily: fonts.bold, fontSize: 12, color: '#FFFFFF' }}>{formatCount(post.likeCount ?? 0)}</Txt>
                 </View>
               </Pressable>

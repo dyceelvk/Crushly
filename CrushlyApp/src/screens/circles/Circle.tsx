@@ -32,7 +32,7 @@ import { splitForUpload, emptyEdit, type VideoEdit } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import type { RootStackParamList, ScreenProps } from '../../navigation/types';
 import type { CircleMessage } from '../../api/types';
-import { PostCard } from '../flow/Flow';
+import { PostCard } from '../../components/feed/PostCard';
 
 type Tab = 'posts' | 'chat' | 'people';
 

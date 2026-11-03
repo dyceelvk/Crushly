@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Header, Screen, useLayout } from '../../components/Layout';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
-import { PostCard } from '../flow/Flow';
+import { PostCard } from '../../components/feed/PostCard';
 import { useSavedPosts } from '../../api/hooks';
 import { space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';

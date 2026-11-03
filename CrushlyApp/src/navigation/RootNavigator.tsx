@@ -24,7 +24,6 @@ import {
 } from '../screens/onboarding/Onboarding';
 import { DiscoverScreen } from '../screens/discover/Discover';
 import { SearchScreen } from '../screens/discover/Search';
-import { FlowScreen } from '../screens/flow/Flow';
 import { FeedScreen } from '../screens/flow/FeedScreen';
 import { FiltersScreen } from '../screens/discover/Filters';
 import { CrushesScreen } from '../screens/crushes/Crushes';
@@ -139,7 +138,7 @@ function MainTabs() {
         tabBar={(props) => <TabBar {...props} onCreate={() => navigation.navigate('CreatePost')} />}
         screenOptions={{ headerShown: false, lazy: true }}
       >
-        <Tabs.Screen name="Flows" component={FeedScreen} />
+        <Tabs.Screen name="Flows" component={FeedScreen} options={{ title: 'Flow' }} />
         <Tabs.Screen name="Crushes" component={CrushesScreen} />
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
@@ -192,7 +191,6 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade' }} />
           <Stack.Screen name="WebPreview" component={WebPreviewScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="VibeViewer" component={VibeViewerScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
-          <Stack.Screen name="FlowList" component={FlowScreen} options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="PostViewer" component={PostViewerScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Sound" component={SoundScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />

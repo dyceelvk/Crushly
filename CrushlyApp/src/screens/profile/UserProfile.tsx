@@ -26,7 +26,7 @@ import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
-import { PostCard } from '../flow/Flow';
+import { PostCard } from '../../components/feed/PostCard';
 import type { Post, Vibe } from '../../api/types';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';

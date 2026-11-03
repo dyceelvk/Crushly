@@ -3,7 +3,7 @@
   "versionCode": 26,
   "minVersionCode": 3,
   "file": "Crushly-1.0.26-Android9plus.apk",
-  "notes": "Tap the sound on a clip to open it, and post under somebody else's sound.",
+  "notes": "The feed is called Flow, the menu holds the rest of Crushly, and clips in grids show their picture.",
   "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.26/Crushly-1.0.26-Android9plus.apk",
   "bytes": 95214899,
   "sha256": "f2339955b654c5af6a2b7026f5f6ae5e41c008f73d23bcb978549c91bc4aee9d"

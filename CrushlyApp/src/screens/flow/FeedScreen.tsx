@@ -10,6 +10,7 @@ import { FeedPost } from '../../components/feed/FeedPost';
 import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
+import { AppMenu } from '../../components/AppMenu';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMe, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
@@ -25,10 +26,13 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  *
  * Two tabs, both of which serve something real:
  *
- *   For You    `flow_ranked_feed` — scored from dwell, engagement, affinity and
- *              an exploration slice, with the reason attached to every item.
- *   Following  `flow_feed` — the plain reverse-chronological list of the people
- *              and Circles you can already see.
+ *   Flow         `flow_ranked_feed` — scored from dwell, engagement, affinity
+ *                and an exploration slice, with the reason attached to every
+ *                item. This is the page the product is named for, so it is
+ *                called Flow and not "For You": Crushly does not borrow the
+ *                reference's words for its own surfaces.
+ *   Connections  `flow_feed` — the plain reverse-chronological list of the
+ *                people and Circles you can already see.
  *
  * The reference has four tabs, but two of its four are TikTok's own surfaces
  * (STEM, Series). Crushly does not have them, and a tab that opens nothing is a
@@ -46,10 +50,10 @@ export function FeedScreen() {
   const { data: circles } = useMyCircles();
   const reportDwell = usePostDwell();
 
-  const [tab, setTab] = useState<'for-you' | 'following'>('for-you');
+  const [tab, setTab] = useState<'flow' | 'connections'>('flow');
   const ranked = useRankedFlow(8);
   const following = useFlow(20);
-  const feed = tab === 'for-you' ? ranked : following;
+  const feed = tab === 'flow' ? ranked : following;
   const posts: Post[] = feed.posts;
 
   const like = useReactToPost();
@@ -57,6 +61,7 @@ export function FeedScreen() {
   const [shareFor, setShareFor] = useState<Post | null>(null);
   const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   /**
    * The screen height is the page height. The tab bar floats over the feed, so
@@ -120,8 +125,8 @@ export function FeedScreen() {
   );
 
   const tabs: FeedTab[] = [
-    { key: 'for-you', label: 'For You' },
-    { key: 'following', label: 'Following' },
+    { key: 'flow', label: 'Flow' },
+    { key: 'connections', label: 'Connections' },
   ];
 
   return (
@@ -177,9 +182,9 @@ export function FeedScreen() {
       {/* Top-left: the surfaces the tabs do not cover. Top-right: search, which
           is where the reference puts it. */}
       <Pressable
-        onPress={() => navigation.navigate('FlowList')}
+        onPress={() => setMenuOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel="Open the rest of the Flow: all posts, Circles and the everyone switch"
+        accessibilityLabel="Everything else in Crushly"
         hitSlop={10}
         style={{ position: 'absolute', left: 14, top: insets.top + 14, zIndex: 22 }}
       >
@@ -227,6 +232,7 @@ export function FeedScreen() {
         <Txt style={{ fontSize: 13, fontFamily: 'Manrope_700Bold', color: '#FFFFFF' }}>See more ›</Txt>
       </Pressable>
 
+      <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
       {shareFor ? <ShareToWhisper visible post={shareFor} onClose={() => setShareFor(null)} /> : null}
       <CommentsSheet
         post={commentsFor}

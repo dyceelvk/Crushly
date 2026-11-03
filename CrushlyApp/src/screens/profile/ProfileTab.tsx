@@ -116,6 +116,9 @@ function GlassChip({
  *  overlap and the name beside it cannot drift apart. */
 const FACE = 76;
 
+/** Height of the floating tab bar: a Space's last card must clear it. */
+const TAB_BAR_ROOM = 86;
+
 function Dot() {
   const { colors } = useTheme();
   return <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.5)' }} />;
@@ -146,7 +149,7 @@ export function ProfileTabScreen() {
       contentContainerStyle={{
         paddingTop: insets.top + space.sm,
         paddingHorizontal: gutter,
-        paddingBottom: space.xxxl,
+        paddingBottom: space.xxxl + TAB_BAR_ROOM,
         width: '100%',
         maxWidth: contentWidth,
         alignSelf: 'center',
@@ -159,10 +162,10 @@ export function ProfileTabScreen() {
           Space
         </Txt>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          {/* The Space is where most people post from — the thing they are
-              looking at is their own work — so the way to add to it lives here
-              as well as in the middle of the tab bar. */}
-          <IconButton icon="add" label="Share a post" onPress={() => navigation.navigate('CreatePost')} />
+          {/* Settings, and nothing else. There was a "+" here as well as the one
+              in the middle of the tab bar, and both of them opened the same
+              composer: two buttons for one job, one of them in a header where
+              it read as "add a field to your profile". */}
           <IconButton icon="settings-outline" label="Settings" onPress={() => navigation.navigate('Settings')} />
         </View>
       </View>

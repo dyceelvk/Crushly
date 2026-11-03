@@ -9,7 +9,7 @@ import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { VibesRow } from './VibesRow';
 import { MomentsRow } from './MomentsRow';
-import { PostCard } from '../flow/Flow';
+import { PostCard } from '../../components/feed/PostCard';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { keys, useBadges, useCrush, usePublicFlow, useVibes } from '../../api/hooks';
@@ -106,12 +106,20 @@ export function DiscoverScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingTop: space.sm }}>
+          {/* Discover is a pushed screen, and it had no way back: on the web
+              there is no system gesture to fall through to, so the only exit was
+              whatever had been underneath. */}
+          {navigation.canGoBack() ? (
+            <View style={{ marginLeft: -6, marginRight: 2 }}>
+              <IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />
+            </View>
+          ) : null}
           <View style={{ flex: 1 }}>
             <Txt variant="display" accessibilityRole="header">
               Discover
             </Txt>
             <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-              What people are sharing.
+              Vibes, Moments and public posts from people you have not met.
             </Txt>
           </View>
           {/* Search lived one screen away, behind an icon on Flow, and had no

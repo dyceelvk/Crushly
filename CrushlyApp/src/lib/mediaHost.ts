@@ -76,6 +76,11 @@ export function mediaKind(path: string): MediaKind | null {
     : null;
 }
 
+/** True when a stored media path is a clip rather than a picture. */
+export function isVideoPath(path?: string | null): boolean {
+  return !!path && /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(path);
+}
+
 /** Stored path → the URL the app renders, with the token when browsers need it. */
 export function mediaStoreUrl(path: string, withToken = tokenInQuery): string {
   const url = `${MEDIA_BASE_URL}/m/${path

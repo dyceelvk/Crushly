@@ -67,15 +67,15 @@ export function MessagesScreen() {
   const header = (
     <View style={{ paddingTop: space.sm }}>
       <Txt variant="display" accessibilityRole="header">
-        Messages
+        Whispers
       </Txt>
       <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-        Whispers with your Connections.
+        Where a Crush turns into a conversation.
       </Txt>
 
       <Input
         icon="search"
-        placeholder="Search conversations..."
+        placeholder="Search your Whispers"
         accessibilityLabel="Search conversations"
         value={query}
         onChangeText={setQuery}
