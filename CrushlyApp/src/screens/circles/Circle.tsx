@@ -33,6 +33,7 @@ import { preparedClip } from '../../lib/videoEncode';
 import type { RootStackParamList, ScreenProps } from '../../navigation/types';
 import type { CircleMessage } from '../../api/types';
 import { PostCard } from '../../components/feed/PostCard';
+import { shownPosts } from '../../lib/features';
 
 type Tab = 'posts' | 'chat' | 'people';
 
@@ -542,9 +543,9 @@ function RoomPosts({ circleId }: { circleId: number }) {
         <LoadingBlock label="Loading posts" />
       ) : feed.isError ? (
         <ErrorState error={feed.error} message="These posts didn’t load." onRetry={feed.refresh} />
-      ) : feed.posts.length ? (
+      ) : shownPosts(feed.posts).length ? (
         <>
-          {feed.posts.map((p) => (
+          {shownPosts(feed.posts).map((p) => (
             /* In a Circle a post opens where it sits. Pushing a full-screen
                viewer meant leaving the room to read something said in it —
                and coming back to a list that had to find your place again. */

@@ -34,6 +34,7 @@ import { emptyEdit, splitForUpload } from '../../lib/videoEdit';
 import { preparedClip } from '../../lib/videoEncode';
 import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
+import { VIDEO_ENABLED } from '../../lib/features';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -52,12 +53,17 @@ type PostType = 'Flows' | 'Stories' | 'Moments';
 type PostKind = 'flow' | 'moment';
 
 const BOARDS: { kind: PostKind; title: string; blurb: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { kind: 'flow', title: 'Flow', blurb: 'Words, photos, a clip. Stays until you take it down.', icon: 'albums-outline' },
+  { kind: 'flow', title: 'Post', blurb: 'Words and photos. Stays until you take it down.', icon: 'albums-outline' },
   { kind: 'moment', title: 'Moment', blurb: 'One glimpse. Gone in 24 hours.', icon: 'aperture-outline' },
 ];
 
 /**
- * Create Post — unified composer for text, photo, and video posts.
+ * Create Post — the composer for text and photo posts.
+ *
+ * Video is not offered in this build: the picker takes images, and a clip that
+ * arrives anyway (a share sheet, a stale web blob) is refused with a sentence
+ * rather than uploaded into a post nothing will draw. The trim screen, the
+ * editor and the encoders are all still here, behind `VIDEO_ENABLED`.
  *
  * Layout follows the design: view at top, editors above tabs, tabs below
  * editors, add-text bar at the bottom. Video goes trim-first (dedicated trim
@@ -155,7 +161,9 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const pickMedia = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        // Images only while `VIDEO_ENABLED` is off — the library filter is the
+        // first of the three places video is stopped (picker, composer, feeds).
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         videoMaxDuration: MAX_VIDEO_SECONDS,
         quality: 0.8,
         allowsMultipleSelection: true,
@@ -167,6 +175,13 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         const isVideo = asset.mimeType?.startsWith('video/') ?? false;
         const sizeBytes = asset.fileSize ?? 0;
         const durationMs = asset.duration ?? 0;
+
+        if (isVideo && !VIDEO_ENABLED) {
+          // A clip can still reach us from a share sheet or a stale web blob.
+          // Say why instead of posting something no surface will show.
+          toast({ kind: 'error', title: 'Photos and words for now', message: 'Crushly takes pictures and text. Video is coming back later.' });
+          continue;
+        }
 
         if (isVideo && durationMs > MAX_VIDEO_SECONDS * 1000) {
           toast({ kind: 'error', title: 'That clip is too long', message: 'Posts can carry up to one minute of video.' });
@@ -606,7 +621,7 @@ function ComposerLeft({
             Add Media
           </Txt>
           <Txt variant="caption" color="textMuted">
-            Photos, videos or multiple files
+            Photos, or a few words
           </Txt>
         </View>
         {media.map((m) => (
@@ -747,10 +762,10 @@ function ComposerLeft({
         <View style={{ gap: 2 }}>
           <Txt variant="label" color="textSecondary">Sharing</Txt>
           <Txt variant="caption" color="textMuted">
-            A Flow — public, or for your connections
+            A post — public, or for your connections
           </Txt>
         </View>
-        <Pill label="Flow" tone="gold" />
+        <Pill label="Post" tone="gold" />
       </View>
 
       {/* Advanced options */}

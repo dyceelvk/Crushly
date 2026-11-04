@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { IconButton } from '../../components/IconButton';
 import { DiscoverPane } from './Discover';
-import { NoirScope } from '../../theme/ThemeProvider';
+import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -25,10 +25,13 @@ import type { RootStackParamList } from '../../navigation/types';
 export function DiscoverTabScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  // The title is the page's own ink. It used to be a hard-coded white, which is
+  // invisible on the white page the light appearance gives you — a blank band
+  // with a search icon stranded on it, which is exactly what was reported.
+  const { colors } = useTheme();
 
   return (
-    <NoirScope>
-      <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <View
           style={{
             flexDirection: 'row',
@@ -39,13 +42,12 @@ export function DiscoverTabScreen() {
             paddingBottom: space.sm,
           }}
         >
-          <Txt variant="display" accessibilityRole="header" style={{ color: '#FFFFFF' }}>
+          <Txt variant="display" accessibilityRole="header" style={{ color: colors.text }}>
             Discover
           </Txt>
           <IconButton icon="search" label="Search Crushly" onPress={() => navigation.navigate('Search')} />
         </View>
-        <DiscoverPane />
-      </View>
-    </NoirScope>
+      <DiscoverPane />
+    </View>
   );
 }

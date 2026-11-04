@@ -7,6 +7,7 @@ import { Button } from '../../components/Button';
 import { PostCard } from '../../components/feed/PostCard';
 import { useLayout } from '../../components/Layout';
 import { useCrushesFeed } from '../../api/hooks';
+import { shownPosts } from '../../lib/features';
 import { space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
@@ -67,7 +68,7 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
 
   return (
     <FlatList
-      data={feed.posts}
+      data={shownPosts(feed.posts)}
       keyExtractor={(p) => String(p.id)}
       showsVerticalScrollIndicator={false}
       onEndReached={onEndReached}

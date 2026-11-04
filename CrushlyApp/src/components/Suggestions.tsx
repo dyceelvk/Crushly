@@ -80,7 +80,7 @@ export function Suggestions({
           key: `t${t.tag}`,
           value: t.tag,
           label: `#${t.tag}`,
-          detail: `${t.uses} ${t.uses === 1 ? 'Flow' : 'Flows'}`,
+          detail: `${t.uses} ${t.uses === 1 ? 'post' : 'posts'}`,
           photo: null as string | null,
         }));
 

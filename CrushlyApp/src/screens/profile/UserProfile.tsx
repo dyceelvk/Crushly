@@ -27,6 +27,7 @@ import { useCrushFlow } from '../discover/Discover';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
 import { PostCard } from '../../components/feed/PostCard';
+import { shownPosts } from '../../lib/features';
 import type { Post } from '../../api/types';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
@@ -469,7 +470,7 @@ export function SpaceScreen({
                 page. */}
             <Tabs
               tabs={[
-                { id: 'flow' as const, label: 'Flow' },
+                { id: 'flow' as const, label: 'Posts' },
                 { id: 'moments' as const, label: 'Moments' },
                 { id: 'circles' as const, label: 'Circles' },
               ]}
@@ -625,6 +626,9 @@ function SpacePosts({
   onRetry: () => void;
 }) {
   const { colors } = useTheme();
+  // Nothing on a Space this build does not show. A clip in the list would be a
+  // card that plays nothing, so it is not in the list.
+  const shown = shownPosts(items);
   if (loading) {
     return (
       <View style={{ gap: space.md }}>
@@ -643,7 +647,7 @@ function SpacePosts({
       />
     );
   }
-  if (!items.length) {
+  if (!shown.length) {
     return (
       <EmptyState
         icon="document-text-outline"
@@ -654,7 +658,7 @@ function SpacePosts({
   }
   return (
     <View style={{ gap: space.md }}>
-      {items.map((post) => (
+      {shown.map((post) => (
         <View key={post.id} style={{ borderTopWidth: 0, borderColor: colors.border }}>
           {/* `secondPerson={false}`: this is a list of somebody else's posts, so
               "You" would be a lie about who wrote them. */}

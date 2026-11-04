@@ -10,6 +10,7 @@ import { PostCard } from '../../components/feed/PostCard';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { keys, useCrush, usePublicFlow } from '../../api/hooks';
+import { shownPosts } from '../../lib/features';
 import type { Profile } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
@@ -76,7 +77,9 @@ export function DiscoverPane() {
   const qc = useQueryClient();
   const feed = usePublicFlow();
 
-  const posts = feed.data ?? [];
+  // Clips are not part of this build, so a clip in the public list is not a
+  // card with a hole in it — it is not a card.
+  const posts = shownPosts(feed.data ?? []);
   // Second person only where the list really is yours-and-others. Here every
   // card is somebody's post in a shared list, so "You" would be wrong — and on a
   // public screen it read as though the app had merged you into the crowd.

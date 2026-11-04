@@ -5,7 +5,7 @@ import type { VideoEdit } from '../lib/videoEdit';
 export type TabParamList = {
   /** `tab` opens Home already on that part of the strip. */
   Flows: {
-    tab?: 'flow' | 'crushes' | 'connections';
+    tab?: 'crushes' | 'connections';
     /** Which lens of Crushes a notification means: who crushed you, or a match. */
     crushesTab?: 'incoming' | 'outgoing' | 'mutual';
   } | undefined;

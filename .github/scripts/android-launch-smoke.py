@@ -25,6 +25,7 @@ through the environment and are never printed.
 import os
 import pathlib
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -337,14 +338,16 @@ def back_out():
 
 
 def assert_strip(seen):
-    """Home reads Flow → Crushes → Connections, and the bar reads
+    """Home reads Crushes → Connections, and the bar reads
     Home → Discover → (+) → Whispers → Space.
 
-    This is the layout that was argued about most; a screenshot can be read two
-    ways, a sorted list of x coordinates cannot. Four things are asserted, not
-    two: the strip's words and order, that the magnifier is still there with the
-    bell beside it, that the hamburger is gone and nothing took its corner, and
-    that Crushes is not a tab in the bar.
+    The strip had three words while Flow — the clip surface — was one of them.
+    Clips are not in this build, so the third tab is gone and this asserts the
+    two that remain, in order, in one row. A sorted list of x coordinates cannot
+    be read two ways, which is why the order is checked and not eyeballed.
+
+    Flow is asserted *absent*, not ignored: a tab that comes back without a
+    surface behind it is the exact fault this check exists for.
     """
     points = {}
     for n in seen:
@@ -352,23 +355,25 @@ def assert_strip(seen):
             key = norm(value)
             if key in ('flow', 'crushes', 'connections'):
                 points.setdefault(key, []).append((n['x'], n['y']))
-    missing = [k for k in ('flow', 'crushes', 'connections') if k not in points]
+    missing = [k for k in ('crushes', 'connections') if k not in points]
     if missing:
         fail('the Home strip is missing ' + ', '.join(missing))
+    if 'flow' in points:
+        fail('the Home strip still carries a Flow tab; clips are not in this build')
 
-    # "Flow" and "Crushes" may also be the bar or a heading, so keep to the row
-    # that holds all three.
+    # "Crushes" may also be a heading or the bar, so keep to the row that holds
+    # both words.
     rows = {}
     for key, pts in points.items():
         for _, y in pts:
             rows.setdefault(y // 40, set()).add(key)
-    row = next((r for r, keys in rows.items() if keys >= {'flow', 'crushes', 'connections'}), None)
+    row = next((r for r, keys in rows.items() if keys >= {'crushes', 'connections'}), None)
     if row is None:
-        fail('no single row holds Flow, Crushes and Connections')
+        fail('no single row holds Crushes and Connections')
     in_row = {k: [x for x, y in v if y // 40 == row] for k, v in points.items()}
     order = sorted(in_row, key=lambda k: min(in_row[k]))
-    if order != ['flow', 'crushes', 'connections']:
-        fail('the strip reads ' + ' → '.join(order) + ', not Flow → Crushes → Connections')
+    if order != ['crushes', 'connections']:
+        fail('the strip reads ' + ' → '.join(order) + ', not Crushes → Connections')
 
     # The far end of the strip: a magnifier, and a bell beside it. The brief put
     # the bell next to search rather than in the corner the hamburger left, and
@@ -387,12 +392,12 @@ def assert_strip(seen):
             fail('the strip still carries a "{}" control; the drawer is gone'.format(word))
 
     screen = SCREEN[0] or max(n['x2'] for n in seen if n['on_screen'])
-    for key in ('flow', 'crushes', 'connections'):
+    for key in ('crushes', 'connections'):
         node = next((n for n in seen if n['on_screen']
                      for v in (n['desc'], n['text']) if norm(v) == key and n['y'] // 40 == row), None)
         if node and node['x2'] > screen:
             fail('the "{}" label runs off the screen ({} > {})'.format(key, node['x2'], screen))
-    log('strip: Flow → Crushes → Connections, magnifier + bell, no menu, nothing clipped; checked')
+    log('strip: Crushes → Connections, magnifier + bell, no Flow, nothing clipped; checked')
 
     # The bar: four words and a plus, with Discover in it and Crushes out of it.
     bar = {}
@@ -411,44 +416,169 @@ def assert_strip(seen):
     log('bar: Home · Discover · + · Whispers · Space; checked')
 
 
-def assert_hook_is_low(seen):
-    """The search hook is the bottom line of a page, under name, caption, sound."""
-    hook = find(seen, 'Search for')
-    if not hook:
+#: Labels only a clip carries. Used to assert video is off the surface, not
+#: merely unreachable from the tab we removed.
+CLIP_WORDS = ('original sound', 'sound:', 'a clip', 'video post', 'watch the clip')
+
+
+def assert_no_clips(seen, where):
+    hit = []
+    for n in seen:
+        text = norm(n['text'] + ' ' + n['desc'])
+        for word in CLIP_WORDS:
+            if word in text:
+                hit.append(text[:70])
+    if hit:
+        fail('a clip is on screen on {}: "{}"'.format(where, hit[0]))
+    log('{}: no clip, sound row or player; checked'.format(where))
+
+
+def assert_discover(seen):
+    """Discover: one title, the magnifier on it, and the page right under it.
+
+    The fault this replaces was a header drawn twice, each with its own padding,
+    which left a band of nothing above the first card and a magnifier stranded
+    in the middle of it. So the gap between the title and the page is measured,
+    and the magnifier has to be on the title's row rather than floating.
+    """
+    titles = [n for n in seen if n['on_screen'] and n['y'] < SCREEN[1] * 0.6
+              for v in (n['text'], n['desc']) if norm(v) == 'discover']
+    if not titles:
+        fail('Discover has no title on its own page')
+    title = min(titles, key=lambda n: n['y'])
+    page = find(seen, 'From everyone') or find(seen, 'Nothing public yet') or find(seen, 'Search people')
+    if page and page['y'] > title['y2']:
+        gap = page['y'] - title['y2']
+        if gap > 80:
+            fail('Discover leaves {} px of nothing between its title and the page'.format(gap))
+        log('discover: {:.0f} px from the title to the page; checked'.format(gap))
+    magnifier = find(seen, 'Search Crushly')
+    if magnifier is None:
+        fail('Discover has no magnifier; search lives here')
+    if abs(magnifier['y'] - title['y']) > 40:
+        fail('the magnifier is stranded {} px from the Discover title'.format(abs(magnifier['y'] - title['y'])))
+
+
+def screen_brightness():
+    """Mean brightness of the frame, 0–255, read straight from the framebuffer.
+
+    Appearance cannot be asserted from an accessibility dump — light and dark
+    carry the same words — and there is no image library in the runner. The raw
+    RGBA buffer is sampled instead: a black canvas and a white one are 200-odd
+    apart, and no other change on these screens moves the mean that far.
+    """
+    raw = subprocess.run(['adb', 'exec-out', 'screencap'], capture_output=True, timeout=120).stdout
+    if len(raw) < 16:
+        return None
+    try:
+        w, h, fmt = struct.unpack('<III', raw[:12])
+    except struct.error:
+        return None
+    if fmt != 1:            # only RGBA_8888 is sampled; anything else is unknown
+        return None
+    body = len(raw) - 12
+    header = 12 if body == w * h * 4 else (16 if len(raw) - 16 == w * h * 4 else None)
+    if header is None:
+        return None
+    px = raw[header:]
+    total = bright = 0
+    step = max(1, (w * h) // 4000) * 4    # ~4,000 samples, whatever the panel
+    for i in range(0, w * h * 4 - 4, step):
+        bright += px[i] + px[i + 1] + px[i + 2]
+        total += 3
+    return bright / total if total else None
+
+
+def assert_appearance():
+    """Light and Dark have to reach the screens, not just the row that sets it.
+
+    Reported as "when I switched to light it stayed light and when I switched to
+    dark it stayed light": a preference that saves but does not paint. So the
+    frame is measured on Home and on Discover before and after the change.
+    """
+    tap('Home')
+    time.sleep(1.2)
+    dark_home = screen_brightness()
+    tap('Discover')
+    time.sleep(1.2)
+    dark_discover = screen_brightness()
+    shot('04a-discover-dark')
+
+    if not tap('Space'):
+        log('appearance: could not reach the Space; skipped')
         return
-    sound = find(seen, 'Original sound')
-    if sound and hook['y'] < sound['y']:
-        fail('the search hook sits above the sound row ({} < {})'.format(hook['y'], sound['y']))
-    log('search hook y={} is below the sound row y={}'.format(hook['y'], sound['y'] if sound else '-'))
+    if not tap('Settings', tries=2):
+        log('appearance: no Settings row; skipped')
+        return
+    scroll_to('Appearance')
+    if not tap('Appearance', tries=2):
+        log('appearance: no Appearance row; skipped')
+        return
+    if not tap('Light', tries=2):
+        log('appearance: no Light choice; skipped')
+        return
+    time.sleep(1.5)
+    shot('04b-appearance-light')
+    return_to_tabs()
+
+    tap('Home')
+    time.sleep(1.5)
+    shot('04c-home-light')
+    light_home = screen_brightness()
+    tap('Discover')
+    time.sleep(1.5)
+    shot('04d-discover-light')
+    light_discover = screen_brightness()
+
+    if dark_home is None or light_home is None or dark_discover is None or light_discover is None:
+        log('appearance: the framebuffer could not be read; not asserted')
+    else:
+        log('appearance: Home {:.0f} → {:.0f}, Discover {:.0f} → {:.0f}'.format(
+            dark_home, light_home, dark_discover, light_discover))
+        if light_home < dark_home + 60:
+            fail('Home did not change with the appearance ({} → {})'.format(round(dark_home), round(light_home)))
+        if light_discover < dark_discover + 60:
+            fail('Discover did not change with the appearance ({} → {}); its title used to be white on white'.format(
+                round(dark_discover), round(light_discover)))
+
+    # Put it back the way it was found, so the rest of the walk photographs the
+    # app in the appearance the member actually chose.
+    tap('Space')
+    if tap('Settings', tries=2):
+        scroll_to('Appearance')
+        if tap('Appearance', tries=2):
+            tap('Dark', tries=2)
+            time.sleep(1.2)
+    return_to_tabs()
 
 
 def walk():
     """Photograph every surface, in the order the app presents them."""
-    seen = shot('04-flow-default')
+    seen = shot('04-home')
     assert_strip(seen)
-    assert_hook_is_low(seen)
+    assert_no_clips(seen, 'Home')
 
     for label, name in (('Crushes', '05-segment-crushes'),
-                        ('Connections', '06-segment-connections'),
-                        ('Flow', '07-segment-flow')):
+                        ('Connections', '06-segment-connections')):
         tap(label)
         shot(name)
+        assert_no_clips(nodes() or [], name)
 
-    # Search is reachable from the strip's magnifier and from Discover.
-    tap('Discover')
+    # Discover is a page, not only the door to search: photograph it before
+    # opening search, or the one screen the user twice described as "a white
+    # board with a search icon" is the one screen never looked at.
+    seen = None
+    if tap('Discover'):
+        seen = shot('07-discover')
+        assert_discover(seen)
+        assert_no_clips(seen, 'Discover')
     if tap('Search Crushly'):
         shot('08-discover-search')
         return_to_tabs()
 
-    # And the hook under a clip must search the words it names, not open blank.
-    # The hook only exists on Flow, and the step before this one left us on
-    # Discover, so come home first.
-    tap('Home')
-    if tap('Search for'):
-        seen = shot('09-hook-search')
-        named = [n['desc'] for n in seen if norm(n['desc']).startswith('search for')]
-        log('the hook opened: ' + (named[0] if named else '(no hook label left)'))
-        return_to_tabs()
+    # Appearance: measure it, because a preference that saves and does not paint
+    # is invisible to every other check in this file.
+    assert_appearance()
 
     for label, name in (('Whispers', '11-whispers'),
                         ('Space', '12-space')):
@@ -474,12 +604,6 @@ def walk():
         seen = nodes() or []
         if not find(seen, 'chosen to keep near'):
             fail('Space → Close Ones did not land on the Close Ones segment')
-
-    # A clip's sound is a place, so it has to open as one.
-    tap('Flow')
-    if tap('Original sound'):
-        shot('15-sound')
-        return_to_tabs()
 
     # The drawer is gone. Everything it used to hold now opens from where it
     # belongs: Circles, Moments and Picked from the Space, Settings from the

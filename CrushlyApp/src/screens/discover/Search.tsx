@@ -14,6 +14,7 @@ import { Tabs, TabItem } from '../../components/Tabs';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useSearch } from '../../api/hooks';
+import { shownPosts } from '../../lib/features';
 import { Suggestions } from '../../components/Suggestions';
 import { useMentionInput } from '../../components/useMentionInput';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -113,14 +114,17 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const words = query.replace(/^[@#]/, '').trim();
   const results = useSearch(words);
   const data = results.data;
+  // A result that cannot be opened is not a result. Clips are filtered here as
+  // they are in every other list, so the counts and the rows agree.
+  const posts = shownPosts(data?.posts ?? []);
 
   const counts = useMemo(
     () => ({
       people: data?.members.length ?? 0,
-      flows: data?.posts.length ?? 0,
+      flows: posts.length,
       moments: data?.moments.length ?? 0,
     }),
-    [data],
+    [data, posts],
   );
   const total = counts.people + counts.flows + counts.moments;
   const asked = words.length >= 2;
@@ -131,7 +135,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const tabs: TabItem<Tab>[] = [
     { id: 'top', label: 'Top', count: total },
     { id: 'people', label: 'People', count: counts.people },
-    { id: 'flows', label: 'Flows', count: counts.flows },
+    { id: 'flows', label: 'Posts', count: counts.flows },
     { id: 'moments', label: 'Moments', count: counts.moments },
   ];
 
@@ -155,10 +159,10 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
     ));
 
   const flowList = (limit?: number) =>
-    (data?.posts ?? []).slice(0, limit ?? undefined).map((post, i) => (
+    posts.slice(0, limit ?? undefined).map((post, i) => (
       <Rise key={`p-${post.id}`} delay={stagger(i)}>
         <TextRow
-          kind="Flow"
+          kind="Post"
           icon="chatbubbles-outline"
           body={post.body}
           author={post.author?.name ?? 'Member'}
@@ -324,7 +328,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             <EmptyState
               icon="search-outline"
               title="Search Crushly"
-              message="Type a name, a handle, a city or an interest — or a word somebody shared in a Flow or a Moment. Start with @ for a person, # for a tag."
+              message="Type a name, a handle, a city or an interest — or a word somebody shared in a post or a Moment. Start with @ for a person, # for a tag."
             />
           </>
         ) : results.isLoading ? (

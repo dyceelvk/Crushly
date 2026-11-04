@@ -85,7 +85,7 @@ export function FeedTabs({
           left: 0,
           right: 0,
           height: top + 46 + 24,
-          backgroundColor: 'rgba(0,0,0,0.22)',
+          backgroundColor: colors.scheme === 'light' ? 'rgba(255,255,255,0.86)' : 'rgba(0,0,0,0.22)',
         }}
       />
       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -117,9 +117,7 @@ export function FeedTabs({
                 style={{
                   fontSize: labelSize,
                   fontFamily: on ? 'Manrope_800ExtraBold' : 'Manrope_600SemiBold',
-                  color: on ? '#FFFFFF' : 'rgba(255,255,255,0.72)',
-                  textShadowColor: 'rgba(0,0,0,0.35)',
-                  textShadowRadius: 6,
+                  color: on ? colors.text : colors.textSecondary,
                 }}
               >
                 {t.label}
@@ -132,7 +130,7 @@ export function FeedTabs({
                   width: 22,
                   height: 2.5,
                   borderRadius: stroke.hairline,
-                  backgroundColor: on ? '#FFFFFF' : 'transparent',
+                  backgroundColor: on ? colors.text : 'transparent',
                 }}
               />
             </Pressable>
@@ -147,7 +145,7 @@ export function FeedTabs({
           hitSlop={10}
           style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
         >
-          <Ionicons name="search" size={compact ? 19 : 21} color="#FFFFFF" />
+          <Ionicons name="search" size={compact ? 19 : 21} color={colors.text} />
         </Pressable>
       ) : null}
       {onBell ? (
@@ -158,7 +156,7 @@ export function FeedTabs({
           hitSlop={10}
           style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
         >
-          <Ionicons name="notifications-outline" size={compact ? 20 : 22} color="#FFFFFF" />
+          <Ionicons name="notifications-outline" size={compact ? 20 : 22} color={colors.text} />
           {unread ? (
             <View style={{ position: 'absolute', top: 7, right: compact ? 6 : 9, width: 7, height: 7, borderRadius: 4, backgroundColor: '#FF4081' }} />
           ) : null}

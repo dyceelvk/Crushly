@@ -6,6 +6,7 @@ import { Header, Screen, useLayout } from '../../components/Layout';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { PostCard } from '../../components/feed/PostCard';
 import { useSavedPosts } from '../../api/hooks';
+import { shownPosts } from '../../lib/features';
 import { space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
@@ -56,7 +57,7 @@ export function SavedPostsScreen() {
         />
       ) : (
         <FlatList
-          data={saved.posts}
+          data={shownPosts(saved.posts)}
           keyExtractor={(p) => String(p.id)}
           showsVerticalScrollIndicator={false}
           onEndReached={onEndReached}

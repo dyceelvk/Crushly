@@ -22,6 +22,7 @@ import { splitForUpload, emptyEdit, playbackLength, type VideoEdit } from '../..
 import { preparedClip } from '../../lib/videoEncode';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { takeTrimResult } from '../common/VideoTrimScreen';
+import { VIDEO_ENABLED } from '../../lib/features';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
@@ -154,10 +155,12 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
           }
           setMode(m);
         }}
+        // The Clip choice is behind the same switch as every other video
+        // surface: a Moment can be words or a photo in this build.
         options={[
           { value: 'text', label: 'Words' },
           { value: 'photo', label: 'Photo' },
-          { value: 'video', label: 'Clip' },
+          ...(VIDEO_ENABLED ? [{ value: 'video' as const, label: 'Clip' }] : []),
         ]}
       />
 
