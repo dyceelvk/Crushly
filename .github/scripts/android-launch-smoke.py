@@ -112,6 +112,7 @@ def nodes(attempts=3):
             'class': n.get('class', ''),
             'x': (x1 + x2) // 2,
             'y': (y1 + y2) // 2,
+            'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2,
             'on_screen': y1 > 0 and y2 > y1,
         })
     return out
@@ -309,9 +310,21 @@ def assert_strip(seen):
         fail('the strip has no magnifier')
     if abs(magnifier['y'] // 40 - row) > 1:
         fail('the magnifier is not on the strip row')
-    if magnifier['x'] <= max(max(v) for v in in_row.values()):
+    rightmost = max(n['x2'] for n in seen if n['on_screen'] and abs(n['y'] // 40 - row) <= 1)
+    if magnifier['x1'] < rightmost - 1 and not any(
+            norm(v) in ('discover', 'flow', 'connections') and n['x2'] > magnifier['x1']
+            for n in seen for v in (n['desc'], n['text'])):
         fail('the magnifier is not at the end of the strip')
-    log('strip: Discover → Flow → Connections, magnifier last; checked')
+
+    # Nothing may be clipped: a tab that reads "Connectio" is a tab nobody can
+    # read. This is the failure the 320 dp emulator produced twice.
+    row_nodes = [n for n in seen if n['on_screen'] and abs(n['y'] // 40 - row) <= 1]
+    screen = max(n['x2'] for n in seen if n['on_screen'])
+    for key in ('discover', 'flow', 'connections'):
+        node = next((n for n in row_nodes for v in (n['desc'], n['text']) if norm(v) == key), None)
+        if node and node['x2'] > screen:
+            fail('the "{}" tab runs off the screen ({} > {})'.format(key, node['x2'], screen))
+    log('strip: Discover → Flow → Connections, magnifier last, nothing clipped; checked')
 
 
 def assert_hook_is_low(seen):

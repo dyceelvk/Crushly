@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -52,6 +52,14 @@ export function FeedTabs({
   onSearch?: () => void;
 }) {
   const { colors } = useTheme();
+  // At 320 dp — a small phone, or the same phone with the display size turned
+  // up — the row is menu + Discover + Flow + Connections + magnifier, and at the
+  // comfortable sizes that is wider than the screen: "Connections" ran under the
+  // magnifier. Nothing is dropped at that width, the type and the air shrink.
+  const { width } = useWindowDimensions();
+  const compact = width < 380;
+  const labelSize = compact ? 14 : 15;
+  const gap = compact ? 12 : 18;
   return (
     <View
       style={{
@@ -84,9 +92,9 @@ export function FeedTabs({
           accessibilityRole="button"
           accessibilityLabel="Everything else in Crushly"
           hitSlop={10}
-          style={{ paddingHorizontal: 13, paddingVertical: 10 }}
+          style={{ paddingHorizontal: compact ? 9 : 13, paddingVertical: 10 }}
         >
-          <Ionicons name="menu" size={23} color="#FFFFFF" />
+          <Ionicons name="menu" size={compact ? 21 : 23} color="#FFFFFF" />
         </Pressable>
       ) : null}
       <ScrollView
@@ -97,8 +105,8 @@ export function FeedTabs({
           flexGrow: 1,
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 18,
-          paddingHorizontal: space.sm,
+          gap,
+          paddingHorizontal: compact ? 2 : space.sm,
         }}
       >
         {tabs.map((t) => {
@@ -115,7 +123,7 @@ export function FeedTabs({
             >
               <Txt
                 style={{
-                  fontSize: 15,
+                  fontSize: labelSize,
                   fontFamily: on ? 'Manrope_800ExtraBold' : 'Manrope_600SemiBold',
                   color: on ? '#FFFFFF' : 'rgba(255,255,255,0.72)',
                   textShadowColor: 'rgba(0,0,0,0.35)',
@@ -145,9 +153,9 @@ export function FeedTabs({
           accessibilityRole="button"
           accessibilityLabel="Search Crushly"
           hitSlop={10}
-          style={{ paddingHorizontal: 14, paddingVertical: 10 }}
+          style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
         >
-          <Ionicons name="search" size={21} color="#FFFFFF" />
+          <Ionicons name="search" size={compact ? 19 : 21} color="#FFFFFF" />
         </Pressable>
       ) : null}
       </View>
