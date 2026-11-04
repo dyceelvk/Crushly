@@ -1,10 +1,10 @@
 {
-  "version": "1.0.44",
-  "versionCode": 44,
+  "version": "1.0.45",
+  "versionCode": 45,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.44-Android9plus.apk",
+  "file": "Crushly-1.0.45-Android9plus.apk",
   "notes": "The feed is called Flow, the menu holds the rest of Crushly, and clips in grids show their picture.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.44/Crushly-1.0.44-Android9plus.apk",
-  "bytes": 95198683,
-  "sha256": "ab8fb0c3096883335f8674d4200a81fbab4da56a2f3ed8213db8f553788ed036"
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.45/Crushly-1.0.45-Android9plus.apk",
+  "bytes": 95198687,
+  "sha256": "111109bdf0e688e3f9512eaad7d3158d4e4c9875d4a8906ef8aec0dbd90fb266"
 }
