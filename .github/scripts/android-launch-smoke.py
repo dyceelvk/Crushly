@@ -466,17 +466,45 @@ def walk():
                 shot('{:02d}'.format(n) + '-' + name)
                 n += 1
                 if name == 'settings':
-                    # The settings screen is a list of places as well; open three
-                    # of them so a broken one cannot hide behind the index.
+                    # Settings is a list of places as well. Each one is opened
+                    # from the top of a fresh Settings screen, because coming back
+                    # from a page can land anywhere — and the ones below the fold
+                    # are scrolled to rather than assumed visible.
                     for sub, slug in (('Account & security', 'account'),
                                       ('Appearance', 'appearance'),
-                                      ('Privacy', 'privacy')):
+                                      ('Privacy & visibility', 'privacy'),
+                                      ('Discover preferences', 'filters'),
+                                      ('Verification', 'verification'),
+                                      ('Crushly Plus', 'plus')):
+                        tap('Flow')
+                        tap('Everything else in Crushly', tries=2)
+                        if not tap('Settings', tries=2):
+                            continue
+                        scroll_to(sub)
                         if tap(sub, tries=2):
                             shot('{:02d}-settings-{}'.format(n, slug))
                             n += 1
                             return_to_tabs()
+                    tap('Flow')
                     continue
                 return_to_tabs()
+
+    # A Vibe opens as its own page, not as a bigger tile in the row.
+    tap('Discover')
+    if tap("s vibe,", tries=2):
+        shot('{:02d}-vibe'.format(n))
+        n += 1
+        return_to_tabs()
+
+    # Search with something actually typed into it: the empty state is not the
+    # screen, and the results are the part people use.
+    if tap('Search Crushly'):
+        type_into(0, 'spencer')
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(2.5)
+        shot('{:02d}-search-results'.format(n))
+        n += 1
+        return_to_tabs()
 
     # Space's own edit surface, and the three Crushes lenses.
     tap('Space')
