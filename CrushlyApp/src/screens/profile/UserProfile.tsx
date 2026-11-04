@@ -365,20 +365,11 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           ) : null}
           </View>
 
+          {/* One tab row, not two. A Segmented sat above this SwipeTabs with the
+              same four labels and the same state — the same control drawn twice,
+              one of them not swipable — which is how the row above the posts read
+              as a rendering bug. The SwipeTabs is the row; Picks is its second tab. */}
           <View style={{ marginTop: space.lg }}>
-            <Segmented<'flow' | 'vibes' | 'moments' | 'circles'>
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'flow', label: 'Flow', count: posts.data?.items.length ?? undefined },
-                { value: 'vibes', label: 'Vibes', count: vibes.data?.items.length ?? undefined },
-                { value: 'moments', label: 'Moments', count: p.moments.length || undefined },
-                { value: 'circles', label: 'Circles', count: circles.data?.items.length || undefined },
-              ]}
-            />
-          </View>
-
-          <View style={{ marginTop: space.md }}>
             <SwipeTabs
               options={['flow', 'picks', 'vibes', 'moments', 'circles'] as const}
               value={tab}
