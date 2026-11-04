@@ -65,12 +65,14 @@ def nodes(attempts=3):
 
     On Android the soft keyboard is a window of its own, and `uiautomator dump`
     reports the *active* one. Once a text field has focus the dump therefore
-    describes the keyboard, and the form behind it looks empty. So: if the
-    window we got is not the app's, send BACK (which dismisses the keyboard, not
-    the screen) and ask again.
+    describes the keyboard, and the form behind it looks empty. So: if what came
+    back is an input method, send BACK (which dismisses the keyboard, not the
+    screen) and ask again. Anything else — a system dialog, the launcher — is
+    returned as-is, because pretending not to see it is how a walk turns into a
+    green tick over nothing.
     """
     root = None
-    for _ in range(attempts):
+    for attempt in range(attempts):
         dumped = adb('shell', 'uiautomator', 'dump', '/sdcard/crushly-ui.xml', check=False)
         if 'dumped' not in dumped:
             return None
@@ -79,12 +81,23 @@ def nodes(attempts=3):
             root = ET.fromstring(xml)
         except ET.ParseError:
             return None
-        if root.get('package') == PACKAGE:
+        # `package` lives on the nodes; the <hierarchy> root carries rotation
+        # only. Reading it from the root — which is what this did first — made
+        # every window look like "not the app", and the BACK presses that
+        # followed walked the app out to the launcher.
+        packages = {n.get('package') or '' for n in root.iter('node')}
+        if PACKAGE in packages:
             break
-        adb('shell', 'input', 'keyevent', '4')
-        time.sleep(1.0)
-    else:
-        return None
+        ime = any('inputmethod' in p or 'keyboard' in p for p in packages)
+        if not ime:
+            # Some other window (a system dialog, the launcher). Report it as it
+            # is: the caller can say what it saw instead of waiting in the dark.
+            log('window is not the app ({}); using what is on screen'.format(
+                ', '.join(sorted(p for p in packages if p)) or 'unknown'))
+            break
+        if attempt < attempts - 1:
+            adb('shell', 'input', 'keyevent', '4')
+            time.sleep(1.0)
     out = []
     for n in root.iter('node'):
         bounds = n.get('bounds', '')
