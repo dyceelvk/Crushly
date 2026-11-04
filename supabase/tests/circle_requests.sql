@@ -9,6 +9,10 @@
 -- Fixtures are written before the role is switched, as the schema owner, because
 -- circle_members and circles are protected by RLS that members are not meant to
 -- write through directly.
+-- Fixtures are read from `auth.users` before any role switch, which needs the
+-- schema owner: every other suite in this directory ends by resetting the role,
+-- and this file says so explicitly rather than relying on the one before it.
+reset role;
 do $$
 declare
   owner_uuid uuid;
@@ -151,4 +155,6 @@ begin
   assert not exists (
     select 1 from jsonb_array_elements(j) e where (e->>'circleId')::bigint = cid
   ), 'a room you are not in must never appear in your highlights';
+
+  reset role;
 end $$;
