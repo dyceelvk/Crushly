@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, ScrollView, View } from 'react-native';
+import { Animated, PanResponder, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -102,7 +102,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
             hitSlop={8}
             style={{ paddingHorizontal: space.sm, paddingVertical: 4 }}
           >
-            <Txt variant="caption" style={{ color: colors.accent }}>
+            <Txt variant="caption" style={{ color: colors.primary }}>
               Mark all read
             </Txt>
           </Pressable>
@@ -175,8 +175,9 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
           style={{ maxHeight: 460 }}
           contentContainerStyle={{ padding: space.sm, gap: 2, paddingBottom: space.xl }}
           showsVerticalScrollIndicator={false}
-          refreshing={isRefetching}
-          onRefresh={() => void refetch()}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={() => void refetch()} tintColor={colors.text} />
+          }
         >
           {shown.map((n) => {
             const official = n.kind === 'verified' || n.kind === 'verification_rejected';
