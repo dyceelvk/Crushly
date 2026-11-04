@@ -24,7 +24,7 @@ function hostOf(raw: string): string {
  * A link, opened inside Crushly.
  *
  * Nothing in this app navigates outwards on its own. A member taps a link that
- * somebody put in a Flow, a Vibe or a Moment and it opens here — in our own
+ * somebody put in a Flow or a Moment and it opens here — in our own
  * sheet, on Chromium where Chromium is what the platform runs — with the site's
  * name stated at the top the whole time. Leaving the app is a separate button,
  * pressed on purpose.

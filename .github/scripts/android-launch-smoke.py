@@ -11,8 +11,9 @@ So the run is:
   1. cold start twice, signed out, asserting the real opening UI (as before);
   2. sign in as the walk account, through the same screens a person uses;
   3. photograph and read every surface — the Flow strip and its three segments,
-     the magnifier, Crushes, Whispers, Close Ones, Space, the menu, Settings —
-     dumping the accessibility tree at each stop into `walk/report.txt`.
+     the magnifier and the bell beside it, Crushes, Whispers, Close Ones, Space,
+     Settings and its pages, the notification sheet — dumping the accessibility
+     tree at each stop into `walk/report.txt`.
 
 Everything is addressed by the app's own text and accessibility labels, never by
 pixel coordinates, so a layout change moves the walk with it.
@@ -340,9 +341,10 @@ def assert_strip(seen):
     Home → Discover → (+) → Whispers → Space.
 
     This is the layout that was argued about most; a screenshot can be read two
-    ways, a sorted list of x coordinates cannot. Three things are asserted, not
-    two: the strip's words and order, that the magnifier is *not* on the strip
-    (search moved into Discover), and that Crushes is not a tab in the bar.
+    ways, a sorted list of x coordinates cannot. Four things are asserted, not
+    two: the strip's words and order, that the magnifier is still there with the
+    bell beside it, that the hamburger is gone and nothing took its corner, and
+    that Crushes is not a tab in the bar.
     """
     points = {}
     for n in seen:
@@ -368,9 +370,21 @@ def assert_strip(seen):
     if order != ['flow', 'crushes', 'connections']:
         fail('the strip reads ' + ' → '.join(order) + ', not Flow → Crushes → Connections')
 
-    # Search is a page, not a magnifier on a row about the feed.
-    if find(seen, 'Search Crushly'):
-        fail('the strip still carries a magnifier; search lives in Discover now')
+    # The far end of the strip: a magnifier, and a bell beside it. The brief put
+    # the bell next to search rather than in the corner the hamburger left, and
+    # the drawer it used to open is gone — so the corner must hold nothing that
+    # opens a menu.
+    magnifier = find(seen, 'Search Crushly')
+    if magnifier is None:
+        fail('the strip has no magnifier; search belongs beside the bell')
+    bell = find(seen, 'Notifications')
+    if bell is None:
+        fail('the strip has no bell; notifications open from here')
+    if abs(bell['y'] - magnifier['y']) > 40:
+        fail('the bell is not on the strip with the magnifier')
+    for word in ('menu', 'open menu', 'more options', 'navigation menu'):
+        if find(seen, word):
+            fail('the strip still carries a "{}" control; the drawer is gone'.format(word))
 
     screen = SCREEN[0] or max(n['x2'] for n in seen if n['on_screen'])
     for key in ('flow', 'crushes', 'connections'):
@@ -378,7 +392,7 @@ def assert_strip(seen):
                      for v in (n['desc'], n['text']) if norm(v) == key and n['y'] // 40 == row), None)
         if node and node['x2'] > screen:
             fail('the "{}" label runs off the screen ({} > {})'.format(key, node['x2'], screen))
-    log('strip: Flow → Crushes → Connections, no magnifier, nothing clipped; checked')
+    log('strip: Flow → Crushes → Connections, magnifier + bell, no menu, nothing clipped; checked')
 
     # The bar: four words and a plus, with Discover in it and Crushes out of it.
     bar = {}
@@ -420,7 +434,7 @@ def walk():
         tap(label)
         shot(name)
 
-    # Search is Discover's, so walk to Discover to find it.
+    # Search is reachable from the strip's magnifier and from Discover.
     tap('Discover')
     if tap('Search Crushly'):
         shot('08-discover-search')
@@ -520,16 +534,8 @@ def walk():
         time.sleep(1.5)
         return_to_tabs()
 
-    # A Vibe opens as its own page, not as a bigger tile in the row.
-    tap('Discover')
-    if tap("s vibe,", tries=2):
-        shot('{:02d}-vibe'.format(n))
-        n += 1
-        return_to_tabs()
-
     # Search with something actually typed into it: the empty state is not the
-    # screen, and the results are the part people use. The magnifier is
-    # Discover's, not the strip's.
+    # screen, and the results are the part people use.
     tap('Discover')
     if tap('Search Crushly'):
         type_into(0, 'spencer')

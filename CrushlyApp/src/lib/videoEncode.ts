@@ -67,7 +67,6 @@ export function isContiguous(ranges: Segment[]): boolean {
 /** Longest edge we keep, per category. Short-lived clips do not need 4K. */
 const MAX_EDGE: Record<EditCategory, number> = {
   moment: 720,
-  vibe: 720,
   post: 1080,
   circle: 720,
 };

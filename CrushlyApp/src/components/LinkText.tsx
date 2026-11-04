@@ -34,7 +34,7 @@ export function prettyUrl(raw: string): string {
 /**
  * Text that may hold links — and links that stay inside Crushly.
  *
- * A link somebody put in a Flow, a Vibe or a Moment opens in our own preview
+ * A link somebody put in a Flow or a Moment opens in our own preview
  * sheet. It never hands the member straight to Chrome, and nothing navigates
  * on its own: the member taps, sees which site it is, and decides from there
  * whether to open it in a real browser. The hostname is shown on every link,

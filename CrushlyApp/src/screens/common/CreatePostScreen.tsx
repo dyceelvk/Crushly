@@ -46,14 +46,13 @@ type MediaItem = {
   edit?: VideoEdit | null;
 };
 
-type PostType = 'Flows' | 'Stories' | 'Moments' | 'Vibes';
+type PostType = 'Flows' | 'Stories' | 'Moments';
 
-/** The three things a person can share, in the order the product grew them. */
-type PostKind = 'flow' | 'vibe' | 'moment';
+/** The two things a person can share, in the order the product grew them. */
+type PostKind = 'flow' | 'moment';
 
 const BOARDS: { kind: PostKind; title: string; blurb: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { kind: 'flow', title: 'Flow', blurb: 'Words, photos, a clip. Stays until you take it down.', icon: 'albums-outline' },
-  { kind: 'vibe', title: 'Vibe', blurb: 'A short clip with a fortnight to live.', icon: 'flash-outline' },
   { kind: 'moment', title: 'Moment', blurb: 'One glimpse. Gone in 24 hours.', icon: 'aperture-outline' },
 ];
 
@@ -79,13 +78,11 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   /**
    * What is being shared, chosen *before* the board is built.
    *
-   * The composer used to ask this last — a "Post type" row of four segments at
-   * the bottom of a settings panel, after the photograph had already been
-   * picked and the words already written. By then the answer changes nothing
-   * anyone can see, and three of the four answers were not even wired to a
-   * different composer: a Vibe and a Moment lived in screens of their own while
-   * "Post type: Vibes" quietly posted a Flow. So the question comes first, and
-   * each answer leads to the board that is actually that thing.
+   * The composer used to ask this last — a "Post type" row of segments at the
+   * bottom of a settings panel, after the photograph had already been picked
+   * and the words already written. By then the answer changes nothing anyone
+   * can see. So the question comes first, and each answer leads to the board
+   * that is actually that thing.
    */
   const [kind, setKind] = useState<PostKind | null>(route.params?.type ?? null);
   /**
@@ -289,16 +286,12 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   /**
    * The question, asked first.
    *
-   * Three cards, one of which is the thing you already had in mind. Choosing a
-   * Vibe or a Moment hands over to the screen that has always been that, rather
-   * than pretending a Flow with a different label on it is one.
+   * Two cards, one of which is the thing you already had in mind. Choosing a
+   * Moment hands over to the screen that has always been that, rather than
+   * pretending a Flow with a different label on it is one.
    */
   if (!kind) {
     const choose = (next: PostKind) => {
-      if (next === 'vibe') {
-        navigation.replace('VibeComposer');
-        return;
-      }
       if (next === 'moment') {
         navigation.replace('MomentComposer');
         return;
@@ -383,7 +376,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       >
         <IconButton icon="close" label="Cancel" onPress={() => navigation.goBack()} />
         <Txt variant="title" style={{ flex: 1 }} accessibilityRole="header">
-          {kind === 'moment' ? 'New Moment' : kind === 'vibe' ? 'New Vibe' : 'New Flow'}
+          {kind === 'moment' ? 'New Moment' : 'New Flow'}
         </Txt>
         {/* Back to the question. Changing your mind about what this is should
             cost one tap, not a discarded draft. */}
@@ -573,7 +566,7 @@ function ComposerLeft({
   setBody: React.Dispatch<React.SetStateAction<string>>;
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
-  postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
+  postType: 'Flows' | 'Stories' | 'Moments';
   scheduleOn: boolean;
   setScheduleOn: (v: boolean) => void;
   maxBody: number;
@@ -791,7 +784,7 @@ function ComposerRight({
 }: {
   primaryMedia: MediaItem | undefined;
   media: MediaItem[];
-  postType: 'Flows' | 'Stories' | 'Moments' | 'Vibes';
+  postType: 'Flows' | 'Stories' | 'Moments';
   audience: 'everyone' | 'connections';
   body: string;
   maxBody: number;

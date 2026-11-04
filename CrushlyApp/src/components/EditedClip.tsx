@@ -75,7 +75,7 @@ function useNativeRatio(player: VideoPlayer | null, alreadyKnown: boolean): numb
  * Drawing the look rather than baking it is what makes an edit survive at all on
  * a phone with no encoder. What you saw while editing is what everybody sees.
  *
- * Used by Flows, Moments, Circles and Vibes alike.
+ * Used by Flows, Moments and Circles alike.
  *
  * Two things it now owns that it did not before:
  *

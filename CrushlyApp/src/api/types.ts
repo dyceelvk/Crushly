@@ -1,3 +1,5 @@
+import type { LiveEdit } from '../lib/videoEdit';
+
 export type Photo = { id: number; url: string };
 
 export type Intention = 'dating' | 'relationship' | 'friends' | 'casual' | 'new_connections' | 'not_sure';
@@ -417,37 +419,10 @@ export type BlockedMember = { id: number; name: string; photo: string | null; bl
 
 export type CrushResult = { mutual: boolean; isNew: boolean; profile: Profile | null };
 
-/* ------------------------------------------------------------------ vibes */
-
-/** The author of a Vibe, as the feed returns them. */
-import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
-
-export type VibeAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
-
-/**
- * A Vibe: a short clip with a fortnight to live.
- *
- * `seen` is whether you have opened it; `viewCount` is only ever filled in for
- * your own, because who watched yours is yours to know and nobody else's.
- */
-export type Vibe = {
-  id: number;
-  body: string;
-  mediaUrl: string;
-  coverUrl: string | null;
-  durationMs: number | null;
-  audience: 'connections' | 'everyone';
-  /** The editor's recipe, or null when the clip is untouched. */
-  edit: VideoEdit | null;
-  createdAt: number;
-  expiresAt: number;
-  author: VibeAuthor;
-  mine: boolean;
-  seen: boolean;
-  viewCount: number | null;
-};
-
 /* ----------------------------------------------------------------- search */
+
+/** The author a search result carries — the same shape a feed row uses. */
+export type SearchAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
 
 export type SearchPost = {
   id: number;
@@ -455,18 +430,7 @@ export type SearchPost = {
   mediaUrl: string | null;
   audience: 'connections' | 'everyone';
   createdAt: number;
-  author: VibeAuthor;
-};
-
-export type SearchVibe = {
-  id: number;
-  body: string;
-  mediaUrl: string;
-  coverUrl: string | null;
-  durationMs: number | null;
-  createdAt: number;
-  expiresAt: number;
-  author: VibeAuthor;
+  author: SearchAuthor;
 };
 
 export type SearchMoment = {
@@ -475,14 +439,13 @@ export type SearchMoment = {
   body: string;
   mediaUrl: string | null;
   createdAt: number;
-  author: VibeAuthor;
+  author: SearchAuthor;
 };
 
 /** What the search box returns: members, and what they have shared. */
 export type SearchResults = {
   members: Profile[];
   posts: SearchPost[];
-  vibes: SearchVibe[];
   moments: SearchMoment[];
 };
 

@@ -7,12 +7,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Txt } from '../../components/Txt';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
-import { VibesRow } from './VibesRow';
 import { MomentsRow } from './MomentsRow';
 import { PostCard } from '../../components/feed/PostCard';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { keys, useBadges, useCrush, usePublicFlow, useVibes } from '../../api/hooks';
+import { keys, useBadges, useCrush, usePublicFlow } from '../../api/hooks';
 import type { Profile } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
@@ -59,7 +58,7 @@ export function useCrushFlow() {
  * on purpose: you can still Crush somebody, but you do it from their Space,
  * because you want to, not because a grid put them in front of you.
  *
- * What is here is content — Vibes, Moments, and the posts people chose to make
+ * What is here is content — Moments, and the posts people chose to make
  * public — and everything in it has already been through the same audience,
  * block and Circle rules as the feed it came from.
  */
@@ -80,20 +79,13 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const { data: badges } = useBadges(true);
   const feed = usePublicFlow();
-  // The Vibes row lives inside this scroller, so whether it has anything to show
-  // is decided here — otherwise the row paints its own empty state and, when
-  // there is nothing, so does the feed underneath it: two empty states stacked,
-  // one of them telling you to post a clip you may already have posted.
-  const vibes = useVibes();
 
   const posts = feed.data ?? [];
   // Second person only where the list really is yours-and-others. Here every
   // card is somebody's post in a shared list, so "You" would be wrong — and on a
   // public screen it read as though the app had merged you into the crowd.
-  const nothingVibed = !vibes.isLoading && !vibes.data?.length;
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: keys.vibes });
     qc.invalidateQueries({ queryKey: keys.moments });
     qc.invalidateQueries({ queryKey: keys.publicFlow });
   };
@@ -129,7 +121,7 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
                 Discover
               </Txt>
               <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-                Vibes, Moments and public posts from people you have not met.
+                Moments and public posts from people you have not met.
               </Txt>
             </View>
             <IconButton
@@ -141,9 +133,6 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
           </View>
         )}
 
-        {/* Vibes keeps its own heading (it owns the "share a clip" tile); the
-            feed below is what gets quiet when there is nothing to watch. */}
-        <VibesRow />
         <MomentsRow />
 
         <View
@@ -180,11 +169,7 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
           <EmptyState
             icon="chatbubbles-outline"
             title="Nothing public yet"
-            message={
-              nothingVibed
-                ? 'When somebody shares a post or a Vibe with Everyone, it shows up here.'
-                : 'Nobody has shared a post publicly yet. The Vibes above are what people are sharing right now.'
-            }
+            message="When somebody shares a post with Everyone, it shows up here."
           />
         )}
       </ScrollView>

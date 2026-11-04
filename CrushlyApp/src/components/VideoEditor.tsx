@@ -116,7 +116,7 @@ export type VideoEditorResult = { uri: string; edit: VideoEdit | null };
  * gap between the preview and what gets posted.
  *
  * The tools are the same set everywhere. Only the ceiling moves: a Moment is
- * capped at fifteen seconds, a Vibe at thirty, a Flow or a Circle at a minute.
+ * capped at fifteen seconds, a Flow or a Circle at a minute.
  */
 export function VideoEditorModal({
   visible,

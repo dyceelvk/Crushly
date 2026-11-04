@@ -63,7 +63,7 @@ test('trimming drags overlays back inside the window', () => {
       },
     ],
   };
-  const trimmed = setTrim(e, 0, 10, 'vibe');
+  const trimmed = setTrim(e, 0, 10, 'moment');
   const c = trimmed.captions[0];
   assert.ok(c.end <= 10.001, `caption end ${c.end} should follow the trim`);
 });
@@ -105,7 +105,7 @@ test('the split keeps words live and sends the rest to the encoder', () => {
       { id: 's1', glyph: '🔥', x: 0.3, y: 0.3, start: 0, end: 5, scale: 1, rotation: 0 },
     ],
   };
-  const { baked, live } = splitForUpload(e, 'vibe');
+  const { baked, live } = splitForUpload(e, 'moment');
   assert.equal(baked.trimStart, 5);
   assert.equal(baked.speed, 1.5);
   assert.equal((baked as { captions?: unknown }).captions, undefined, 'captions must not be baked');

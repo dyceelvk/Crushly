@@ -21,9 +21,8 @@ const TILE_H = 138;
 /**
  * Moments, as one row of Discover.
  *
- * Moments last a day and Vibes last a fortnight, so they sit as different
- * sections rather than one another's tabs: same people, different promises
- * about how long the thing stays. Everything here is already filtered by the
+ * A Moment lasts a day, so the row is about right now rather than about
+ * whatever somebody once said. Everything here is already filtered by the
  * database — a Moment you may not see never reaches this screen.
  */
 export function MomentsRow() {

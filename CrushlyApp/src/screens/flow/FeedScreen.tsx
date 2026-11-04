@@ -303,7 +303,7 @@ export function FeedScreen() {
  * actually answer, so tapping it is never a dead end.
  */
 function suggestedQuery(post: Post | undefined): string {
-  if (!post) return 'people, Circles, Vibes';
+  if (!post) return 'people, Circles, Moments';
   const tag = post.body.match(/#[\p{L}\p{N}_]+/u);
   if (tag) return tag[0];
   const words = post.body.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);

@@ -32,7 +32,7 @@ import type { RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-type Tab = 'top' | 'people' | 'flows' | 'vibes' | 'moments';
+type Tab = 'top' | 'people' | 'flows' | 'moments';
 
 /** How many results of each kind "Top" shows before it offers the full list. */
 const PREVIEW = 3;
@@ -41,7 +41,7 @@ const PREVIEW = 3;
  * Search — members, and what they have shared.
  *
  * It finds people by name, handle, city and interests, and it finds words
- * inside Flows, Vibes and Moments. It never finds more than that: everything
+ * inside Flows and Moments. It never finds more than that: everything
  * in these results has already been through the same rules as the feed it came
  * from, so the search box is not a way round an audience, a Circle, or a block.
  *
@@ -54,7 +54,7 @@ const PREVIEW = 3;
  *   A tab per kind of result, with Top first — Top is a little of everything,
  *   which is what you want before you know what you are looking for. Each tab
  *   carries its own count, so you can see that there were four people and one
- *   Vibe before you spend a tap finding out.
+ *   Flow before you spend a tap finding out.
  *
  *   Nothing to search yet shows what you searched for last, not an advert for
  *   the search box.
@@ -118,12 +118,11 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
     () => ({
       people: data?.members.length ?? 0,
       flows: data?.posts.length ?? 0,
-      vibes: data?.vibes.length ?? 0,
       moments: data?.moments.length ?? 0,
     }),
     [data],
   );
-  const total = counts.people + counts.flows + counts.vibes + counts.moments;
+  const total = counts.people + counts.flows + counts.moments;
   const asked = words.length >= 2;
 
   // Switching tabs is a change of content, not a new screen: the tab row stays
@@ -133,7 +132,6 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
     { id: 'top', label: 'Top', count: total },
     { id: 'people', label: 'People', count: counts.people },
     { id: 'flows', label: 'Flows', count: counts.flows },
-    { id: 'vibes', label: 'Vibes', count: counts.vibes },
     { id: 'moments', label: 'Moments', count: counts.moments },
   ];
 
@@ -172,22 +170,6 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
              post you found by its words was unreachable from the one screen
              that found it. */
           onPress={go(() => navigation.navigate('PostViewer', { postId: post.id }))}
-        />
-      </Rise>
-    ));
-
-  const vibeList = (limit?: number) =>
-    (data?.vibes ?? []).slice(0, limit ?? undefined).map((v, i) => (
-      <Rise key={`v-${v.id}`} delay={stagger(i)}>
-        <TextRow
-          kind="Vibe"
-          icon="play-circle-outline"
-          body={v.body}
-          author={v.author?.name ?? 'Member'}
-          verified={!!v.author?.verified}
-          photo={v.author?.photo ?? null}
-          when={v.createdAt}
-          onPress={go(() => navigation.navigate('VibeViewer', { id: v.id }))}
         />
       </Rise>
     ));
@@ -342,7 +324,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             <EmptyState
               icon="search-outline"
               title="Search Crushly"
-              message="Type a name, a handle, a city or an interest — or a word somebody shared in a Flow, a Vibe or a Moment. Start with @ for a person, # for a tag."
+              message="Type a name, a handle, a city or an interest — or a word somebody shared in a Flow or a Moment. Start with @ for a person, # for a tag."
             />
           </>
         ) : results.isLoading ? (
@@ -382,11 +364,6 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
                       {flowList(PREVIEW)}
                     </Section>
                   ) : null}
-                  {counts.vibes ? (
-                    <Section title="Vibes" more={counts.vibes > PREVIEW ? counts.vibes : 0} onMore={() => setTab('vibes')}>
-                      {vibeList(PREVIEW)}
-                    </Section>
-                  ) : null}
                   {counts.moments ? (
                     <Section
                       title="Moments"
@@ -400,7 +377,6 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
               ) : null}
               {tab === 'people' ? <Section title="People">{peopleList()}</Section> : null}
               {tab === 'flows' ? <Section title="Flows">{flowList()}</Section> : null}
-              {tab === 'vibes' ? <Section title="Vibes">{vibeList()}</Section> : null}
               {tab === 'moments' ? <Section title="Moments">{momentList()}</Section> : null}
             </View>
           </>

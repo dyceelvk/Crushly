@@ -38,7 +38,7 @@ import {
   trimSegment,
 } from './timeline';
 
-export type EditCategory = 'post' | 'vibe' | 'moment' | 'circle';
+export type EditCategory = 'post' | 'moment' | 'circle';
 
 export type FilterId =
   | 'none'
@@ -178,12 +178,6 @@ export const EDIT_LIMITS: Record<EditCategory, { maxSeconds: number; maxCaptions
     maxStickers: 6,
     note: 'A Moment clip can be up to one minute, and disappears tomorrow.',
   },
-  vibe: {
-    maxSeconds: 30,
-    maxCaptions: 8,
-    maxStickers: 12,
-    note: 'A Vibe is a short clip. Thirty seconds, then it lives two weeks.',
-  },
   post: {
     maxSeconds: 60,
     maxCaptions: 12,
@@ -200,7 +194,6 @@ export const EDIT_LIMITS: Record<EditCategory, { maxSeconds: number; maxCaptions
 
 export const CATEGORY_LABEL: Record<EditCategory, string> = {
   moment: 'Moment',
-  vibe: 'Vibe',
   post: 'Flow',
   circle: 'Circle',
 };

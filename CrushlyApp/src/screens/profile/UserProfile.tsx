@@ -18,7 +18,7 @@ import { Pill, VerifiedBadge } from '../../components/Badges';
 import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useOpenConversation, useSpacePosts, useSpaceVibes, useUndoCrush, useUser } from '../../api/hooks';
+import { useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
 import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
@@ -26,7 +26,7 @@ import { useCrushFlow } from '../discover/Discover';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
 import { PostCard } from '../../components/feed/PostCard';
-import type { Post, Vibe } from '../../api/types';
+import type { Post } from '../../api/types';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
 import { timeAgo } from '../../lib/format';
@@ -78,18 +78,17 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   const letGo = useLetGo();
   const [index, setIndex] = useState(0);
   /**
-   * A Space is three things now: what they've posted, the Vibes still running,
-   * and their Moments. It used to be one long page of facts about a person with
-   * nothing they had actually made on it.
+   * A Space is what they have made and where they belong: their Flows, their
+   * Moments, and the Circles they share with you. It used to be one long page of
+   * facts about a person with nothing they had actually made on it.
    */
-  // Flow, Vibes, Moments, Circles — everything somebody has made or joined, in
-  // the vocabulary the product uses everywhere else. It used to say "Posts",
-  // which is a hashtag's word for a Flow.
-  const [tab, setTab] = useState<'flow' | 'vibes' | 'moments' | 'circles'>('flow');
+  // Flow, Moments, Circles — everything somebody has made or joined, in the
+  // vocabulary the product uses everywhere else. It used to say "Posts", which
+  // is a hashtag's word for a Flow.
+  const [tab, setTab] = useState<'flow' | 'moments' | 'circles'>('flow');
   // The Circles this member made public, and the ones you share with them.
   const circles = useMemberCircles(p?.id ?? null);
   const posts = useSpacePosts(id);
-  const vibes = useSpaceVibes(id);
 
   const heroW = Math.min(width, contentWidth);
   // A cover, not a portrait: wide enough to read as the backdrop of the Space,
@@ -365,12 +364,12 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           </View>
 
           {/* One tab row, not two. A Segmented sat above this SwipeTabs with the
-              same four labels and the same state — the same control drawn twice,
-              one of them not swipable — which is how the row above the posts read
-              as a rendering bug. The SwipeTabs is the row; Picks is its second tab. */}
+              same labels and the same state — the same control drawn twice, one
+              of them not swipable — which is how the row above the posts read as
+              a rendering bug. The SwipeTabs is the row. */}
           <View style={{ marginTop: space.lg }}>
             <SwipeTabs
-              options={['flow', 'vibes', 'moments', 'circles'] as const}
+              options={['flow', 'moments', 'circles'] as const}
               value={tab}
               onChange={setTab}
               width={contentWidth - gutter * 2}
@@ -382,17 +381,6 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                 failed={posts.isError}
                 name={p.name}
                 onRetry={() => void posts.refetch()}
-              />
-            ) : null}
-            {tab === 'vibes' ? (
-              <SpaceVibes
-                items={vibes.data?.items ?? []}
-                loading={vibes.isLoading}
-                failed={vibes.isError}
-                name={p.name}
-                onOpen={(id) => navigation.navigate('VibeViewer', { id })}
-                onRetry={() => void vibes.refetch()}
-                gutter={gutter}
               />
             ) : null}
             {tab === 'moments' ? (
@@ -506,79 +494,6 @@ function SpacePosts({
               "You" would be a lie about who wrote them. */}
           <PostCard post={post} secondPerson={false} active={false} />
         </View>
-      ))}
-    </View>
-  );
-}
-
-/** The Vibes they still have running, as tiles — the shape a clip wants. */
-function SpaceVibes({
-  items,
-  loading,
-  failed,
-  name,
-  onOpen,
-  onRetry,
-  gutter,
-}: {
-  items: Vibe[];
-  loading: boolean;
-  failed: boolean;
-  name: string;
-  onOpen: (id: number) => void;
-  onRetry: () => void;
-  gutter: number;
-}) {
-  const { colors } = useTheme();
-  const { contentWidth } = useLayout();
-  const cols = 3;
-  const gap = 6;
-  const w = (contentWidth - gutter * 2 - gap * (cols - 1)) / cols;
-  if (loading) {
-    return (
-      <View style={{ flexDirection: 'row', gap }}>
-        {Array.from({ length: cols }).map((_, i) => (
-          <Skeleton key={i} style={{ width: w, height: w * 1.5, borderRadius: radius.md }} />
-        ))}
-      </View>
-    );
-  }
-  if (failed) {
-    return <EmptyState icon="cloud-offline-outline" title="Couldn’t load their Vibes" message="Try again in a moment." action={{ label: 'Try again', onPress: onRetry }} />;
-  }
-  if (!items.length) {
-    return <EmptyState icon="videocam-outline" title="No Vibes running" message={`${name} has no clip up right now. Vibes last a day.`} />;
-  }
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
-      {items.map((v) => (
-        <Pressable
-          key={v.id}
-          onPress={() => onOpen(v.id)}
-          accessibilityRole="button"
-          accessibilityLabel={`Play ${name}’s Vibe${v.body ? `: ${v.body}` : ''}`}
-          style={({ pressed }) => ({ width: w, opacity: pressed ? 0.85 : 1 })}
-        >
-          <View style={{ width: w, height: w * 1.5, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.card }}>
-            {v.coverUrl ? (
-              <Photo uri={v.coverUrl} style={{ width: '100%', height: '100%' }} alt="" />
-            ) : (
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="videocam-outline" size={20} color={colors.textMuted} />
-              </View>
-            )}
-            <View style={{ position: 'absolute', right: 6, bottom: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="play" size={11} color="#fff" />
-            </View>
-            {v.body ? (
-              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 6 }}>
-                <Txt variant="caption" color="#FFFFFF" numberOfLines={2}>
-                  {v.body}
-                </Txt>
-              </View>
-            ) : null}
-          </View>
-        </Pressable>
       ))}
     </View>
   );

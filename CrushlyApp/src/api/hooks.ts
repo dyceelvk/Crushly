@@ -29,8 +29,6 @@ export const keys = {
   postComments: (id: number) => ['post-comments', id] as const,
   closeOnes: ['close-ones'] as const,
   spacePosts: (id: number) => ['space-posts', id] as const,
-  spaceVibes: (id: number) => ['space-vibes', id] as const,
-  vibes: ['vibes'] as const,
   publicFlow: ['public-flow'] as const,
   update: ['app-update'] as const,
   search: (q: string) => ['search', q] as const,
@@ -66,9 +64,6 @@ export const useConversation = (id: number) =>
 
 export const useMoments = () =>
   useQuery({ queryKey: keys.moments, queryFn: () => service.momentsFeed(), staleTime: 20_000 });
-
-export const useVibes = () =>
-  useQuery({ queryKey: keys.vibes, queryFn: () => service.vibesFeed(), staleTime: 20_000 });
 
 /** Debounced by the caller: only queries once the text is worth asking about. */
 export const useSearch = (query: string) =>
@@ -167,15 +162,6 @@ export const useSpacePosts = (memberId: number) =>
   useQuery({
     queryKey: keys.spacePosts(memberId),
     queryFn: () => service.spacePosts(memberId),
-    enabled: Number.isFinite(memberId),
-    staleTime: 20_000,
-  });
-
-/** The Vibes this member still has running. */
-export const useSpaceVibes = (memberId: number) =>
-  useQuery({
-    queryKey: keys.spaceVibes(memberId),
-    queryFn: () => service.spaceVibes(memberId),
     enabled: Number.isFinite(memberId),
     staleTime: 20_000,
   });
@@ -1059,21 +1045,3 @@ export function useChat(conversationId: number) {
 }
 
 export type ChatDraft = Parameters<ReturnType<typeof useChat>['send']>[0];
-
-/** Watching someone's Vibe. Never counted for your own. */
-export const useViewVibe = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => service.viewVibe(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.vibes }),
-  });
-};
-
-/** Posts a Vibe. */
-export const useCreateVibe = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: Parameters<typeof service.createVibe>[0]) => service.createVibe(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.vibes }),
-  });
-};

@@ -28,13 +28,12 @@ export interface Env {
 }
 
 /**
- * How long each kind of media is kept, in days. A Moment is gone tomorrow; a
- * Vibe lasts a fortnight. Both are enforced by the bucket itself rather than
- * by a job of ours, so they hold even if nothing runs.
+ * How long each kind of media is kept, in days. A Moment is gone tomorrow, and
+ * that is enforced by the bucket itself rather than by a job of ours, so it
+ * holds even if nothing runs.
  */
 const LIFECYCLE = {
   moments: { hideAfterDays: 1, deleteAfterDays: 1 },
-  vibes: { hideAfterDays: 14, deleteAfterDays: 1 },
 } as const;
 
 const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account';
@@ -152,7 +151,6 @@ type B2Auth = {
   bucketType: string;
   accountId: string;
   lifecycle: Lifecycle | null;
-  vibesLifecycle: Lifecycle | null;
   rules: Lifecycle[];
   exp: number;
 };
@@ -233,7 +231,6 @@ async function authorize(env: Env): Promise<B2Auth> {
   // happy with `moments` as `moments/` and the two must not look different here.
   const ruleFor = (prefix: string) => rules.find((r) => r.prefix.replace(/\/+$/, '') === prefix) ?? null;
   const lifecycle = ruleFor('moments');
-  const vibesLifecycle = ruleFor('vibes');
 
   return {
     token: data.authorizationToken,
@@ -243,7 +240,6 @@ async function authorize(env: Env): Promise<B2Auth> {
     bucketType: bucket.bucketType ?? 'unknown',
     accountId: data.accountId,
     lifecycle,
-    vibesLifecycle,
     rules,
     exp: Date.now() + AUTH_TTL_MS,
   };
@@ -345,7 +341,6 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     b2: boolean;
     bucketPrivate: boolean;
     momentsLifecycle: Lifecycle | null;
-    vibesLifecycle: Lifecycle | null;
     lifecycleRules?: Lifecycle[];
     problem?: 'auth' | 'bucket';
     lengths?: { keyId: number; applicationKey: number };
@@ -354,14 +349,13 @@ async function health(env: Env, origin: string | null): Promise<Response> {
     caseMismatch?: boolean;
     listStatus?: number;
     listMessage?: string | null;
-  } = { b2: false, bucketPrivate: false, momentsLifecycle: null, vibesLifecycle: null };
+  } = { b2: false, bucketPrivate: false, momentsLifecycle: null };
   try {
     const auth = await authorize(env);
     storage = {
       b2: true,
       bucketPrivate: auth.bucketType === 'allPrivate',
       momentsLifecycle: auth.lifecycle,
-      vibesLifecycle: auth.vibesLifecycle,
       lifecycleRules: auth.rules,
     };
   } catch (e) {
@@ -416,7 +410,7 @@ async function applyLifecycle(env: Env, origin: string | null): Promise<Response
     const wanted: Record<string, { fileNamePrefix: string; daysFromUploadingToHiding: number; daysFromHidingToDeleting: number }> = {};
     for (const r of auth.rules) {
       const key = r.prefix.replace(/\/+$/, '');
-      if (key === 'moments' || key === 'vibes') continue; // replaced below
+      if (key === 'moments') continue; // replaced below
       wanted[key] = {
         fileNamePrefix: r.prefix,
         daysFromUploadingToHiding: r.hideAfterDays ?? 0,

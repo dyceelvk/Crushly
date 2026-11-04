@@ -32,12 +32,10 @@ import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
 import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
-import { VibeViewerScreen } from '../screens/discover/VibeViewer';
 import { PostViewerScreen } from '../screens/flow/PostViewer';
 import { SavedPostsScreen } from '../screens/flow/SavedPosts';
 import { SoundScreen } from '../screens/flow/SoundScreen';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
-import { VibeComposerScreen } from '../screens/discover/VibeComposer';
 import { VideoTrimScreen } from '../screens/common/VideoTrimScreen';
 import { CreatePostScreen } from '../screens/common/CreatePostScreen';
 import { WebPreviewScreen } from '../screens/common/WebPreview';
@@ -189,7 +187,6 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
         <>
           <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade' }} />
           <Stack.Screen name="WebPreview" component={WebPreviewScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
-          <Stack.Screen name="VibeViewer" component={VibeViewerScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
         <Stack.Screen name="PostViewer" component={PostViewerScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="CrushList" component={CrushesScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
@@ -213,7 +210,6 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Info" component={InfoScreen} />
           <Stack.Group screenOptions={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }}>
             <Stack.Screen name="Filters" component={FiltersScreen} />
-            <Stack.Screen name="VibeComposer" component={VibeComposerScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />
             <Stack.Screen name="VideoTrim" component={VideoTrimScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
             <Stack.Screen name="CreatePost" component={CreatePostScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />

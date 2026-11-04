@@ -6,7 +6,7 @@ import { emptyEdit, type VideoEdit } from './videoEdit';
 
 const SRC = 60;
 
-function plan(over: Partial<VideoEdit> = {}, opts: { music?: string | null; category?: 'post' | 'vibe' | 'moment' | 'circle' } = {}) {
+function plan(over: Partial<VideoEdit> = {}, opts: { music?: string | null; category?: 'post' | 'moment' | 'circle' } = {}) {
   const edit = { ...emptyEdit(SRC), ...over };
   const { captions: _c, stickers: _s, ...baked } = edit;
   return planEncode(baked, {

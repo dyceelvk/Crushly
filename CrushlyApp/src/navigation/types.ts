@@ -43,18 +43,16 @@ export type RootStackParamList = {
   Verification: undefined;
   Plus: { feature?: string } | undefined;
   MomentViewer: { userId: number; mine?: boolean };
-  VibeViewer: { id: number };
   Circles: undefined;
   Circle: { circleId: number };
   Moments: undefined;
   MomentComposer: undefined;
-  VibeComposer: undefined;
-  VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'vibe' | 'moment' | 'circle'; initialEdit?: VideoEdit };
+  VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'moment' | 'circle'; initialEdit?: VideoEdit };
   /** `type` skips the "what are you sharing?" board — used by entry points
    *  that already are one thing, like the Moment button on a Space. */
   CreatePost:
     | {
-        type?: 'flow' | 'vibe' | 'moment';
+        type?: 'flow' | 'moment';
         /** Set when the composer was opened from a sound page. */
         soundId?: number;
         soundLabel?: string;

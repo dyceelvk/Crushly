@@ -12,7 +12,7 @@ import { radius, space } from '../../theme/tokens';
 import { clampEdit, emptyEdit, segmentsOf, type VideoEdit } from '../../lib/videoEdit';
 import type { ScreenProps } from '../../navigation/types';
 
-export type TrimResult = { edit: VideoEdit | null; category: 'post' | 'vibe' | 'moment' | 'circle' };
+export type TrimResult = { edit: VideoEdit | null; category: 'post' | 'moment' | 'circle' };
 
 let pendingTrim: TrimResult | null = null;
 export function setTrimResult(result: TrimResult) {

@@ -64,7 +64,7 @@ export const CIRCLE_THEMES: CircleTheme[] = [
   { slug: 'sapa', label: 'Sapa Diaries', cover: ['#2A2418', '#A08A3E'], icon: 'wallet-outline', naija: true },
   { slug: 'detty-december', label: 'Detty December', cover: ['#101A3A', '#D14E7A'], icon: 'sparkles-outline', naija: true },
   { slug: 'no-wahala', label: 'No Wahala', cover: ['#14261E', '#4E9E7A'], icon: 'hand-left-outline', naija: true },
-  { slug: 'cruise', label: 'Cruise & Vibes', cover: ['#1E1A3A', '#6E5CC7'], icon: 'boat-outline', naija: true },
+  { slug: 'cruise', label: 'Cruise & Sunsets', cover: ['#1E1A3A', '#6E5CC7'], icon: 'boat-outline', naija: true },
   { slug: 'mama-put', label: 'Mama Put Runs', cover: ['#3A2218', '#C77A3E'], icon: 'fast-food-outline', naija: true },
   { slug: 'soft-life', label: 'Soft Life', cover: ['#2A1E3A', '#C77AC7'], icon: 'flower-outline', naija: true },
   { slug: 'street-hustle', label: 'Street Hustle', cover: ['#241E14', '#9E7A3E'], icon: 'bicycle-outline', naija: true },

@@ -14,7 +14,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, Vibe, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
+import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -623,19 +623,14 @@ export async function closeOnes(limit = 50): Promise<{ items: CloseOne[] }> {
 }
 
 /**
- * What one member has posted, and the Vibes they still have running.
+ * What one member has posted.
  *
- * These two RPCs already existed in the database (`space_posts` / `space_vibes`)
- * and nothing on the client had ever called them, so a Space could show who
- * somebody is and never what they had made.
+ * The RPC already existed in the database (`space_posts`) and nothing on the
+ * client had ever called it, so a Space could show who somebody is and never
+ * what they had made.
  */
 export async function spacePosts(authorId: number, limit = 20, after: number | null = null): Promise<{ items: Post[] }> {
   const page = await rpc<{ items: Post[] }>('space_posts', { p_author_id: authorId, p_limit: limit, p_after: after });
-  return { items: page?.items ?? [] };
-}
-
-export async function spaceVibes(authorId: number, limit = 30, after: number | null = null): Promise<{ items: Vibe[] }> {
-  const page = await rpc<{ items: Vibe[] }>('space_vibes', { p_author_id: authorId, p_limit: limit, p_after: after });
   return { items: page?.items ?? [] };
 }
 
@@ -1158,7 +1153,7 @@ export async function createMoment(input: {
     }
     const type = (input.videoMime || 'video/mp4').toLowerCase();
     const id = await meId();
-    // Same reason as a Vibe: extensionFor() maps mp4 to m4a, which is right for
+    // extensionFor() maps mp4 to m4a, which is right for
     // a voice note and wrong for a clip.
     mediaPath = await uploadMediaFile(
       'media',
@@ -1239,66 +1234,6 @@ export const INTERESTS: string[] = catalogInterests;
 export const LANGUAGES: string[] = catalogLanguages;
 export const RELATIONSHIP_INTENTIONS: string[] = catalogRelationshipIntentions;
 
-/* ------------------------------------------------------------------ vibes */
-
-export async function vibesFeed(): Promise<Vibe[]> {
-  const res = await rpc<{ items: Vibe[] }>('vibes_feed', { p_limit: 60 });
-  return res?.items ?? [];
-}
-
-/** Marks one watched. Only ever counted for somebody else's Vibe. */
-export async function viewVibe(id: number): Promise<void> {
-  await rpc<boolean>('view_vibe', { p_vibe_id: id });
-}
-
-export async function deleteVibe(id: number): Promise<void> {
-  await rpc<boolean>('delete_vibe', { p_vibe_id: id });
-}
-
-export async function createVibe(input: {
-  body: string;
-  audience: 'connections' | 'everyone';
-  videoUri: string;
-  videoMime?: string;
-  coverUri?: string | null;
-  coverMime?: string | null;
-  durationMs?: number | null;
-  edit?: LiveEdit | null;
-}): Promise<Vibe> {
-  const body = str(input.body, 'Caption', { max: 200 });
-  if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');
-  const id = await meId();
-
-  // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
-  // for a clip, so the container is chosen here instead.
-  const mime = (input.videoMime || 'video/mp4').toLowerCase();
-  const media = await uploadMediaFile(
-    'media',
-    `vibes/${id}/${Date.now()}.${mime.includes('webm') ? 'webm' : 'mp4'}`,
-    input.videoUri,
-    mime,
-  );
-
-  let cover: string | null = null;
-  if (input.coverUri) {
-    const cMime = (input.coverMime || 'image/jpeg').toLowerCase();
-    cover = await uploadMediaFile(
-      'media',
-      `vibes/${id}/${Date.now()}-cover.${cMime.includes('png') ? 'png' : 'jpg'}`,
-      input.coverUri,
-      cMime,
-    );
-  }
-
-  return rpc<Vibe>('create_vibe', {
-    p_body: body,
-    p_media_url: media,
-    p_cover_url: cover,
-    p_audience: input.audience,
-    p_duration_ms: input.durationMs ?? null,
-  });
-}
-
 /* ----------------------------------------------------------------- search */
 
 /** People whose handle or name starts with what is being typed after `@`. */
@@ -1311,10 +1246,10 @@ export async function tagSuggest(query: string): Promise<{ tag: string; uses: nu
   return rpc('tag_suggest', { p_query: String(query ?? '').slice(0, 30) });
 }
 
-/** Members you can already see, plus the Flows, Vibes and Moments you may see. */
+/** Members you can already see, plus the Flows and Moments you may see. */
 export async function searchAll(query: string): Promise<SearchResults> {
   const q = String(query ?? '').trim();
-  if (q.length < 2) return { members: [], posts: [], vibes: [], moments: [] };
+  if (q.length < 2) return { members: [], posts: [], moments: [] };
   return rpc<SearchResults>('search_all', { p_query: q, p_limit: 8 });
 }
 
