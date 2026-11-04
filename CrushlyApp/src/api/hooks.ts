@@ -45,8 +45,8 @@ export const useMe = (enabled = true) =>
 export const useDiscover = () =>
   useQuery({ queryKey: keys.discover, queryFn: () => service.discover(), staleTime: 60_000 });
 
-export const useUser = (id: number) =>
-  useQuery({ queryKey: keys.user(id), queryFn: () => service.loadProfile(id), staleTime: 30_000 });
+export const useUser = (id: number, enabled = true) =>
+  useQuery({ queryKey: keys.user(id), queryFn: () => service.loadProfile(id), enabled: enabled && Number.isFinite(id) && id > 0, staleTime: 30_000 });
 
 export const useCrushes = () =>
   useQuery({ queryKey: keys.crushes, queryFn: () => service.crushes(), staleTime: 15_000 });
@@ -124,10 +124,15 @@ export const useNotifications = () =>
 export const useBlocks = () =>
   useQuery({ queryKey: keys.blocks, queryFn: () => service.listBlocks() });
 
-export const useMyCircles = () =>
+/**
+ * `enabled` exists for the Space: a visitor's page shows *their* Circles, not
+ * yours, and the two are different requests rather than two shapes of one.
+ */
+export const useMyCircles = (enabled = true) =>
   useQuery({
     queryKey: keys.circles,
     queryFn: () => service.myCircles(),
+    enabled,
     staleTime: 10_000,
     refetchInterval: 30_000,
   });
@@ -175,11 +180,11 @@ export const useCircleMessages = (circleId: number) =>
   });
 
 /** What this member has posted. The RPC has always existed; nothing called it. */
-export const useSpacePosts = (memberId: number) =>
+export const useSpacePosts = (memberId: number, enabled = true) =>
   useQuery({
     queryKey: keys.spacePosts(memberId),
     queryFn: () => service.spacePosts(memberId),
-    enabled: Number.isFinite(memberId),
+    enabled: enabled && Number.isFinite(memberId) && memberId > 0,
     staleTime: 20_000,
   });
 

@@ -31,7 +31,65 @@ import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
 import { timeAgo } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
-import type { ScreenProps } from '../../navigation/types';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { ScreenProps, RootStackParamList } from '../../navigation/types';
+import { useMe, useMoments, useMyCircles } from '../../api/hooks';
+import type { Me } from '../../api/types';
+import { Group, ListRow } from '../../components/ListRow';
+
+/**
+ * A visitor's Space, and the owner's, from one component.
+ *
+ * The owner's tab is the same page with the same layout; `mine` is the only
+ * thing that differs.
+ */
+export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfile'>) {
+  return <SpaceScreen memberId={route.params.id} onBack={() => navigation.goBack()} />;
+}
+
+
+/**
+ * Your own profile, in the shape a Space is drawn from.
+ *
+ * `Me` carries your settings and your completion; `FullProfile` carries what a
+ * page needs. Rather than teach every part of the layout two shapes, the owner's
+ * half is folded into the visitor's — which is what makes it the same page
+ * instead of two that happen to look alike.
+ *
+ * The things that only mean something between two people (a Crush, whether you
+ * may message yourself, a distance to yourself) are stated as absent, not faked.
+ */
+function asFullProfile(me: Me, moments: MomentSummary[]): FullProfile {
+  const pr = me.profile;
+  return {
+    id: me.id,
+    name: pr.name,
+    username: pr.username || null,
+    age: pr.age,
+    pronouns: pr.pronouns || null,
+    city: pr.city || null,
+    verified: me.verification.status === 'verified',
+    badgeTier: me.verification.status === 'verified' ? 'verified' : 'none',
+    keepsYou: false,
+    distance: null,
+    online: null,
+    activity: null,
+    bio: pr.bio,
+    intentions: pr.intentions,
+    relationshipIntention: pr.relationshipIntention || null,
+    interests: pr.interests,
+    sharedInterests: [],
+    photos: pr.photos,
+    crush: { sent: false, sentDeep: false, received: false, receivedDeep: false, note: null, mutual: false },
+    canMessage: false,
+    acceptsCrushes: true,
+    languages: pr.languages,
+    lifestyle: pr.lifestyle,
+    messageBlockReason: null,
+    moments,
+  };
+}
 
 /** Diameter of the round face that sits on the cover. */
 const FACE = 84;
@@ -62,41 +120,80 @@ function Fact({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; la
   );
 }
 
-export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfile'>) {
-  const { id } = route.params;
+/**
+ * The Space.
+ *
+ * One page and one layout, for two readers: the owner looking at themselves,
+ * and somebody looking at them. The brief asked for the *same component*, and
+ * this is that: every difference between the two is a boolean, and the
+ * owner-only controls — Edit, the gear, the setup rows, Picked — are simply not
+ * rendered for a visitor. Nothing about the shape of the page changes, which is
+ * the point: you should be able to see your Space the way everybody else does,
+ * with your controls sitting on top of it rather than in a second design.
+ *
+ * It also means an edit shows up immediately: both readers draw from the same
+ * queries, and `useMe` is the one the editor invalidates on save.
+ */
+export function SpaceScreen({
+  memberId,
+  mine = false,
+  onBack,
+}: {
+  memberId?: number;
+  mine?: boolean;
+  onBack?: () => void;
+}) {
+  const id = memberId ?? 0;
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width, contentWidth, gutter } = useLayout();
   const toast = useToast();
-  const { data: p, isLoading, isError, error, refetch } = useUser(id);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  // One query per reader, never both. `enabled` rather than a conditional hook,
+  // so the ordering of hooks is the same on both paths.
+  const meQ = useMe(mine);
+  const otherQ = useUser(id, !mine);
+  const query = mine ? meQ : otherQ;
+
+  const moments = useMoments();
   const { run: crushOn, pendingId } = useCrushFlow();
   const undo = useUndoCrush();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
-  const keep = useKeepState(id);
+  const keep = useKeepState(id, !mine);
   const keepClose = useKeepClose();
   const letGo = useLetGo();
   const [index, setIndex] = useState(0);
+
   /**
    * A Space is what they have made and where they belong: their Flows, their
-   * Moments, and the Circles they share with you. It used to be one long page of
-   * facts about a person with nothing they had actually made on it.
+   * Moments, and the Circles they share with you.
    */
-  // Flow, Moments, Circles — everything somebody has made or joined, in the
-  // vocabulary the product uses everywhere else. It used to say "Posts", which
-  // is a hashtag's word for a Flow.
   const [tab, setTab] = useState<'flow' | 'moments' | 'circles'>('flow');
-  // The Circles this member made public, and the ones you share with them.
-  const circles = useMemberCircles(p?.id ?? null);
-  const posts = useSpacePosts(id);
+
+  // Their Circles, or yours. Same page, same component.
+  const mineCircles = useMyCircles(mine);
+  const theirCircles = useMemberCircles(mine ? null : id || null);
+  // The same RPC in both modes: `space_posts` already answers for your own id,
+  // so an owner's Flows and a visitor's are the same list from the same call.
+  const spaceId = mine ? (meQ.data?.id ?? 0) : id;
+  const posts = useSpacePosts(spaceId, spaceId > 0);
+
+  const p: FullProfile | null = mine
+    ? meQ.data
+      ? asFullProfile(meQ.data, moments.data?.mine.moments ?? [])
+      : null
+    : otherQ.data ?? null;
 
   const heroW = Math.min(width, contentWidth);
   // A cover, not a portrait: wide enough to read as the backdrop of the Space,
   // short enough that the face, the name and the tabs are all on the first
   // screen without scrolling.
   const heroH = Math.min(heroW * 0.98, 460);
+  const goBack = onBack ?? (navigation.canGoBack() ? () => navigation.goBack() : undefined);
 
-  if (isLoading) {
+  if (query.isLoading && !p) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <Skeleton style={{ width: '100%', height: heroH, borderRadius: 0 }} />
@@ -108,16 +205,17 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
       </View>
     );
   }
-  if (isError || !p) {
+  if (query.isError || !p) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top, paddingHorizontal: gutter }}>
-        <IconButton icon="chevron-back" label="Go back" onPress={() => navigation.goBack()} style={{ marginTop: space.sm }} />
-        <ErrorState error={error} message="This Space isn’t available." onRetry={refetch} />
+        {goBack ? <IconButton icon="chevron-back" label="Go back" onPress={goBack} style={{ marginTop: space.sm }} /> : null}
+        <ErrorState error={query.error} message="This Space isn’t available." onRetry={query.refetch} />
       </View>
     );
   }
 
-  const member = { id: p.id, name: p.name, age: p.age, connected: p.crush.mutual, context: 'profile', onGone: () => navigation.goBack() };
+  const member = { id: p.id, name: p.name, age: p.age, connected: p.crush.mutual, context: 'profile', onGone: () => (goBack ? goBack() : undefined) };
+
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / heroW);
@@ -176,13 +274,25 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           />
           <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.75, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} pointerEvents="none" />
           <View style={{ position: 'absolute', top: insets.top + space.sm, left: gutter, right: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <IconButton icon="chevron-back" variant="glass" label="Go back" onPress={() => navigation.goBack()} />
+            {/* The same corner, whoever is reading. A visitor gets the way back;
+                the owner gets the gear, because the Space is the top of the app
+                for them and Settings has to live somewhere they can reach it
+                without a drawer. Neither ever sees both. */}
+            {mine ? (
+              <IconButton icon="settings-outline" variant="glass" label="Settings" onPress={() => navigation.navigate('Settings')} />
+            ) : goBack ? (
+              <IconButton icon="chevron-back" variant="glass" label="Go back" onPress={goBack} />
+            ) : null}
             <View style={{ flex: 1, flexDirection: 'row', gap: 4, justifyContent: 'center' }} accessibilityElementsHidden>
               {p.photos.length > 1
                 ? p.photos.map((ph, i) => <View key={ph.id} style={{ flex: 1, maxWidth: 40, height: 3, borderRadius: 2, backgroundColor: i === index ? '#fff' : 'rgba(255,255,255,0.35)' }} />)
                 : null}
             </View>
-            <IconButton icon="ellipsis-horizontal" variant="glass" label={`More options for ${p.name}`} onPress={() => openActions(member)} />
+            {mine ? (
+              <IconButton icon="create-outline" variant="glass" label="Edit Space" onPress={() => navigation.navigate('EditProfile')} />
+            ) : (
+              <IconButton icon="ellipsis-horizontal" variant="glass" label={`More options for ${p.name}`} onPress={() => openActions(member)} />
+            )}
           </View>
           {/* Only the state pills live on the cover now. The name, the face and
               the actions sit under it, on the page background, which is what
@@ -232,6 +342,29 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                 <VerifiedBadge size={18} tier={p.badgeTier ?? (p.verified ? 'verified' : 'none')} />
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                {/* Keep Close and Crush are things one member does to another.
+                    On your own Space they are replaced by the only two things
+                    you can do to yourself: write it, and edit it. */}
+                {mine ? (
+                  <Pressable
+                    onPress={() => navigation.navigate('EditProfile')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit your Space"
+                    hitSlop={8}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 5,
+                      paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+                      backgroundColor: colors.goldSoft, borderWidth: 1, borderColor: colors.goldLine,
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={12} color={colors.gold} />
+                    <Txt variant="caption" color="gold">
+                      Edit Space
+                    </Txt>
+                  </Pressable>
+                ) : null}
+                {mine ? null : (
+                <>
                 <Pressable
                   onPress={() => {
                     haptic.tap();
@@ -271,6 +404,8 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                     {p.crush.mutual ? 'Whisper' : p.crush.sent ? 'Crushed' : 'Crush'}
                   </Txt>
                 </Pressable>
+                </>
+                )}
               </View>
             </View>
           </View>
@@ -282,7 +417,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               them directly behind the face — a rounded rectangle poking out at
               the corners of a circle, unreadable and untappable. They are on
               the page now, where they can be read and pressed. */}
-          {p.online || p.activity || p.crush.mutual || p.crush.received || keep.data?.keepsYou ? (
+          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.mutual || p.crush.received || keep.data?.keepsYou ? (
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: space.sm }}>
               {p.online ? (
                 <Pill tone="neutral" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} />
@@ -301,12 +436,13 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               {keep.data?.keepsYou ? (
                 <Pill tone="gold" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} />
               ) : null}
+              {mine && meQ.data?.status === 'paused' ? <Pill tone="neutral" label="Hidden from Discover" /> : null}
             </View>
           ) : null}
         </View>
 
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
-          {p.crush.note ? (
+          {!mine && p.crush.note ? (
             <View style={{ marginTop: space.lg, backgroundColor: colors.goldSoft, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: colors.goldLine }}>
               <Txt variant="label" color="gold">
                 Big Crush note
@@ -387,11 +523,15 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               <SpaceMoments
                 moments={p.moments}
                 name={p.name}
-                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id })}
+                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id, mine })}
               />
             ) : null}
             {tab === 'circles' ? (
-              <SpaceCircles items={circles.data?.items ?? []} loading={circles.isLoading} onOpen={(id) => navigation.navigate('Circle', { circleId: id })} />
+              <SpaceCircles
+                items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
+                loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
+                onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
+              />
             ) : null}
             </SwipeTabs>
           </View>
@@ -406,18 +546,31 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
 
 
 
-          <View style={{ marginTop: space.xxl, flexDirection: 'row', justifyContent: 'center', gap: space.lg }}>
-            <Pressable onPress={() => openActions(member)} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}>
-              <Ionicons name="flag-outline" size={15} color={colors.textMuted} />
-              <Txt variant="smallStrong" color="textMuted">
-                Report or block {p.name}
-              </Txt>
-            </Pressable>
-          </View>
+          {mine ? (
+            /* Everything the drawer used to hold, on the Space where it belongs.
+               A row that opens a blank page is worse than no row, so each of
+               these lands on the screen it names. */
+            <Group title="Your space" style={{ marginTop: space.xxl }}>
+              <ListRow title="Your Circles" subtitle="The rooms you are part of" icon="people-outline" onPress={() => navigation.navigate('Circles')} />
+              <ListRow title="Your Moments" subtitle="Today, then gone" icon="aperture-outline" onPress={() => navigation.navigate('Moments')} />
+              <ListRow title="Picked" subtitle="Saved posts. Only you can see this." icon="bookmark-outline" onPress={() => navigation.navigate('SavedPosts')} />
+              <ListRow title="Settings" subtitle="Account, appearance, privacy" icon="settings-outline" onPress={() => navigation.navigate('Settings')} last />
+            </Group>
+          ) : (
+            <View style={{ marginTop: space.xxl, flexDirection: 'row', justifyContent: 'center', gap: space.lg }}>
+              <Pressable onPress={() => openActions(member)} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}>
+                <Ionicons name="flag-outline" size={15} color={colors.textMuted} />
+                <Txt variant="smallStrong" color="textMuted">
+                  Report or block {p.name}
+                </Txt>
+              </Pressable>
+            </View>
+          )}
         </View>
       </ScrollView>
 
-      {/* Persistent action bar */}
+      {/* Persistent action bar — for people you are not. */}
+      {mine ? null : (
       <View
         style={{
           position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: Math.max(insets.bottom, space.md), paddingTop: space.sm,
@@ -438,6 +591,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
           <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />
         </View>
       </View>
+      )}
     </View>
   );
 }
