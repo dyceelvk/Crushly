@@ -430,9 +430,21 @@ export function ProfileTabScreen() {
       <Group title="Your space">
         <ListRow
           title="Picked"
-          subtitle="The posts you kept. Public on your Space."
+          subtitle="The posts you kept. Only you can see them."
           icon="download-outline"
           onPress={() => navigation.navigate('SavedPosts')}
+        />
+        <ListRow
+          title="Your Circles"
+          subtitle="The rooms you are part of"
+          icon="people-outline"
+          onPress={() => navigation.navigate('Circles')}
+        />
+        <ListRow
+          title="Your Moments"
+          subtitle="Today, then gone"
+          icon="aperture-outline"
+          onPress={() => navigation.navigate('Moments')}
         />
         <ListRow title="Discover preferences" icon="options-outline" onPress={() => navigation.navigate('Filters')} />
         <ListRow title="Privacy" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />

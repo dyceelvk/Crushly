@@ -422,16 +422,6 @@ export async function crushesFeed(limit = 20, after?: number | null): Promise<Fl
 }
 
 /**
- * Someone's Picks, as posts. Gated per row by `can_view_post`, so a picked post
- * that later narrows its audience stops appearing here rather than becoming a
- * dead tap.
- */
-export async function picksOf(userId: number, limit = 30, after?: number | null): Promise<FlowPage> {
-  const page = await rpc<FlowPage>('picks_of', { p_user_id: userId, p_limit: limit, p_after: after ?? null });
-  return { items: page?.items ?? [] };
-}
-
-/**
  * The saved drawer: the posts you kept, newest save first, in the same shape as
  * the Flow. `saved_posts` applies `can_view_post` before returning a row, so a
  * post you can no longer see drops out of the list instead of sitting in it as

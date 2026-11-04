@@ -26,24 +26,27 @@ export function FeedTabs({
   tabs,
   active,
   onChange,
+  unread = 0,
   top = 0,
-  onMenu,
   onSearch,
+  onBell,
 }: {
   tabs: FeedTab[];
   active: string;
   onChange: (key: string) => void;
+  /** Unread notifications, for the bell's dot. */
+  unread?: number;
   top?: number;
   /**
-   * The button for everything the strip does not cover.
+   * The bell, beside the magnifier at the far end of the row.
    *
-   * It is drawn *in* this row rather than floating in the corner over the clip.
-   * Floating meant it overlapped the first tab on a narrow phone — at 320 dp the
-   * burger sat on top of "Discover", which is how the emulator walk found it —
-   * and a row is the honest description of what it is anyway: the same line as
-   * the three surfaces it is an alternative to.
+   * There used to be a hamburger here that opened a drawer holding Circles,
+   * Moments, Picked, Notifications and Settings. Four of those five now live
+   * where they belong — Circles and Moments on the Space, Picked on the Space,
+   * Settings behind the Space's gear — and the fifth is this bell. The drawer is
+   * gone; nothing took its corner.
    */
-  onMenu?: () => void;
+  onBell?: () => void;
   /**
    * The search at the far end of the strip. It belongs here rather than in a
    * corner of its own: the strip is already the row of "where am I", and the
@@ -86,17 +89,6 @@ export function FeedTabs({
         }}
       />
       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-      {onMenu ? (
-        <Pressable
-          onPress={onMenu}
-          accessibilityRole="button"
-          accessibilityLabel="Everything else in Crushly"
-          hitSlop={10}
-          style={{ paddingHorizontal: compact ? 9 : 13, paddingVertical: 10 }}
-        >
-          <Ionicons name="menu" size={compact ? 21 : 23} color="#FFFFFF" />
-        </Pressable>
-      ) : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -156,6 +148,20 @@ export function FeedTabs({
           style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
         >
           <Ionicons name="search" size={compact ? 19 : 21} color="#FFFFFF" />
+        </Pressable>
+      ) : null}
+      {onBell ? (
+        <Pressable
+          onPress={onBell}
+          accessibilityRole="button"
+          accessibilityLabel={unread ? `Notifications, ${unread} unread` : 'Notifications'}
+          hitSlop={10}
+          style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
+        >
+          <Ionicons name="notifications-outline" size={compact ? 20 : 22} color="#FFFFFF" />
+          {unread ? (
+            <View style={{ position: 'absolute', top: 7, right: compact ? 6 : 9, width: 7, height: 7, borderRadius: 4, backgroundColor: '#FF4081' }} />
+          ) : null}
         </Pressable>
       ) : null}
       </View>

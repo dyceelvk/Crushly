@@ -467,46 +467,58 @@ def walk():
         shot('15-sound')
         return_to_tabs()
 
-    # Everything the menu holds. Each row has to open on its own screen: a menu
-    # row that lands on a blank page or the wrong list is a row that lies.
-    tap('Flow')
+    # The drawer is gone. Everything it used to hold now opens from where it
+    # belongs: Circles, Moments and Picked from the Space, Settings from the
+    # Space's gear, notifications from the bell on Home. Each row is still
+    # opened and photographed, because a row that lands on a blank page or the
+    # wrong list is a row that lies.
     n = 16
-    if tap('Everything else in Crushly', tries=3):
-        shot('{:02d}-menu'.format(n))
+    for row, name in (('Your Circles', 'circles'),
+                      ('Your Moments', 'moments'),
+                      ('Picked', 'picked')):
+        tap('Space')
+        scroll_to(row)
+        if tap(row, tries=2):
+            shot('{:02d}'.format(n) + '-' + name)
+            n += 1
+            return_to_tabs()
+
+    # Settings, from the Space's gear, and every page inside it.
+    tap('Space')
+    if tap('Settings', tries=2):
+        shot('{:02d}-settings'.format(n))
         n += 1
-        for row, name in (('Your Circles', 'circles'),
-                          ('Moments', 'moments'),
-                          ('Kept', 'kept'),
-                          ('Notifications', 'notifications'),
-                          ('Settings', 'settings')):
-            tap('Flow')                              # the menu is the Flow's
-            tap('Everything else in Crushly', tries=2)
-            if tap(row, tries=2):
-                shot('{:02d}'.format(n) + '-' + name)
+        for sub, slug in (('Account & security', 'account'),
+                          ('Appearance', 'appearance'),
+                          ('Privacy & visibility', 'privacy'),
+                          ('Discover preferences', 'filters'),
+                          ('Crushly Plus', 'plus'),
+                          ('Verification', 'verification')):
+            tap('Space')
+            if not tap('Settings', tries=2):
+                continue
+            scroll_to(sub)
+            if tap(sub, tries=2):
+                shot('{:02d}-settings-{}'.format(n, slug))
                 n += 1
-                if name == 'settings':
-                    # Settings is a list of places as well. Each one is opened
-                    # from the top of a fresh Settings screen, because coming back
-                    # from a page can land anywhere — and the ones below the fold
-                    # are scrolled to rather than assumed visible.
-                    for sub, slug in (('Account & security', 'account'),
-                                      ('Appearance', 'appearance'),
-                                      ('Privacy & visibility', 'privacy'),
-                                      ('Discover preferences', 'filters'),
-                                      ('Crushly Plus', 'plus'),
-                                      ('Verification', 'verification')):
-                        tap('Flow')
-                        tap('Everything else in Crushly', tries=2)
-                        if not tap('Settings', tries=2):
-                            continue
-                        scroll_to(sub)
-                        if tap(sub, tries=2):
-                            shot('{:02d}-settings-{}'.format(n, slug))
-                            n += 1
-                            return_to_tabs()
-                    tap('Flow')
-                    continue
                 return_to_tabs()
+
+    # Notifications are a sheet over Home now, with two tabs inside it.
+    tap('Home')
+    if tap('Notifications', tries=2):
+        seen = shot('{:02d}-notifications-sheet'.format(n))
+        n += 1
+        if find(seen, 'From Crushly'):
+            log('notifications: sheet with Yours and From Crushly')
+            if tap('From Crushly', tries=2):
+                shot('{:02d}-notifications-from-crushly'.format(n))
+                n += 1
+        else:
+            fail('the notification sheet has no "From Crushly" tab')
+        # Back out of the sheet the way a person would.
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1.5)
+        return_to_tabs()
 
     # A Vibe opens as its own page, not as a bigger tile in the row.
     tap('Discover')

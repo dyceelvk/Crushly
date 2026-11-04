@@ -9,7 +9,6 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
-import { Segmented } from '../../components/Segmented';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { BlurView } from 'expo-blur';
 import { useMemberCircles } from '../../api/hooks';
@@ -19,7 +18,7 @@ import { Pill, VerifiedBadge } from '../../components/Badges';
 import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useOpenConversation, usePicksOf, useSpacePosts, useSpaceVibes, useUndoCrush, useUser } from '../../api/hooks';
+import { useOpenConversation, useSpacePosts, useSpaceVibes, useUndoCrush, useUser } from '../../api/hooks';
 import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
@@ -86,7 +85,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   // Flow, Vibes, Moments, Circles — everything somebody has made or joined, in
   // the vocabulary the product uses everywhere else. It used to say "Posts",
   // which is a hashtag's word for a Flow.
-  const [tab, setTab] = useState<'flow' | 'picks' | 'vibes' | 'moments' | 'circles'>('flow');
+  const [tab, setTab] = useState<'flow' | 'vibes' | 'moments' | 'circles'>('flow');
   // The Circles this member made public, and the ones you share with them.
   const circles = useMemberCircles(p?.id ?? null);
   const posts = useSpacePosts(id);
@@ -371,7 +370,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
               as a rendering bug. The SwipeTabs is the row; Picks is its second tab. */}
           <View style={{ marginTop: space.lg }}>
             <SwipeTabs
-              options={['flow', 'picks', 'vibes', 'moments', 'circles'] as const}
+              options={['flow', 'vibes', 'moments', 'circles'] as const}
               value={tab}
               onChange={setTab}
               width={contentWidth - gutter * 2}
@@ -384,9 +383,6 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
                 name={p.name}
                 onRetry={() => void posts.refetch()}
               />
-            ) : null}
-            {tab === 'picks' ? (
-              <SpacePicks userId={p.id} name={p.name} />
             ) : null}
             {tab === 'vibes' ? (
               <SpaceVibes
@@ -715,44 +711,4 @@ function lifestyleFacts(p: FullProfile) {
   if (l.pets) out.push({ icon: 'paw-outline', label: 'Pets', value: l.pets });
   if (l.zodiac) out.push({ icon: 'moon-outline', label: 'Zodiac', value: l.zodiac });
   return out;
-}
-
-/**
- * A Space's Picks tab.
- *
- * Picks are public by design: picking a post keeps it on a shelf anyone who can
- * read the Space can read. The server still decides per row — `picks_of` filters
- * through can_view_post — so a pick whose author later blocks the reader, or
- * whose audience narrows, drops out here instead of turning into a dead card.
- *
- * It renders the same PostCard as every other list, so a picked post can be
- * Crushed, commented on, shared, picked again — or, on your own Space,
- * unpicked — by exactly the code that does it everywhere else.
- */
-function SpacePicks({ userId, name }: { userId: number; name: string }) {
-  const picks = usePicksOf(userId);
-  const { colors } = useTheme();
-  if (picks.isLoading) return <Skeleton style={{ height: 260 }} />;
-  if (picks.isError) {
-    return <ErrorState message={(picks.error as Error)?.message ?? 'Their Picks didn’t load.'} onRetry={() => void picks.refetch()} />;
-  }
-  if (!picks.posts.length) {
-    return (
-      <EmptyState
-        icon="download-outline"
-        title="No Picks yet"
-        message={`${name} hasn’t picked a post yet. A Pick keeps a post on your shelf, where anyone who can see your Space can find it.`}
-      />
-    );
-  }
-  return (
-    <View style={{ gap: space.md }}>
-      {picks.posts.map((post) => (
-        <PostCard key={post.id} post={post} />
-      ))}
-      <Txt variant="caption" color="textMuted" style={{ textAlign: 'center', color: colors.textMuted }}>
-        {picks.posts.length === 1 ? 'One pick' : `${picks.posts.length} picks`}
-      </Txt>
-    </View>
-  );
 }

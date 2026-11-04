@@ -37,7 +37,6 @@ export const keys = {
   keep: (id: number) => ['keep', id] as const,
   savedPosts: ['saved-posts'] as const,
   crushesFeed: ['crushes-feed'] as const,
-  picksOf: ['picks-of'] as const,
 };
 
 /* ------------------------------------------------------------------ queries */
@@ -472,18 +471,6 @@ export function useCrushesFeed(limit = 20) {
       return query.refetch();
     },
   };
-}
-
-/** Someone's Picks, as posts. */
-export function usePicksOf(userId: number | null | undefined, limit = 30) {
-  const [after, setAfter] = useState<number | null>(null);
-  const query = useQuery({
-    queryKey: [...keys.picksOf, userId, limit, after],
-    queryFn: () => service.picksOf(userId as number, limit, after),
-    enabled: typeof userId === 'number' && userId > 0,
-  });
-  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
-  return { ...query, posts };
 }
 
 export function useSavedPosts(limit = 20) {

@@ -70,7 +70,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           status belong with the rest of the app settings; the footer below used
           to state the version a second time. */}
       <Group title="App">
-        <ListRow title="Picked posts" subtitle="Public on your Space" icon="download-outline" onPress={() => navigation.navigate('SavedPosts')} />
+        <ListRow title="Picked posts" subtitle="Only you can see this" icon="download-outline" onPress={() => navigation.navigate('SavedPosts')} />
         <ListRow title="Notification settings" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} />
         <ListRow title="App version" value={version} icon="information-circle-outline" />

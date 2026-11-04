@@ -9,10 +9,10 @@ import { FeedPost } from '../../components/feed/FeedPost';
 import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
-import { AppMenu } from '../../components/AppMenu';
+import { NotificationsSheet } from '../../components/NotificationsSheet';
 import { CrushesFeed } from '../crushes/CrushesFeed';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
-import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMyCircles } from '../../api/hooks';
+import { useBadges, useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
 import { palettes, space } from '../../theme/tokens';
 import { openSpan, settleDwell, type ActiveSpan } from '../../lib/dwell';
@@ -74,7 +74,8 @@ export function FeedScreen() {
   const [shareFor, setShareFor] = useState<Post | null>(null);
   const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const { data: badges } = useBadges(true);
 
   /**
    * The page is as tall as the pane the feed is given, not as tall as the window.
@@ -221,15 +222,18 @@ export function FeedScreen() {
         />
       )}
 
-      {/* One row: the menu and the three parts of the feed. The magnifier used
-          to sit at the end of it; search is what Discover is for now, so it
-          lives there instead of on a row about the feed. */}
+      {/* One row: the three parts of the feed, the magnifier, the bell. The
+          hamburger that used to open a drawer is gone, and nothing took its
+          corner: Circles, Moments, Picked and Settings all live on the Space,
+          and notifications are the bell beside search. */}
       <FeedTabs
         tabs={tabs}
         active={tab}
         onChange={(k) => setTab(k as typeof tab)}
         top={insets.top + 4}
-        onMenu={() => setMenuOpen(true)}
+        unread={badges?.notifications ?? 0}
+        onSearch={() => navigation.navigate('Search')}
+        onBell={() => setNotificationsOpen(true)}
       />
 
       {/* The corner used to hold the member's own face and a second magnifier.
@@ -277,7 +281,7 @@ export function FeedScreen() {
       </>
       )}
 
-      <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
+      <NotificationsSheet visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
       {shareFor ? <ShareToWhisper visible post={shareFor} onClose={() => setShareFor(null)} /> : null}
       <CommentsSheet
         post={commentsFor}
