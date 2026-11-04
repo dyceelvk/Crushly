@@ -208,25 +208,17 @@ export function FeedScreen() {
         />
       )}
 
+      {/* One row: the menu, the three surfaces, the magnifier. The menu used to
+          float in the corner over the feed, which put it on top of "Discover" on
+          a narrow phone. */}
       <FeedTabs
         tabs={tabs}
         active={tab}
         onChange={(k) => setTab(k as typeof tab)}
         top={insets.top + 4}
+        onMenu={() => setMenuOpen(true)}
         onSearch={() => navigation.navigate('Search')}
       />
-
-      {/* Top-left: the surfaces the tabs do not cover. Top-right: search, which
-          is where the reference puts it. */}
-      <Pressable
-        onPress={() => setMenuOpen(true)}
-        accessibilityRole="button"
-        accessibilityLabel="Everything else in Crushly"
-        hitSlop={10}
-        style={{ position: 'absolute', left: 14, top: insets.top + 14, zIndex: 22 }}
-      >
-        <Ionicons name="menu" size={25} color="#FFFFFF" />
-      </Pressable>
 
       {/* The corner used to hold the member's own face and a second magnifier.
           The face is the Space tab and the magnifier is the end of the strip, so

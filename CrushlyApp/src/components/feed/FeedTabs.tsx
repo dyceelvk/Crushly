@@ -27,12 +27,23 @@ export function FeedTabs({
   active,
   onChange,
   top = 0,
+  onMenu,
   onSearch,
 }: {
   tabs: FeedTab[];
   active: string;
   onChange: (key: string) => void;
   top?: number;
+  /**
+   * The button for everything the strip does not cover.
+   *
+   * It is drawn *in* this row rather than floating in the corner over the clip.
+   * Floating meant it overlapped the first tab on a narrow phone — at 320 dp the
+   * burger sat on top of "Discover", which is how the emulator walk found it —
+   * and a row is the honest description of what it is anyway: the same line as
+   * the three surfaces it is an alternative to.
+   */
+  onMenu?: () => void;
   /**
    * The search at the far end of the strip. It belongs here rather than in a
    * corner of its own: the strip is already the row of "where am I", and the
@@ -67,6 +78,17 @@ export function FeedTabs({
         }}
       />
       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      {onMenu ? (
+        <Pressable
+          onPress={onMenu}
+          accessibilityRole="button"
+          accessibilityLabel="Everything else in Crushly"
+          hitSlop={10}
+          style={{ paddingHorizontal: 13, paddingVertical: 10 }}
+        >
+          <Ionicons name="menu" size={23} color="#FFFFFF" />
+        </Pressable>
+      ) : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -75,8 +97,8 @@ export function FeedTabs({
           flexGrow: 1,
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 20,
-          paddingHorizontal: space.md,
+          gap: 18,
+          paddingHorizontal: space.sm,
         }}
       >
         {tabs.map((t) => {

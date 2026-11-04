@@ -167,6 +167,22 @@ def find(seen, needle, cls=None):
     return None
 
 
+def swipe_up():
+    adb('shell', 'input', 'swipe', '160', '520', '160', '240', '220')
+    time.sleep(1.2)
+
+
+def scroll_to(needle, swipes=4):
+    """Swipe until the label is on screen. Returns True when it is."""
+    if find(nodes() or [], needle):
+        return True
+    for _ in range(swipes):
+        swipe_up()
+        if find(nodes() or [], needle):
+            return True
+    return False
+
+
 def tap(needle, cls=None, tries=2, required=False):
     for _ in range(tries):
         seen = nodes()
@@ -198,6 +214,13 @@ def type_into(index, value, fields=None):
 
 def shot(name, seen=None):
     seen = nodes() if seen is None else seen
+    if not seen:
+        # uiautomator occasionally returns a tree with nothing in it while the
+        # screen is obviously drawn. Say so instead of writing "nothing on
+        # screen", which reads like a bug in the app.
+        seen = nodes()
+        if not seen:
+            log('[{}] the accessibility dump came back empty; the screenshot is still real'.format(name))
     time.sleep(0.8)
     png = subprocess.run(['adb', 'exec-out', 'screencap', '-p'],
                          capture_output=True, timeout=120).stdout
@@ -346,12 +369,14 @@ def walk():
 
     # Space's Close Ones count is a link into that segment, not into a lookalike.
     tap('Space')
+    scroll_to('Close Ones')
     if tap('Close Ones'):
         shot('14-space-to-close-ones')
         seen = nodes() or []
         if not find(seen, 'chosen to keep near'):
             fail('Space → Close Ones did not land on the Close Ones segment')
 
+    tap('Flow')
     if tap('Everything else in Crushly', tries=3):
         shot('14-menu')
         if tap('Settings'):
