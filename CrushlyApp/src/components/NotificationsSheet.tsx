@@ -38,7 +38,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
   const markRead = useMarkNotificationsRead();
   const [lens, setLens] = useState<Lens>('yours');
 
-  const items = useMemo(() => data?.items ?? [], [data]);
+  const items = useMemo<AppNotification[]>(() => data ?? [], [data]);
   const yours = items.filter((n) => n.kind !== 'verified' && n.kind !== 'verification_rejected');
   const fromCrushly = items.filter((n) => n.kind === 'verified' || n.kind === 'verification_rejected');
   const shown = lens === 'yours' ? yours : fromCrushly;
@@ -96,7 +96,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
         </Txt>
         {unread > 0 ? (
           <Pressable
-            onPress={() => markRead.mutate({ kinds: shown.map((n) => n.kind).filter((k, i, a) => a.indexOf(k) === i) })}
+            onPress={() => markRead.mutate({ kinds: Array.from(new Set(shown.map((n) => n.kind))) })}
             accessibilityRole="button"
             accessibilityLabel={`Mark ${lens === 'yours' ? 'your notifications' : 'Crushly’s notifications'} read`}
             hitSlop={8}
