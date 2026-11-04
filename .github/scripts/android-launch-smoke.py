@@ -31,6 +31,7 @@ import xml.etree.ElementTree as ET
 
 PACKAGE = 'app.crushly'
 SCREEN = [0, 0]  # filled in from `wm size`; dump bounds are in the same pixels
+LAUNCHER = [PACKAGE + '/.MainActivity']  # resolved from the package, not assumed
 OUT = pathlib.Path(os.environ.get('CRUSHLY_WALK_OUT') or 'walk')
 EMAIL = os.environ.get('CRUSHLY_WALK_EMAIL') or ''
 PASSWORD = os.environ.get('CRUSHLY_WALK_PASSWORD') or ''
@@ -279,11 +280,23 @@ def sign_in():
 
 
 def back_out():
-    """Leave whatever screen just opened. The keyboard eats the first BACK."""
+    """Leave whatever screen just opened — and stop there.
+
+    Pressing BACK twice unconditionally was wrong twice over: on a screen with
+    the keyboard up the first one only dismisses the keyboard (so one is not
+    enough), and on a screen without it the second one leaves the app (so two is
+    too many). The app went to the launcher and every later step reported
+    MISSING. So: BACK once, then look at where we are, and only fix it up if we
+    are not back in the app.
+    """
     adb('shell', 'input', 'keyevent', '4')
-    time.sleep(1.2)
-    adb('shell', 'input', 'keyevent', '4')
-    time.sleep(1.5)
+    time.sleep(1.4)
+    seen = nodes()          # nodes() dismisses a keyboard and re-reads, by itself
+    if seen is not None:
+        return
+    log('BACK left the app; bringing it back to the front')
+    adb('shell', 'am', 'start', '-n', LAUNCHER[0])
+    time.sleep(6)
 
 
 def assert_strip(seen):
