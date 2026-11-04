@@ -35,6 +35,7 @@ begin
   -- The three that had to keep working, checked by source.
   select string_agg(fn, ', ') into leftover
     from (values ('public.can_view_media(text, text)'),
+                 ('public.can_manage_media(text, text)'),
                  ('public.search_all(text, integer)'),
                  ('public.media_upload_ticket(text, text, integer)')) as t(fn)
    where pg_get_functiondef(t.fn::regprocedure) ilike '%vibe%';

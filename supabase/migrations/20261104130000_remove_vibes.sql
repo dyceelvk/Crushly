@@ -15,12 +15,14 @@
 --     Moments. The client no longer reads it, but a function that selects from a
 --     dropped table cannot be left in place either.
 --
---   * `can_view_media` — the gate every private media read passes through —
+--   * `can_manage_media` and `can_view_media` — the gates every private media
+--     write and read passes through —
 --     declared a `vibes` row variable and resolved `vibes/` paths against the
 --     table. A plpgsql body is not validated when it is created, so this one
 --     survived the drop and only failed the first time somebody opened a photo:
---     which is exactly how the Postgres smoke suite caught it. It is redefined
---     below with its Vibe branch removed and every other branch untouched.
+--     which is exactly how the Postgres smoke suite caught it, twice — the write
+--     gate was hiding behind the read gate. Both are redefined below with their
+--     Vibe branches removed and every other branch untouched.
 --
 -- What is dropped afterwards is Vibes and only Vibes: `vibes`, its two
 -- children (`vibe_views`, `vibe_reactions`) and the seven functions that served
@@ -203,6 +205,97 @@ begin
     )
   );
 end $$;
+
+create or replace function public.can_manage_media(p_path text, p_url text default null::text)
+returns boolean
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null or p_path is null or p_path = '' then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and public.media_object_path(p_url) <> p_path then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where public.media_object_path(url) = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (public.media_object_path(url) = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $function$;
 
 create or replace function public.can_view_media(p_path text, p_url text default null::text)
 returns jsonb
