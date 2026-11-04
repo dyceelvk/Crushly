@@ -279,6 +279,31 @@ def sign_in():
     return False
 
 
+def leave_screen():
+    """Leave the screen we opened, by its own Back if it has one.
+
+    Pressing the system BACK is not enough on a screen with a focused text
+    field: the first press only dismisses the keyboard, so the walk carried on
+    inside Search and every later step was wrong-but-green. Tapping the screen's
+    own Back closes the screen whether or not a keyboard is up, so that is tried
+    first, and the system BACK is only the fallback.
+    """
+    if tap('Back', tries=1):
+        time.sleep(0.6)
+        return
+    back_out()
+
+
+def return_to_tabs(tries=4):
+    """Come back to the app's four tabs, however many screens are stacked."""
+    for _ in range(tries):
+        seen = nodes() or []
+        if find(seen, 'Crushes') and find(seen, 'Space'):
+            return True
+        leave_screen()
+    return False
+
+
 def back_out():
     """Leave whatever screen just opened — and stop there.
 
@@ -382,14 +407,14 @@ def walk():
     # a segment that is not the feed's first one too.
     if tap('Search Crushly'):
         shot('08-strip-magnifier')
-        back_out()
+        return_to_tabs()
 
     # And the hook under a clip must search the words it names, not open blank.
     if tap('Search for'):
         seen = shot('09-hook-search')
         named = [n['desc'] for n in seen if norm(n['desc']).startswith('search for')]
         log('the hook opened: ' + (named[0] if named else '(no hook label left)'))
-        back_out()
+        return_to_tabs()
 
     for label, name in (('Crushes', '10-crushes'),
                         ('Whispers', '11-whispers'),
@@ -421,7 +446,7 @@ def walk():
     tap('Flow')
     if tap('Original sound'):
         shot('15-sound')
-        back_out()
+        return_to_tabs()
 
     # Everything the menu holds. Each row has to open on its own screen: a menu
     # row that lands on a blank page or the wrong list is a row that lies.
@@ -449,16 +474,16 @@ def walk():
                         if tap(sub, tries=2):
                             shot('{:02d}-settings-{}'.format(n, slug))
                             n += 1
-                            back_out()
+                            return_to_tabs()
                     continue
-                back_out()
+                return_to_tabs()
 
     # Space's own edit surface, and the three Crushes lenses.
     tap('Space')
     if tap('Edit Space'):
         shot('{:02d}-edit-space'.format(n))
         n += 1
-        back_out()
+        return_to_tabs()
     tap('Crushes')
     for lens, name in (('Your crushes', 'crushes-outgoing'), ('Mutual', 'crushes-mutual')):
         if tap(lens, tries=2):
