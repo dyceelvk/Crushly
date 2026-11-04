@@ -244,9 +244,69 @@ def sign_in():
     return False
 
 
+def back_out():
+    """Leave whatever screen just opened. The keyboard eats the first BACK."""
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(1.2)
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(1.5)
+
+
+def assert_strip(seen):
+    """Discover, Flow, Connections — in that order, on one row, magnifier last.
+
+    This is the layout that was argued about most; a screenshot can be read two
+    ways, a sorted list of x coordinates cannot.
+    """
+    points = {}
+    for n in seen:
+        for value in (n['desc'], n['text']):
+            key = norm(value)
+            if key in ('discover', 'flow', 'connections'):
+                points.setdefault(key, []).append((n['x'], n['y']))
+    missing = [k for k in ('discover', 'flow', 'connections') if k not in points]
+    if missing:
+        fail('the Flow strip is missing ' + ', '.join(missing))
+
+    # The bottom bar also says "Flow", so keep to the row that holds all three.
+    rows = {}
+    for key, pts in points.items():
+        for _, y in pts:
+            rows.setdefault(y // 40, set()).add(key)
+    row = next((r for r, keys in rows.items() if keys >= {'discover', 'flow', 'connections'}), None)
+    if row is None:
+        fail('no single row holds Discover, Flow and Connections')
+    in_row = {k: [x for x, y in v if y // 40 == row] for k, v in points.items()}
+    order = sorted(in_row, key=lambda k: min(in_row[k]))
+    if order != ['discover', 'flow', 'connections']:
+        fail('the strip reads ' + ' → '.join(order) + ', not Discover → Flow → Connections')
+
+    magnifier = find(seen, 'Search Crushly')
+    if not magnifier:
+        fail('the strip has no magnifier')
+    if abs(magnifier['y'] // 40 - row) > 1:
+        fail('the magnifier is not on the strip row')
+    if magnifier['x'] <= max(max(v) for v in in_row.values()):
+        fail('the magnifier is not at the end of the strip')
+    log('strip: Discover → Flow → Connections, magnifier last; checked')
+
+
+def assert_hook_is_low(seen):
+    """The search hook is the bottom line of a page, under name, caption, sound."""
+    hook = find(seen, 'Search for')
+    if not hook:
+        return
+    sound = find(seen, 'Original sound')
+    if sound and hook['y'] < sound['y']:
+        fail('the search hook sits above the sound row ({} < {})'.format(hook['y'], sound['y']))
+    log('search hook y={} is below the sound row y={}'.format(hook['y'], sound['y'] if sound else '-'))
+
+
 def walk():
     """Photograph every surface, in the order the app presents them."""
-    shot('04-flow-default')
+    seen = shot('04-flow-default')
+    assert_strip(seen)
+    assert_hook_is_low(seen)
 
     for label, name in (('Discover', '05-segment-discover'),
                         ('Connections', '06-segment-connections'),
@@ -256,14 +316,20 @@ def walk():
 
     # The magnifier sits at the end of the strip, so it must be reachable from
     # a segment that is not the feed's first one too.
-    if tap('Search'):
-        shot('08-search')
-        adb('shell', 'input', 'keyevent', '4')
-        time.sleep(1.5)
+    if tap('Search Crushly'):
+        shot('08-strip-magnifier')
+        back_out()
 
-    for label, name in (('Crushes', '09-crushes'),
-                        ('Whispers', '10-whispers'),
-                        ('Space', '11-space')):
+    # And the hook under a clip must search the words it names, not open blank.
+    if tap('Search for'):
+        seen = shot('09-hook-search')
+        named = [n['desc'] for n in seen if norm(n['desc']).startswith('search for')]
+        log('the hook opened: ' + (named[0] if named else '(no hook label left)'))
+        back_out()
+
+    for label, name in (('Crushes', '10-crushes'),
+                        ('Whispers', '11-whispers'),
+                        ('Space', '12-space')):
         tap(label)
         shot(name)
 
@@ -271,7 +337,7 @@ def walk():
     # a person would, from the tab.
     if tap('Whispers'):
         if tap('Close Ones'):
-            shot('12-close-ones')
+            shot('13-close-ones')
             # The box in Whispers searches conversations and cannot search a list
             # of people, so it must not be above this list.
             seen = nodes() or []
@@ -281,7 +347,7 @@ def walk():
     # Space's Close Ones count is a link into that segment, not into a lookalike.
     tap('Space')
     if tap('Close Ones'):
-        shot('13-space-to-close-ones')
+        shot('14-space-to-close-ones')
         seen = nodes() or []
         if not find(seen, 'chosen to keep near'):
             fail('Space → Close Ones did not land on the Close Ones segment')
