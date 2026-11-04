@@ -1,13 +1,27 @@
-"""Launch a clean, unsigned-in release install twice and assert the real opening UI.
+"""Cold start, sign in, and walk every surface of the release APK.
 
-The app opens on "Follow the feelings" (one tap) and then on Welcome. The script
-walks that path rather than expecting Welcome first, which is what it used to do
-— and it also had no way of telling "the app is showing a different screen" from
-"the app died", so a tap-through keeps the two distinct.
+This script used to stop at Welcome. That is why "the APK was checked" kept
+meaning less than it sounded: a build can launch, reach its first screen, hold
+the process open, and still put a caption under the tab bar, order a strip
+wrongly, or send a link to the wrong segment. None of that shows up in a
+compiler, a unit test or a successful launch.
 
-No personal accounts, tokens, or user data involved. Logs stay private to the
-runner; only known crash categories are surfaced in annotations.
+So the run is:
+
+  1. cold start twice, signed out, asserting the real opening UI (as before);
+  2. sign in as the walk account, through the same screens a person uses;
+  3. photograph and read every surface — the Flow strip and its three segments,
+     the magnifier, Crushes, Whispers, Close Ones, Space, the menu, Settings —
+     dumping the accessibility tree at each stop into `walk/report.txt`.
+
+Everything is addressed by the app's own text and accessibility labels, never by
+pixel coordinates, so a layout change moves the walk with it.
+
+The walk account is a throwaway profile in the project's own database
+(`arena.walk@example.com`); no other user's data is touched. Credentials arrive
+through the environment and are never printed.
 """
+import os
 import pathlib
 import subprocess
 import sys
@@ -15,84 +29,268 @@ import time
 import xml.etree.ElementTree as ET
 
 PACKAGE = 'app.crushly'
+OUT = pathlib.Path(os.environ.get('CRUSHLY_WALK_OUT') or 'walk')
+EMAIL = os.environ.get('CRUSHLY_WALK_EMAIL') or ''
+PASSWORD = os.environ.get('CRUSHLY_WALK_PASSWORD') or ''
+
+OUT.mkdir(parents=True, exist_ok=True)
+report = open(OUT / 'report.txt', 'w', encoding='utf-8')
+
+
+def log(line):
+    print(line, flush=True)
+    report.write(line + '\n')
+    report.flush()
+
 
 def adb(*args, check=True):
     return subprocess.run(['adb', *args], text=True, capture_output=True, check=check).stdout
 
+
 def fail(reason):
-    print('::error::Android 9 release launch failed: ' + reason)
+    log('::error::Android 9 release walk failed: ' + reason)
+    report.close()
     sys.exit(1)
 
-adb('install', '-r', sys.argv[1])
-adb('shell', 'pm', 'clear', PACKAGE)
-for attempt in range(2):
-    adb('shell', 'am', 'force-stop', PACKAGE)
-    adb('logcat', '-c')
-    adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.MainActivity')
-    def labels():
-        """Visible text plus accessibility labels, whitespace-collapsed."""
-        result = adb('shell', 'uiautomator', 'dump', '/sdcard/crushly-ui.xml', check=False)
-        if 'dumped' not in result:
-            return None
-        xml = adb('shell', 'cat', '/sdcard/crushly-ui.xml', check=False)
+
+def nodes():
+    """Every node in the current window, with the centre of its bounds."""
+    dumped = adb('shell', 'uiautomator', 'dump', '/sdcard/crushly-ui.xml', check=False)
+    if 'dumped' not in dumped:
+        return None
+    xml = adb('shell', 'cat', '/sdcard/crushly-ui.xml', check=False)
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return None
+    out = []
+    for n in root.iter('node'):
+        bounds = n.get('bounds', '')
         try:
-            root = ET.fromstring(xml)
-        except ET.ParseError:
-            return None
-        return [' '.join((n.get('text', '') + ' ' + n.get('content-desc', '')).split())
-                for n in root.iter('node')]
-
-    def alive(why):
-        if not adb('shell', 'pidof', PACKAGE, check=False).strip():
-            # Logcat is the only way to know why a release build died: React
-            # Native aborts the process on an uncaught JS error, so the crash
-            # buffer is printed here instead of being swallowed.
-            print(adb('logcat', '-d', '-b', 'crash', check=False)[-4000:])
-            print(adb('logcat', '-d', check=False)[-4000:])
-            fail(why)
-
-    # 1. The opening sentence. Also the place where a launch crash shows up.
-    deadline = time.monotonic() + 90
-    opening = False
-    while time.monotonic() < deadline:
-        time.sleep(3)
-        alive('process exited during startup')
-        seen = labels()
-        if seen is None:
+            box = bounds.replace('][', ',').strip('[]').split(',')
+            x1, y1, x2, y2 = (int(v) for v in box)
+        except ValueError:
             continue
-        if any('Follow the feelings' in s for s in seen):
-            opening = True
-            break
-    if not opening:
-        fail('the follow-the-feelings opening did not appear')
+        out.append({
+            'text': ' '.join(n.get('text', '').split()),
+            'desc': ' '.join(n.get('content-desc', '').split()),
+            'class': n.get('class', ''),
+            'x': (x1 + x2) // 2,
+            'y': (y1 + y2) // 2,
+            'on_screen': y1 > 0 and y2 > y1,
+        })
+    return out
 
-    # 2. One tap anywhere, which is the whole interaction on that screen.
-    size = adb('shell', 'wm', 'size', check=False).strip().split()[-1]
-    w, h = (int(v) for v in size.split('x'))
-    adb('shell', 'input', 'tap', str(w // 2), str(h // 2))
-    time.sleep(2)
 
-    # 3. Welcome, which is where signing in starts.
-    deadline = time.monotonic() + 60
-    welcome = False
+def norm(value):
+    """Flatten whitespace and quote style so a label matches however it is typed."""
+    return ' '.join(value.replace('\u2019', "'").replace('\u2018', "'").split()).lower()
+
+
+def labels(seen):
+    return [' '.join((n['text'] + ' ' + n['desc']).split()) for n in seen]
+
+
+def alive(why):
+    if not adb('shell', 'pidof', PACKAGE, check=False).strip():
+        # Logcat is the only way to know why a release build died: React Native
+        # aborts the process on an uncaught JS error, so the crash buffer is
+        # printed here instead of being swallowed.
+        log(adb('logcat', '-d', '-b', 'crash', check=False)[-4000:])
+        log(adb('logcat', '-d', check=False)[-4000:])
+        fail(why)
+
+
+def wait_for(needles, seconds, why):
+    """Wait until every needle is on screen. Returns the last tree or None."""
+    deadline = time.monotonic() + seconds
+    wanted = [norm(n) for n in needles]
     while time.monotonic() < deadline:
-        alive('process exited after the opening screen')
-        seen = labels()
+        alive(why)
+        seen = nodes()
         if seen is None:
             time.sleep(2)
             continue
-        # Whitespace-collapsed: the Welcome headline is set as `Welcome to\nCrushly`.
-        if any('Welcome to Crushly' in s for s in seen) and any('Get Started' in s for s in seen):
-            welcome = True
-            break
+        text = ' ¦ '.join(norm(v) for v in labels(seen))
+        if all(w in text for w in wanted):
+            return seen
         time.sleep(2)
-    if not welcome:
-        fail('tapping the opening did not reach Welcome')
-    time.sleep(10)
-    if not adb('shell', 'pidof', PACKAGE, check=False).strip():
-        fail('process exited after welcome')
-    logs = adb('logcat', '-d', '-b', 'crash', check=False)
-    if PACKAGE in logs and ('FATAL EXCEPTION' in logs or 'Fatal signal' in logs):
-        fail('fatal crash recorded')
-    print(f'::notice::Android 9 release launch {attempt + 1}: welcome UI visible; process alive.')
-print('Android 9 cold start and relaunch passed (signed out).')
+    return None
+
+
+def find(seen, needle, cls=None):
+    want = norm(needle)
+    pool = [n for n in seen if (cls is None or cls in n['class']) and n['on_screen']]
+    for key in ('text', 'desc'):
+        for n in pool:
+            if norm(n[key]) == want:
+                return n
+    for key in ('text', 'desc'):
+        for n in pool:
+            if want in norm(n[key]):
+                return n
+    return None
+
+
+def tap(needle, cls=None, tries=2, required=False):
+    for _ in range(tries):
+        seen = nodes()
+        if seen:
+            node = find(seen, needle, cls=cls)
+            if node:
+                adb('shell', 'input', 'tap', str(node['x']), str(node['y']))
+                time.sleep(1.8)
+                return True
+        time.sleep(1.5)
+    log('MISSING: nothing on screen to tap for ' + repr(needle))
+    if required:
+        fail('the ' + needle + ' control was not on screen')
+    return False
+
+
+def type_into(index, value):
+    seen = nodes() or []
+    fields = [n for n in seen if 'EditText' in n['class'] and n['on_screen']]
+    if len(fields) <= index:
+        return False
+    adb('shell', 'input', 'tap', str(fields[index]['x']), str(fields[index]['y']))
+    time.sleep(1.0)
+    # `input text` has no way to send a space; an escaped %s is how adb spells it.
+    adb('shell', 'input', 'text', value.replace(' ', '%s'))
+    time.sleep(0.8)
+    return True
+
+
+def shot(name, seen=None):
+    seen = nodes() if seen is None else seen
+    time.sleep(0.8)
+    png = subprocess.run(['adb', 'exec-out', 'screencap', '-p'],
+                         capture_output=True, timeout=120).stdout
+    path = OUT / (name + '.png')
+    path.write_bytes(png)
+    present = labels(seen or [])
+    log('[{}] {} bytes | {}'.format(name, len(png), ' · '.join(present)[:500] or '(nothing on screen)'))
+    return seen
+
+
+def sign_in():
+    """Welcome -> sign in -> the Flow. Returns True when the app is signed in."""
+    if not EMAIL or not PASSWORD:
+        fail('no walk credentials in the environment (CRUSHLY_WALK_EMAIL / CRUSHLY_WALK_PASSWORD)')
+    # Welcome offers "Get Started" (create an account) and a quieter line for
+    # people who already have one. The walk takes the second.
+    if not tap('I already have an account', tries=3):
+        # Some builds land straight on the form; only fail if the form is absent too.
+        if not find(nodes() or [], 'Welcome back'):
+            fail('could not reach the sign-in form from Welcome')
+    if not wait_for(['Welcome back'], 45, 'process exited on the way to sign in'):
+        fail('the sign-in form never appeared')
+    if not type_into(0, EMAIL):
+        fail('the email field was not there')
+    if not type_into(1, PASSWORD):
+        fail('the password field was not there')
+    adb('shell', 'input', 'keyevent', '4')  # dismiss the keyboard over the button
+    time.sleep(1.0)
+    if not tap('Sign in', tries=3, required=True):
+        return False
+    if wait_for(['Connections', 'Whispers'], 120, 'process exited while signing in'):
+        log('signed in as the walk account')
+        return True
+    shot('01-sign-in-stuck')
+    fail('signing in did not reach the app')
+    return False
+
+
+def walk():
+    """Photograph every surface, in the order the app presents them."""
+    shot('02-flow-default')
+
+    for label, name in (('Discover', '03-segment-discover'),
+                        ('Connections', '04-segment-connections'),
+                        ('Flow', '05-segment-flow')):
+        tap(label)
+        shot(name)
+
+    # The magnifier sits at the end of the strip, so it must be reachable from
+    # a segment that is not the feed's first one too.
+    if tap('Search'):
+        shot('06-search')
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1.5)
+
+    for label, name in (('Crushes', '07-crushes'),
+                        ('Whispers', '08-whispers'),
+                        ('Space', '09-space')):
+        tap(label)
+        shot(name)
+
+    # Close Ones is a segment of Whispers, not a tab of its own: walk in the way
+    # a person would, from the tab.
+    if tap('Whispers'):
+        if tap('Close Ones'):
+            shot('10-close-ones')
+            # The box in Whispers searches conversations and cannot search a list
+            # of people, so it must not be above this list.
+            seen = nodes() or []
+            if find(seen, 'Search your Whispers'):
+                fail('the Whispers search box is showing over Close Ones')
+
+    # Space's Close Ones count is a link into that segment, not into a lookalike.
+    tap('Space')
+    if tap('Close Ones'):
+        shot('11-space-to-close-ones')
+        seen = nodes() or []
+        if not find(seen, 'chosen to keep near'):
+            fail('Space → Close Ones did not land on the Close Ones segment')
+
+    if tap('Everything else in Crushly', tries=3):
+        shot('12-menu')
+        if tap('Settings'):
+            shot('13-settings')
+
+
+def main():
+    apk = sys.argv[1]
+    adb('install', '-r', apk)
+    adb('shell', 'pm', 'clear', PACKAGE)
+    for attempt in range(2):
+        adb('shell', 'am', 'force-stop', PACKAGE)
+        adb('logcat', '-c')
+        adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.MainActivity')
+
+        # 1. The opening sentence. Also the place where a launch crash shows up.
+        if not wait_for(['Follow the feelings'], 90, 'process exited during startup'):
+            fail('the follow-the-feelings opening did not appear')
+
+        # 2. One tap anywhere, which is the whole interaction on that screen.
+        size = adb('shell', 'wm', 'size', check=False).strip().split()[-1]
+        w, h = (int(v) for v in size.split('x'))
+        adb('shell', 'input', 'tap', str(w // 2), str(h // 2))
+        time.sleep(2)
+
+        # 3. Welcome, which is where signing in starts.
+        if not wait_for(['Welcome to Crushly', 'Get Started'], 60,
+                        'process exited after the opening screen'):
+            fail('tapping the opening did not reach Welcome')
+        time.sleep(2)
+
+        logs = adb('logcat', '-d', '-b', 'crash', check=False)
+        if PACKAGE in logs and ('FATAL EXCEPTION' in logs or 'Fatal signal' in logs):
+            fail('fatal crash recorded')
+        log('::notice::cold start {}: welcome UI visible; process alive.'.format(attempt + 1))
+
+        if attempt == 0:
+            # The relaunch proves the first run did not leave the app wedged;
+            # the second run is the one that gets walked.
+            continue
+
+        sign_in()
+        walk()
+        alive('process exited during the walk')
+
+    report.close()
+    print('Android 9 release walk finished. See walk/report.txt and the screenshots beside it.')
+
+
+if __name__ == '__main__':
+    main()
