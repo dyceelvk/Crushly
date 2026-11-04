@@ -156,8 +156,17 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 9 cold start and relaunch
+      - name: Android 9 cold start, sign in and walk
+        # This is the round the app gets walked on a real Android system image.
+        # A green build used to mean only that the APK launched: the walk now
+        # signs in and photographs every surface, so a caption under the tab bar
+        # or a link landing on the wrong segment fails here instead of on a
+        # phone in someone's hand.
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          CRUSHLY_WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
+          CRUSHLY_WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
+          CRUSHLY_WALK_OUT: ../walk
         with:
           api-level: 28
           target: default
@@ -275,6 +284,14 @@ jobs:
         with:
           name: Crushly-Android-test-APK
           path: CrushlyApp/apk/
+          retention-days: 14
+      - name: Keep the walk
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-walk
+          path: walk/
+          if-no-files-found: warn
           retention-days: 14
       - name: Build log on failure
         if: failure()
