@@ -86,7 +86,7 @@ export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfil
   // Flow, Vibes, Moments, Circles — everything somebody has made or joined, in
   // the vocabulary the product uses everywhere else. It used to say "Posts",
   // which is a hashtag's word for a Flow.
-  const [tab, setTab] = useState<'flow' | 'vibes' | 'moments' | 'circles'>('flow');
+  const [tab, setTab] = useState<'flow' | 'picks' | 'vibes' | 'moments' | 'circles'>('flow');
   // The Circles this member made public, and the ones you share with them.
   const circles = useMemberCircles(p?.id ?? null);
   const posts = useSpacePosts(id);
