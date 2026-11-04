@@ -69,14 +69,19 @@ export function CirclesScreen() {
           </View>
         </View>
 
-        <Button
-          title="Start a Circle"
-          variant="primary"
-          size="md"
-          icon="add"
-          style={{ marginTop: space.lg }}
-          onPress={() => setCreating(true)}
-        />
+        {/* Only when there is a list to sit above. With no Circles, the empty
+            state below already offers this exact button — the same action twice
+            on one screen reads as two different actions until you press them. */}
+        {items.length ? (
+          <Button
+            title="Start a Circle"
+            variant="primary"
+            size="md"
+            icon="add"
+            style={{ marginTop: space.lg }}
+            onPress={() => setCreating(true)}
+          />
+        ) : null}
 
         <View style={{ marginTop: space.lg, gap: space.sm }}>
           {circles.isLoading ? (

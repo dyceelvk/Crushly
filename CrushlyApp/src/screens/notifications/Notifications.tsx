@@ -98,10 +98,14 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       <View style={{ paddingTop: insets.top, paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm }}>
           <IconButton icon="chevron-back" variant="plain" label="Go back" onPress={() => navigation.goBack()} />
+          {/* The menu row that opens this is called Notifications, and it says
+              it carries "Crushes, Whispers and everything else" — so the screen
+              cannot call itself Crush Alerts, which promised only one of the
+              three. One place, one name. */}
           <Txt variant="heading" style={{ flex: 1 }} accessibilityRole="header">
-            Crush Alerts
+            Notifications
           </Txt>
-          <IconButton icon="settings-outline" variant="plain" label="Crush Alert settings" onPress={() => navigation.navigate('NotificationSettings')} />
+          <IconButton icon="settings-outline" variant="plain" label="Notification settings" onPress={() => navigation.navigate('NotificationSettings')} />
         </View>
       </View>
       {isLoading ? (
