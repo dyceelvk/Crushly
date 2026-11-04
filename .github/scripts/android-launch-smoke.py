@@ -23,12 +23,14 @@ through the environment and are never printed.
 """
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
 
 PACKAGE = 'app.crushly'
+SCREEN = [0, 0]  # filled in from `wm size`; dump bounds are in the same pixels
 OUT = pathlib.Path(os.environ.get('CRUSHLY_WALK_OUT') or 'walk')
 EMAIL = os.environ.get('CRUSHLY_WALK_EMAIL') or ''
 PASSWORD = os.environ.get('CRUSHLY_WALK_PASSWORD') or ''
@@ -45,6 +47,14 @@ def log(line):
 
 def adb(*args, check=True):
     return subprocess.run(['adb', *args], text=True, capture_output=True, check=check).stdout
+
+
+def read_screen_size():
+    out = adb('shell', 'wm', 'size', check=False)
+    found = re.findall(r'(\d+)x(\d+)', out)
+    if found:
+        SCREEN[0], SCREEN[1] = (int(v) for v in found[-1])
+    return SCREEN
 
 
 def fail(reason):
@@ -310,20 +320,25 @@ def assert_strip(seen):
         fail('the strip has no magnifier')
     if abs(magnifier['y'] // 40 - row) > 1:
         fail('the magnifier is not on the strip row')
-    rightmost = max(n['x2'] for n in seen if n['on_screen'] and abs(n['y'] // 40 - row) <= 1)
-    if magnifier['x1'] < rightmost - 1 and not any(
-            norm(v) in ('discover', 'flow', 'connections') and n['x2'] > magnifier['x1']
-            for n in seen for v in (n['desc'], n['text'])):
-        fail('the magnifier is not at the end of the strip')
+    row_nodes = [n for n in seen if n['on_screen'] and abs(n['y'] // 40 - row) <= 1]
+
+    def label_node(key):
+        return next((n for n in row_nodes
+                     for v in (n['desc'], n['text']) if norm(v) == key), None)
+
+    # The magnifier closes the row: it must be to the right of every label in it.
+    labels_right = max(label_node(k)['x2'] for k in ('discover', 'flow', 'connections')
+                       if label_node(k))
+    if magnifier['x1'] < labels_right:
+        fail('the magnifier does not close the strip ({} < {})'.format(magnifier['x1'], labels_right))
 
     # Nothing may be clipped: a tab that reads "Connectio" is a tab nobody can
     # read. This is the failure the 320 dp emulator produced twice.
-    row_nodes = [n for n in seen if n['on_screen'] and abs(n['y'] // 40 - row) <= 1]
-    screen = max(n['x2'] for n in seen if n['on_screen'])
-    for key in ('discover', 'flow', 'connections'):
-        node = next((n for n in row_nodes for v in (n['desc'], n['text']) if norm(v) == key), None)
+    screen = SCREEN[0] or max(n['x2'] for n in seen if n['on_screen'])
+    for key in ('discover', 'flow', 'connections', 'search crushly'):
+        node = label_node(key) or (magnifier if key == 'search crushly' else None)
         if node and node['x2'] > screen:
-            fail('the "{}" tab runs off the screen ({} > {})'.format(key, node['x2'], screen))
+            fail('the "{}" label runs off the screen ({} > {})'.format(key, node['x2'], screen))
     log('strip: Discover → Flow → Connections, magnifier last, nothing clipped; checked')
 
 
@@ -398,6 +413,8 @@ def walk():
 
 def main():
     apk = sys.argv[1]
+    read_screen_size()
+    log('screen: {}x{} px'.format(SCREEN[0], SCREEN[1]))
     adb('install', '-r', apk)
     adb('shell', 'pm', 'clear', PACKAGE)
     for attempt in range(2):
