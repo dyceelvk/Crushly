@@ -295,13 +295,24 @@ def leave_screen():
 
 
 def return_to_tabs(tries=4):
-    """Come back to the app's four tabs, however many screens are stacked."""
+    """Come back to the app's four tabs, however many screens are stacked.
+
+    If a screen will not close — a verification flow with its own chrome, a
+    camera permission sheet — the app is started again instead of the walk
+    carrying on wherever it happens to be, which is how a screen silently
+    becomes five wrong screenshots.
+    """
     for _ in range(tries):
         seen = nodes() or []
         if find(seen, 'Crushes') and find(seen, 'Space'):
             return True
         leave_screen()
-    return False
+    log('could not get back to the tabs; restarting the app')
+    adb('shell', 'am', 'force-stop', PACKAGE)
+    time.sleep(1.5)
+    adb('shell', 'am', 'start', '-n', LAUNCHER[0])
+    time.sleep(8)
+    return bool(find(nodes() or [], 'Crushes'))
 
 
 def back_out():
@@ -474,8 +485,8 @@ def walk():
                                       ('Appearance', 'appearance'),
                                       ('Privacy & visibility', 'privacy'),
                                       ('Discover preferences', 'filters'),
-                                      ('Verification', 'verification'),
-                                      ('Crushly Plus', 'plus')):
+                                      ('Crushly Plus', 'plus'),
+                                      ('Verification', 'verification')):
                         tap('Flow')
                         tap('Everything else in Crushly', tries=2)
                         if not tap('Settings', tries=2):

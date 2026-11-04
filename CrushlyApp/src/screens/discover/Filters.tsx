@@ -36,7 +36,7 @@ export function FiltersScreen({ navigation }: ScreenProps<'Filters'>) {
       await update.mutateAsync({ ageMin: ages[0], ageMax: ages[1], maxDistance: distance, intentions, interests, verifiedOnly });
       navigation.goBack();
     } catch (e) {
-      toast({ kind: 'error', title: 'Filters not saved', message: (e as Error).message });
+      toast({ kind: 'error', title: 'Preferences not saved', message: (e as Error).message });
     }
   };
 
@@ -57,7 +57,7 @@ export function FiltersScreen({ navigation }: ScreenProps<'Filters'>) {
             <Button title="Reset" variant="secondary" onPress={reset} />
           </View>
           <View style={{ flex: 2 }}>
-            <Button title="Apply filters" onPress={apply} loading={update.isPending} />
+            <Button title="Save preferences" onPress={apply} loading={update.isPending} />
           </View>
         </View>
       }
@@ -65,7 +65,7 @@ export function FiltersScreen({ navigation }: ScreenProps<'Filters'>) {
       <Header
         title="Discover preferences"
         subtitle="Shape who shows up for you."
-        right={<IconButton icon="close" label="Close filters" onPress={() => navigation.goBack()} />}
+        right={<IconButton icon="close" label="Close preferences" onPress={() => navigation.goBack()} />}
       />
 
       <View style={{ gap: 6 }}>
