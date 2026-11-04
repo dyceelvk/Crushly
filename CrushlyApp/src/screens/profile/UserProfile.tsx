@@ -11,7 +11,7 @@ import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { BlurView } from 'expo-blur';
-import { useMemberCircles } from '../../api/hooks';
+import { useCircleRequestState, useMemberCircles, useRequestJoinCircle } from '../../api/hooks';
 import { resolveTheme } from '../../lib/circleThemes';
 import { ThemeTile } from '../../components/ThemePicker';
 import { Pill, VerifiedBadge } from '../../components/Badges';
@@ -681,51 +681,96 @@ function SpaceCircles({
   }
   return (
     <View style={{ gap: space.sm }}>
-      {items.map((c) => {
-        const theme = resolveTheme(c.theme);
-        return (
-          <Pressable
-            key={c.id}
-            onPress={() => onOpen(c.id)}
-            accessibilityRole="button"
-            accessibilityLabel={`${c.name}, ${c.memberCount} members`}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: space.sm,
-              padding: space.sm,
-              borderRadius: radius.lg,
-              backgroundColor: colors.card,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            {theme ? (
-              <ThemeTile theme={theme} size={64} />
-            ) : (
-              <View style={{ width: 64, height: 40, borderRadius: radius.md, backgroundColor: colors.elevated }} />
-            )}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Txt variant="subheading" numberOfLines={1} style={{ flexShrink: 1 }}>
-                  {c.name}
-                </Txt>
-                {c.joined ? (
-                  <Txt variant="caption" color="gold">
-                    Yours
-                  </Txt>
-                ) : null}
-              </View>
-              <Txt variant="caption" color="textMuted" numberOfLines={1}>
-                {[theme?.label, `${c.memberCount} ${c.memberCount === 1 ? 'member' : 'members'}`, c.visibility === 'public' ? 'Public' : null]
-                  .filter(Boolean)
-                  .join(' · ')}
+      {items.map((c) => (
+        <SpaceCircleRow key={c.id} circle={c} onOpen={onOpen} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One room on somebody's Space.
+ *
+ * If its owners made it public and you are not in it, this is where you ask.
+ * The button is a request, never a join: whether it is allowed is decided in the
+ * database, and an approved row in `circle_join_requests` is the only thing that
+ * creates the membership.
+ */
+function SpaceCircleRow({
+  circle: c,
+  onOpen,
+}: {
+  circle: { id: number; name: string; about: string; theme?: string | null; visibility?: string; memberCount: number; joined?: boolean };
+  onOpen: (id: number) => void;
+}) {
+  const { colors } = useTheme();
+  const toast = useToast();
+  const theme = resolveTheme(c.theme);
+  const canAsk = !c.joined && c.visibility === 'public';
+  const state = useCircleRequestState(c.id, canAsk);
+  const ask = useRequestJoinCircle();
+  const asked = state.data?.requested ?? false;
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: space.sm,
+        padding: space.sm,
+        borderRadius: radius.lg,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <Pressable
+        onPress={() => onOpen(c.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`${c.name}, ${c.memberCount} members`}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1, minWidth: 0 }}
+      >
+        {theme ? (
+          <ThemeTile theme={theme} size={64} />
+        ) : (
+          <View style={{ width: 64, height: 40, borderRadius: radius.md, backgroundColor: colors.elevated }} />
+        )}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Txt variant="subheading" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {c.name}
+            </Txt>
+            {c.joined ? (
+              <Txt variant="caption" color="gold">
+                Yours
               </Txt>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-          </Pressable>
-        );
-      })}
+            ) : null}
+          </View>
+          <Txt variant="caption" color="textMuted" numberOfLines={1}>
+            {[theme?.label, `${c.memberCount} ${c.memberCount === 1 ? 'member' : 'members'}`, c.visibility === 'public' ? 'Public' : null]
+              .filter(Boolean)
+              .join(' · ')}
+          </Txt>
+        </View>
+      </Pressable>
+      {canAsk ? (
+        <Button
+          title={asked ? 'Asked' : 'Ask to join'}
+          variant={asked ? 'ghost' : 'outline'}
+          size="sm"
+          full={false}
+          disabled={asked}
+          loading={ask.isPending}
+          onPress={() =>
+            ask.mutate(c.id, {
+              onSuccess: () => toast({ kind: 'info', title: 'Asked', message: `The owner of ${c.name} decides who joins.` }),
+              onError: (e) => toast({ kind: 'error', title: 'Couldn’t ask', message: (e as Error).message }),
+            })
+          }
+        />
+      ) : (
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      )}
     </View>
   );
 }

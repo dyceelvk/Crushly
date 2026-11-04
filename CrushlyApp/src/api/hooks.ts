@@ -124,6 +124,55 @@ export const useNotifications = () =>
 export const useBlocks = () =>
   useQuery({ queryKey: keys.blocks, queryFn: () => service.listBlocks() });
 
+export const useCircleHighlights = (limit = 8) =>
+  useQuery({
+    queryKey: ['circle-highlights', limit],
+    queryFn: () => service.circleHighlights(limit),
+    staleTime: 20_000,
+  });
+
+export const useCircleRequests = () =>
+  useQuery({
+    queryKey: ['circle-requests'],
+    queryFn: () => service.myCircleRequests(),
+    staleTime: 15_000,
+    refetchInterval: 45_000,
+  });
+
+/** Asking to join. Invalidates the state of the button that asked. */
+export const useRequestJoinCircle = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (circleId: number) => service.requestJoinCircle(circleId),
+    onSuccess: (_res, circleId) => {
+      qc.invalidateQueries({ queryKey: ['circle-request-state', circleId] });
+      qc.invalidateQueries({ queryKey: ['member-circles'] });
+    },
+  });
+};
+
+/** An owner's answer. Both lists change, so both are refreshed. */
+export const useDecideCircleRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { requestId: number; approve: boolean }) =>
+      service.decideCircleRequest(input.requestId, input.approve),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['circle-requests'] });
+      qc.invalidateQueries({ queryKey: keys.circles });
+      qc.invalidateQueries({ queryKey: ['member-circles'] });
+    },
+  });
+};
+
+export const useCircleRequestState = (circleId: number, enabled = true) =>
+  useQuery({
+    queryKey: ['circle-request-state', circleId],
+    queryFn: () => service.circleRequestState(circleId),
+    enabled: enabled && Number.isFinite(circleId) && circleId > 0,
+    staleTime: 30_000,
+  });
+
 /**
  * `enabled` exists for the Space: a visitor's page shows *their* Circles, not
  * yours, and the two are different requests rather than two shapes of one.

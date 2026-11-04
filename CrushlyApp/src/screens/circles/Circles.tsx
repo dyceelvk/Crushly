@@ -17,10 +17,11 @@ import { CircleCover } from '../../components/CircleCover';
 import { Segmented } from '../../components/Segmented';
 import { setCircleLook } from '../../api/service';
 import { useToast } from '../../components/Toast';
-import { useCreateCircle, useCrushes, useMyCircles } from '../../api/hooks';
+import { useCreateCircle, useCrushes, useDecideCircleRequest, useMyCircles, useCircleRequests } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
+import { Avatar } from '../../components/Photo';
 import type { RootStackParamList } from '../../navigation/types';
 
 /**
@@ -37,9 +38,13 @@ export function CirclesScreen() {
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
   const circles = useMyCircles();
+  const requests = useCircleRequests();
+  const decide = useDecideCircleRequest();
   const [creating, setCreating] = useState(false);
+  const toast = useToast();
 
   const items = circles.data?.items ?? [];
+  const asking = requests.data ?? [];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -81,6 +86,76 @@ export function CirclesScreen() {
             style={{ marginTop: space.lg }}
             onPress={() => setCreating(true)}
           />
+        ) : null}
+
+        {/* Who is asking. Only owners ever have anything here, so the section
+            does not exist for anybody else — no empty heading, no explanation of
+            a feature you cannot use. */}
+        {asking.length ? (
+          <View style={{ marginTop: space.lg, gap: space.sm }}>
+            <Txt variant="title" accessibilityRole="header">
+              {asking.length === 1 ? '1 request to join' : `${asking.length} requests to join`}
+            </Txt>
+            {asking.map((r) => (
+              <View
+                key={r.id}
+                style={{
+                  backgroundColor: colors.card,
+                  borderRadius: radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.goldLine,
+                  padding: space.md,
+                  gap: space.sm,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Avatar uri={r.member.photos?.[0]?.url ?? null} name={r.member.name} size={40} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Txt variant="bodyStrong" numberOfLines={1}>
+                      {r.member.name}
+                    </Txt>
+                    <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                      wants to join {r.circleName} · {timeAgo(r.createdAt)}
+                    </Txt>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <Button
+                    title="Let them in"
+                    variant="primary"
+                    size="sm"
+                    icon="checkmark"
+                    loading={decide.isPending && decide.variables?.requestId === r.id && decide.variables?.approve === true}
+                    onPress={() =>
+                      decide.mutate(
+                        { requestId: r.id, approve: true },
+                        {
+                          onSuccess: () => toast({ kind: 'info', title: `${r.member.name} is in`, message: `They can read ${r.circleName} now.` }),
+                          onError: (e) => toast({ kind: 'error', title: 'Couldn’t let them in', message: (e as Error).message }),
+                        },
+                      )
+                    }
+                    full={false}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    title="Not this time"
+                    variant="ghost"
+                    size="sm"
+                    loading={decide.isPending && decide.variables?.requestId === r.id && decide.variables?.approve === false}
+                    onPress={() =>
+                      decide.mutate(
+                        { requestId: r.id, approve: false },
+                        { onError: (e) => toast({ kind: 'error', title: 'Couldn’t answer that', message: (e as Error).message }) },
+                      )
+                    }
+                    full={false}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
         ) : null}
 
         <View style={{ marginTop: space.lg, gap: space.sm }}>

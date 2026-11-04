@@ -14,7 +14,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
+import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -632,6 +632,36 @@ export async function closeOnes(limit = 50): Promise<{ items: CloseOne[] }> {
 export async function spacePosts(authorId: number, limit = 20, after: number | null = null): Promise<{ items: Post[] }> {
   const page = await rpc<{ items: Post[] }>('space_posts', { p_author_id: authorId, p_limit: limit, p_after: after });
   return { items: page?.items ?? [] };
+}
+
+/**
+ * The highlight in each of your Circles — the post people reacted to, and how
+ * busy each room has been. Computed in the database, from rows, never seeded.
+ */
+export async function circleHighlights(limit = 8): Promise<CircleHighlight[]> {
+  return (await rpc<CircleHighlight[]>('circle_highlights', { p_limit: limit })) ?? [];
+}
+
+/** Ask to join a public Circle. The owner decides; the database enforces it. */
+export async function requestJoinCircle(circleId: number): Promise<{ status: string; requestId: number }> {
+  return rpc('request_join_circle', { p_circle_id: circleId });
+}
+
+export async function cancelJoinRequest(circleId: number): Promise<boolean> {
+  return rpc('cancel_join_request', { p_circle_id: circleId });
+}
+
+/** Who is asking to join the Circles you started. */
+export async function myCircleRequests(): Promise<CircleJoinRequest[]> {
+  return (await rpc<CircleJoinRequest[]>('my_circle_requests')) ?? [];
+}
+
+export async function decideCircleRequest(requestId: number, approve: boolean): Promise<{ ok: boolean; approved: boolean; memberId: number; circleId: number }> {
+  return rpc('decide_circle_request', { p_request_id: requestId, p_approve: approve });
+}
+
+export async function circleRequestState(circleId: number): Promise<{ requested: boolean }> {
+  return rpc('circle_request_state', { p_circle_id: circleId });
 }
 
 export async function myCircles(): Promise<CircleListPage> {

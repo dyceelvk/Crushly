@@ -95,6 +95,10 @@ def main() -> int:
         # them left inside a function body that still has to work.
         if not run_file(ROOT / 'no_vibes.sql'):
             return 1
+        # A Circle you are not in is joinable by asking, and only the owner can
+        # answer — enforced by the functions, not by the button.
+        if not run_file(ROOT / 'circle_requests.sql'):
+            return 1
         if not run_file(ROOT / 'shared_post.sql'):
             return 1
         # The Flow is ranked: scored from what people read, resumable by cursor,

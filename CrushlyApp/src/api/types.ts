@@ -182,6 +182,39 @@ export type CircleSummary = Circle & {
   unreadCount: number;
 };
 
+/**
+ * The most engaged thing in one of your Circles.
+ *
+ * Every field is a fact about a row: `likes` and `comments` are counted from
+ * `post_reactions` and `post_comments`, `messages` from the room's own
+ * conversation. `kind` says which of those earned the card its place.
+ */
+export type CircleHighlight = {
+  circleId: number;
+  circleName: string;
+  theme: string | null;
+  coverUrl: string | null;
+  memberCount: number;
+  postId: number | null;
+  body: string | null;
+  mediaUrl: string | null;
+  likes: number;
+  comments: number;
+  messages: number;
+  totalMessages: number;
+  kind: 'post' | 'conversation' | 'quiet';
+  score: number;
+};
+
+/** Somebody waiting to be let into a Circle you started. */
+export type CircleJoinRequest = {
+  id: number;
+  circleId: number;
+  circleName: string;
+  createdAt: number;
+  member: Profile;
+};
+
 export type CircleMember = {
   member: Profile;
   role: CircleRole;
