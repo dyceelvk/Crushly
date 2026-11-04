@@ -411,13 +411,13 @@ export async function recordPostFeedback(
 /**
  * Crushes: the posts of the people you have a Crush with, newest first.
  *
- * Crushes is a feed, not a directory — `crushes_feed` returns the same post
+ * Crushes is a feed, not a directory — `crush_posts_feed` returns the same post
  * shape everything else returns, minus clips, because clips are Flow's. It
  * carries `saved` through `post_engagement`, which is what makes Pick and Crush
  * work here without any second code path.
  */
 export async function crushesFeed(limit = 20, after?: number | null): Promise<FlowPage> {
-  const page = await rpc<FlowPage>('crushes_feed', { p_limit: limit, p_after: after ?? null });
+  const page = await rpc<FlowPage>('crush_posts_feed', { p_limit: limit, p_after: after ?? null });
   return { items: page?.items ?? [] };
 }
 

@@ -1,4 +1,10 @@
--- crushes_feed: the posts Crushes shows.
+-- crush_posts_feed: the posts Crushes shows.
+--
+-- (Named this way, not `crushes_feed`: that name is already the people side of
+-- Crushes, `crushes_feed()` with no arguments, and adding a second function of
+-- the same name with defaults made every call to the first one ambiguous —
+-- "function public.crushes_feed() is not unique". The suite caught it before
+-- anyone's Space did.)
 --
 -- Crushes is a post feed, not a directory of people. It carries the posts of
 -- the people you have a Crush with — you on them, them on you, or both — and it
@@ -14,7 +20,7 @@
 -- Paging is keyset (created_at, id), the same shape flow_feed uses, so a post
 -- arriving while someone scrolls cannot make them see a row twice.
 
-create or replace function public.crushes_feed(p_limit integer default 20, p_after bigint default null::bigint)
+create or replace function public.crush_posts_feed(p_limit integer default 20, p_after bigint default null::bigint)
 returns jsonb
 language plpgsql
 stable security definer
@@ -83,7 +89,11 @@ begin
   return jsonb_build_object('items', items);
 end $function$;
 
-grant execute on function public.crushes_feed(integer, bigint) to authenticated, service_role;
+grant execute on function public.crush_posts_feed(integer, bigint) to authenticated, service_role;
+
+-- Belt and braces: if this migration is replayed over a database that ran the
+-- earlier draft, the ambiguous overload goes.
+drop function if exists public.crushes_feed(integer, bigint);
 
 -- picks_of: someone's Picks, as posts.
 --
