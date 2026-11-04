@@ -71,7 +71,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           to state the version a second time. */}
       <Group title="App">
         <ListRow title="Kept posts" subtitle="Only you can see this" icon="bookmark-outline" onPress={() => navigation.navigate('SavedPosts')} />
-        <ListRow title="Crush Alerts" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
+        <ListRow title="Notification settings" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} />
         <ListRow title="App version" value={version} icon="information-circle-outline" />
         {update.data?.available ? (
@@ -292,7 +292,7 @@ export function NotificationSettingsScreen() {
     update.mutate({ [k]: v }, { onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
   return (
     <Screen>
-      <Header title="Crush Alerts" back />
+      <Header title="Notification settings" back />
       <Group footer="These control your in-app notification center. Push notifications arrive in a future update.">
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
         <ListRow title="Crushes" subtitle="Crushes, Big Crushes and Mutual Crushes" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />

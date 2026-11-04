@@ -431,7 +431,7 @@ export function ProfileTabScreen() {
         <ListRow title="Discover preferences" icon="options-outline" onPress={() => navigation.navigate('Filters')} />
         <ListRow title="Privacy" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />
         <ListRow title="Safety center" icon="shield-outline" iconTone="success" onPress={() => navigation.navigate('Safety')} />
-        <ListRow title="Crush Alerts" icon="notifications-outline" onPress={() => navigation.navigate('Notifications')} />
+        <ListRow title="Notifications" icon="notifications-outline" onPress={() => navigation.navigate('Notifications')} />
         <ListRow title="Settings" icon="settings-outline" onPress={() => navigation.navigate('Settings')} last />
       </Group>
     </ScrollView>

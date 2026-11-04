@@ -134,7 +134,7 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
             </View>
             <IconButton
               icon="notifications-outline"
-              label={`Crush Alerts${badges?.notifications ? `, ${badges.notifications} unread` : ''}`}
+              label={`Notifications${badges?.notifications ? `, ${badges.notifications} unread` : ''}`}
               badge={!!badges?.notifications}
               onPress={() => navigation.navigate('Notifications')}
             />
