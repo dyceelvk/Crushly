@@ -37,7 +37,12 @@ begin
   insert into public.circle_members (circle_id, member_id, role) values (cid, owner_id, 'owner');
 
   -- Engagement that a highlight is allowed to be about: a post with reactions.
-  insert into public.posts (author_id, body, circle_id) values (owner_id, 'first light', cid) returning id into liked_post;
+  -- A post that lives inside the room: `posts_circle_pairing` requires the
+  -- audience and the circle to agree, which is the schema saying a Circle post
+  -- is only ever a Circle post.
+  insert into public.posts (author_id, body, audience, circle_id)
+    values (owner_id, 'first light', 'circle', cid)
+    returning id into liked_post;
   insert into public.post_reactions (post_id, user_id) values (liked_post, owner_id);
   insert into public.post_reactions (post_id, user_id) values (liked_post, asker_id);
 
