@@ -404,11 +404,54 @@ def walk():
         if not find(seen, 'chosen to keep near'):
             fail('Space → Close Ones did not land on the Close Ones segment')
 
+    # A clip's sound is a place, so it has to open as one.
     tap('Flow')
+    if tap('Original sound'):
+        shot('15-sound')
+        back_out()
+
+    # Everything the menu holds. Each row has to open on its own screen: a menu
+    # row that lands on a blank page or the wrong list is a row that lies.
+    tap('Flow')
+    n = 16
     if tap('Everything else in Crushly', tries=3):
-        shot('14-menu')
-        if tap('Settings'):
-            shot('15-settings')
+        shot('{:02d}-menu'.format(n))
+        n += 1
+        for row, name in (('Your Circles', 'circles'),
+                          ('Moments', 'moments'),
+                          ('Kept', 'kept'),
+                          ('Notifications', 'notifications'),
+                          ('Settings', 'settings')):
+            tap('Flow')                              # the menu is the Flow's
+            tap('Everything else in Crushly', tries=2)
+            if tap(row, tries=2):
+                shot('{:02d}'.format(n) + '-' + name)
+                n += 1
+                if name == 'settings':
+                    # The settings screen is a list of places as well; open three
+                    # of them so a broken one cannot hide behind the index.
+                    for sub, slug in (('Account & security', 'account'),
+                                      ('Appearance', 'appearance'),
+                                      ('Privacy', 'privacy')):
+                        if tap(sub, tries=2):
+                            shot('{:02d}-settings-{}'.format(n, slug))
+                            n += 1
+                            back_out()
+                    continue
+                back_out()
+
+    # Space's own edit surface, and the three Crushes lenses.
+    tap('Space')
+    if tap('Edit Space'):
+        shot('{:02d}-edit-space'.format(n))
+        n += 1
+        back_out()
+    tap('Crushes')
+    for lens, name in (('Your crushes', 'crushes-outgoing'), ('Mutual', 'crushes-mutual')):
+        if tap(lens, tries=2):
+            shot('{:02d}-{}'.format(n, name))
+            n += 1
+    log('walk finished with {} screens'.format(n))
 
 
 def main():

@@ -98,10 +98,29 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
+          # This step used to print a warning and `exit 0` when the token was
+          # missing. Every run since then went green having published nothing,
+          # while mecrushly.vercel.app kept serving a build from days earlier —
+          # which is indistinguishable, from the outside, from work that was
+          # never done. A deploy that cannot deploy is a failure, and it says so.
           if [ -z "${VERCEL_TOKEN:-}" ]; then
-            echo "::warning::VERCEL_TOKEN is not set for this repository; skipping Vercel. Add it to GitHub secrets to publish mecrushly.vercel.app again."
-            exit 0
+            echo "::error::VERCEL_TOKEN is not set, so this workflow cannot publish. mecrushly.vercel.app is NOT this commit. Add a Vercel token (https://vercel.com/account/tokens) to the repository secrets, or deploy with the Vercel integration."
+            exit 1
           fi
           npx --yes vercel@latest deploy --prod --yes \
             --token="$VERCEL_TOKEN" \
             --message="Crushly web ${{ github.sha }}"
+          # Then prove it: the alias must serve a bundle containing this commit's
+          # code, not merely accept the upload.
+          for _ in $(seq 1 20); do
+            sleep 15
+            if curl -fsSL https://mecrushly.vercel.app | grep -q "_expo/static/js/web/index-"; then
+              bundle=$(curl -fsSL https://mecrushly.vercel.app | grep -o '/_expo/static/js/web/index-[a-f0-9]*\.js' | head -1)
+              if curl -fsSL "https://mecrushly.vercel.app${bundle}" | grep -qF 'Search Crushly'; then
+                echo "::notice::The live site now serves this build (${bundle})."
+                exit 0
+              fi
+            fi
+          done
+          echo "::error::mecrushly.vercel.app is not serving this build after the deploy."
+          exit 1
