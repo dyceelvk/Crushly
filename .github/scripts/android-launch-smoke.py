@@ -427,6 +427,9 @@ def walk():
         return_to_tabs()
 
     # And the hook under a clip must search the words it names, not open blank.
+    # The hook only exists on Flow, and the step before this one left us on
+    # Discover, so come home first.
+    tap('Home')
     if tap('Search for'):
         seen = shot('09-hook-search')
         named = [n['desc'] for n in seen if norm(n['desc']).startswith('search for')]
@@ -526,6 +529,7 @@ def walk():
 
     # Space's own edit surface, and the three Crushes lenses.
     tap('Space')
+    time.sleep(1.5)
     if tap('Edit Space'):
         shot('{:02d}-edit-space'.format(n))
         n += 1

@@ -22,6 +22,12 @@ import type { RootStackParamList } from '../../navigation/types';
 
 type Tab = 'incoming' | 'outgoing' | 'mutual';
 
+/** Height of Home's strip. As a pane, Crushes starts under it — the strip is
+ *  drawn over the pane, so anything that begins at the top of the pane collides
+ *  with it. The 320 dp walk caught exactly that: the lens row printed straight
+ *  through "Flow · Crushes · Connections". */
+const STRIP = 46;
+
 export function CrushesScreen({ embedded = false, initial }: { embedded?: boolean; initial?: Tab } = {}) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
@@ -122,7 +128,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
         numColumns={columns}
         keyExtractor={(p) => String(p.id)}
         columnWrapperStyle={columns > 1 ? { gap } : undefined}
-        contentContainerStyle={{ paddingTop: embedded ? space.md : insets.top, paddingHorizontal: gutter, paddingBottom: space.xxxl, gap: space.lg, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
+        contentContainerStyle={{ paddingTop: embedded ? insets.top + STRIP : insets.top, paddingHorizontal: gutter, paddingBottom: space.xxxl, gap: space.lg, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
         ListHeaderComponent={
           <View style={{ gap: space.lg, paddingTop: space.sm }}>
             {/* As a pane of Home the strip above already says which surface this
