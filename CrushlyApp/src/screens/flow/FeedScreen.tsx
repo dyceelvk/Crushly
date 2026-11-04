@@ -11,6 +11,7 @@ import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { NotificationsSheet } from '../../components/NotificationsSheet';
 import { CrushesFeed } from '../crushes/CrushesFeed';
+import { CirclesStrip } from '../../components/circles/CirclesStrip';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useBadges, useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
@@ -171,6 +172,13 @@ export function FeedScreen() {
         if (next > 0 && next !== paneHeight) setPaneHeight(next);
       }}
     >
+      {/* Circles on the feed, one presentation of three. It sits over the top of
+          the pages rather than inside them: the pages are one post each and snap,
+          so a header inside the list would scroll away and come back with the
+          wrong post. Only on Connections, where a room you belong to and the
+          people in it are the same idea. */}
+      {tab === 'connections' ? <CirclesStrip top={insets.top + 46 + 4} /> : null}
+
       {tab === 'crushes' ? (
         <CrushesFeed />
       ) : feed.isLoading ? (
