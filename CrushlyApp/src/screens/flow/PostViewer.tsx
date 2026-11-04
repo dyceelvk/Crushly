@@ -452,7 +452,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           icon={post.saved ? 'bookmark' : 'bookmark-outline'}
           tint={post.saved ? colors.primary : '#FFFFFF'}
           label={post.saved ? 'Let it go' : 'Keep for later'}
-          count={post.saved ? 'Kept' : 'Keep'}
+          count={post.saved ? 'Picked' : 'Pick'}
           onPress={toggleKeep}
         />
         <RailAction icon="arrow-redo-outline" label="Share this post" count="Share" onPress={() => setShareOpen(true)} />

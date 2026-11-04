@@ -304,7 +304,7 @@ def return_to_tabs(tries=4):
     """
     for _ in range(tries):
         seen = nodes() or []
-        if find(seen, 'Crushes') and find(seen, 'Space'):
+        if find(seen, 'Home') and find(seen, 'Space'):
             return True
         leave_screen()
     log('could not get back to the tabs; restarting the app')
@@ -312,7 +312,7 @@ def return_to_tabs(tries=4):
     time.sleep(1.5)
     adb('shell', 'am', 'start', '-n', LAUNCHER[0])
     time.sleep(8)
-    return bool(find(nodes() or [], 'Crushes'))
+    return bool(find(nodes() or [], 'Home'))
 
 
 def back_out():
@@ -336,59 +336,65 @@ def back_out():
 
 
 def assert_strip(seen):
-    """Discover, Flow, Connections — in that order, on one row, magnifier last.
+    """Home reads Flow → Crushes → Connections, and the bar reads
+    Home → Discover → (+) → Whispers → Space.
 
     This is the layout that was argued about most; a screenshot can be read two
-    ways, a sorted list of x coordinates cannot.
+    ways, a sorted list of x coordinates cannot. Three things are asserted, not
+    two: the strip's words and order, that the magnifier is *not* on the strip
+    (search moved into Discover), and that Crushes is not a tab in the bar.
     """
     points = {}
     for n in seen:
         for value in (n['desc'], n['text']):
             key = norm(value)
-            if key in ('discover', 'flow', 'connections'):
+            if key in ('flow', 'crushes', 'connections'):
                 points.setdefault(key, []).append((n['x'], n['y']))
-    missing = [k for k in ('discover', 'flow', 'connections') if k not in points]
+    missing = [k for k in ('flow', 'crushes', 'connections') if k not in points]
     if missing:
-        fail('the Flow strip is missing ' + ', '.join(missing))
+        fail('the Home strip is missing ' + ', '.join(missing))
 
-    # The bottom bar also says "Flow", so keep to the row that holds all three.
+    # "Flow" and "Crushes" may also be the bar or a heading, so keep to the row
+    # that holds all three.
     rows = {}
     for key, pts in points.items():
         for _, y in pts:
             rows.setdefault(y // 40, set()).add(key)
-    row = next((r for r, keys in rows.items() if keys >= {'discover', 'flow', 'connections'}), None)
+    row = next((r for r, keys in rows.items() if keys >= {'flow', 'crushes', 'connections'}), None)
     if row is None:
-        fail('no single row holds Discover, Flow and Connections')
+        fail('no single row holds Flow, Crushes and Connections')
     in_row = {k: [x for x, y in v if y // 40 == row] for k, v in points.items()}
     order = sorted(in_row, key=lambda k: min(in_row[k]))
-    if order != ['discover', 'flow', 'connections']:
-        fail('the strip reads ' + ' → '.join(order) + ', not Discover → Flow → Connections')
+    if order != ['flow', 'crushes', 'connections']:
+        fail('the strip reads ' + ' → '.join(order) + ', not Flow → Crushes → Connections')
 
-    magnifier = find(seen, 'Search Crushly')
-    if not magnifier:
-        fail('the strip has no magnifier')
-    if abs(magnifier['y'] // 40 - row) > 1:
-        fail('the magnifier is not on the strip row')
-    row_nodes = [n for n in seen if n['on_screen'] and abs(n['y'] // 40 - row) <= 1]
+    # Search is a page, not a magnifier on a row about the feed.
+    if find(seen, 'Search Crushly'):
+        fail('the strip still carries a magnifier; search lives in Discover now')
 
-    def label_node(key):
-        return next((n for n in row_nodes
-                     for v in (n['desc'], n['text']) if norm(v) == key), None)
-
-    # The magnifier closes the row: it must be to the right of every label in it.
-    labels_right = max(label_node(k)['x2'] for k in ('discover', 'flow', 'connections')
-                       if label_node(k))
-    if magnifier['x1'] < labels_right:
-        fail('the magnifier does not close the strip ({} < {})'.format(magnifier['x1'], labels_right))
-
-    # Nothing may be clipped: a tab that reads "Connectio" is a tab nobody can
-    # read. This is the failure the 320 dp emulator produced twice.
     screen = SCREEN[0] or max(n['x2'] for n in seen if n['on_screen'])
-    for key in ('discover', 'flow', 'connections', 'search crushly'):
-        node = label_node(key) or (magnifier if key == 'search crushly' else None)
+    for key in ('flow', 'crushes', 'connections'):
+        node = next((n for n in seen if n['on_screen']
+                     for v in (n['desc'], n['text']) if norm(v) == key and n['y'] // 40 == row), None)
         if node and node['x2'] > screen:
             fail('the "{}" label runs off the screen ({} > {})'.format(key, node['x2'], screen))
-    log('strip: Discover → Flow → Connections, magnifier last, nothing clipped; checked')
+    log('strip: Flow → Crushes → Connections, no magnifier, nothing clipped; checked')
+
+    # The bar: four words and a plus, with Discover in it and Crushes out of it.
+    bar = {}
+    for n in seen:
+        for value in (n['desc'], n['text']):
+            key = norm(value)
+            if key in ('home', 'discover', 'whispers', 'space', 'crushes'):
+                bar.setdefault(key, []).append((n['x'], n['y']))
+    bar_missing = [k for k in ('home', 'discover', 'whispers', 'space') if k not in bar]
+    if bar_missing:
+        fail('the bottom bar is missing ' + ', '.join(bar_missing))
+    lowest = max(y for pts in bar.values() for _, y in pts)
+    bar_keys = {k for k, pts in bar.items() if any(abs(y - lowest) < 60 for _, y in pts)}
+    if 'crushes' in bar_keys:
+        fail('Crushes is still a tab in the bar; it belongs on the strip')
+    log('bar: Home · Discover · + · Whispers · Space; checked')
 
 
 def assert_hook_is_low(seen):
@@ -408,16 +414,16 @@ def walk():
     assert_strip(seen)
     assert_hook_is_low(seen)
 
-    for label, name in (('Discover', '05-segment-discover'),
+    for label, name in (('Crushes', '05-segment-crushes'),
                         ('Connections', '06-segment-connections'),
                         ('Flow', '07-segment-flow')):
         tap(label)
         shot(name)
 
-    # The magnifier sits at the end of the strip, so it must be reachable from
-    # a segment that is not the feed's first one too.
+    # Search is Discover's, so walk to Discover to find it.
+    tap('Discover')
     if tap('Search Crushly'):
-        shot('08-strip-magnifier')
+        shot('08-discover-search')
         return_to_tabs()
 
     # And the hook under a clip must search the words it names, not open blank.
@@ -427,8 +433,7 @@ def walk():
         log('the hook opened: ' + (named[0] if named else '(no hook label left)'))
         return_to_tabs()
 
-    for label, name in (('Crushes', '10-crushes'),
-                        ('Whispers', '11-whispers'),
+    for label, name in (('Whispers', '11-whispers'),
                         ('Space', '12-space')):
         tap(label)
         shot(name)
@@ -508,7 +513,9 @@ def walk():
         return_to_tabs()
 
     # Search with something actually typed into it: the empty state is not the
-    # screen, and the results are the part people use.
+    # screen, and the results are the part people use. The magnifier is
+    # Discover's, not the strip's.
+    tap('Discover')
     if tap('Search Crushly'):
         type_into(0, 'spencer')
         adb('shell', 'input', 'keyevent', '4')
@@ -523,7 +530,7 @@ def walk():
         shot('{:02d}-edit-space'.format(n))
         n += 1
         return_to_tabs()
-    tap('Crushes')
+    tap('Crushes')   # a segment of Home, not a tab
     for lens, name in (('Your crushes', 'crushes-outgoing'), ('Mutual', 'crushes-mutual')):
         if tap(lens, tries=2):
             shot('{:02d}-{}'.format(n, name))

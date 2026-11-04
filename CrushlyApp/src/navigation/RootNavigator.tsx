@@ -25,7 +25,7 @@ import {
 import { SearchScreen } from '../screens/discover/Search';
 import { FeedScreen } from '../screens/flow/FeedScreen';
 import { FiltersScreen } from '../screens/discover/Filters';
-import { CrushesScreen } from '../screens/crushes/Crushes';
+import { DiscoverTabScreen } from '../screens/discover/DiscoverTab';
 import { MutualCrushScreen, celebrated } from '../screens/crushes/MutualCrush';
 import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
@@ -136,8 +136,8 @@ function MainTabs() {
         tabBar={(props) => <TabBar {...props} onCreate={() => navigation.navigate('CreatePost')} />}
         screenOptions={{ headerShown: false, lazy: true }}
       >
-        <Tabs.Screen name="Flows" component={FeedScreen} options={{ title: 'Flow' }} />
-        <Tabs.Screen name="Crushes" component={CrushesScreen} />
+        <Tabs.Screen name="Flows" component={FeedScreen} options={{ title: 'Home' }} />
+        <Tabs.Screen name="Discover" component={DiscoverTabScreen} options={{ title: 'Discover' }} />
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>

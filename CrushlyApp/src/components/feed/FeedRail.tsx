@@ -11,30 +11,37 @@ import type { Post } from '../../api/types';
 /**
  * The action rail down the right edge of a post.
  *
+ * Two things live here, and they are the two that are not verbs about the post
+ * itself: **Pick** keeps it (private, silent — the author is never told) and
+ * **Repost** passes it on. Crush, Comment and Share are in the row under the
+ * post, where they have been all along — the rail carried all five once, which
+ * meant every one of those three existed twice on one screen, and the rail is
+ * the last place a thumb reaches.
+ *
  * Measured from the reference: 58 dp wide, 10 dp from the screen edge, items
  * 15 dp apart, a 46 dp avatar with a 20 dp follow badge hanging off its bottom
- * edge, 34 dp glyphs, and an 11.5 dp count under each. The numbers are
- * abbreviated (`39.4K`), never raw — a five-digit number under a heart is noise.
+ * edge, 34 dp glyphs, and an 11.5 dp count under each.
  *
- * Only the bookmark changes colour when it is on. Everything else stays white so
- * the video keeps the eye.
+ * The author's face disc that used to sit at the bottom of the rail is gone: it
+ * opened the author's Space, and the avatar at the top of the same rail already
+ * does exactly that.
  */
 export function FeedRail({
   post,
   onAuthor,
-  onLike,
-  onComment,
-  onSave,
-  onShare,
+  onPick,
+  onRepost,
+  reposts,
   following,
   onFollow,
 }: {
   post: Post;
   onAuthor: () => void;
-  onLike: () => void;
-  onComment: () => void;
-  onSave: () => void;
-  onShare: () => void;
+  onPick: () => void;
+  /** Absent until the reposts table exists — a button that does nothing is worse
+   *  than a button that is not there. */
+  onRepost?: () => void;
+  reposts?: number;
   following?: boolean;
   onFollow?: () => void;
 }) {
@@ -102,42 +109,17 @@ export function FeedRail({
         ) : null}
       </Pressable>
 
-      {item('Like', post.likeCount, (
+      {item('Pick', null, (
         <Ionicons
-          name={post.liked ? 'heart' : 'heart-outline'}
-          size={34}
-          color={post.liked ? colors.crush : '#FFFFFF'}
-          style={{ opacity: post.liked ? 1 : 0.96 }}
+          name={post.saved ? 'download' : 'download-outline'}
+          size={30}
+          color={post.saved ? colors.gold : '#FFFFFF'}
         />
-      ), onLike)}
+      ), onPick)}
 
-      {item('Comment', post.commentCount, <Ionicons name="chatbubble-outline" size={31} color="#FFFFFF" />, onComment)}
-
-      {item('Save', null, (
-        <Ionicons name={post.saved ? 'bookmark' : 'bookmark-outline'} size={30} color={post.saved ? colors.gold : '#FFFFFF'} />
-      ), onSave)}
-
-      {item('Share', null, <Ionicons name="arrow-redo-outline" size={32} color="#FFFFFF" />, onShare)}
-
-      {/* The sound disc: the reference spins the track under the action rail.
-          Crushly has no sound object, so this is the author's mark — the same
-          place in the anatomy, filled with the thing that exists. */}
-      <Pressable onPress={onAuthor} accessibilityRole="button" accessibilityLabel={`More from ${post.author.name}`} hitSlop={8}>
-        <View
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 21,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(0,0,0,0.55)',
-            borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.16)',
-          }}
-        >
-          <Avatar uri={post.author.photos?.[0]?.url ?? null} name={post.author.name} size={30} />
-        </View>
-      </Pressable>
+      {onRepost
+        ? item('Repost', reposts ?? null, <Ionicons name="repeat-outline" size={32} color="#FFFFFF" />, onRepost)
+        : null}
     </View>
   );
 }

@@ -73,7 +73,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
     switch (n.kind) {
       case 'crush':
       case 'deep_crush':
-        return navigation.navigate('Main', { screen: 'Crushes', params: { tab: 'incoming' } });
+        return navigation.navigate('Main', { screen: 'Flows', params: { tab: 'crushes', crushesTab: 'incoming' } });
       case 'mutual':
         // An unseen match opens the moment; one you have already been shown is
         // just a way back to the person.
@@ -81,7 +81,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
           celebrated.add(n.actor.id);
           return navigation.navigate('MutualCrush', { userId: n.actor.id, name: n.actor.name, photo: n.actor.photo });
         }
-        return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Crushes', params: { tab: 'mutual' } });
+        return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Flows', params: { tab: 'crushes', crushesTab: 'mutual' } });
       case 'message':
       case 'moment_reply':
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
@@ -162,7 +162,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
                 icon="notifications-outline"
                 title="All quiet for now"
                 message="Crushes, Mutual Crushes and Whispers will show up here."
-                action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) }}
+                action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
               />
             )
           }

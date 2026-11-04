@@ -13,7 +13,7 @@ import { haptic } from '../lib/haptics';
 
 const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap] | 'crush'> = {
   Flows: ['home', 'home-outline'],
-  Crushes: 'crush',
+  Discover: ['compass', 'compass-outline'],
   Messages: ['chatbubble-ellipses', 'chatbubble-ellipses-outline'],
   Profile: ['person-circle', 'person-circle-outline'],
 };
@@ -27,8 +27,10 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
   const insets = useSafeAreaInsets();
   const { data: badges } = useBadges(true);
 
+  // Crushes is a part of Home now, so its count rides on Home's icon rather
+  // than on a tab of its own.
   const counts: Record<string, number> = {
-    Crushes: badges?.crushes || 0,
+    Flows: badges?.crushes || 0,
     Messages: badges?.messages || 0,
   };
 

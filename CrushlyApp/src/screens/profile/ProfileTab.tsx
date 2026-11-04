@@ -393,7 +393,7 @@ export function ProfileTabScreen() {
           first
           value={crushes.data?.incoming.length}
           label={crushes.data?.incoming.length === 1 ? 'Crush' : 'Crushes'}
-          onPress={() => navigation.navigate('Main', { screen: 'Crushes' })}
+          onPress={() => navigation.navigate('Main', { screen: 'Flows', params: { tab: 'crushes' } })}
         />
         <Count value={circles.data?.items.length} label={circles.data?.items.length === 1 ? 'Circle' : 'Circles'} onPress={() => navigation.navigate('Circles')} />
         <Count
@@ -428,6 +428,12 @@ export function ProfileTabScreen() {
       </Group>
 
       <Group title="Your space">
+        <ListRow
+          title="Picked"
+          subtitle="The posts you kept. Only you can see them."
+          icon="download-outline"
+          onPress={() => navigation.navigate('SavedPosts')}
+        />
         <ListRow title="Discover preferences" icon="options-outline" onPress={() => navigation.navigate('Filters')} />
         <ListRow title="Privacy" icon="eye-off-outline" onPress={() => navigation.navigate('Privacy')} />
         <ListRow title="Safety center" icon="shield-outline" iconTone="success" onPress={() => navigation.navigate('Safety')} />

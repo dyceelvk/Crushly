@@ -130,7 +130,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
               icon="bookmark-outline"
               title="Nobody here yet"
               message="Keep someone close from their Space and they’ll show up here. It’s yours alone — they aren’t told, and nobody sees this list."
-              action={{ label: 'Find someone', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) }}
+              action={{ label: 'Find someone', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
             />
           )}
         </View>

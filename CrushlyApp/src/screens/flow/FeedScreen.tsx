@@ -10,7 +10,7 @@ import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { AppMenu } from '../../components/AppMenu';
-import { DiscoverPane } from '../discover/Discover';
+import { CrushesScreen } from '../crushes/Crushes';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
@@ -50,19 +50,19 @@ export function FeedScreen() {
   const { data: circles } = useMyCircles();
   const reportDwell = usePostDwell();
 
-  const [tab, setTab] = useState<'discover' | 'flow' | 'connections'>(route.params?.segment ?? 'flow');
-  // Anything that says "Discover people" now arrives on the Discover segment of
-  // this surface rather than on a second copy of it.
+  const [tab, setTab] = useState<'flow' | 'crushes' | 'connections'>(route.params?.tab ?? 'flow');
+  // A notification about a Crush opens Crushes, which is a part of this surface
+  // rather than a tab of its own.
   useEffect(() => {
-    if (route.params?.segment) setTab(route.params.segment);
-  }, [route.params?.segment]);
+    if (route.params?.tab) setTab(route.params.tab);
+  }, [route.params?.tab]);
   const ranked = useRankedFlow(8);
   const following = useFlow(20);
   const feed = tab === 'flow' ? ranked : following;
   const posts: Post[] = feed.posts;
 
   const like = useReactToPost();
-  const save = useSavePost();
+  const pick = useSavePost();
   const [shareFor, setShareFor] = useState<Post | null>(null);
   const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -133,22 +133,23 @@ export function FeedScreen() {
         onCircle={item.circleId ? () => navigation.navigate('Circle', { circleId: item.circleId as number }) : undefined}
         onLike={() => like.mutate({ postId: item.id, liked: !item.liked })}
         onComment={() => setCommentsFor(item)}
-        onSave={() => save.mutate({ postId: item.id, saved: !item.saved })}
         onShare={() => setShareFor(item)}
+        onPick={() => pick.mutate({ postId: item.id, saved: !item.saved })}
         onSound={item.sound ? () => navigation.navigate('Sound', { soundId: item.sound!.id }) : undefined}
       />
     ),
-    [activeIndex, captionBottom, circleName, like, navigation, pageHeight, save],
+    [activeIndex, captionBottom, circleName, like, navigation, pageHeight, pick],
   );
 
   /**
-   * The strip: what the surface offers, in the order the surface offers it.
-   * Discover is public content, Flow is everything scored for you, Connections
-   * is the people you already know. Search is the magnifier at the far end.
+   * The strip: the three ways of looking at one feed. Flow is everything scored
+   * for you, Crushes is the posts from people you have crushed on (and who have
+   * crushed on you), Connections is the people you already know. Discover is not
+   * one of them — it is a destination in the bar, and it is where search lives.
    */
   const tabs: FeedTab[] = [
-    { key: 'discover', label: 'Discover' },
     { key: 'flow', label: 'Flow' },
+    { key: 'crushes', label: 'Crushes' },
     { key: 'connections', label: 'Connections' },
   ];
 
@@ -161,8 +162,8 @@ export function FeedScreen() {
         if (next > 0 && next !== paneHeight) setPaneHeight(next);
       }}
     >
-      {tab === 'discover' ? (
-        <DiscoverPane embedded />
+      {tab === 'crushes' ? (
+        <CrushesScreen embedded initial={route.params?.crushesTab} />
       ) : feed.isLoading ? (
         <View style={{ flex: 1, padding: space.lg, gap: space.md, justifyContent: 'center' }}>
           <Skeleton style={{ height: 380, borderRadius: 24 }} />
@@ -208,16 +209,15 @@ export function FeedScreen() {
         />
       )}
 
-      {/* One row: the menu, the three surfaces, the magnifier. The menu used to
-          float in the corner over the feed, which put it on top of "Discover" on
-          a narrow phone. */}
+      {/* One row: the menu and the three parts of the feed. The magnifier used
+          to sit at the end of it; search is what Discover is for now, so it
+          lives there instead of on a row about the feed. */}
       <FeedTabs
         tabs={tabs}
         active={tab}
         onChange={(k) => setTab(k as typeof tab)}
         top={insets.top + 4}
         onMenu={() => setMenuOpen(true)}
-        onSearch={() => navigation.navigate('Search')}
       />
 
       {/* The corner used to hold the member's own face and a second magnifier.
@@ -227,7 +227,7 @@ export function FeedScreen() {
 
       {/* The hook belongs to a clip, so it has no business on Discover, which is
           a list of cards rather than one thing on a screen. */}
-      {tab === 'discover' ? null : (
+      {tab !== 'flow' ? null : (
       <>
       {/* The search hook. It is part of the feed in the reference, and it earns
           its 52 dp: it turns scrolling into a query without making anyone open a

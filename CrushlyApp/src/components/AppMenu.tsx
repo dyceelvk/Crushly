@@ -40,7 +40,7 @@ export function AppMenu({ visible, onClose }: { visible: boolean; onClose: () =>
   const rows: Row[] = [
     { key: 'Circles', label: 'Your Circles', hint: 'The small rooms you are in', icon: 'people-outline' },
     { key: 'Moments', label: 'Moments', hint: 'Today, then gone', icon: 'aperture-outline' },
-    { key: 'SavedPosts', label: 'Kept', hint: 'What you saved from the Flow', icon: 'bookmark-outline' },
+    { key: 'SavedPosts', label: 'Picked', hint: 'What you picked from the Flow', icon: 'download-outline' },
     { key: 'Notifications', label: 'Notifications', hint: 'Crushes, Whispers and everything else', icon: 'notifications-outline', badge: badges?.notifications || 0 },
     { key: 'Settings', label: 'Settings', hint: 'Account, privacy and appearance', icon: 'settings-outline' },
   ];

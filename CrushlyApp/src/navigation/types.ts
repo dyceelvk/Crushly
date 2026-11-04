@@ -3,9 +3,14 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { VideoEdit } from '../lib/videoEdit';
 
 export type TabParamList = {
-  /** `segment` opens Flow already on that part of the strip. */
-  Flows: { segment?: 'discover' | 'flow' | 'connections' } | undefined;
-  Crushes: { tab?: 'incoming' | 'outgoing' | 'mutual' } | undefined;
+  /** `tab` opens Home already on that part of the strip. */
+  Flows: {
+    tab?: 'flow' | 'crushes' | 'connections';
+    /** Which lens of Crushes a notification means: who crushed you, or a match. */
+    crushesTab?: 'incoming' | 'outgoing' | 'mutual';
+  } | undefined;
+  /** Discover is a destination of its own — it is where searching happens. */
+  Discover: undefined;
   /** `tab` opens Whispers already on Close Ones — see the Space's count. */
   Messages: { tab?: 'whispers' | 'close' } | undefined;
   Profile: undefined;

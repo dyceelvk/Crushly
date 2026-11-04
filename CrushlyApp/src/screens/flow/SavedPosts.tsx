@@ -43,7 +43,7 @@ export function SavedPostsScreen() {
 
   return (
     <Screen scroll={false}>
-      <Header title="Kept" subtitle="Only you can see this." back />
+      <Header title="Picked" subtitle="Only you can see this." back />
       {saved.isLoading ? (
         <View style={{ gap: space.md, width: contentWidth, alignSelf: 'center' }}>
           <Skeleton style={{ height: 220 }} />

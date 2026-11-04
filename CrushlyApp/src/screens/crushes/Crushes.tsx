@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,27 +18,26 @@ import { useCrushFlow } from '../discover/Discover';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
-import type { RootStackParamList, TabParamList } from '../../navigation/types';
+import type { RootStackParamList } from '../../navigation/types';
 
 type Tab = 'incoming' | 'outgoing' | 'mutual';
 
-export function CrushesScreen() {
+export function CrushesScreen({ embedded = false, initial }: { embedded?: boolean; initial?: Tab } = {}) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const route = useRoute<RouteProp<TabParamList, 'Crushes'>>();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { contentWidth, gutter, columns } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useCrushes();
-  const [tab, setTab] = useState<Tab>(route.params?.tab || 'incoming');
+  const [tab, setTab] = useState<Tab>(initial ?? 'incoming');
   const { run: crushOn, pendingId } = useCrushFlow();
   const pass = usePass();
   const open = useOpenConversation();
   const markRead = useMarkNotificationsRead();
 
   useEffect(() => {
-    if (route.params?.tab) setTab(route.params.tab);
-  }, [route.params?.tab]);
+    if (initial) setTab(initial);
+  }, [initial]);
 
   // Visiting Crushes clears the crush badge.
   useFocusEffect(
@@ -101,17 +100,17 @@ export function CrushesScreen() {
     incoming: {
       title: 'No crushes yet.',
       message: 'Your next Crush could be around the corner. A complete Space and a fresh Moment help you get noticed.',
-      action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) },
+      action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
     outgoing: {
       title: 'Nobody’s caught your eye — yet',
       message: 'When you Crush on someone, they’ll wait here until the feeling is mutual.',
-      action: { label: 'Start discovering', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) },
+      action: { label: 'Start discovering', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
     mutual: {
       title: 'Your Mutual Crushes live here',
       message: 'When you both feel it, you’ll find each other here — ready to say hello.',
-      action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Flows', params: { segment: 'discover' } }) },
+      action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
   }[tab];
 
@@ -123,17 +122,22 @@ export function CrushesScreen() {
         numColumns={columns}
         keyExtractor={(p) => String(p.id)}
         columnWrapperStyle={columns > 1 ? { gap } : undefined}
-        contentContainerStyle={{ paddingTop: insets.top, paddingHorizontal: gutter, paddingBottom: space.xxxl, gap: space.lg, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
+        contentContainerStyle={{ paddingTop: embedded ? space.md : insets.top, paddingHorizontal: gutter, paddingBottom: space.xxxl, gap: space.lg, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
         ListHeaderComponent={
           <View style={{ gap: space.lg, paddingTop: space.sm }}>
-            <View>
-              <Txt variant="display" accessibilityRole="header">
-                Your Crushes
-              </Txt>
-              <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-                Who’s crushing on you, and who you’re crushing on.
-              </Txt>
-            </View>
+            {/* As a pane of Home the strip above already says which surface this
+                is; printing a second title under it would name the same screen
+                twice. */}
+            {embedded ? null : (
+              <View>
+                <Txt variant="display" accessibilityRole="header">
+                  Your Crushes
+                </Txt>
+                <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
+                  Who’s crushing on you, and who you’re crushing on.
+                </Txt>
+              </View>
+            )}
             <Segmented<Tab>
               value={tab}
               onChange={setTab}

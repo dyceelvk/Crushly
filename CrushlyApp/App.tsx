@@ -47,7 +47,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       SignIn: 'sign-in',
       SignUp: 'join',
       Main: {
-        screens: { Flows: 'flows', Crushes: 'crushes', Messages: 'messages', Profile: 'profile' },
+        screens: { Flows: 'home', Discover: 'discover', Messages: 'messages', Profile: 'profile' },
       },
       UserProfile: 'u/:id',
       Chat: 'chat/:conversationId',
