@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
@@ -37,6 +38,7 @@ const STRIP = 46;
 export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { contentWidth } = useLayout();
   const feed = useCrushesFeed();
 
@@ -44,7 +46,11 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
     feed.loadOlder();
   }, [feed]);
 
-  const top = embedded ? STRIP : space.xs;
+  // The strip is drawn over this pane at `insets.top + 4`, and it is 46 tall —
+  // so the list starts below the status bar *and* below the strip. It used to
+  // start at 46 from the top of the pane, which on a phone with a 24 dp status
+  // bar put the first card under the last third of the strip.
+  const top = embedded ? insets.top + STRIP + space.md : space.xs;
 
   if (feed.isLoading) {
     return (
