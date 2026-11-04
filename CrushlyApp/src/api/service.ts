@@ -409,6 +409,29 @@ export async function recordPostFeedback(
 }
 
 /**
+ * Crushes: the posts of the people you have a Crush with, newest first.
+ *
+ * Crushes is a feed, not a directory — `crushes_feed` returns the same post
+ * shape everything else returns, minus clips, because clips are Flow's. It
+ * carries `saved` through `post_engagement`, which is what makes Pick and Crush
+ * work here without any second code path.
+ */
+export async function crushesFeed(limit = 20, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('crushes_feed', { p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
+/**
+ * Someone's Picks, as posts. Gated per row by `can_view_post`, so a picked post
+ * that later narrows its audience stops appearing here rather than becoming a
+ * dead tap.
+ */
+export async function picksOf(userId: number, limit = 30, after?: number | null): Promise<FlowPage> {
+  const page = await rpc<FlowPage>('picks_of', { p_user_id: userId, p_limit: limit, p_after: after ?? null });
+  return { items: page?.items ?? [] };
+}
+
+/**
  * The saved drawer: the posts you kept, newest save first, in the same shape as
  * the Flow. `saved_posts` applies `can_view_post` before returning a row, so a
  * post you can no longer see drops out of the list instead of sitting in it as

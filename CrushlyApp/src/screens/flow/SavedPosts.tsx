@@ -43,7 +43,7 @@ export function SavedPostsScreen() {
 
   return (
     <Screen scroll={false}>
-      <Header title="Picked" subtitle="Only you can see this." back />
+      <Header title="Picked" subtitle="Anyone who can see your Space can see these." back />
       {saved.isLoading ? (
         <View style={{ gap: space.md, width: contentWidth, alignSelf: 'center' }}>
           <Skeleton style={{ height: 220 }} />
@@ -77,7 +77,7 @@ export function SavedPostsScreen() {
             <EmptyState
               icon="bookmark-outline"
               title="Nothing kept yet"
-              message="Tap the bookmark on a post to keep it here. Only you can see what you keep."
+              message="Tap Pick on a post to keep it here. A Pick is public: it shows on your Space, where anyone who can see the Space can find it."
               action={{
                 label: 'Back to the Flow',
                 variant: 'secondary',

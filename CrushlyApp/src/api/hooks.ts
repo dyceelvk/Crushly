@@ -36,6 +36,8 @@ export const keys = {
   search: (q: string) => ['search', q] as const,
   keep: (id: number) => ['keep', id] as const,
   savedPosts: ['saved-posts'] as const,
+  crushesFeed: ['crushes-feed'] as const,
+  picksOf: ['picks-of'] as const,
 };
 
 /* ------------------------------------------------------------------ queries */
@@ -450,6 +452,40 @@ export function useSavePost() {
  * `keys.savedPosts` was already listed in `POST_LIST_HEADS`, so un-saving a post
  * from this list repaints the list itself rather than leaving a stale row.
  */
+/** Crushes: a post feed of the people you share a Crush with. */
+export function useCrushesFeed(limit = 20) {
+  const [after, setAfter] = useState<number | null>(null);
+  const query = useQuery({
+    queryKey: [...keys.crushesFeed, limit, after],
+    queryFn: () => service.crushesFeed(limit, after),
+  });
+  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      const oldest = posts[posts.length - 1];
+      if (oldest && !query.isFetching) setAfter(oldest.id);
+    },
+    refresh: () => {
+      setAfter(null);
+      return query.refetch();
+    },
+  };
+}
+
+/** Someone's Picks, as posts. */
+export function usePicksOf(userId: number | null | undefined, limit = 30) {
+  const [after, setAfter] = useState<number | null>(null);
+  const query = useQuery({
+    queryKey: [...keys.picksOf, userId, limit, after],
+    queryFn: () => service.picksOf(userId as number, limit, after),
+    enabled: typeof userId === 'number' && userId > 0,
+  });
+  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  return { ...query, posts };
+}
+
 export function useSavedPosts(limit = 20) {
   const [after, setAfter] = useState<number | null>(null);
   const query = useQuery({

@@ -534,11 +534,25 @@ def walk():
         shot('{:02d}-edit-space'.format(n))
         n += 1
         return_to_tabs()
-    tap('Crushes')   # a segment of Home, not a tab
-    for lens, name in (('Your crushes', 'crushes-outgoing'), ('Mutual', 'crushes-mutual')):
-        if tap(lens, tries=2):
-            shot('{:02d}-{}'.format(n, name))
-            n += 1
+    # Crushes is a post feed: pictures and words from the people you share a
+    # Crush with. It is not a list of people, so what is checked here is that the
+    # page is the feed (cards or its empty state), not a directory.
+    tap('Home')
+    tap('Crushes')
+    seen = shot('{:02d}-crushes-feed'.format(n))
+    n += 1
+    if find(seen, 'Suggested') or find(seen, 'Crushing on you'):
+        fail('Crushes is showing people, not posts')
+    log('crushes: post feed, not a directory; checked')
+
+    # Who crushed you is a people list, and it lives behind the Space's count.
+    tap('Space')
+    if tap('Crushes', tries=2):
+        seen = shot('{:02d}-crush-list'.format(n))
+        n += 1
+        if find(seen, 'Crushing on you'):
+            log('crush list: the people side of Crushes, reached from Space')
+        return_to_tabs()
     log('walk finished with {} screens'.format(n))
 
 

@@ -73,7 +73,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
     switch (n.kind) {
       case 'crush':
       case 'deep_crush':
-        return navigation.navigate('Main', { screen: 'Flows', params: { tab: 'crushes', crushesTab: 'incoming' } });
+        return navigation.navigate('CrushList', { tab: 'incoming' });
       case 'mutual':
         // An unseen match opens the moment; one you have already been shown is
         // just a way back to the person.
@@ -81,7 +81,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
           celebrated.add(n.actor.id);
           return navigation.navigate('MutualCrush', { userId: n.actor.id, name: n.actor.name, photo: n.actor.photo });
         }
-        return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Flows', params: { tab: 'crushes', crushesTab: 'mutual' } });
+        return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('CrushList', { tab: 'mutual' });
       case 'message':
       case 'moment_reply':
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });

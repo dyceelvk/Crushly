@@ -65,6 +65,9 @@ export type RootStackParamList = {
   PostViewer: { postId: number };
   /** What you kept, newest first. Private: nobody else can read this list. */
   SavedPosts: undefined;
+  /** The people side of Crushes: who crushed you, and who you crushed. */
+  CrushList: { tab?: 'incoming' | 'outgoing' | 'mutual' } | undefined;
+
   WebPreview: { url: string };
   Safety: undefined;
   Privacy: undefined;

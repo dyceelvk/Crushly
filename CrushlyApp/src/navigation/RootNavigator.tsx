@@ -26,6 +26,7 @@ import { SearchScreen } from '../screens/discover/Search';
 import { FeedScreen } from '../screens/flow/FeedScreen';
 import { FiltersScreen } from '../screens/discover/Filters';
 import { DiscoverTabScreen } from '../screens/discover/DiscoverTab';
+import { CrushesScreen } from '../screens/crushes/Crushes';
 import { MutualCrushScreen, celebrated } from '../screens/crushes/MutualCrush';
 import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
@@ -191,6 +192,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="VibeViewer" component={VibeViewerScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
         <Stack.Screen name="PostViewer" component={PostViewerScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+          <Stack.Screen name="CrushList" component={CrushesScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Sound" component={SoundScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           <Stack.Screen name="Moments" component={MomentsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />

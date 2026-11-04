@@ -13,7 +13,7 @@ import { ShareToWhisper } from '../ShareToWhisper';
 import { EditedClip } from '../EditedClip';
 import { useToast } from '../Toast';
 import { CommentsSheet } from './CommentsSheet';
-import { useDeletePost, useMe, useOpenConversation, useReactToPost } from '../../api/hooks';
+import { useDeletePost, useMe, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -76,6 +76,7 @@ export function PostCard({
 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const like = useReactToPost();
+  const pick = useSavePost();
 
   // A post leaves the feed two ways now: into a Whisper, or out of the app.
   const [shareOpen, setShareOpen] = useState(false);
@@ -223,6 +224,16 @@ export function PostCard({
           onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
         />
         <View style={{ flex: 1 }} />
+        {/* Pick keeps the post in public: it lands in the picker's collection and
+            on their Space, where anyone who can see the Space can read it. It is
+            not a follow, a connection or a favourite — it is a post kept. */}
+        <PostAction
+          icon={p.saved ? 'download' : 'download-outline'}
+          label={p.saved ? 'Remove this Pick' : 'Pick this post'}
+          active={p.saved}
+          activeColor={colors.gold}
+          onPress={() => pick.mutate({ postId: p.id, saved: !p.saved })}
+        />
         <PostAction icon="share-social-outline" label="Share this post" onPress={() => setShareOpen(true)} />
       </View>
 
@@ -272,7 +283,7 @@ export function PostCard({
 
 /** One of the three things you can do with a post, shown under it. */
 function PostAction({
-  icon, count, label, noun, active, onPress,
+  icon, count, label, noun, active, activeColor, onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   count?: number;
@@ -280,6 +291,8 @@ function PostAction({
   /** What the count counts, so a screen reader hears "42 comments", not "42". */
   noun?: string;
   active?: boolean;
+  /** A Crush and a Pick are different states; they must not share a colour. */
+  activeColor?: string;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -296,7 +309,7 @@ function PostAction({
         opacity: pressed ? 0.55 : 1,
       })}
     >
-      <Ionicons name={icon} size={19} color={active ? colors.crush : colors.textSecondary} />
+      <Ionicons name={icon} size={19} color={active ? (activeColor ?? colors.crush) : colors.textSecondary} />
       {count === undefined || count === 0 ? null : (
         <Txt variant="numeric" color={active ? 'crush' : 'textSecondary'}>
           {formatCount(count)}

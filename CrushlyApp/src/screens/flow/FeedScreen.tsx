@@ -10,7 +10,7 @@ import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { AppMenu } from '../../components/AppMenu';
-import { CrushesScreen } from '../crushes/Crushes';
+import { CrushesFeed } from '../crushes/CrushesFeed';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useFlow, usePostDwell, useRankedFlow, useReactToPost, useSavePost, useMyCircles } from '../../api/hooks';
 import { NoirScope } from '../../theme/ThemeProvider';
@@ -56,10 +56,18 @@ export function FeedScreen() {
   useEffect(() => {
     if (route.params?.tab) setTab(route.params.tab);
   }, [route.params?.tab]);
-  const ranked = useRankedFlow(8);
+  // Flow is the clip surface. Asking for more than a screenful is deliberate:
+  // the page is filtered to clips, and a page of eight mixed posts can filter
+  // down to one.
+  const ranked = useRankedFlow(30);
   const following = useFlow(20);
   const feed = tab === 'flow' ? ranked : following;
-  const posts: Post[] = feed.posts;
+  // Flow carries clips and only clips — the FYP. Pictures and words are Crushes'
+  // and Connections' (and a Space's); putting everything on every surface was
+  // how three feeds ended up being one feed with three names.
+  const posts: Post[] = tab === 'flow'
+    ? feed.posts.filter((p) => p.mediaKind === 'video')
+    : feed.posts;
 
   const like = useReactToPost();
   const pick = useSavePost();
@@ -163,7 +171,7 @@ export function FeedScreen() {
       }}
     >
       {tab === 'crushes' ? (
-        <CrushesScreen embedded initial={route.params?.crushesTab} />
+        <CrushesFeed />
       ) : feed.isLoading ? (
         <View style={{ flex: 1, padding: space.lg, gap: space.md, justifyContent: 'center' }}>
           <Skeleton style={{ height: 380, borderRadius: 24 }} />
@@ -173,8 +181,12 @@ export function FeedScreen() {
         <ErrorState error={feed.error} message="The feed didn’t load." onRetry={feed.refresh} />
       ) : posts.length === 0 ? (
         <EmptyState
-          title="Nothing here yet"
-          message="Post something and it will show up here, for you first."
+          title={tab === 'flow' ? 'No clips yet' : 'Nothing here yet'}
+          message={
+            tab === 'flow'
+              ? 'Flow is where clips play, scored for you. Pictures and words live on Crushes and Connections.'
+              : 'Post something and it will show up here, for you first.'
+          }
           action={{ label: 'Share a post', onPress: () => navigation.navigate('CreatePost') }}
         />
       ) : (

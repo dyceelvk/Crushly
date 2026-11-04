@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,13 +29,14 @@ type Tab = 'incoming' | 'outgoing' | 'mutual';
 const STRIP = 46;
 
 export function CrushesScreen({ embedded = false, initial }: { embedded?: boolean; initial?: Tab } = {}) {
+  const route = useRoute<RouteProp<RootStackParamList, 'CrushList'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { contentWidth, gutter, columns } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useCrushes();
-  const [tab, setTab] = useState<Tab>(initial ?? 'incoming');
+  const [tab, setTab] = useState<Tab>(initial ?? route.params?.tab ?? 'incoming');
   const { run: crushOn, pendingId } = useCrushFlow();
   const pass = usePass();
   const open = useOpenConversation();
