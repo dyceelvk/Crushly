@@ -13,12 +13,13 @@ import { ShareToWhisper } from '../ShareToWhisper';
 import { EditedClip } from '../EditedClip';
 import { useToast } from '../Toast';
 import { CommentsSheet } from './CommentsSheet';
-import { useDeletePost, useMe, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
+import { useDeletePost, useMe, useMomentRings, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { HIT, elevation, radius, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
+import { momentRing } from '../../lib/momentRings';
 import { formatCount, spokenCount } from '../../lib/counts';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -60,6 +61,7 @@ export function PostCard({
   const remove = useDeletePost();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
+  const momentRings = useMomentRings();
 
   const whisper = async () => {
     try {
@@ -104,7 +106,15 @@ export function PostCard({
           accessibilityLabel={`Open ${authorName}’s Space`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
         >
-          <Avatar uri={p.author.photos[0]?.url ?? null} name={p.author.name} size={38} ring={p.author.verified ? 'gold' : undefined} />
+          <Avatar
+            uri={p.author.photos[0]?.url ?? null}
+            name={p.author.name}
+            size={38}
+            ring={p.author.verified ? 'gold' : undefined}
+            /* A ring on the picture of somebody with a Moment live right now:
+               the cheapest true thing a feed can tell you. */
+            momentRing={momentRing(p.author.id, !p.mine && momentRings.has(p.author.id))}
+          />
           <View style={{ flexShrink: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Txt variant="bodyStrong" numberOfLines={1}>

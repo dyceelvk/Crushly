@@ -91,8 +91,9 @@ def main() -> int:
         # Every function that returns a post must return a whole one.
         if not run_file(ROOT / 'post_shape.sql'):
             return 1
-        # Vibe reactions must persist without exposing their private rows.
-        if not run_file(ROOT / 'vibe_reactions.sql'):
+        # Vibes are gone — the tables, the functions, and every reference to
+        # them left inside a function body that still has to work.
+        if not run_file(ROOT / 'no_vibes.sql'):
             return 1
         if not run_file(ROOT / 'shared_post.sql'):
             return 1

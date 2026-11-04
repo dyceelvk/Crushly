@@ -4,8 +4,8 @@
 -- discover row, the composer, the search tab, the Space tab, the notification
 -- copy, the client, the endpoints — and the tables they were the only user of.
 --
--- Two things had to move before anything could be dropped, and both are the
--- reason this file starts with two function bodies rather than a `drop table`:
+-- Three things had to move before anything could be dropped, and they are the
+-- reason this file starts with three function bodies rather than a `drop table`:
 --
 --   * `media_upload_ticket` counts the last hour's uploads per member, and one
 --     of the six terms it counted was `vibes`. Dropping the table under it would
@@ -15,6 +15,13 @@
 --     Moments. The client no longer reads it, but a function that selects from a
 --     dropped table cannot be left in place either.
 --
+--   * `can_view_media` — the gate every private media read passes through —
+--     declared a `vibes` row variable and resolved `vibes/` paths against the
+--     table. A plpgsql body is not validated when it is created, so this one
+--     survived the drop and only failed the first time somebody opened a photo:
+--     which is exactly how the Postgres smoke suite caught it. It is redefined
+--     below with its Vibe branch removed and every other branch untouched.
+--
 -- What is dropped afterwards is Vibes and only Vibes: `vibes`, its two
 -- children (`vibe_views`, `vibe_reactions`) and the seven functions that served
 -- them. Moments, posts, Circles, sounds, reactions and profile data are not
@@ -23,7 +30,7 @@
 --
 -- Written by Odoh chiagoziem isreal's team, on the existing schema.
 
-/* ------------------------------------------------- uploads and search */
+/* ------------------------------------------------- uploads, search, media */
 create or replace function public.media_upload_ticket(p_kind text, p_content_type text, p_bytes integer default 0)
 returns jsonb
 language plpgsql
@@ -196,6 +203,122 @@ begin
     )
   );
 end $$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null::text)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+begin
+  if me is null or p_path is null or p_path = ''
+     or (p_url is not null and public.media_object_path(p_url) <> p_path) then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind in ('photos', 'seed') then
+    return jsonb_build_object('allowed', exists (
+      select 1 from photos ph join profiles pf on pf.id = ph.user_id
+        join privacy pr on pr.user_id = pf.id
+       where public.media_object_path(ph.url) = p_path
+         and (v_kind = 'seed' or split_part(p_path, '/', 2) = ph.user_id::text)
+         and (ph.user_id = me or (
+           pf.onboarded and pf.status = 'active'
+           and not public.is_blocked_pair(me, ph.user_id)
+           and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, ph.user_id))
+           and (not pr.incognito or public.is_connected_pair(me, ph.user_id))
+         ))
+    ), 'cacheable', false);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where public.media_object_path(mo.media_url) = p_path
+      and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url
+        and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where public.media_object_path(ms.media_url) = p_path and (c.user_a = me or c.user_b = me)
+        and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+          and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Media belongs to the original uploader's row, not an arbitrary row that
+  -- copied its URL. Visibility is checked again on every request.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where (public.media_object_path(po.media_url) = p_path or (p_url is not null and po.media_url = p_url))
+       and split_part(p_path, '/', 2) = po.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (public.media_object_path(m2.media_url) = p_path or (p_url is not null and m2.media_url = p_url))
+         and split_part(p_path, '/', 2) = m2.sender_id::text
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (public.media_object_path(c.cover_url) = p_path or (p_url is not null and c.cover_url = p_url))
+         and split_part(p_path, '/', 2) = c.owner_id::text
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $function$;
 
 /* ------------------------------------------------------------ dependents */
 

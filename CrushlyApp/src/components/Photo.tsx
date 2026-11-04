@@ -102,38 +102,62 @@ type AvatarProps = {
   online?: boolean | null;
   shape?: 'circle' | 'squircle';
   ring?: 'gold' | 'muted' | 'crush' | null;
+  /**
+   * The colour of a Moment ring, or null for none.
+   *
+   * A Moment gets a ring around the picture rather than a card in a feed: it is
+   * one glimpse, live for a day. The colour comes from `lib/momentRings` so it
+   * is the same on every screen, and it sits *outside* the crush/verified ring
+   * with a gap, because the two are different statements: who this is, and
+   * whether there is something to watch right now.
+   */
+  momentRing?: string | null;
   style?: StyleProp<ViewStyle>;
 };
 
-export function Avatar({ uri, name, size = 48, online, shape = 'circle', ring, style }: AvatarProps) {
+export function Avatar({ uri, name, size = 48, online, shape = 'circle', ring, momentRing, style }: AvatarProps) {
   const { colors } = useTheme();
-  const r = shape === 'circle' ? size / 2 : size * 0.32;
+  const momentColor = momentRing || null;
+  // The picture keeps its position and the footprint stays `size`, so a ring
+  // appearing never nudges the row it is in.
+  const gap = momentColor ? 2 : 0;
+  const thickness = momentColor ? 2 : 0;
+  const body = momentColor ? size - (thickness + gap) * 2 : size;
+  const r = shape === 'circle' ? body / 2 : body * 0.32;
+  const outerR = shape === 'circle' ? size / 2 : size * 0.32;
   const ringColor = ring === 'gold' ? colors.gold : ring === 'crush' ? colors.crush : ring === 'muted' ? colors.borderStrong : null;
   const inset = ringColor ? 3 : 0;
-  const inner = size - inset * 2 - (ringColor ? 2 : 0);
+  const inner = body - inset * 2 - (ringColor ? 2 : 0);
   return (
     <View
       style={[
-        { width: size, height: size, borderRadius: r, alignItems: 'center', justifyContent: 'center' },
-        ringColor ? { borderWidth: 1.5, borderColor: ringColor } : null,
+        { width: size, height: size, alignItems: 'center', justifyContent: 'center' },
+        momentColor ? { borderRadius: outerR, borderWidth: thickness, borderColor: momentColor } : null,
         style,
       ]}
     >
-      {uri ? (
-        <Photo uri={uri} style={{ width: inner, height: inner, borderRadius: shape === 'circle' ? inner / 2 : inner * 0.3 }} priority="low" />
-      ) : (
-        <View
-          style={{
-            width: inner, height: inner, borderRadius: shape === 'circle' ? inner / 2 : inner * 0.3,
-            backgroundColor: colors.elevated, alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Txt variant="bodyStrong" color="textSecondary" style={{ fontSize: Math.max(12, inner * 0.36) }}>
-            {(name || '?').slice(0, 1).toUpperCase()}
-          </Txt>
-        </View>
-      )}
-      {online ? <OnlineDot size={Math.max(10, size * 0.22)} style={{ position: 'absolute', right: shape === 'circle' ? size * 0.02 : -2, bottom: shape === 'circle' ? size * 0.02 : -2 }} /> : null}
+      <View
+        style={[
+          { width: body, height: body, borderRadius: r, alignItems: 'center', justifyContent: 'center' },
+          ringColor ? { borderWidth: 1.5, borderColor: ringColor } : null,
+        ]}
+      >
+        {uri ? (
+          <Photo uri={uri} style={{ width: inner, height: inner, borderRadius: shape === 'circle' ? inner / 2 : inner * 0.3 }} priority="low" />
+        ) : (
+          <View
+            style={{
+              width: inner, height: inner, borderRadius: shape === 'circle' ? inner / 2 : inner * 0.3,
+              backgroundColor: colors.elevated, alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Txt variant="bodyStrong" color="textSecondary" style={{ fontSize: Math.max(12, inner * 0.36) }}>
+              {(name || '?').slice(0, 1).toUpperCase()}
+            </Txt>
+          </View>
+        )}
+        {online ? <OnlineDot size={Math.max(10, size * 0.22)} style={{ position: 'absolute', right: shape === 'circle' ? size * 0.02 : -2, bottom: shape === 'circle' ? size * 0.02 : -2 }} /> : null}
+      </View>
     </View>
   );
 }

@@ -17,6 +17,7 @@ import type { Moment, MomentGroup } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { MOMENT_STYLES } from '../../lib/catalog';
+import { momentRing } from '../../lib/momentRings';
 import { EditedClip } from '../../components/EditedClip';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
@@ -231,7 +232,13 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
         </View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 6 }}>
-        <Avatar uri={group.user.photo} name={group.user.name} size={18} ring={group.user.mutual ? 'crush' : null} />
+        <Avatar
+          uri={group.user.photo}
+          name={group.user.name}
+          size={18}
+          ring={group.user.mutual ? 'crush' : null}
+          momentRing={momentRing(group.user.id, group.hasUnseen)}
+        />
         <Txt variant="smallStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
           {group.user.name}
         </Txt>

@@ -65,6 +65,23 @@ export const useConversation = (id: number) =>
 export const useMoments = () =>
   useQuery({ queryKey: keys.moments, queryFn: () => service.momentsFeed(), staleTime: 20_000 });
 
+/**
+ * The members whose Moment is still live and unseen.
+ *
+ * The ring is drawn by whoever draws the picture, so what it needs from the data
+ * is one membership test — not the feed itself, and not a second request. This
+ * reads the Moments query every other Moments surface already uses, so a Space
+ * and the row above the feed agree about who has something new.
+ */
+export function useMomentRings(): Set<number> {
+  const { data } = useMoments();
+  return useMemo(() => {
+    const ids = new Set<number>();
+    for (const group of data?.others ?? []) if (group.hasUnseen) ids.add(group.user.id);
+    return ids;
+  }, [data]);
+}
+
 /** Debounced by the caller: only queries once the text is worth asking about. */
 export const useSearch = (query: string) =>
   useQuery({
