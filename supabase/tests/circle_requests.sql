@@ -71,9 +71,10 @@ begin
     null;
   end;
 
-  assert exists (
-    select 1 from public.circle_join_requests where id = rid and status = 'pending'
-  ), 'the refused approval must not have changed the request';
+  -- Read through the function, not the table: the table has RLS on and no
+  -- policies, which is the point of it — a member cannot even see the row.
+  assert (public.circle_request_state(cid)->>'requested')::boolean,
+    'the refused approval must not have changed the request';
 
   /* -------------------------------------------------------------- owning */
   perform set_config('request.jwt.claim.sub', owner_uuid::text, false);
@@ -101,9 +102,11 @@ begin
     select 1 from public.circle_members where circle_id = cid and member_id = asker_id
   ), 'approving must create the membership';
 
-  assert exists (
-    select 1 from public.circle_join_requests where id = rid and status = 'approved'
-  ), 'the request should be marked approved, not deleted';
+  -- Answered, so it leaves the owner's list — but the row stays, so the same
+  -- request cannot be replayed.
+  assert jsonb_array_length(public.my_circle_requests()) = 0,
+    'an answered request should leave the owner''s list';
+
 
   -- Answering the same request twice is refused, so an approve cannot be replayed.
   begin
