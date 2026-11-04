@@ -49,19 +49,41 @@ def adb(*args, check=True):
 
 def fail(reason):
     log('::error::Android 9 release walk failed: ' + reason)
+    try:
+        png = subprocess.run(['adb', 'exec-out', 'screencap', '-p'],
+                             capture_output=True, timeout=120).stdout
+        (OUT / 'failure.png').write_bytes(png)
+        log('failure.png saved ({} bytes)'.format(len(png)))
+    except Exception as exc:                       # never mask the real reason
+        log('could not screenshot the failure: ' + str(exc))
     report.close()
     sys.exit(1)
 
 
-def nodes():
-    """Every node in the current window, with the centre of its bounds."""
-    dumped = adb('shell', 'uiautomator', 'dump', '/sdcard/crushly-ui.xml', check=False)
-    if 'dumped' not in dumped:
-        return None
-    xml = adb('shell', 'cat', '/sdcard/crushly-ui.xml', check=False)
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
+def nodes(attempts=3):
+    """Every node in the app's window, with the centre of its bounds.
+
+    On Android the soft keyboard is a window of its own, and `uiautomator dump`
+    reports the *active* one. Once a text field has focus the dump therefore
+    describes the keyboard, and the form behind it looks empty. So: if the
+    window we got is not the app's, send BACK (which dismisses the keyboard, not
+    the screen) and ask again.
+    """
+    root = None
+    for _ in range(attempts):
+        dumped = adb('shell', 'uiautomator', 'dump', '/sdcard/crushly-ui.xml', check=False)
+        if 'dumped' not in dumped:
+            return None
+        xml = adb('shell', 'cat', '/sdcard/crushly-ui.xml', check=False)
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            return None
+        if root.get('package') == PACKAGE:
+            break
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1.0)
+    else:
         return None
     out = []
     for n in root.iter('node'):
@@ -148,9 +170,9 @@ def tap(needle, cls=None, tries=2, required=False):
     return False
 
 
-def type_into(index, value):
+def type_into(index, value, fields=None):
     seen = nodes() or []
-    fields = [n for n in seen if 'EditText' in n['class'] and n['on_screen']]
+    fields = fields or [n for n in seen if 'EditText' in n['class'] and n['on_screen']]
     if len(fields) <= index:
         return False
     adb('shell', 'input', 'tap', str(fields[index]['x']), str(fields[index]['y']))
@@ -185,10 +207,18 @@ def sign_in():
             fail('could not reach the sign-in form from Welcome')
     if not wait_for(['Welcome back'], 45, 'process exited on the way to sign in'):
         fail('the sign-in form never appeared')
-    if not type_into(0, EMAIL):
-        fail('the email field was not there')
-    if not type_into(1, PASSWORD):
-        fail('the password field was not there')
+    fields = [n for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
+    log('sign-in form has {} text field(s)'.format(len(fields)))
+    shot('02-sign-in-form')
+    if len(fields) < 2:
+        fail('the sign-in form did not offer email and password fields')
+    if not type_into(0, EMAIL, fields):
+        fail('the email field could not be filled')
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(0.8)
+    if not type_into(1, PASSWORD, fields):
+        fail('the password field could not be filled')
+    shot('03-sign-in-filled')
     adb('shell', 'input', 'keyevent', '4')  # dismiss the keyboard over the button
     time.sleep(1.0)
     if not tap('Sign in', tries=3, required=True):
@@ -203,24 +233,24 @@ def sign_in():
 
 def walk():
     """Photograph every surface, in the order the app presents them."""
-    shot('02-flow-default')
+    shot('04-flow-default')
 
-    for label, name in (('Discover', '03-segment-discover'),
-                        ('Connections', '04-segment-connections'),
-                        ('Flow', '05-segment-flow')):
+    for label, name in (('Discover', '05-segment-discover'),
+                        ('Connections', '06-segment-connections'),
+                        ('Flow', '07-segment-flow')):
         tap(label)
         shot(name)
 
     # The magnifier sits at the end of the strip, so it must be reachable from
     # a segment that is not the feed's first one too.
     if tap('Search'):
-        shot('06-search')
+        shot('08-search')
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(1.5)
 
-    for label, name in (('Crushes', '07-crushes'),
-                        ('Whispers', '08-whispers'),
-                        ('Space', '09-space')):
+    for label, name in (('Crushes', '09-crushes'),
+                        ('Whispers', '10-whispers'),
+                        ('Space', '11-space')):
         tap(label)
         shot(name)
 
@@ -228,7 +258,7 @@ def walk():
     # a person would, from the tab.
     if tap('Whispers'):
         if tap('Close Ones'):
-            shot('10-close-ones')
+            shot('12-close-ones')
             # The box in Whispers searches conversations and cannot search a list
             # of people, so it must not be above this list.
             seen = nodes() or []
@@ -238,15 +268,15 @@ def walk():
     # Space's Close Ones count is a link into that segment, not into a lookalike.
     tap('Space')
     if tap('Close Ones'):
-        shot('11-space-to-close-ones')
+        shot('13-space-to-close-ones')
         seen = nodes() or []
         if not find(seen, 'chosen to keep near'):
             fail('Space → Close Ones did not land on the Close Ones segment')
 
     if tap('Everything else in Crushly', tries=3):
-        shot('12-menu')
+        shot('14-menu')
         if tap('Settings'):
-            shot('13-settings')
+            shot('15-settings')
 
 
 def main():
