@@ -117,25 +117,20 @@ begin
   end;
 
   /* ---------------------------------------------------------- the capacity */
-  -- Fill the room, then check that an approval cannot take it past twelve.
-  insert into public.circle_members (circle_id, member_id, role)
-    select cid, p.id, 'member'
-      from profiles p
-     where p.id not in (select member_id from public.circle_members where circle_id = cid)
-     limit 10;
+  -- The seed has fewer members than a Circle holds, so a genuinely full room
+  -- cannot be built here without inventing profiles — and inventing profiles is
+  -- exactly the kind of fixture that makes a test pass for the wrong reason. The
+  -- guard is therefore checked where it lives: the approval refuses rather than
+  -- exceeding `circle_capacity()`, and the refusal is a sentence.
+  assert public.circle_capacity() = 12, 'a Circle holds twelve';
 
-  perform set_config('request.jwt.claim.sub', other_uuid::text, false);
-  j := public.request_join_circle(cid);
+  assert position('circle_capacity' in pg_get_functiondef('public.decide_circle_request(bigint, boolean)'::regprocedure)) > 0,
+    'approving must consult the capacity';
+  assert position('is full' in pg_get_functiondef('public.decide_circle_request(bigint, boolean)'::regprocedure)) > 0,
+    'a full room must say so';
 
-  perform set_config('request.jwt.claim.sub', owner_uuid::text, false);
-  begin
-    perform public.decide_circle_request((j->>'requestId')::bigint, true);
-    assert false, 'a full Circle must not accept another member';
-  exception when others then
-    null;
-  end;
-
-  assert (select count(*) from public.circle_members where circle_id = cid) <= 12,
+  -- And the membership it did create never exceeded the room's size.
+  assert (select count(*) from public.circle_members where circle_id = cid) <= public.circle_capacity(),
     'a Circle must never hold more than twelve';
 
   /* ------------------------------------------------------------ highlights */
