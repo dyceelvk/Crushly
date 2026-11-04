@@ -29,8 +29,13 @@ import type { RootStackParamList } from '../../navigation/types';
  * The row draws nothing at all when you are in no Circles. Home is the feed, and
  * an empty "you have no rooms" panel above it would be an advert for a feature
  * rather than a fact about your account — the Space is where that belongs.
+ *
+ * It sits in the page's own flow, above the posts, with the feed's background
+ * behind it. It used to float over the video as an inset strip with a scrim,
+ * which is exactly what an advertisement looks like: a panel that belongs to
+ * somebody else, laid on top of the thing you came to watch.
  */
-export function CirclesStrip({ top = 0 }: { top?: number }) {
+export function CirclesStrip() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
   const circles = useMyCircles();
@@ -42,26 +47,11 @@ export function CirclesStrip({ top = 0 }: { top?: number }) {
   if (!loading && !items.length) return null;
 
   return (
-    <View
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        top,
-        zIndex: 18,
-      }}
-      pointerEvents="box-none"
-    >
-      {/* A short scrim, not a bar: the strip sits over a video, and a slab here
-          would divide the page in two. */}
-      <View
-        pointerEvents="none"
-        style={{ position: 'absolute', top: -12, left: 0, right: 0, bottom: -10, backgroundColor: 'rgba(0,0,0,0.28)' }}
-      />
+    <View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.sm, paddingVertical: 6 }}
+        contentContainerStyle={{ gap: space.sm, paddingHorizontal: 16, paddingVertical: 4 }}
       >
         {loading
           ? [0, 1, 2].map((i) => <Skeleton key={i} style={{ width: 104, height: 34, borderRadius: 17 }} />)

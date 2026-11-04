@@ -92,7 +92,12 @@ export function FeedScreen() {
    * Measured, not assumed: `onLayout` on the pane.
    */
   const [paneHeight, setPaneHeight] = useState(0);
-  const pageHeight = paneHeight || height;
+  // The pages are as tall as the area the list actually got. On Connections a
+  // header band — the Circle highlights, then the rooms — takes real space above
+  // it, so measuring the pane instead of the list would leave every page taller
+  // than the thing that clips it and the snap would settle in the wrong place.
+  const [listHeight, setListHeight] = useState(0);
+  const pageHeight = listHeight || paneHeight || height;
   // The bar is outside this pane, so the only space to leave is breathing room.
   const tabBarSpace = 8;
   // The search bar is the last thing on the page: name, words, hashtags and the
@@ -173,18 +178,25 @@ export function FeedScreen() {
         if (next > 0 && next !== paneHeight) setPaneHeight(next);
       }}
     >
-      {/* Circles on the feed, one presentation of three. It sits over the top of
-          the pages rather than inside them: the pages are one post each and snap,
-          so a header inside the list would scroll away and come back with the
-          wrong post. Only on Connections, where a room you belong to and the
-          people in it are the same idea. */}
+      {/* Circles on the feed, one presentation of three.
+          A band, in the page's own flow, under the strip: the highlights first
+          (what happened in your rooms), then the rooms themselves. It used to
+          float over the video with a scrim behind it, which read as an
+          advertisement dropped on top of the feed rather than as the top of the
+          page — so it is part of the page now, and the pages below it are
+          measured against the space that is left. */}
       {tab === 'connections' ? (
-        <>
-          <CircleHighlights top={insets.top + 46 + 4} />
-          <CirclesStrip top={insets.top + 46 + 4 + 136} />
-        </>
+        <View style={{ paddingTop: insets.top + 46 + 4 }}>
+          <CircleHighlights />
+          <CirclesStrip />
+          <View style={{ height: 1, backgroundColor: colors.border, marginTop: space.sm }} />
+        </View>
       ) : null}
 
+      <View style={{ flex: 1 }} onLayout={(e) => {
+        const next = Math.round(e.nativeEvent.layout.height);
+        if (next > 0 && next !== listHeight) setListHeight(next);
+      }}>
       {tab === 'crushes' ? (
         <CrushesFeed />
       ) : feed.isLoading ? (
@@ -235,6 +247,8 @@ export function FeedScreen() {
           onEndReachedThreshold={0.6}
         />
       )}
+
+      </View>
 
       {/* One row: the three parts of the feed, the magnifier, the bell. The
           hamburger that used to open a drawer is gone, and nothing took its

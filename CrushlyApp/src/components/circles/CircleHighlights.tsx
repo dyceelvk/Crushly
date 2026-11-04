@@ -31,14 +31,14 @@ import type { RootStackParamList } from '../../navigation/types';
  *   * it does not exist when there is nothing to show. An empty carousel is a
  *     worse empty state than no carousel.
  */
-export function CircleHighlights({ top = 0 }: { top?: number }) {
+export function CircleHighlights() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors, reduceMotion } = useTheme();
   const { width } = useWindowDimensions();
   const highlights = useCircleHighlights(8);
   const items = highlights.data ?? [];
 
-  const cardW = Math.min(width - space.lg * 2, 420);
+  const cardW = Math.min(width - 32, 460);
   const scroll = useRef<ScrollView | null>(null);
   const [index, setIndex] = useState(0);
   const paused = useRef(false);
@@ -80,10 +80,8 @@ export function CircleHighlights({ top = 0 }: { top?: number }) {
 
   if (highlights.isLoading) {
     return (
-      <View style={{ position: 'absolute', left: 0, right: 0, top, zIndex: 19 }} pointerEvents="none">
-        <View style={{ paddingHorizontal: space.lg }}>
-          <Skeleton style={{ height: 92, borderRadius: radius.lg }} />
-        </View>
+      <View style={{ paddingHorizontal: 16, paddingTop: space.sm }}>
+        <Skeleton style={{ height: 92, borderRadius: radius.lg }} />
       </View>
     );
   }
@@ -97,14 +95,14 @@ export function CircleHighlights({ top = 0 }: { top?: number }) {
   };
 
   return (
-    <Animated.View style={{ position: 'absolute', left: 0, right: 0, top, zIndex: 19, opacity: fade }} pointerEvents="box-none">
+    <Animated.View style={{ opacity: fade, paddingTop: space.sm }}>
       <ScrollView
         ref={scroll}
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={cardW + space.sm}
         decelerationRate="fast"
-        contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: space.sm }}
         onTouchStart={() => {
           paused.current = true;
         }}

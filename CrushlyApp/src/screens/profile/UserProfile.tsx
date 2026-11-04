@@ -10,6 +10,7 @@ import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { SwipeTabs } from '../../components/SwipeTabs';
+import { Tabs } from '../../components/Tabs';
 import { BlurView } from 'expo-blur';
 import { useCircleRequestState, useMemberCircles, useRequestJoinCircle } from '../../api/hooks';
 import { resolveTheme } from '../../lib/circleThemes';
@@ -453,17 +454,65 @@ export function SpaceScreen({
             </View>
           ) : null}
 
-          {/*
-            Three tabs, and the ring above them is the shortcut everyone
-            already knows: face ring → Moments. The identity facts (about,
-            looking for, interests) sit under the content, because what someone
-            has made is the reason to be on this page.
-          */}
-          {/* Who they are, before what they made: the cover, then the words
-              about them, then their work. The facts used to sit under three
-              tabs' worth of content, which meant a visitor read everything
-              somebody posted before learning one thing about them. */}
-          <View style={{ marginTop: space.lg, gap: space.md }}>
+          {/* The tabs come straight after the name, on everybody's Space.
+              This is the whole complaint that started the correction: on your own
+              page the row sat under About, Looking for and Interests, so the
+              first thing below your face was prose and the tabs were somewhere
+              past it. Same order as the visitor view now — cover, face, name,
+              tabs — and the hand can turn the page either way. */}
+          <View style={{ marginTop: space.md }}>
+            {/* The words, then the page under them. These are one control, not
+                two: `Tabs` is where the labels are and what you press, and
+                `SwipeTabs` is the same choice made with the hand. Neither works
+                without the other — a swipe with no visible tabs is a page with
+                no name, and tabs that do not swipe are a menu pretending to be a
+                page. */}
+            <Tabs
+              tabs={[
+                { id: 'flow' as const, label: 'Flow' },
+                { id: 'moments' as const, label: 'Moments' },
+                { id: 'circles' as const, label: 'Circles' },
+              ]}
+              active={tab}
+              onChange={setTab}
+              accessibilityLabel={`${p.name}’s Space`}
+            />
+            <View style={{ height: 1, backgroundColor: colors.border, marginTop: space.xs }} />
+            <View style={{ marginTop: space.md }}>
+            <SwipeTabs
+              options={['flow', 'moments', 'circles'] as const}
+              value={tab}
+              onChange={setTab}
+              width={contentWidth - gutter * 2}
+            >
+            {tab === 'flow' ? (
+              <SpacePosts
+                items={posts.data?.items ?? []}
+                loading={posts.isLoading}
+                failed={posts.isError}
+                name={p.name}
+                onRetry={() => void posts.refetch()}
+              />
+            ) : null}
+            {tab === 'moments' ? (
+              <SpaceMoments
+                moments={p.moments}
+                name={p.name}
+                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id, mine })}
+              />
+            ) : null}
+            {tab === 'circles' ? (
+              <SpaceCircles
+                items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
+                loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
+                onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
+              />
+            ) : null}
+            </SwipeTabs>
+            </View>
+          </View>
+
+          <View style={{ marginTop: space.xxl, gap: space.md }}>
                       {p.bio ? (
             <Section title={`About ${p.name}`}>
               <Txt variant="body">
@@ -497,43 +546,6 @@ export function SpaceScreen({
               ) : null}
             </Section>
           ) : null}
-          </View>
-
-          {/* One tab row, not two. A Segmented sat above this SwipeTabs with the
-              same labels and the same state — the same control drawn twice, one
-              of them not swipable — which is how the row above the posts read as
-              a rendering bug. The SwipeTabs is the row. */}
-          <View style={{ marginTop: space.lg }}>
-            <SwipeTabs
-              options={['flow', 'moments', 'circles'] as const}
-              value={tab}
-              onChange={setTab}
-              width={contentWidth - gutter * 2}
-            >
-            {tab === 'flow' ? (
-              <SpacePosts
-                items={posts.data?.items ?? []}
-                loading={posts.isLoading}
-                failed={posts.isError}
-                name={p.name}
-                onRetry={() => void posts.refetch()}
-              />
-            ) : null}
-            {tab === 'moments' ? (
-              <SpaceMoments
-                moments={p.moments}
-                name={p.name}
-                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id, mine })}
-              />
-            ) : null}
-            {tab === 'circles' ? (
-              <SpaceCircles
-                items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
-                loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
-                onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
-              />
-            ) : null}
-            </SwipeTabs>
           </View>
 
           {lifestyle.length ? (

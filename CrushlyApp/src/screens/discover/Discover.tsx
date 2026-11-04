@@ -2,16 +2,14 @@ import React, { useCallback, useRef } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { Txt } from '../../components/Txt';
-import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { MomentsRow } from './MomentsRow';
 import { PostCard } from '../../components/feed/PostCard';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { keys, useBadges, useCrush, usePublicFlow } from '../../api/hooks';
+import { keys, useCrush, usePublicFlow } from '../../api/hooks';
 import type { Profile } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
@@ -71,13 +69,11 @@ export function useCrushFlow() {
  * offers, next to your Flow and your Connections, so it is one of the three
  * panes of that surface, and every "Discover people" in the app arrives here.
  */
-export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
+export function DiscoverPane() {
   const navigation = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
   const qc = useQueryClient();
-  const { data: badges } = useBadges(true);
   const feed = usePublicFlow();
 
   const posts = feed.data ?? [];
@@ -94,7 +90,7 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: embedded ? STRIP_ROOM : insets.top,
+          paddingTop: space.xs,
           paddingHorizontal: gutter,
           paddingBottom: space.xxxl,
           width: '100%',
@@ -102,37 +98,10 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
           alignSelf: 'center',
         }}
         refreshControl={
-          <RefreshControl refreshing={feed.isRefetching} onRefresh={refresh} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
+          <RefreshControl refreshing={feed.isRefetching} onRefresh={refresh} tintColor={colors.gold} colors={[colors.gold]} />
         }
         showsVerticalScrollIndicator={false}
       >
-        {embedded ? null : (
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingTop: space.sm }}>
-            {/* Discover is a pushed screen, and it had no way back: on the web
-                there is no system gesture to fall through to, so the only exit
-                was whatever had been underneath. */}
-            {navigation.canGoBack() ? (
-              <View style={{ marginLeft: -6, marginRight: 2 }}>
-                <IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />
-              </View>
-            ) : null}
-            <View style={{ flex: 1 }}>
-              <Txt variant="display" accessibilityRole="header">
-                Discover
-              </Txt>
-              <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-                Moments and public posts from people you have not met.
-              </Txt>
-            </View>
-            <IconButton
-              icon="notifications-outline"
-              label={`Notifications${badges?.notifications ? `, ${badges.notifications} unread` : ''}`}
-              badge={!!badges?.notifications}
-              onPress={() => navigation.navigate('Notifications')}
-            />
-          </View>
-        )}
-
         <MomentsRow />
 
         <View
@@ -176,6 +145,3 @@ export function DiscoverPane({ embedded = false }: { embedded?: boolean }) {
     </View>
   );
 }
-
-/** Height of the Flow's top strip, which the embedded pane sits under. */
-const STRIP_ROOM = 58;

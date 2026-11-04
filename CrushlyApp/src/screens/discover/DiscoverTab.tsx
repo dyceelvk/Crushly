@@ -36,7 +36,7 @@ export function DiscoverTabScreen() {
             justifyContent: 'space-between',
             paddingTop: insets.top + space.sm,
             paddingHorizontal: 16,
-            paddingBottom: space.xs,
+            paddingBottom: space.sm,
           }}
         >
           <Txt variant="display" accessibilityRole="header" style={{ color: '#FFFFFF' }}>
