@@ -214,17 +214,12 @@ export function PostCard({
         ) : null}
       </Pressable>
 
-      {/* One rail, three verbs, evenly spaced, with the share at the far end
-          where the thumb is not. Heights match the comment sheet's handle so
-          the card does not change height when the sheet opens. */}
+      {/* One rail, in the order a hand reaches for things: the reaction first,
+          then the conversation, then passing it on — and the bookmark that keeps
+          it, alone at the far end where the thumb rests. Heights match the
+          comment sheet's handle so the card does not change height when the
+          sheet opens, and the counts are the same numbers the sheet shows. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xs, paddingVertical: 2 }}>
-        <PostAction
-          icon="chatbubble-outline"
-          count={p.commentCount}
-          label="Comments"
-          noun="comments"
-          onPress={() => (onOpen ? onOpen() : setCommentsOpen(true))}
-        />
         <PostAction
           icon={p.liked ? 'heart' : 'heart-outline'}
           count={p.likeCount}
@@ -233,18 +228,27 @@ export function PostCard({
           active={p.liked}
           onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
         />
+        <PostAction
+          icon="chatbubble-outline"
+          count={p.commentCount}
+          label="Comments"
+          noun="comments"
+          onPress={() => (onOpen ? onOpen() : setCommentsOpen(true))}
+        />
+        <PostAction icon="arrow-redo-outline" label="Share this post" onPress={() => setShareOpen(true)} />
         <View style={{ flex: 1 }} />
         {/* Pick keeps the post in public: it lands in the picker's collection and
             on their Space, where anyone who can see the Space can read it. It is
-            not a follow, a connection or a favourite — it is a post kept. */}
+            not a follow, a connection or a favourite — it is a post kept. The
+            bookmark is the shape, because that is what keeping something looks
+            like, and it is the same icon the Space's header uses for Picked. */}
         <PostAction
-          icon={p.saved ? 'download' : 'download-outline'}
+          icon={p.saved ? 'bookmark' : 'bookmark-outline'}
           label={p.saved ? 'Remove this Pick' : 'Pick this post'}
           active={p.saved}
           activeColor={colors.gold}
           onPress={() => pick.mutate({ postId: p.id, saved: !p.saved })}
         />
-        <PostAction icon="share-social-outline" label="Share this post" onPress={() => setShareOpen(true)} />
       </View>
 
       <ShareToWhisper visible={shareOpen} post={p} onClose={() => setShareOpen(false)} />

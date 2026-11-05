@@ -7,8 +7,7 @@ import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { PostCard } from '../../components/feed/PostCard';
 import { NotificationsSheet } from '../../components/NotificationsSheet';
 import { CrushesFeed } from '../crushes/CrushesFeed';
-import { CirclesStrip } from '../../components/circles/CirclesStrip';
-import { CircleHighlights } from '../../components/circles/CircleHighlights';
+import { ConnectionsTop, type CircleFilter } from '../../components/feed/ConnectionsTop';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { Button } from '../../components/Button';
 import { useBadges, useFlow, useMyCircles } from '../../api/hooks';
@@ -67,25 +66,17 @@ export function FeedScreen() {
   }, [route.params?.tab]);
 
   /**
-   * The Circles band: the highlights first (what happened in your rooms), then
-   * the rooms themselves, then the divider the posts begin under.
+   * Which room Connections is showing: All, or one of your Circles.
    *
-   * In the page's own flow, under the strip. It used to float over the feed with
-   * a scrim behind it, which read as an advertisement dropped on top of the page
-   * rather than as the top of it.
+   * A filter rather than a third list, because a room is a place inside the feed
+   * you already have, not a different feed. Choosing one narrows the same posts.
    */
-  const band = tab === 'connections' ? (
-    <View style={{ paddingTop: insets.top + STRIP + 4 }}>
-      <CircleHighlights />
-      <CirclesStrip />
-      <View style={{ height: 1, backgroundColor: colors.border, marginTop: space.sm }} />
-    </View>
-  ) : null;
+  const [circleFilter, setCircleFilter] = useState<CircleFilter>('all');
+  const filtered = circleFilter === 'all' ? posts : posts.filter((p) => p.circleId === circleFilter);
+  const filteredName = (circles?.items ?? []).find((c) => c.id === circleFilter)?.name;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {band}
-
       {tab === 'crushes' ? (
         <CrushesFeed />
       ) : following.isLoading ? (
@@ -99,7 +90,7 @@ export function FeedScreen() {
         </View>
       ) : (
         <FlatList
-          data={posts}
+          data={filtered}
           keyExtractor={(p) => String(p.id)}
           renderItem={({ item }) => <PostCard post={item} />}
           showsVerticalScrollIndicator={false}
@@ -107,11 +98,19 @@ export function FeedScreen() {
             width: contentWidth,
             alignSelf: 'center',
             gap: space.md,
-            paddingTop: insets.top + STRIP + space.md,
+            paddingTop: insets.top + STRIP + space.sm,
             paddingHorizontal: space.md,
             paddingBottom: space.xxxl,
             flexGrow: 1,
           }}
+          ListHeaderComponent={
+            <ConnectionsTop
+              selected={circleFilter}
+              onSelect={setCircleFilter}
+              onCompose={() => navigation.navigate('CreatePost')}
+              onOpenCircle={(circleId) => navigation.navigate('Circle', { circleId })}
+            />
+          }
           refreshControl={
             <RefreshControl refreshing={following.isRefetching} onRefresh={following.refresh} tintColor={colors.text} />
           }
@@ -119,15 +118,20 @@ export function FeedScreen() {
           onEndReachedThreshold={0.6}
           ListEmptyComponent={
             <EmptyState
-              icon="people-outline"
-              title="Nothing here yet"
+              icon={circleFilter === 'all' ? 'people-outline' : 'people-circle-outline'}
+              title={circleFilter === 'all' ? 'Nothing here yet' : `Nothing in ${filteredName ?? 'this Circle'} yet`}
               message={
-                circles?.items.length
-                  ? 'Post something and it will show up here, for you first.'
-                  : 'Follow the people and Circles you want to hear from, and their Crushes land here.'
+                circleFilter !== 'all'
+                  ? 'A post lands in a Circle the moment somebody writes one there. Show all to see everything you are connected to.'
+                  : circles?.items.length
+                    ? 'Post something and it will show up here, for you first.'
+                    : 'Follow the people and Circles you want to hear from, and their Crushes land here.'
               }
-              action={{ label: 'Share a post', onPress: () => navigation.navigate('CreatePost') }}
-              secondary={{ label: 'Find people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
+              action={{ label: 'Say something', onPress: () => navigation.navigate('CreatePost') }}
+              secondary={{
+                label: circleFilter === 'all' ? 'Find people' : 'Show all',
+                onPress: () => (circleFilter === 'all' ? navigation.navigate('Main', { screen: 'Discover' }) : setCircleFilter('all')),
+              }}
             />
           }
         />

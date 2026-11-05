@@ -622,6 +622,19 @@ def assert_space_header(seen):
     log('space about: the words, the interests and the facts are a tab, not prose under the posts; checked')
 
 
+def assert_connections(seen):
+    """Connections opens with the thing you came to do, not with a blank page.
+
+    Above the feed there is a composer ("Say something…") and, for a member with
+    rooms, a filter row starting with All. Both are asserted here because both
+    are new: the composer was a button in an empty state before, and the filter
+    is what makes a Circle a place inside the feed rather than a separate list.
+    """
+    if not find(seen, 'Say something'):
+        fail('Connections has no composer above the feed')
+    log('connections: composer above the feed; checked')
+
+
 def walk():
     """Photograph every surface, in the order the app presents them."""
     seen = shot('04-home')
@@ -656,6 +669,8 @@ def walk():
         seen = shot(name)
         if label == 'Space':
             assert_space_header(seen)
+        if label == 'Connections':
+            assert_connections(seen)
 
     # Close Ones is a segment of Whispers, not a tab of its own: walk in the way
     # a person would, from the tab.
@@ -677,21 +692,23 @@ def walk():
         if not find(seen, 'chosen to keep near'):
             fail('Space → Close Ones did not land on the Close Ones segment')
 
-    # The drawer is gone. Everything it used to hold now opens from where it
-    # belongs: Circles, Moments and Picked from the Space, Settings from the
-    # Space's gear, notifications from the bell on Home. Each row is still
-    # opened and photographed, because a row that lands on a blank page or the
-    # wrong list is a row that lies.
+    # The drawer is gone, and so are the rows it left behind. Each of these has
+    # exactly one door now, and the door is where the thing lives: Picked in the
+    # Space's header, Circles and Moments as tabs on the Space, Settings behind
+    # the Space's gear. Every one is opened and photographed, because a door that
+    # lands on a blank page is a door that lies.
     n = 16
-    for row, name in (('Your Circles', 'circles'),
-                      ('Your Moments', 'moments'),
-                      ('Picked', 'picked')):
+    tap('Space')
+    if tap('Picked', tries=2):
+        shot('{:02d}-picked'.format(n))
+        n += 1
+    return_to_tabs()
+    for row, name in (('Circles', 'circles'), ('Moments', 'moments')):
         tap('Space')
-        scroll_to(row)
         if tap(row, tries=2):
-            shot('{:02d}'.format(n) + '-' + name)
+            shot('{:02d}-space-{}'.format(n, name))
             n += 1
-            return_to_tabs()
+        return_to_tabs()
 
     # Settings, from the Space's gear, and every page inside it.
     tap('Space')
