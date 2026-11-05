@@ -241,7 +241,11 @@ def shot(name, seen=None):
         seen = nodes()
         if not seen:
             log('[{}] the accessibility dump came back empty; the screenshot is still real'.format(name))
-    time.sleep(0.8)
+    # Long enough for the frame to be finished, not just started. At 0.8s the
+    # emulator sometimes handed back a half-painted screen — a card with its
+    # action row missing, and a dark rectangle where a list had not drawn yet —
+    # which then looks exactly like a layout bug in the app.
+    time.sleep(1.6)
     png = subprocess.run(['adb', 'exec-out', 'screencap', '-p'],
                          capture_output=True, timeout=120).stdout
     path = OUT / (name + '.png')
@@ -730,11 +734,19 @@ def walk():
         # The creator opens straight away from here now, which is also the check
         # that the Space's Circles tab has a door at all.
         if tap('Start a Circle'):
-            seen = shot('{:02d}-circle-creator'.format(n))
+            shot('{:02d}-circle-creator'.format(n))
             n += 1
+            # The two settings are under the name, the line about the room and
+            # the theme, so the sheet has to be scrolled before it can be read —
+            # which is fine, and is why this scrolls instead of looking at the
+            # first screenful and calling it missing.
             for needle in ('Can people find it?', 'How do people get in?'):
-                if not find(seen, needle):
+                if not scroll_to(needle, swipes=5):
+                    shot('{:02d}-circle-creator-missing'.format(n))
+                    n += 1
                     fail('the Circle creator is missing "%s"' % needle)
+            shot('{:02d}-circle-creator-settings'.format(n))
+            n += 1
             log('circle creator: findable and joinable are two questions; checked')
             back()
     return_to_tabs()
