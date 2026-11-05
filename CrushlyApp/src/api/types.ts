@@ -537,7 +537,19 @@ export type NotificationKind =
   | 'moment_reply'
   | 'moment_reaction'
   | 'verified'
-  | 'verification_rejected';
+  | 'verification_rejected'
+  | 'post_reaction'
+  | 'post_comment'
+  /**
+   * The four things a Circle can say. `refId` is the Circle's id, not a
+   * request id: every one of them is answered by opening the room.
+   */
+  | 'circle_request'
+  | 'circle_approved'
+  | 'circle_declined'
+  | 'circle_invite'
+  /** The owner's side of the same door: somebody is now in *your* room. */
+  | 'circle_joined';
 
 export type AppNotification = {
   id: number;

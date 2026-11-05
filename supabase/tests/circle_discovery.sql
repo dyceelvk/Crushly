@@ -99,6 +99,13 @@ begin
   assert j->>'state' = 'member', 'an open room should let you in';
   assert exists (select 1 from public.circle_members where circle_id = open_room and member_id = asker_id),
     'joining an open room must create the membership';
+  /* The owner hears about the walk-in as a walk-in, not as their own approval. */
+  assert exists (select 1 from public.notifications
+                  where user_id = owner_id and kind = 'circle_joined' and ref_id = open_room),
+    'the owner of an open room should be told somebody walked in';
+  assert not exists (select 1 from public.notifications
+                      where user_id = owner_id and kind = 'circle_approved' and ref_id = open_room),
+    'the owner must not be told they were approved into their own room';
   assert (public.join_circle(open_room)->>'already')::boolean,
     'joining twice is the same membership, not an error';
 

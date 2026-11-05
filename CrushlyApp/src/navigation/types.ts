@@ -48,8 +48,12 @@ export type RootStackParamList = {
   Circle: { circleId: number };
   /** A room you are not in yet: what it is, who is in it, and the way in. */
   CirclePreview: { circleId: number };
-  /** The owner's desk — members, requests, invitations, and the two switches. */
-  CircleManage: { circleId: number };
+  /**
+   * The owner's desk — members, requests, invitations, and the two switches.
+   * `tab` lets a notification open the list it is about: a request should land
+   * on Requests, not on Members with the request one tap away.
+   */
+  CircleManage: { circleId: number; tab?: 'members' | 'requests' | 'invited' | 'declined' };
   Moments: undefined;
   MomentComposer: undefined;
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'moment' | 'circle'; initialEdit?: VideoEdit };

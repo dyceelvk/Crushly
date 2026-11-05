@@ -48,7 +48,7 @@ type Tab = 'members' | 'requests' | 'invited' | 'declined';
 export function CircleManageScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CircleManage'>>();
-  const { circleId } = route.params;
+  const { circleId, tab: openOn } = route.params;
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { contentWidth, gutter } = useLayout();
@@ -60,7 +60,8 @@ export function CircleManageScreen() {
   const access = useSetCircleAccess();
   const invite = useInviteToCircle();
 
-  const [tab, setTab] = useState<Tab>('members');
+  /* A notification about a request opens on Requests: the work, not the roster. */
+  const [tab, setTab] = useState<Tab>(openOn ?? 'members');
   const [inviting, setInviting] = useState(false);
   const [query, setQuery] = useState('');
   const candidates = useCircleInviteCandidates(inviting ? circleId : null, query);

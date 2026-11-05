@@ -34,7 +34,7 @@ const CIRCLE = {
   state: 'none',
 };
 
-async function signedIn(page: Page) {
+async function signedIn(page: Page, notifications: unknown[] = []) {
   const profile = {
     id: 1,
     email: 'offline@example.com',
@@ -71,7 +71,7 @@ async function signedIn(page: Page) {
       case 'flow_ranked_feed':
         return { items: [], hasMore: false };
       case 'badges':
-        return { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
+        return { notifications: notifications.length, whispers: 0, crushes: 0, moments: 0 };
       case 'my_circles':
         return { items: [] };
       case 'circle_highlights':
@@ -83,6 +83,9 @@ async function signedIn(page: Page) {
         return [];
       case 'heartbeat':
         return true;
+      // The bell reads one RPC; /rest/v1/notifications is not it.
+      case 'list_notifications':
+        return notifications;
       default:
         return [];
     }
@@ -98,7 +101,7 @@ async function signedIn(page: Page) {
     else if (path === '/rest/v1/photos') body = [];
     else if (path === '/rest/v1/verification_requests') body = null;
     else if (path === '/rest/v1/crushes') body = [];
-    else if (path === '/rest/v1/notifications') body = [];
+    else if (path === '/rest/v1/notifications') body = notifications;
     else body = [];
     await route.fulfill({
       status: 200,
@@ -156,4 +159,28 @@ test('the composer sits above the feed, once', async ({ page }) => {
   await signedIn(page);
   await openConnections(page);
   await expect(page.getByText('Say something…', { exact: true })).toHaveCount(1);
+});
+
+/**
+ * The other end of the same door. A request reaches the owner as a sentence
+ * about a person and a room, and it opens the list where it can be answered —
+ * the sentence is the contract, so it is what gets checked.
+ */
+test('a join request is announced by name, from the person to the room', async ({ page }) => {
+  await signedIn(page, [
+    {
+      id: 91,
+      kind: 'circle_request',
+      body: 'Sunday go sharp oh',
+      read: false,
+      refId: 5,
+      createdAt: Date.now() - 60000,
+      actor: { id: 9, name: 'Ada Nwosu', photo: null },
+    },
+  ]);
+  await openConnections(page);
+  await page.getByLabel('Notifications').first().click({ force: true });
+  // The sheet slides up; the sentence has to survive the animation.
+  await expect(page.getByText('Ada Nwosu asked to join Sunday go sharp oh.', { exact: true })).toBeVisible({ timeout: 20000 });
+  await page.screenshot({ path: 'walk-web/notification-request.png', fullPage: false });
 });

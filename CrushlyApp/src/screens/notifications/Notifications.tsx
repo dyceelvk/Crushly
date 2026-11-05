@@ -14,6 +14,7 @@ import { space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
 import { celebrated } from '../crushes/MutualCrush';
+import { circleNotificationText, circleRoute } from '../../lib/circleNotifications';
 import type { ScreenProps } from '../../navigation/types';
 
 const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphMap; tone: 'crush' | 'gold' | 'success' | 'textSecondary' }> = {
@@ -25,6 +26,13 @@ const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphM
   moment_reaction: { name: 'happy', tone: 'gold' },
   verified: { name: 'shield-checkmark', tone: 'success' },
   verification_rejected: { name: 'shield-outline', tone: 'textSecondary' },
+  post_reaction: { name: 'heart-outline', tone: 'crush' },
+  post_comment: { name: 'chatbubble-outline', tone: 'textSecondary' },
+  circle_request: { name: 'person-add-outline', tone: 'gold' },
+  circle_approved: { name: 'checkmark-circle', tone: 'success' },
+  circle_joined: { name: 'people-circle-outline', tone: 'success' },
+  circle_declined: { name: 'close-circle-outline', tone: 'textSecondary' },
+  circle_invite: { name: 'mail-outline', tone: 'gold' },
 };
 
 export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { actor: { name: string } | null }): { title: string; detail?: string } {
@@ -44,6 +52,13 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
       const emoji = n.body === 'crush' ? '♥' : MOMENT_REACTIONS.find((r) => r.key === n.body)?.emoji;
       return { title: `${name} reacted to your Moment${emoji ? ` ${emoji}` : ''}.` };
     }
+    /* The body of a Circle notification is the room's name, so it reads as one. */
+    case 'circle_request':
+    case 'circle_approved':
+    case 'circle_joined':
+    case 'circle_declined':
+    case 'circle_invite':
+      return circleNotificationText(n.kind, n.body, name);
     case 'verified':
       return { title: 'Your Space is verified.', detail: 'Your check badge is now visible on your Space.' };
     case 'verification_rejected':
@@ -90,6 +105,14 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       case 'verified':
       case 'verification_rejected':
         return navigation.navigate('Verification');
+      case 'circle_request':
+      case 'circle_approved':
+      case 'circle_joined':
+      case 'circle_declined':
+      case 'circle_invite': {
+        const to = n.refId ? circleRoute(n.kind, n.refId) : null;
+        return to ? navigation.navigate(to.screen, to.params) : navigation.navigate('Circles');
+      }
     }
   };
 

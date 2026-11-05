@@ -3,6 +3,7 @@ import { Animated, PanResponder, Pressable, RefreshControl, ScrollView, View } f
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { circleNotificationText, circleRoute, isCircleNotification } from '../lib/circleNotifications';
 import { Txt } from './Txt';
 import { Avatar } from './Photo';
 import { BottomSheet } from './BottomSheet';
@@ -31,6 +32,15 @@ type Lens = 'yours' | 'crushly';
  * not by a second endpoint: there is one list of notifications and two ways to
  * read it, so a notification can never exist in one tab and not the other.
  */
+/** The mark on a Circle notification: asked, let in, turned away, invited. */
+const CIRCLE_GLYPH: Partial<Record<NotificationKind, keyof typeof Ionicons.glyphMap>> = {
+  circle_request: 'person-add-outline',
+  circle_approved: 'checkmark',
+  circle_declined: 'close',
+  circle_invite: 'mail-outline',
+  circle_joined: 'people-circle-outline',
+};
+
 export function NotificationsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
@@ -79,6 +89,19 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
     }
     if (kind === 'verified' || kind === 'verification_rejected') {
       navigation.navigate('Verification');
+      return;
+    }
+    /*
+     * A Circle notification is about a room, not a person, so it opens the room.
+     * The reference is the Circle's id in all four cases: a request lands on the
+     * owner's Requests list (the thing they have to do), an approval on the room
+     * itself (the thing they now have), and a decline or an invitation on the
+     * preview — where someone who is not in the room can still see where they
+     * stand and, for an invitation, the way in.
+     */
+    if (isCircleNotification(kind) && n.refId) {
+      const to = circleRoute(kind, n.refId);
+      if (to) navigation.navigate(to.screen, to.params);
       return;
     }
     if (n.actor) navigation.navigate('UserProfile', { id: n.actor.id });
@@ -181,12 +204,21 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
         >
           {shown.map((n) => {
             const official = n.kind === 'verified' || n.kind === 'verification_rejected';
+            /*
+             * A Circle notification carries the room's *name* as its body, which
+             * on its own says nothing: "Sunday go sharp oh" is not news. It gets
+             * the same sentence the full Notifications screen uses — one copy,
+             * one phrasing — so the row reads "Ada asked to join Sunday go sharp".
+             */
+            const line = isCircleNotification(n.kind)
+              ? circleNotificationText(n.kind, n.body, n.actor?.name ?? 'Someone').title
+              : n.body;
             return (
               <Pressable
                 key={n.id}
                 onPress={() => open(n)}
                 accessibilityRole="button"
-                accessibilityLabel={`${n.actor?.name ?? 'Crushly'}: ${n.body}${n.read ? '' : ', unread'}`}
+                accessibilityLabel={`${n.actor?.name ?? 'Crushly'}: ${line}${n.read ? '' : ', unread'}`}
                 style={({ pressed }) => ({
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -213,11 +245,33 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
                     <Ionicons name={n.kind === 'verified' ? 'shield-checkmark' : 'shield-outline'} size={19} color={colors.gold} />
                   </View>
                 ) : (
-                  <Avatar uri={n.actor?.photo ?? null} name={n.actor?.name ?? 'Crushly'} size={40} />
+                  <View>
+                    <Avatar uri={n.actor?.photo ?? null} name={n.actor?.name ?? 'Crushly'} size={40} />
+                    {/* Which kind of Circle news this is, without a second word. */}
+                    {CIRCLE_GLYPH[n.kind] ? (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          right: -2,
+                          bottom: -2,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 9,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: colors.card,
+                          borderWidth: stroke.hairline,
+                          borderColor: colors.border,
+                        }}
+                      >
+                        <Ionicons name={CIRCLE_GLYPH[n.kind]!} size={11} color={colors.primary} />
+                      </View>
+                    ) : null}
+                  </View>
                 )}
                 <View style={{ flex: 1 }}>
                   <Txt variant="body" numberOfLines={2}>
-                    {n.body}
+                    {line}
                   </Txt>
                   <Txt variant="caption" color="textMuted" style={{ marginTop: 2 }}>
                     {[n.actor?.name, timeAgo(n.createdAt)].filter(Boolean).join(' · ')}
