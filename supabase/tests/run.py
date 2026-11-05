@@ -99,6 +99,10 @@ def main() -> int:
         # answer — enforced by the functions, not by the button.
         if not run_file(ROOT / 'circle_requests.sql'):
             return 1
+        # Media is private, by the bucket flag and by the policy — not by a
+        # dashboard setting somebody made once.
+        if not run_file(ROOT / 'storage_privacy.sql'):
+            return 1
         if not run_file(ROOT / 'shared_post.sql'):
             return 1
         # The Flow is ranked: scored from what people read, resumable by cursor,
