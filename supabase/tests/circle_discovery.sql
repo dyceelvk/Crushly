@@ -210,9 +210,13 @@ begin
   assert (j->>'approved')::boolean, 'the owner''s approval should be recorded';
   assert (select count(*) from public.circle_members where circle_id = ask_room) = before_members + 1,
     'approval must add exactly one member';
+  -- Notifications are read under RLS, so this is asserted as the person who
+  -- received it rather than as the owner looking at somebody else's row.
+  perform set_config('request.jwt.claim.sub', asker_uuid::text, false);
   assert exists (select 1 from public.notifications
                   where user_id = asker_id and kind = 'circle_approved' and ref_id = ask_room),
     'the new member should be told they are in';
+  perform set_config('request.jwt.claim.sub', owner_uuid::text, false);
 
   assert jsonb_array_length(public.circle_manage(ask_room)->'requests') = 0,
     'an answered request should leave the desk';
@@ -235,18 +239,23 @@ begin
     'a declined member must stay outside';
   assert jsonb_array_length(public.circle_manage(ask_room)->'declined') = 1,
     'a declined request should stay on the desk as a record';
+  perform set_config('request.jwt.claim.sub', other_uuid::text, false);
   assert exists (select 1 from public.notifications
                   where user_id = other_id and kind = 'circle_declined' and ref_id = ask_room),
     'the person turned away should be told';
+  perform set_config('request.jwt.claim.sub', owner_uuid::text, false);
 
   /* ----------------------------------------------------------- invitations */
 
   j := public.invite_to_circle(invite_room, other_id);
   assert j->>'state' = 'invited', 'the owner should be able to invite somebody in';
   inv_id := (j->>'invitationId')::bigint;
+
+  perform set_config('request.jwt.claim.sub', other_uuid::text, false);
   assert exists (select 1 from public.notifications
                   where user_id = other_id and kind = 'circle_invite' and ref_id = invite_room),
     'an invited person should be told';
+  perform set_config('request.jwt.claim.sub', owner_uuid::text, false);
 
   -- The same invitation, not two.
   j := public.invite_to_circle(invite_room, other_id);
