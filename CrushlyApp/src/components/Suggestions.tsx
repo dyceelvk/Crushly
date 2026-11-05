@@ -109,7 +109,7 @@ export function Suggestions({
               ? `Nobody called “${query}”.`
               : 'Tag somebody once you’ve connected.'
             : query
-              ? `No Flows with #${query} yet. Post it and you start it.`
+              ? `No Crushes with #${query} yet. Crush it and you start it.`
               : 'No tags yet. Yours would be the first.'}
         </Txt>
         )

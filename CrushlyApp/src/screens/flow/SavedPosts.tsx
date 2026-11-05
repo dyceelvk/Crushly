@@ -78,11 +78,11 @@ export function SavedPostsScreen() {
             <EmptyState
               icon="bookmark-outline"
               title="Nothing kept yet"
-              message="Tap Pick on a post to keep it here. Picked is yours alone: nothing here is shown to anyone else."
+              message="Tap Pick on a Crush to keep it here. Picked is yours alone: nothing here is shown to anyone else."
               action={{
-                label: 'Back to the Flow',
+                label: 'Back to your Space',
                 variant: 'secondary',
-                onPress: () => navigation.navigate('Main', { screen: 'Flows' }),
+                onPress: () => navigation.navigate('Main', { screen: 'Profile' }),
               }}
             />
           }

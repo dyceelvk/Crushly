@@ -228,8 +228,8 @@ export function PostCard({
         <PostAction
           icon={p.liked ? 'heart' : 'heart-outline'}
           count={p.likeCount}
-          label={p.liked ? 'Take back your like' : 'Like'}
-          noun="likes"
+          label={p.liked ? 'Take back your Crush' : 'Crush this post'}
+          noun="Crushes"
           active={p.liked}
           onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
         />

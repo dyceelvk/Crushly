@@ -194,7 +194,7 @@ export const EDIT_LIMITS: Record<EditCategory, { maxSeconds: number; maxCaptions
 
 export const CATEGORY_LABEL: Record<EditCategory, string> = {
   moment: 'Moment',
-  post: 'Flow',
+  post: 'Crush',
   circle: 'Circle',
 };
 

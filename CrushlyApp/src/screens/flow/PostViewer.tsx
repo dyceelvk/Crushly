@@ -456,9 +456,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         <RailAction
           icon={post.liked ? 'heart' : 'heart-outline'}
           tint={post.liked ? colors.crush : '#FFFFFF'}
-          label={post.liked ? 'Take back your reaction' : 'React to this post, hold for more'}
+          label={post.liked ? 'Take back your Crush' : 'Crush this post, hold for more'}
           count={formatCount(totalReactions)}
-          spoken={spokenCount(totalReactions, 'reaction')}
+          spoken={spokenCount(totalReactions, 'Crush')}
           onPress={tapHeart}
           onLongPress={() => setReactionsOpen(true)}
         />
@@ -472,7 +472,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         <RailAction
           icon={post.saved ? 'bookmark' : 'bookmark-outline'}
           tint={post.saved ? colors.primary : '#FFFFFF'}
-          label={post.saved ? 'Let it go' : 'Keep for later'}
+          label={post.saved ? 'Remove this Pick' : 'Pick this post'}
           count={post.saved ? 'Picked' : 'Pick'}
           onPress={toggleKeep}
         />
@@ -647,8 +647,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       <BottomSheet
         visible={reactionsOpen}
         onClose={() => setReactionsOpen(false)}
-        title="React"
-        subtitle="The same words a Moment accepts."
+        title="Crush it"
+        subtitle="A Crush by any other name — the same words a Moment accepts."
         maxHeight={0.34}
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: space.md }}>
@@ -700,8 +700,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           />
           <SheetRow
             icon={post.saved ? 'bookmark' : 'bookmark-outline'}
-            label={post.saved ? 'Let it go' : 'Keep for later'}
-            hint={post.saved ? 'It leaves your kept posts' : 'Only you can see what you keep'}
+            label={post.saved ? 'Remove this Pick' : 'Pick this post'}
+            hint={post.saved ? 'It leaves your Picked' : 'Picked is yours alone — nobody else sees it'}
             onPress={() => {
               setMoreOpen(false);
               void toggleKeep();

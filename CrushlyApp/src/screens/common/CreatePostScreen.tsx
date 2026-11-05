@@ -391,7 +391,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       >
         <IconButton icon="close" label="Cancel" onPress={() => navigation.goBack()} />
         <Txt variant="title" style={{ flex: 1 }} accessibilityRole="header">
-          {kind === 'moment' ? 'New Moment' : 'New Flow'}
+          {kind === 'moment' ? 'New Moment' : 'New Crush'}
         </Txt>
         {/* Back to the question. Changing your mind about what this is should
             cost one tap, not a discarded draft. */}
@@ -854,7 +854,7 @@ function ComposerRight({
           )}
         </View>
         <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-          <Pressable accessibilityLabel="Like" hitSlop={12} style={{ padding: 4 }}>
+          <Pressable accessibilityLabel="Crush" hitSlop={12} style={{ padding: 4 }}>
             <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
           </Pressable>
           <Pressable accessibilityLabel="Comment" hitSlop={12} style={{ padding: 4 }}>

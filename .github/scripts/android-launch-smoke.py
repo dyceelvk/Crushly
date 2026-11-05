@@ -573,6 +573,21 @@ def assert_space_header(seen):
         if find(seen, row):
             fail('the Space still lists "{}" at the bottom; it is a tab above'.format(row))
 
+    # Four tabs, and About is one of them. The words, what they are looking for,
+    # their interests and their facts used to be loose prose under the post
+    # list, which meant a Space had no bottom: you finished the posts and kept
+    # walking through somebody's biography. They are a tab now.
+    for tab in ('Crushes', 'Moments', 'Circles', 'About'):
+        if not find(seen, tab):
+            fail('the Space has no "{}" tab'.format(tab))
+    log('space tabs: Crushes · Moments · Circles · About; checked')
+
+    # One Edit, not two. The header's pencil is the only way in; the gold chip
+    # that sat under the name is gone, and so is the Settings row that pointed
+    # at the same screen.
+    if sum(1 for n in (seen or []) if norm(n.get('text', '')) == 'edit space') > 1:
+        fail('the Space has two "Edit Space" controls')
+
     for _ in range(7):
         swipe_up()
     time.sleep(0.8)
@@ -588,6 +603,19 @@ def assert_space_header(seen):
     for _ in range(8):
         adb('shell', 'input', 'swipe', '160', '240', '160', '560', '180')
         time.sleep(0.35)
+
+    # About, opened, so the tab is proven to be a tab and not a label.
+    if not tap('About', tries=3):
+        fail("the Space's About tab could not be tapped")
+    time.sleep(0.9)
+    about = nodes() or []
+    shot('12b-space-about')
+    if not any(find(about, w) for w in ('Nothing here yet', 'About me', 'Looking for', 'Interests')):
+        fail('the About tab shows none of the words, the interests or the facts')
+    if not tap('Crushes', tries=3):
+        fail('could not get back to the Crushes tab')
+    time.sleep(0.6)
+    log('space about: the words, the interests and the facts are a tab, not prose under the posts; checked')
 
 
 def walk():

@@ -248,7 +248,7 @@ export function CommentsSheet({
             <Pressable
               onPress={() => react(comment)}
               accessibilityRole="button"
-              accessibilityLabel={comment.liked ? 'Remove like' : 'Like this comment'}
+              accessibilityLabel={comment.liked ? 'Take back your Crush' : 'Crush this comment'}
               hitSlop={10}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
             >

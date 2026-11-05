@@ -364,7 +364,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
                     </Section>
                   ) : null}
                   {counts.flows ? (
-                    <Section title="Flows" more={counts.flows > PREVIEW ? counts.flows : 0} onMore={() => setTab('flows')}>
+                    <Section title="Crushes" more={counts.flows > PREVIEW ? counts.flows : 0} onMore={() => setTab('flows')}>
                       {flowList(PREVIEW)}
                     </Section>
                   ) : null}
@@ -380,7 +380,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
                 </>
               ) : null}
               {tab === 'people' ? <Section title="People">{peopleList()}</Section> : null}
-              {tab === 'flows' ? <Section title="Flows">{flowList()}</Section> : null}
+              {tab === 'flows' ? <Section title="Crushes">{flowList()}</Section> : null}
               {tab === 'moments' ? <Section title="Moments">{momentList()}</Section> : null}
             </View>
           </>

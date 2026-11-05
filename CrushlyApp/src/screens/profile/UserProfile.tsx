@@ -177,10 +177,21 @@ export function SpaceScreen({
   const [scrolled, setScrolled] = useState(false);
 
   /**
-   * A Space is what they have made and where they belong: their Flows, their
-   * Moments, and the Circles they share with you.
+   * A Space is four things, in this order, and nothing else:
+   *
+   *   Crushes — what they have posted. A post *is* a Crush on this product, so
+   *              the tab is named for the thing, not for the container.
+   *   Moments  — what they have shared today.
+   *   Circles  — where they belong.
+   *   About    — who they are: the words, what they are looking for, their
+   *              interests, and the facts they filled in.
+   *
+   * About used to be loose prose under the post list, which made the page a
+   * scroll with no end and no boundary: you reached the bottom of somebody's
+   * posts and then kept walking through their biography. Everything that is
+   * *about* the person is a tab now, and the page ends where the tab ends.
    */
-  const [tab, setTab] = useState<'flow' | 'moments' | 'circles'>('flow');
+  const [tab, setTab] = useState<'crushes' | 'moments' | 'circles' | 'about'>('crushes');
 
   // Their Circles, or yours. Same page, same component.
   const mineCircles = useMyCircles(mine);
@@ -350,26 +361,10 @@ export function SpaceScreen({
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 {/* Keep Close and Crush are things one member does to another.
-                    On your own Space they are replaced by the only two things
-                    you can do to yourself: write it, and edit it. */}
-                {mine ? (
-                  <Pressable
-                    onPress={() => navigation.navigate('EditProfile')}
-                    accessibilityRole="button"
-                    accessibilityLabel="Edit your Space"
-                    hitSlop={8}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 5,
-                      paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-                      backgroundColor: colors.goldSoft, borderWidth: 1, borderColor: colors.goldLine,
-                    }}
-                  >
-                    <Ionicons name="create-outline" size={12} color={colors.gold} />
-                    <Txt variant="caption" color="gold">
-                      Edit Space
-                    </Txt>
-                  </Pressable>
-                ) : null}
+                    On your own Space there was a gold "Edit Space" chip here as
+                    well as the pencil in the header — two doors to one room,
+                    four pixels apart. The header is pinned and always in reach,
+                    so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
                 <Pressable
@@ -475,9 +470,10 @@ export function SpaceScreen({
                 page. */}
             <Tabs
               tabs={[
-                { id: 'flow' as const, label: 'Posts' },
+                { id: 'crushes' as const, label: 'Crushes' },
                 { id: 'moments' as const, label: 'Moments' },
                 { id: 'circles' as const, label: 'Circles' },
+                { id: 'about' as const, label: 'About' },
               ]}
               active={tab}
               onChange={setTab}
@@ -486,12 +482,12 @@ export function SpaceScreen({
             <View style={{ height: 1, backgroundColor: colors.border, marginTop: space.xs }} />
             <View style={{ marginTop: space.md }}>
             <SwipeTabs
-              options={['flow', 'moments', 'circles'] as const}
+              options={['crushes', 'moments', 'circles', 'about'] as const}
               value={tab}
               onChange={setTab}
               width={contentWidth - gutter * 2}
             >
-            {tab === 'flow' ? (
+            {tab === 'crushes' ? (
               <SpacePosts
                 items={posts.data?.items ?? []}
                 loading={posts.isLoading}
@@ -514,66 +510,21 @@ export function SpaceScreen({
                 onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
               />
             ) : null}
+            {tab === 'about' ? (
+              <SpaceAbout
+                profile={p}
+                lifestyle={lifestyle}
+                mine={mine}
+                onReport={mine ? undefined : () => openActions(member)}
+              />
+            ) : null}
             </SwipeTabs>
             </View>
           </View>
 
-          <View style={{ marginTop: space.xxl, gap: space.md }}>
-                      {p.bio ? (
-            <Section title={`About ${p.name}`}>
-              <Txt variant="body">
-                {p.bio}
-              </Txt>
-            </Section>
-          ) : null}
-
-          {p.intentions.length || p.relationshipIntention ? (
-            <Section title="Looking for">
-              <Txt variant="heading">{p.intentions.map(intentionLabel).join(' • ')}</Txt>
-              {p.relationshipIntention ? (
-                <Txt variant="body" color="textSecondary" style={{ marginTop: 4 }}>
-                  {p.relationshipIntention}
-                </Txt>
-              ) : null}
-            </Section>
-          ) : null}
-
-          {p.interests.length ? (
-            <Section title="Interests">
-              <ChipGroup>
-                {p.interests.map((i) => (
-                  <Chip key={i} label={i} tone={p.sharedInterests.includes(i) ? 'primary' : 'default'} icon={p.sharedInterests.includes(i) ? 'sparkles' : undefined} />
-                ))}
-              </ChipGroup>
-              {p.sharedInterests.length ? (
-                <Txt variant="small" color="textMuted" style={{ marginTop: 8 }}>
-                  You both love {p.sharedInterests.slice(0, 3).join(', ')}.
-                </Txt>
-              ) : null}
-            </Section>
-          ) : null}
-          </View>
-
-          {lifestyle.length ? (
-            <Section title="About me">
-              {lifestyle.map((f) => (
-                <Fact key={f.label} {...f} />
-              ))}
-            </Section>
-          ) : null}
-
-
-
-          {mine ? null : (
-            <View style={{ marginTop: space.xxl, flexDirection: 'row', justifyContent: 'center', gap: space.lg }}>
-              <Pressable onPress={() => openActions(member)} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}>
-                <Ionicons name="flag-outline" size={15} color={colors.textMuted} />
-                <Txt variant="smallStrong" color="textMuted">
-                  Report or block {p.name}
-                </Txt>
-              </Pressable>
-            </View>
-          )}
+          {/* Nothing below this line. The page is the four tabs and stops: the
+              words, the interests and the facts are the About tab now, and the
+              visitor's report link moved in there with them. */}
         </View>
       </ScrollView>
 
@@ -700,7 +651,7 @@ function SpacePosts({
       <EmptyState
         icon="document-text-outline"
         title="Nothing posted yet"
-        message={`${name} hasn’t shared anything on the Flow.`}
+        message={`${name} hasn’t shared anything yet.`}
       />
     );
   }
@@ -872,6 +823,99 @@ function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; nam
           </View>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+/**
+ * The About tab: who they are, in their own words and in their own facts.
+ *
+ * This is what used to sit under the post list as loose prose — which made a
+ * Space a page that never ended, where you scrolled past somebody's last post
+ * and kept walking through their biography. It is a tab now, so the page stops
+ * where the content stops, and a visitor who wants the words asks for them.
+ *
+ * The report/block link belongs to the visitor and lives at the bottom of this
+ * tab rather than under everything: it is the last thing on the page, not a
+ * fifth thing to scroll past.
+ */
+function SpaceAbout({
+  profile: p,
+  lifestyle,
+  mine,
+  onReport,
+}: {
+  profile: FullProfile;
+  lifestyle: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }[];
+  mine: boolean;
+  onReport?: () => void;
+}) {
+  const { colors } = useTheme();
+  const hasWords = Boolean(p.bio) || p.intentions.length > 0 || Boolean(p.relationshipIntention);
+  const empty = !hasWords && p.interests.length === 0 && lifestyle.length === 0;
+
+  if (empty && !onReport) {
+    return (
+      <EmptyState
+        icon="person-outline"
+        title="Nothing here yet"
+        message={
+          mine
+            ? 'Add a few words, what you are looking for, and a few interests. This is the page people read before they send you a Crush.'
+            : `${p.name} hasn’t filled this in yet.`
+        }
+      />
+    );
+  }
+
+  return (
+    <View style={{ gap: space.lg }}>
+      {p.bio ? <Txt variant="body">{p.bio}</Txt> : null}
+
+      {hasWords && (p.intentions.length || p.relationshipIntention) ? (
+        <Section title="Looking for">
+          <Txt variant="heading">{p.intentions.map(intentionLabel).join(' • ')}</Txt>
+          {p.relationshipIntention ? (
+            <Txt variant="body" color="textSecondary" style={{ marginTop: 4 }}>
+              {p.relationshipIntention}
+            </Txt>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {p.interests.length ? (
+        <Section title="Interests">
+          <ChipGroup>
+            {p.interests.map((i) => (
+              <Chip key={i} label={i} tone={p.sharedInterests.includes(i) ? 'primary' : 'default'} icon={p.sharedInterests.includes(i) ? 'sparkles' : undefined} />
+            ))}
+          </ChipGroup>
+          {p.sharedInterests.length ? (
+            <Txt variant="small" color="textMuted" style={{ marginTop: 8 }}>
+              You both love {p.sharedInterests.slice(0, 3).join(', ')}.
+            </Txt>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {lifestyle.length ? (
+        <Section title="About me">
+          {lifestyle.map((f) => (
+            <Fact key={f.label} {...f} />
+          ))}
+        </Section>
+      ) : null}
+
+      {onReport ? (
+        <View style={{ marginTop: space.md, flexDirection: 'row', justifyContent: 'center' }}>
+          <Pressable onPress={onReport} accessibilityRole="button" accessibilityLabel={`Report or block ${p.name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}>
+            <Ionicons name="flag-outline" size={15} color={colors.textMuted} />
+            <Txt variant="smallStrong" color="textMuted">
+              Report or block {p.name}
+            </Txt>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
