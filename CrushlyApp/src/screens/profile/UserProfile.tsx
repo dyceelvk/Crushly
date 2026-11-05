@@ -12,7 +12,7 @@ import { Chip, ChipGroup } from '../../components/Chip';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Tabs } from '../../components/Tabs';
 import { BlurView } from 'expo-blur';
-import { useCircleRequestState, useMemberCircles, useRequestJoinCircle } from '../../api/hooks';
+import { useMemberCircles } from '../../api/hooks';
 import { resolveTheme } from '../../lib/circleThemes';
 import { ThemeTile } from '../../components/ThemePicker';
 import { Pill, VerifiedBadge } from '../../components/Badges';
@@ -24,6 +24,7 @@ import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
+import { joinAction, policyLabel } from '../../lib/circleAccess';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
 import { PostCard } from '../../components/feed/PostCard';
@@ -508,6 +509,7 @@ export function SpaceScreen({
                 items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
                 loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
                 onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
+                onPreview={(circleId) => navigation.navigate('CirclePreview', { circleId })}
               />
             ) : null}
             {tab === 'about' ? (
@@ -686,10 +688,23 @@ function SpaceCircles({
   items,
   loading,
   onOpen,
+  onPreview,
 }: {
-  items: { id: number; name: string; about: string; theme?: string | null; visibility?: string; memberCount: number; joined?: boolean }[];
+  items: {
+    id: number;
+    name: string;
+    about: string;
+    theme?: string | null;
+    visibility?: string;
+    discoverable?: boolean;
+    joinPolicy?: 'request' | 'open' | 'invite';
+    memberCount: number;
+    joined?: boolean;
+    myRole?: string;
+  }[];
   loading?: boolean;
   onOpen: (id: number) => void;
+  onPreview: (id: number) => void;
 }) {
   const { colors } = useTheme();
   if (loading) return <LoadingBlock label="Loading their Circles" />;
@@ -703,7 +718,7 @@ function SpaceCircles({
   return (
     <View style={{ gap: space.sm }}>
       {items.map((c) => (
-        <SpaceCircleRow key={c.id} circle={c} onOpen={onOpen} />
+        <SpaceCircleRow key={c.id} circle={c} onOpen={onOpen} onPreview={onPreview} />
       ))}
     </View>
   );
@@ -720,17 +735,32 @@ function SpaceCircles({
 function SpaceCircleRow({
   circle: c,
   onOpen,
+  onPreview,
 }: {
-  circle: { id: number; name: string; about: string; theme?: string | null; visibility?: string; memberCount: number; joined?: boolean };
+  circle: {
+    id: number;
+    name: string;
+    about: string;
+    theme?: string | null;
+    visibility?: string;
+    discoverable?: boolean;
+    joinPolicy?: 'request' | 'open' | 'invite';
+    memberCount: number;
+    joined?: boolean;
+    myRole?: string;
+  };
   onOpen: (id: number) => void;
+  onPreview: (id: number) => void;
 }) {
   const { colors } = useTheme();
-  const toast = useToast();
   const theme = resolveTheme(c.theme);
-  const canAsk = !c.joined && c.visibility === 'public';
-  const state = useCircleRequestState(c.id, canAsk);
-  const ask = useRequestJoinCircle();
-  const asked = state.data?.requested ?? false;
+  const discoverable = c.discoverable ?? c.visibility === 'public';
+  const policy = c.joinPolicy ?? 'request';
+  // `member_circles` marks you as a visitor when you are not in the room, and
+  // `my_circles` only ever returns your own — so "am I in this" is one question
+  // with two sources.
+  const isMember = c.joined ?? (c.myRole ? c.myRole !== 'visitor' : false);
+  const action = joinAction({ state: isMember ? 'member' : 'none', joinPolicy: policy, full: c.memberCount >= 12 });
 
   return (
     <View
@@ -746,7 +776,7 @@ function SpaceCircleRow({
       }}
     >
       <Pressable
-        onPress={() => onOpen(c.id)}
+        onPress={() => (isMember ? onOpen(c.id) : onPreview(c.id))}
         accessibilityRole="button"
         accessibilityLabel={`${c.name}, ${c.memberCount} members`}
         style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1, minWidth: 0 }}
@@ -761,36 +791,38 @@ function SpaceCircleRow({
             <Txt variant="subheading" numberOfLines={1} style={{ flexShrink: 1 }}>
               {c.name}
             </Txt>
-            {c.joined ? (
+            {isMember ? (
               <Txt variant="caption" color="gold">
                 Yours
               </Txt>
             ) : null}
           </View>
           <Txt variant="caption" color="textMuted" numberOfLines={1}>
-            {[theme?.label, `${c.memberCount} ${c.memberCount === 1 ? 'member' : 'members'}`, c.visibility === 'public' ? 'Public' : null]
+            {[
+              theme?.label,
+              `${c.memberCount} ${c.memberCount === 1 ? 'member' : 'members'}`,
+              discoverable ? policyLabel(policy) : 'Private',
+            ]
               .filter(Boolean)
               .join(' · ')}
           </Txt>
         </View>
       </Pressable>
-      {canAsk ? (
+      {/* One door, and it is the room's own page: the button there knows exactly
+          where you stand, which a row on somebody's Space cannot. */}
+      {isMember ? (
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      ) : discoverable ? (
         <Button
-          title={asked ? 'Asked' : 'Ask to join'}
-          variant={asked ? 'ghost' : 'outline'}
+          title={action.kind === 'pending' ? 'Request sent' : action.label}
+          variant={action.pressable ? 'outline' : 'ghost'}
           size="sm"
           full={false}
-          disabled={asked}
-          loading={ask.isPending}
-          onPress={() =>
-            ask.mutate(c.id, {
-              onSuccess: () => toast({ kind: 'info', title: 'Asked', message: `The owner of ${c.name} decides who joins.` }),
-              onError: (e) => toast({ kind: 'error', title: 'Couldn’t ask', message: (e as Error).message }),
-            })
-          }
+          disabled={!action.pressable}
+          onPress={() => onPreview(c.id)}
         />
       ) : (
-        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        <Ionicons name="lock-closed-outline" size={15} color={colors.textMuted} />
       )}
     </View>
   );

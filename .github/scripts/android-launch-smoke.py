@@ -181,6 +181,12 @@ def find(seen, needle, cls=None):
     return None
 
 
+def back():
+    """Dismiss whatever is on top without pretending to know what it is."""
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(0.9)
+
+
 def swipe_up():
     adb('shell', 'input', 'swipe', '160', '520', '160', '240', '220')
     time.sleep(1.2)
@@ -626,13 +632,16 @@ def assert_connections(seen):
     """Connections opens with the thing you came to do, not with a blank page.
 
     Above the feed there is a composer ("Say something…") and, for a member with
-    rooms, a filter row starting with All. Both are asserted here because both
-    are new: the composer was a button in an empty state before, and the filter
-    is what makes a Circle a place inside the feed rather than a separate list.
+    rooms, a filter row starting with All. Both belong at the top: they are what
+    you do on this page. Rooms you are *not* in belong somewhere else — between
+    posts, in the feed — so this also checks that a discovery card, when there is
+    one to show, is below the composer rather than in place of it.
     """
     if not find(seen, 'Say something'):
         fail('Connections has no composer above the feed')
     log('connections: composer above the feed; checked')
+    if find(seen, 'Circles you could join'):
+        log('connections: rooms you are not in are offered inside the feed; checked')
 
 
 def walk():
@@ -644,8 +653,10 @@ def walk():
     for label, name in (('Crushes', '05-segment-crushes'),
                         ('Connections', '06-segment-connections')):
         tap(label)
-        shot(name)
-        assert_no_clips(nodes() or [], name)
+        seen = shot(name)
+        assert_no_clips(seen, name)
+        if label == 'Connections':
+            assert_connections(seen)
 
     # Discover is a page, not only the door to search: photograph it before
     # opening search, or the one screen the user twice described as "a white
@@ -669,8 +680,6 @@ def walk():
         seen = shot(name)
         if label == 'Space':
             assert_space_header(seen)
-        if label == 'Connections':
-            assert_connections(seen)
 
     # Close Ones is a segment of Whispers, not a tab of its own: walk in the way
     # a person would, from the tab.
@@ -709,6 +718,24 @@ def walk():
             shot('{:02d}-space-{}'.format(n, name))
             n += 1
         return_to_tabs()
+
+    # A room can be found now, and there are three ways in. The creator has to
+    # ask two separate questions — whether anyone can find it, and how people get
+    # in — because the commonest way a product like this goes wrong is fusing
+    # them into one switch that means neither.
+    tap('Space')
+    if tap('Circles', tries=2):
+        shot('{:02d}-space-circles-list'.format(n))
+        n += 1
+        if tap('Start a Circle'):
+            seen = shot('{:02d}-circle-creator'.format(n))
+            n += 1
+            for needle in ('Can people find it?', 'How do people get in?'):
+                if not find(seen, needle):
+                    fail('the Circle creator is missing "%s"' % needle)
+            log('circle creator: findable and joinable are two questions; checked')
+            back()
+    return_to_tabs()
 
     # Settings, from the Space's gear, and every page inside it.
     tap('Space')
