@@ -162,7 +162,10 @@ jobs:
             fi
           done
 
-          for col in posts.edit vibes.edit; do
+          # vibes.edit is gone on purpose — migration 20261104130000 removed the
+          # table. Checking for it made this step fail on a database that was
+          # perfectly up to date, which is worse than not checking at all.
+          for col in posts.edit; do
             table=${col%%.*}
             column=${col##*.}
             have=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from information_schema.columns where table_schema='public' and table_name='$table' and column_name='$column');")
