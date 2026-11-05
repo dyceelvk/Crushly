@@ -14,7 +14,8 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
+import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
+  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -695,6 +696,83 @@ export async function setCircleLook(
     p_theme: look.theme ?? null,
     p_visibility: look.visibility ?? 'connections',
   });
+}
+
+/* ------------------------------------------------ circles: find, ask, invite */
+
+/**
+ * Rooms you could walk into.
+ *
+ * Offset paging with a deterministic order, so "load more" never shows the same
+ * room twice. The database decides who is recommendable — a private room, a room
+ * you are in, a room whose owner has blocked you, and a full room never appear.
+ */
+export async function discoverCircles(limit = 6, offset = 0): Promise<DiscoverCircle[]> {
+  return (await rpc<DiscoverCircle[]>('discover_circles', { p_limit: limit, p_offset: offset })) ?? [];
+}
+
+/** One room from outside: its face, its people, its week — never its contents. */
+export async function circlePreview(circleId: number): Promise<CirclePreview> {
+  return rpc<CirclePreview>('circle_preview', { p_circle_id: circleId });
+}
+
+/**
+ * Ask to come in, or come in.
+ *
+ * One call, because the policy is the database's decision and not the button's:
+ * an open room returns `member`, a room with approval returns `pending`, and an
+ * invitation with the door already open returns `member` with `viaInvitation`.
+ */
+export async function joinCircle(
+  circleId: number,
+): Promise<{ state: CircleStanding; requestId?: number; already?: boolean; viaInvitation?: boolean }> {
+  return rpc('join_circle', { p_circle_id: circleId });
+}
+
+/** The owner's two switches. Independent on purpose. */
+export async function setCircleAccess(
+  circleId: number,
+  input: { discoverable: boolean; joinPolicy: CircleJoinPolicy },
+): Promise<{ id: number; discoverable: boolean; joinPolicy: CircleJoinPolicy }> {
+  return rpc('set_circle_access', {
+    p_circle_id: circleId,
+    p_discoverable: input.discoverable,
+    p_join_policy: input.joinPolicy,
+  });
+}
+
+/** The owner's desk: members, requests, invitations, declines, and the switches. */
+export async function circleManage(circleId: number): Promise<CircleManage> {
+  return rpc<CircleManage>('circle_manage', { p_circle_id: circleId });
+}
+
+/** Ask somebody in. Creates an invitation they have to accept. */
+export async function inviteToCircle(
+  circleId: number,
+  memberId: number,
+): Promise<{ state: string; invitationId?: number; fromRequest?: boolean }> {
+  return rpc('invite_to_circle', { p_circle_id: circleId, p_member_id: memberId });
+}
+
+/** The invitations waiting on you. */
+export async function myCircleInvitations(): Promise<CircleInvitation[]> {
+  return (await rpc<CircleInvitation[]>('my_circle_invitations')) ?? [];
+}
+
+/** Yes or no to one. Accepting is what creates the membership. */
+export async function respondCircleInvitation(
+  invitationId: number,
+  accept: boolean,
+): Promise<{ ok: boolean; accepted: boolean; circleId: number }> {
+  return rpc('respond_circle_invitation', { p_invitation_id: invitationId, p_accept: accept });
+}
+
+/** People the owner could invite — their Connections first. */
+export async function circleInviteCandidates(circleId: number, query = ''): Promise<CircleInviteCandidate[]> {
+  return (await rpc<CircleInviteCandidate[]>('circle_invite_candidates', {
+    p_circle_id: circleId,
+    p_query: query,
+  })) ?? [];
 }
 
 /** The Circles on somebody's Space — public ones, and ones you share. */

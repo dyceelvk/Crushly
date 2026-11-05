@@ -33,12 +33,10 @@ export function ConnectionsTop({
   selected,
   onSelect,
   onCompose,
-  onOpenCircle,
 }: {
   selected: CircleFilter;
   onSelect: (value: CircleFilter) => void;
   onCompose: () => void;
-  onOpenCircle: (circleId: number) => void;
 }) {
   const circles = useMyCircles();
   const items = circles.data?.items ?? [];
@@ -47,7 +45,6 @@ export function ConnectionsTop({
     <View style={{ gap: space.sm }}>
       {items.length ? <CircleFilterChips circles={items} selected={selected} onSelect={onSelect} /> : null}
       <ComposerRow onCompose={onCompose} />
-      <CirclesPreview onOpenCircle={onOpenCircle} />
     </View>
   );
 }
@@ -201,7 +198,7 @@ const PER_PAGE = 4;
  * The captions follow this product's words, not another app's: a post is a
  * Crush, so the post people reacted to most is the Most Crushed Post.
  */
-function CirclesPreview({ onOpenCircle }: { onOpenCircle: (circleId: number) => void }) {
+export function CircleHighlightsCard({ onOpenCircle }: { onOpenCircle: (circleId: number) => void }) {
   const { colors, reduceMotion } = useTheme();
   const { contentWidth } = useLayout();
   const highlights = useCircleHighlights(8);

@@ -45,6 +45,10 @@ export type RootStackParamList = {
   MomentViewer: { userId: number; mine?: boolean };
   Circles: undefined;
   Circle: { circleId: number };
+  /** A room you are not in yet: what it is, who is in it, and the way in. */
+  CirclePreview: { circleId: number };
+  /** The owner's desk — members, requests, invitations, and the two switches. */
+  CircleManage: { circleId: number };
   Moments: undefined;
   MomentComposer: undefined;
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'moment' | 'circle'; initialEdit?: VideoEdit };

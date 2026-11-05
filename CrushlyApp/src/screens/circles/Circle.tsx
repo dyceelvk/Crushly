@@ -112,6 +112,11 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
               {circle.about || `${circle.memberCount} of 12 seats taken`}
             </Txt>
           </View>
+          {/* The owner's desk, one press from the room it is about. People-shaped,
+              not a gear: a gear in Crushly always means Settings. */}
+          {circle.myRole === 'owner' ? (
+            <IconButton icon="people-outline" label="Manage this Circle" onPress={() => navigation.navigate('CircleManage', { circleId })} />
+          ) : null}
           <IconButton icon="ellipsis-horizontal" label="Circle options" onPress={() => setMenu(true)} />
         </View>
 

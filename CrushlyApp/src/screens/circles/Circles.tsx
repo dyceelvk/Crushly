@@ -15,13 +15,22 @@ import { Input } from '../../components/Input';
 import { ThemePicker } from '../../components/ThemePicker';
 import { CircleCover } from '../../components/CircleCover';
 import { Segmented } from '../../components/Segmented';
-import { setCircleLook } from '../../api/service';
+import { setCircleAccess, setCircleLook } from '../../api/service';
 import { useToast } from '../../components/Toast';
-import { useCreateCircle, useCrushes, useDecideCircleRequest, useMyCircles, useCircleRequests } from '../../api/hooks';
+import {
+  useCreateCircle,
+  useCrushes,
+  useDecideCircleRequest,
+  useMyCircles,
+  useCircleRequests,
+  useCircleInvitations,
+  useRespondCircleInvitation,
+} from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { Avatar } from '../../components/Photo';
+import type { CircleJoinPolicy } from '../../api/types';
 import type { RootStackParamList } from '../../navigation/types';
 
 /**
@@ -40,11 +49,14 @@ export function CirclesScreen() {
   const circles = useMyCircles();
   const requests = useCircleRequests();
   const decide = useDecideCircleRequest();
+  const invitations = useCircleInvitations();
+  const respond = useRespondCircleInvitation();
   const [creating, setCreating] = useState(false);
   const toast = useToast();
 
   const items = circles.data?.items ?? [];
   const asking = requests.data ?? [];
+  const invited = invitations.data ?? [];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -73,6 +85,82 @@ export function CirclesScreen() {
             </Txt>
           </View>
         </View>
+
+        {/* Somebody asked you in. This is the only place an invitation lives,
+            because a room you have been invited to is not yet a room of yours. */}
+        {invited.length ? (
+          <View style={{ marginTop: space.lg, gap: space.sm }}>
+            <Txt variant="title" accessibilityRole="header">
+              {invited.length === 1 ? '1 invitation' : `${invited.length} invitations`}
+            </Txt>
+            {invited.map((i) => (
+              <View
+                key={i.id}
+                style={{
+                  backgroundColor: colors.card,
+                  borderRadius: radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.primaryLine,
+                  padding: space.md,
+                  gap: space.sm,
+                }}
+              >
+                <Pressable
+                  onPress={() => navigation.navigate('CirclePreview', { circleId: i.circleId })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Look at ${i.circleName}`}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                >
+                  <CircleCover circle={{ name: i.circleName, coverUrl: i.coverUrl, theme: i.theme }} size={42} radius={13} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Txt variant="bodyStrong" numberOfLines={1}>
+                      {i.circleName}
+                    </Txt>
+                    <Txt variant="caption" color="textMuted" numberOfLines={1}>
+                      {i.invitedBy.name} asked you in · {i.memberCount}/12
+                    </Txt>
+                  </View>
+                </Pressable>
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <Button
+                    title="Accept"
+                    variant="primary"
+                    size="sm"
+                    full={false}
+                    style={{ flex: 1 }}
+                    loading={respond.isPending && respond.variables?.invitationId === i.id && respond.variables?.accept === true}
+                    onPress={() =>
+                      respond.mutate(
+                        { invitationId: i.id, accept: true, circleId: i.circleId },
+                        {
+                          onSuccess: () => {
+                            toast({ kind: 'success', title: `You’re in ${i.circleName}` });
+                            navigation.navigate('Circle', { circleId: i.circleId });
+                          },
+                          onError: (e) => toast({ kind: 'error', title: 'Couldn’t accept', message: (e as Error).message }),
+                        },
+                      )
+                    }
+                  />
+                  <Button
+                    title="Not now"
+                    variant="ghost"
+                    size="sm"
+                    full={false}
+                    style={{ flex: 1 }}
+                    loading={respond.isPending && respond.variables?.invitationId === i.id && respond.variables?.accept === false}
+                    onPress={() =>
+                      respond.mutate(
+                        { invitationId: i.id, accept: false, circleId: i.circleId },
+                        { onError: (e) => toast({ kind: 'error', title: 'Couldn’t answer', message: (e as Error).message }) },
+                      )
+                    }
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {/* Only when there is a list to sit above. With no Circles, the empty
             state below already offers this exact button — the same action twice
@@ -206,6 +294,35 @@ export function CirclesScreen() {
                       · You started this
                     </Txt>
                   ) : null}
+                  {/* The desk is people-shaped, not settings-shaped: a gear here
+                      would mean the app's Settings, which is the one thing a gear
+                      is allowed to mean. */}
+                  {c.myRole === 'owner' ? (
+                    <Pressable
+                      onPress={() => navigation.navigate('CircleManage', { circleId: c.id })}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Manage ${c.name}`}
+                      hitSlop={10}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 'auto' }}
+                    >
+                      {c.pendingRequests ? (
+                        <View
+                          style={{
+                            minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5,
+                            alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary,
+                          }}
+                        >
+                          <Txt variant="caption" color={colors.onPrimary}>
+                            {c.pendingRequests}
+                          </Txt>
+                        </View>
+                      ) : null}
+                      <Ionicons name="people-outline" size={15} color={colors.primary} />
+                      <Txt variant="caption" color="primary">
+                        Manage
+                      </Txt>
+                    </Pressable>
+                  ) : null}
                   {c.lastMessageAt ? (
                     <Txt variant="caption" color="textMuted">
                       · {timeAgo(c.lastMessageAt)}
@@ -240,9 +357,11 @@ function CreateCircleSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const [name, setName] = useState('');
   const [about, setAbout] = useState('');
   const [picked, setPicked] = useState<number[]>([]);
-  // What kind of room it is, and whether people outside it may find it.
+  // What kind of room it is.
   const [theme, setTheme] = useState<string | null>(null);
-  const [visibility, setVisibility] = useState<'connections' | 'public'>('connections');
+  // Two questions, two answers. Whether it can be found, and how people get in.
+  const [discoverable, setDiscoverable] = useState(false);
+  const [policy, setPolicy] = useState<CircleJoinPolicy>('invite');
 
   // You can only bring in people you have Clicked with — that is the rule the
   // database enforces, so the picker only offers those.
@@ -254,23 +373,30 @@ function CreateCircleSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const submit = async () => {
     try {
       const space = await create.mutateAsync({ name, about, memberIds: picked });
-      // The theme and the visibility are set straight after, on the Circle that
-      // now exists: the create call is the one old builds still make, so it is
-      // not the place to add two more parameters.
-      if (theme || visibility === 'public') {
+      // The look and the two access settings are set straight after, on the
+      // Circle that now exists: the create call is the one old builds still
+      // make, so it is not the place to add three more parameters.
+      if (theme) {
         try {
-          await setCircleLook(space.circle.id, { theme, visibility });
+          await setCircleLook(space.circle.id, { theme, visibility: discoverable ? 'public' : 'connections' });
         } catch {
           // A room without a label is still a room. The owner can set it again
           // from the Circle screen; failing the whole creation over it would be
           // the wrong trade.
         }
       }
+      try {
+        await setCircleAccess(space.circle.id, { discoverable, joinPolicy: policy });
+      } catch {
+        // Same trade: a room that exists but has to be re-configured beats no
+        // room at all, and the desk says plainly what each setting is.
+      }
       setName('');
       setAbout('');
       setPicked([]);
       setTheme(null);
-      setVisibility('connections');
+      setDiscoverable(false);
+      setPolicy('invite');
       onClose();
       navigation.navigate('Circle', { circleId: space.circle.id });
     } catch (e) {
@@ -299,24 +425,56 @@ function CreateCircleSheet({ visible, onClose }: { visible: boolean; onClose: ()
 
         <ThemePicker value={theme} onChange={setTheme} />
 
-        {/* Who can find it. A Circle is never readable by outsiders: this is
-            about whether it appears on your Space at all. */}
+        {/* Two settings, asked separately, because a room that can be found and
+            a room anybody may enter are not the same room. */}
         <View style={{ gap: 8 }}>
           <Txt variant="label" color="textSecondary">
-            Who can find it
+            Can people find it?
           </Txt>
-          <Segmented<'connections' | 'public'>
+          <Segmented<'no' | 'yes'>
             options={[
-              { value: 'connections', label: 'People I’ve clicked with' },
-              { value: 'public', label: 'Anyone' },
+              { value: 'no', label: 'Only people in it' },
+              { value: 'yes', label: 'Anyone can find it' },
             ]}
-            value={visibility}
-            onChange={setVisibility}
+            value={discoverable ? 'yes' : 'no'}
+            onChange={(v) => {
+              const next = v === 'yes';
+              setDiscoverable(next);
+              // Nobody can ask to join a room they cannot find, so turning
+              // discovery off takes the door with it rather than leaving a
+              // setting that means nothing.
+              if (!next) setPolicy('invite');
+              else if (policy === 'invite') setPolicy('request');
+            }}
           />
           <Txt variant="caption" color="textMuted">
-            {visibility === 'public'
-              ? 'It shows on your Space. Only members can read what is posted in it.'
-              : 'It stays off other people’s screens unless they are in it.'}
+            {discoverable
+              ? 'It can be recommended in Connections and previewed by anyone. What is posted in it stays for members.'
+              : 'It stays off discovery entirely. Nobody outside can find it, preview it, or ask to join.'}
+          </Txt>
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <Txt variant="label" color="textSecondary">
+            How do people get in?
+          </Txt>
+          <Segmented<CircleJoinPolicy>
+            options={[
+              { value: 'request', label: 'Ask me' },
+              { value: 'open', label: 'Anyone joins' },
+              { value: 'invite', label: 'I invite' },
+            ]}
+            value={policy}
+            onChange={setPolicy}
+          />
+          <Txt variant="caption" color="textMuted">
+            {!discoverable
+              ? 'A room nobody can find is stocked by hand, so this is invitations only. Bring people in below, or from the Circle later.'
+              : policy === 'request'
+                ? 'People ask, and nothing happens until you say yes.'
+                : policy === 'open'
+                  ? 'People who find it walk straight in. You are told each time somebody joins.'
+                  : 'People can find it and look, but only you can bring them in.'}
           </Txt>
         </View>
 

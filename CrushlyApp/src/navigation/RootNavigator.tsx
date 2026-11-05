@@ -42,6 +42,8 @@ import { WebPreviewScreen } from '../screens/common/WebPreview';
 import { ProfileTabScreen } from '../screens/profile/ProfileTab';
 import { CirclesScreen } from '../screens/circles/Circles';
 import { CircleScreen } from '../screens/circles/Circle';
+import { CirclePreviewScreen } from '../screens/circles/CirclePreview';
+import { CircleManageScreen } from '../screens/circles/CircleManage';
 import { UserProfileScreen } from '../screens/profile/UserProfile';
 import { EditProfileScreen } from '../screens/profile/EditProfile';
 import { NotificationsScreen } from '../screens/notifications/Notifications';
@@ -196,6 +198,8 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Search" component={SearchScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="Circles" component={CirclesScreen} />
           <Stack.Screen name="Circle" component={CircleScreen} />
+          <Stack.Screen name="CirclePreview" component={CirclePreviewScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+          <Stack.Screen name="CircleManage" component={CircleManageScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />

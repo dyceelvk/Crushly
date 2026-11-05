@@ -160,6 +160,99 @@ export type CloseOne = {
 
 export type CircleRole = 'owner' | 'member';
 
+/** How a room takes new people. Two settings, not one: see `Circle.discoverable`. */
+export type CircleJoinPolicy = 'request' | 'open' | 'invite';
+
+/** Where you stand with a room, in one word the button can be built from. */
+export type CircleStanding = 'none' | 'member' | 'pending' | 'invited';
+
+/**
+ * A Circle you could walk into.
+ *
+ * Everything here is a fact a stranger may know about a room: who runs it, how
+ * big it is, how alive it has been this week, and where you stand. Its posts and
+ * its conversation are not in this type, and never will be — finding a room is
+ * not reading it.
+ */
+export type DiscoverCircle = {
+  id: number;
+  name: string;
+  about: string;
+  theme: string | null;
+  coverUrl: string | null;
+  createdAt: number;
+  ownerId: number;
+  ownerName: string;
+  ownerUsername: string | null;
+  ownerPhoto: string | null;
+  memberCount: number;
+  capacity: number;
+  discoverable: boolean;
+  joinPolicy: CircleJoinPolicy;
+  postsThisWeek: number;
+  messagesThisWeek: number;
+  posts: number;
+  messages: number;
+  friendsInside: number;
+  state: CircleStanding;
+};
+
+/** One room, seen from outside — including by a member. */
+export type CirclePreview = {
+  circle: Circle & { capacity: number };
+  owner: Profile;
+  members: Profile[];
+  activity: {
+    posts: number;
+    postsThisWeek: number;
+    messagesThisWeek: number;
+    reactionsThisWeek: number;
+    lastActivityAt: number;
+  };
+  state: CircleStanding;
+  myRole: CircleRole | null;
+  full: boolean;
+};
+
+/** An invitation waiting on you. */
+export type CircleInvitation = {
+  id: number;
+  circleId: number;
+  circleName: string;
+  about: string;
+  theme: string | null;
+  coverUrl: string | null;
+  memberCount: number;
+  createdAt: number;
+  invitedBy: Profile;
+  state: 'invited';
+};
+
+/** The owner's desk: the four lists, and the two switches behind them. */
+export type CircleManage = {
+  circle: {
+    id: number;
+    name: string;
+    about: string;
+    theme: string | null;
+    coverUrl: string | null;
+    discoverable: boolean;
+    joinPolicy: CircleJoinPolicy;
+    capacity: number;
+  };
+  members: { member: Profile; role: CircleRole; joinedAt: number }[];
+  requests: { id: number; requestedAt: number; member: Profile }[];
+  declined: { id: number; requestedAt: number; decidedAt: number | null; member: Profile }[];
+  invitations: { id: number; createdAt: number; member: Profile }[];
+};
+
+/** Somebody the owner could invite. */
+export type CircleInviteCandidate = {
+  member: Profile;
+  connected: boolean;
+  invited: boolean;
+};
+
 export type Circle = {
   id: number;
   name: string;
@@ -169,6 +262,21 @@ export type Circle = {
   theme?: string | null;
   /** `public` means findable on the owner's Space. A Circle is never readable. */
   visibility?: 'connections' | 'public';
+  /**
+   * Whether people who are not in the room may find it at all — in discovery,
+   * in a preview, on somebody's Space. Independent of how they get in.
+   */
+  discoverable?: boolean;
+  /**
+   * What happens when somebody who found it knocks.
+   *
+   *   request  they ask, the owner answers. A pending request grants nothing.
+   *   open     they are in immediately.
+   *   invite   there is no knocking. The owner adds people.
+   */
+  joinPolicy?: CircleJoinPolicy;
+  /** Owner only: how many people are waiting at the door. */
+  pendingRequests?: number;
   createdAt: number;
   ownerId: number;
   myRole: CircleRole;

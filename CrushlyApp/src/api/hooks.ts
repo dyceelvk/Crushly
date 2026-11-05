@@ -151,16 +151,26 @@ export const useRequestJoinCircle = () => {
   });
 };
 
-/** An owner's answer. Both lists change, so both are refreshed. */
+/**
+ * An owner's answer.
+ *
+ * Answering changes four things at once — the desk, the room's member list, the
+ * person's own state, and (if they were found through it) discovery. All of them
+ * are refreshed, because a button that says "pending" after a decline has not
+ * been answered as far as the person looking at it is concerned.
+ */
 export const useDecideCircleRequest = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { requestId: number; approve: boolean }) =>
+    mutationFn: (input: { requestId: number; approve: boolean; circleId?: number }) =>
       service.decideCircleRequest(input.requestId, input.approve),
-    onSuccess: () => {
+    onSuccess: (_res, input) => {
       qc.invalidateQueries({ queryKey: ['circle-requests'] });
       qc.invalidateQueries({ queryKey: keys.circles });
       qc.invalidateQueries({ queryKey: ['member-circles'] });
+      qc.invalidateQueries({ queryKey: ['circle-manage'] });
+      qc.invalidateQueries({ queryKey: ['circles-discover'] });
+      if (input.circleId) qc.invalidateQueries({ queryKey: ['circle-preview', input.circleId] });
     },
   });
 };
@@ -1116,3 +1126,100 @@ export function useChat(conversationId: number) {
 }
 
 export type ChatDraft = Parameters<ReturnType<typeof useChat>['send']>[0];
+
+/* ------------------------------------------------ circles: find, ask, invite */
+
+/**
+ * Rooms you could walk into, for the Connections feed.
+ *
+ * Kept out of `keys.circles` on purpose: this list changes when somebody else's
+ * room fills up, not when you do something to one of yours, and it should not be
+ * refetched every time you rename a room of your own.
+ */
+export const useDiscoverCircles = (limit = 6) =>
+  useQuery({
+    queryKey: ['circles-discover', limit],
+    queryFn: () => service.discoverCircles(limit, 0),
+    staleTime: 60_000,
+  });
+
+/** One room from outside. Refetched after any attempt to get in, so the button
+ *  and the truth are never different for longer than the request. */
+export const useCirclePreview = (circleId: number | null) =>
+  useQuery({
+    queryKey: ['circle-preview', circleId],
+    queryFn: () => service.circlePreview(circleId as number),
+    enabled: circleId !== null,
+    staleTime: 15_000,
+  });
+
+export const useCircleInvitations = () =>
+  useQuery({
+    queryKey: ['circle-invitations'],
+    queryFn: () => service.myCircleInvitations(),
+    staleTime: 30_000,
+  });
+
+export const useCircleManage = (circleId: number | null) =>
+  useQuery({
+    queryKey: ['circle-manage', circleId],
+    queryFn: () => service.circleManage(circleId as number),
+    enabled: circleId !== null,
+    staleTime: 10_000,
+  });
+
+export const useCircleInviteCandidates = (circleId: number | null, query = '') =>
+  useQuery({
+    queryKey: ['circle-invite-candidates', circleId, query],
+    queryFn: () => service.circleInviteCandidates(circleId as number, query),
+    enabled: circleId !== null,
+    staleTime: 20_000,
+  });
+
+/** Everything a decision about a room touches: the room, your list, discovery. */
+function refreshCircleSurfaces(qc: ReturnType<typeof useQueryClient>, circleId?: number) {
+  if (circleId) {
+    void qc.invalidateQueries({ queryKey: ['circle-preview', circleId] });
+    void qc.invalidateQueries({ queryKey: ['circle-manage', circleId] });
+  }
+  void qc.invalidateQueries({ queryKey: ['circles-discover'] });
+  void qc.invalidateQueries({ queryKey: ['circle-invitations'] });
+  void qc.invalidateQueries({ queryKey: keys.circles });
+  void qc.invalidateQueries({ queryKey: keys.badges });
+  if (circleId) void qc.invalidateQueries({ queryKey: keys.circle(circleId) });
+}
+
+export function useJoinCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (circleId: number) => service.joinCircle(circleId),
+    onSuccess: (_r, circleId) => refreshCircleSurfaces(qc, circleId),
+  });
+}
+
+export function useSetCircleAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { circleId: number; discoverable: boolean; joinPolicy: Parameters<typeof service.setCircleAccess>[1]['joinPolicy'] }) =>
+      service.setCircleAccess(input.circleId, { discoverable: input.discoverable, joinPolicy: input.joinPolicy }),
+    onSuccess: (_r, input) => refreshCircleSurfaces(qc, input.circleId),
+  });
+}
+
+export function useInviteToCircle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { circleId: number; memberId: number }) =>
+      service.inviteToCircle(input.circleId, input.memberId),
+    onSuccess: (_r, input) => refreshCircleSurfaces(qc, input.circleId),
+  });
+}
+
+export function useRespondCircleInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { invitationId: number; accept: boolean; circleId?: number }) =>
+      service.respondCircleInvitation(input.invitationId, input.accept),
+    onSuccess: (_r, input) => refreshCircleSurfaces(qc, input.circleId),
+  });
+}
