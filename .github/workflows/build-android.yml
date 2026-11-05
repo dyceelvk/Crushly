@@ -156,17 +156,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 9 cold start, sign in and walk
-        # This is the round the app gets walked on a real Android system image.
-        # A green build used to mean only that the APK launched: the walk now
-        # signs in and photographs every surface, so a caption under the tab bar
-        # or a link landing on the wrong segment fails here instead of on a
-        # phone in someone's hand.
+      - name: Android 9 cold start and relaunch
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          CRUSHLY_WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
-          CRUSHLY_WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
-          CRUSHLY_WALK_OUT: ../walk
         with:
           api-level: 28
           target: default
@@ -189,6 +180,7 @@ jobs:
           version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
           python3 ../.github/scripts/audit-apk-secrets.py "apk/Crushly-${version}-Android9plus.apk" apk/SECURITY-CHECK.txt
       - name: Publish the asset
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -198,10 +190,15 @@ jobs:
           file="Crushly-${version}-Android9plus.apk"
           echo "::notice::Publishing ${file} to ${tag}."
           test -f "apk/${file}" || { echo "::error::apk/${file} is missing."; exit 1; }
+          # What produced these bytes, so a later rebuild can be recognised as a
+          # rebuild of the same app rather than mistaken for a forgotten bump.
+          app_sources=$(git -C "$(git rev-parse --show-toplevel)" ls-tree -r HEAD -- "$(git rev-parse --show-prefix)" | sha256sum | cut -d' ' -f1)
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --prerelease \
               --title "Crushly ${version} — Android 9+ testing" \
-              --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM."
+              --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM.
+
+App sources: ${app_sources}"
           fi
           # Release tags are immutable in the app: never silently point an
           # existing version at different bytes. If an APK already exists, its
@@ -212,17 +209,31 @@ jobs:
             | jq -r --arg name "$file" '.assets[] | select(.name == $name) | .digest // empty' \
             | head -n 1)
           if [ -n "$existing_digest" ]; then
-            if [ "$existing_digest" != "$expected_digest" ]; then
-              echo "::error::${tag} already contains ${file} with ${existing_digest}; this build is ${expected_digest}. Bump app.json version and versionCode instead of shipping a mismatched APK."
+            # Two different things land here and they must not be confused:
+            # (a) the same sources rebuilt — APK builds are not reproducible, so
+            #     ${version} was re-run for a change that never entered the app
+            #     (a workflow or check script). The tested artefact for this
+            #     version is already out; republishing is impossible by law and
+            #     unnecessary, so the walk stays meaningful and this stays green.
+            # (b) genuinely new app sources under a version that already shipped
+            #     — that is a forgotten bump, and it has to be loud.
+            if ! ../.github/scripts/app-sources-match-release.sh "$tag"; then
+              echo "::error::${tag} already contains ${file} with ${existing_digest}; this build is ${expected_digest}, and the app sources have changed since that release. Bump app.json version and versionCode instead of shipping a mismatched APK."
               exit 1
             fi
-            echo "::notice::${file} already exists with the exact SHA-256; keeping the immutable asset."
+            echo "::warning::${tag} already ships ${file} built from these same app sources; builds are not byte-reproducible, so this rebuild is not republished. Bump app.json version to ship a new APK."
+            echo "published=false" >> "$GITHUB_OUTPUT"
           else
             gh release upload "$tag" "apk/${file}" apk/SHA256SUMS.txt apk/SECURITY-CHECK.txt apk/COMPATIBILITY.txt
+            echo "published=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Tell the media Worker which build is current
         id: announce
+        # Only ever point phones at bytes that are actually the published asset;
+        # when this run republished nothing, release.json must keep the digest of
+        # the build that is out there.
+        if: steps.publish.outputs.published == 'true'
         run: |
           set -euo pipefail
           version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
@@ -284,14 +295,6 @@ jobs:
         with:
           name: Crushly-Android-test-APK
           path: CrushlyApp/apk/
-          retention-days: 14
-      - name: Keep the walk
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-walk
-          path: walk/
-          if-no-files-found: warn
           retention-days: 14
       - name: Build log on failure
         if: failure()

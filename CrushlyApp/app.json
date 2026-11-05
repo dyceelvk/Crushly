@@ -3,7 +3,7 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.61",
+    "version": "1.0.62",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -38,7 +38,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 61
+      "versionCode": 62
     },
     "web": {
       "favicon": "./assets/favicon.png",
