@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { Button } from '../../components/Button';
@@ -45,6 +46,9 @@ type Tab = 'posts' | 'chat' | 'people';
  * of this exists for you — not the posts, not the chat, not the photos.
  */
 export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const { circleId } = route.params;
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
@@ -417,6 +421,7 @@ function Bubble({
   showFace?: boolean;
 }) {
   const { colors } = useTheme();
+  const openProfile = useProfileTap();
   const mine = m.mine;
   const name = mine ? 'You' : author?.name ?? 'Member';
 
@@ -425,7 +430,13 @@ function Bubble({
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, maxWidth: '88%' }}>
         {!mine ? (
           showFace ? (
-            <Avatar uri={author?.photos[0]?.url ?? null} name={name} size={30} />
+            <Pressable
+              onPress={() => (author ? openProfile(author.id) : undefined)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${name}’s Space`}
+            >
+              <Avatar uri={author?.photos[0]?.url ?? null} name={name} size={30} />
+            </Pressable>
           ) : (
             // Keeps the run aligned without repeating the face.
             <View style={{ width: 30 }} />
@@ -582,6 +593,7 @@ function RoomPeople({
   isOwner: boolean;
 }) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const openProfile = useProfileTap();
   const { colors } = useTheme();
   const toast = useToast();
   const remove = useRemoveCircleMember();
@@ -603,7 +615,7 @@ function RoomPeople({
           }}
         >
           <Pressable
-            onPress={() => navigation.navigate('UserProfile', { id: m.member.id })}
+            onPress={() => openProfile(m.member.id)}
             accessibilityRole="button"
             accessibilityLabel={`Open ${m.member.name}’s Space`}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}

@@ -5,6 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Avatar } from '../../components/Photo';
@@ -34,6 +35,9 @@ import type { RootStackParamList } from '../../navigation/types';
  * would be selling somebody else's conversation.
  */
 export function CirclePreviewScreen() {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CirclePreview'>>();
   const { circleId } = route.params;
@@ -149,7 +153,7 @@ export function CirclePreviewScreen() {
 
             {/* Who runs it. A room is a person's room, and the person is a door. */}
             <Pressable
-              onPress={() => navigation.navigate('UserProfile', { id: data.owner.id })}
+              onPress={() => openProfile(data.owner.id)}
               accessibilityRole="button"
               accessibilityLabel={`Open ${data.owner.name}’s Space`}
               style={{
@@ -187,7 +191,7 @@ export function CirclePreviewScreen() {
                   {data.members.map((m) => (
                     <Pressable
                       key={m.id}
-                      onPress={() => navigation.navigate('UserProfile', { id: m.id })}
+                      onPress={() => openProfile(m.id)}
                       accessibilityRole="button"
                       accessibilityLabel={`Open ${m.name}’s Space`}
                       style={{ alignItems: 'center', width: 62 }}

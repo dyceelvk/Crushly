@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { Txt } from '../../components/Txt';
 import { Avatar, Photo } from '../../components/Photo';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
@@ -296,7 +297,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     [chat, toast],
   );
 
-  const openProfile = useCallback((id: number) => navigation.navigate('UserProfile', { id }), [navigation]);
+  const openProfile = useProfileTap();
   // A post shared into the thread is a door back to the post.
   const openPost = useCallback((id: number) => navigation.navigate('PostViewer', { postId: id }), [navigation]);
 

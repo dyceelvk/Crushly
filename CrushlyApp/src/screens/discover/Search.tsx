@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -61,6 +62,9 @@ const PREVIEW = 3;
  *   the search box.
  */
 export function SearchScreen({ route }: { route?: { params?: { q?: string } } }) {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
@@ -153,7 +157,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
           sub={[p.city, p.age ? `${p.age}` : null].filter(Boolean).join(' · ')}
           verified={p.verified}
           photo={p.photos?.[0]?.url ?? null}
-          onPress={go(() => navigation.navigate('UserProfile', { id: p.id }))}
+          onPress={go(() => openProfile(p.id))}
         />
       </Rise>
     ));

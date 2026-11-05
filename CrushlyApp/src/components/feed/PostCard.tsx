@@ -13,13 +13,14 @@ import { ShareToWhisper } from '../ShareToWhisper';
 import { EditedClip } from '../EditedClip';
 import { useToast } from '../Toast';
 import { CommentsSheet } from './CommentsSheet';
-import { useDeletePost, useMe, useMomentRings, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
+import { useDeletePost, useLiveMomentUsers, useMe, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { HIT, elevation, radius, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { momentRing } from '../../lib/momentRings';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { formatCount, spokenCount } from '../../lib/counts';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -61,7 +62,12 @@ export function PostCard({
   const remove = useDeletePost();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
-  const momentRings = useMomentRings();
+  /* The ring is drawn from the same set a tap consults, which is the backend's
+     live Moments — so a picture with a ring always has something to open. */
+  const momentRings = useLiveMomentUsers();
+  /* One handler for every face in the card — the author and everyone in the
+     comments — so the feed cannot invent a second rule. */
+  const openProfile = useProfileTap();
 
   const whisper = async () => {
     try {
@@ -101,7 +107,7 @@ export function PostCard({
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingTop: space.sm }}>
         <Pressable
-          onPress={() => (p.mine ? navigation.navigate('Main', { screen: 'Profile' }) : navigation.navigate('UserProfile', { id: p.author.id }))}
+          onPress={() => openProfile(p.author.id)}
           accessibilityRole="button"
           accessibilityLabel={`Open ${authorName}’s Space`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
@@ -288,7 +294,7 @@ export function PostCard({
         }}
         onOpenAuthor={(id) => {
           setCommentsOpen(false);
-          navigation.navigate('UserProfile', { id });
+          openProfile(id);
         }}
       />
     </View>

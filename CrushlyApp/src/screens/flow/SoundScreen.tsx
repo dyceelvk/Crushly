@@ -5,6 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar, Photo } from '../../components/Photo';
 import { ClipThumb } from '../../components/ClipThumb';
 import { CrushIcon } from '../../components/Logo';
@@ -37,6 +38,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * a wall of images and a white wall makes every one of them look framed.
  */
 export function SoundScreen() {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const navigation = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Sound'>>();
   const insets = useSafeAreaInsets();
@@ -105,7 +109,7 @@ export function SoundScreen() {
                   {sound.title}
                 </Txt>
                 <Pressable
-                  onPress={() => navigation.navigate('UserProfile', { id: sound.owner.id })}
+                  onPress={() => openProfile(sound.owner.id)}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${sound.owner.name}`}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}

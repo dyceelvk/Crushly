@@ -3,6 +3,7 @@ import { AppState, Platform } from 'react-native';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
 import type { SendDraft } from './service';
+import { liveMomentUserIds } from '../lib/profileTap';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
@@ -80,6 +81,21 @@ export function useMomentRings(): Set<number> {
     for (const group of data?.others ?? []) if (group.hasUnseen) ids.add(group.user.id);
     return ids;
   }, [data]);
+}
+
+/**
+ * Everybody with a Moment that is live right now — looked at or not, mine
+ * included.
+ *
+ * `visible_moments` already drops anything past its expiry and anything this
+ * member may not see, so presence in this set *is* the backend's answer to "is
+ * there something to watch". That is what a tap on a picture consults, and it is
+ * deliberately the same response the rings are drawn from: a ring and a door
+ * cannot disagree about who has something live.
+ */
+export function useLiveMomentUsers(): Set<number> {
+  const { data } = useMoments();
+  return useMemo(() => liveMomentUserIds(data), [data]);
 }
 
 /** Debounced by the caller: only queries once the text is worth asking about. */
@@ -1211,7 +1227,12 @@ export function useInviteToCircle() {
   return useMutation({
     mutationFn: (input: { circleId: number; memberId: number }) =>
       service.inviteToCircle(input.circleId, input.memberId),
-    onSuccess: (_r, input) => refreshCircleSurfaces(qc, input.circleId),
+    onSuccess: (_r, input) => {
+      refreshCircleSurfaces(qc, input.circleId);
+      /* The candidate list is where "Invited" comes from: without this the row
+         keeps offering an invitation that has already been sent. */
+      void qc.invalidateQueries({ queryKey: ['circle-invite-candidates'] });
+    },
   });
 }
 

@@ -12,6 +12,7 @@ import { Input } from '../../components/Input';
 import { ListRow, Group } from '../../components/ListRow';
 import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { Avatar } from '../../components/Photo';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { EmptyState, LoadingBlock } from '../../components/States';
 import { Wordmark } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
@@ -343,6 +344,7 @@ export function AppearanceScreen() {
 /* --------------------------------------------------------------- blocked */
 
 export function BlockedUsersScreen() {
+  const openProfile = useProfileTap();
   const { data, isLoading } = useBlocks();
   const unblock = useUnblock();
   const toast = useToast();
@@ -362,7 +364,15 @@ export function BlockedUsersScreen() {
               title={b.name}
               subtitle={`Cut off ${timeAgoLong(b.blockedAt)}`}
               trailing={<Button title="Let back in" size="sm" variant="secondary" onPress={() => setTarget(b)} />}
-              leading={<Avatar uri={b.photo} name={b.name} size={40} />}
+              leading={
+                <Pressable
+                  onPress={() => openProfile(b.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${b.name}’s Space`}
+                >
+                  <Avatar uri={b.photo} name={b.name} size={40} />
+                </Pressable>
+              }
               last={i === data.length - 1}
             />
           ))}

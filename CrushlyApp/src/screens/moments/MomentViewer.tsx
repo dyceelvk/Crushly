@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
@@ -36,6 +37,9 @@ const HOLD_TO_PAUSE_MS = 300;
 type Group = { user: MomentAuthor; moments: Moment[] };
 
 export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentViewer'>) {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const { userId, mine } = route.params;
   const c = palettes.dark; // the viewer is always cinematic dark
   const { reduceMotion } = useTheme();
@@ -341,7 +345,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }} pointerEvents="box-none">
             <Pressable
-              onPress={() => !mine && navigation.navigate('UserProfile', { id: group.user.id })}
+              onPress={() => openProfile(group.user.id)}
               accessibilityRole="button"
               accessibilityLabel={mine ? 'Your Moment' : `${group.user.name}, view Space`}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}

@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { circleNotificationText, circleRoute, isCircleNotification } from '../lib/circleNotifications';
+import { useProfileTap } from '../lib/useProfileTap';
 import { Txt } from './Txt';
 import { Avatar } from './Photo';
 import { BottomSheet } from './BottomSheet';
@@ -71,6 +72,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
     [drag, onClose],
   );
 
+  const openProfile = useProfileTap();
   const open = (n: AppNotification) => {
     if (!n.read) markRead.mutate({ ids: [n.id] });
     onClose();
@@ -245,7 +247,11 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
                     <Ionicons name={n.kind === 'verified' ? 'shield-checkmark' : 'shield-outline'} size={19} color={colors.gold} />
                   </View>
                 ) : (
-                  <View>
+                  <Pressable
+                    onPress={() => (n.actor ? openProfile(n.actor.id) : undefined)}
+                    accessibilityRole="button"
+                    accessibilityLabel={n.actor ? `Open ${n.actor.name}` : undefined}
+                  >
                     <Avatar uri={n.actor?.photo ?? null} name={n.actor?.name ?? 'Crushly'} size={40} />
                     {/* Which kind of Circle news this is, without a second word. */}
                     {CIRCLE_GLYPH[n.kind] ? (
@@ -267,7 +273,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
                         <Ionicons name={CIRCLE_GLYPH[n.kind]!} size={11} color={colors.primary} />
                       </View>
                     ) : null}
-                  </View>
+                  </Pressable>
                 )}
                 <View style={{ flex: 1 }}>
                   <Txt variant="body" numberOfLines={2}>

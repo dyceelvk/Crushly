@@ -15,6 +15,7 @@ import { timeAgo } from '../../lib/format';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
 import { celebrated } from '../crushes/MutualCrush';
 import { circleNotificationText, circleRoute } from '../../lib/circleNotifications';
+import { useProfileTap } from '../../lib/useProfileTap';
 import type { ScreenProps } from '../../navigation/types';
 
 const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphMap; tone: 'crush' | 'gold' | 'success' | 'textSecondary' }> = {
@@ -84,6 +85,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unread > 0]);
 
+  const openProfile = useProfileTap();
   const open = (n: AppNotification) => {
     switch (n.kind) {
       case 'crush':
@@ -148,7 +150,13 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
                 accessibilityLabel={`${n.read ? '' : 'New. '}${t.title} ${t.detail ?? ''}. ${timeAgo(n.createdAt)} ago`}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 })}
               >
-                <View>
+                <Pressable
+                  /* The row opens what the notification is about; the picture
+                     opens the person — Moment first when they have one live. */
+                  onPress={() => (n.actor ? openProfile(n.actor.id) : open(n))}
+                  accessibilityRole="button"
+                  accessibilityLabel={n.actor ? `Open ${n.actor.name}` : 'Open notification'}
+                >
                   {n.actor ? (
                     <Avatar uri={n.actor.photo} name={n.actor.name} size={48} />
                   ) : (
@@ -161,7 +169,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
                       <Ionicons name={ic.name} size={14} color={colors[ic.tone]} />
                     </View>
                   ) : null}
-                </View>
+                </Pressable>
                 <View style={{ flex: 1 }}>
                   <Txt variant={n.read ? 'body' : 'bodyStrong'}>{t.title}</Txt>
                   {t.detail ? (

@@ -13,6 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { KeepsYouChip } from '../../components/KeepsYouChip';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -97,6 +98,7 @@ const REACTION_NAME: Record<ReactionKind, string> = {
 
 export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'>) {
   const { postId } = route.params;
+  const openProfile = useProfileTap();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
@@ -489,11 +491,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         }}
       >
         <Pressable
-          onPress={() =>
-            post.mine
-              ? navigation.navigate('Main', { screen: 'Profile' })
-              : navigation.navigate('UserProfile', { id: post.author.id })
-          }
+          onPress={() => openProfile(post.author.id)}
           accessibilityRole="button"
           accessibilityLabel={`Open ${authorName}’s Space`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 }}
@@ -774,7 +772,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         post={post}
         visible={commentsOpen}
         onClose={() => setCommentsOpen(false)}
-        onOpenAuthor={(id) => navigation.navigate('UserProfile', { id })}
+        onOpenAuthor={(id) => openProfile(id)}
       />
     </View>
   );

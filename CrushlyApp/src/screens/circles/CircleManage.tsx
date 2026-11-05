@@ -5,6 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Input } from '../../components/Input';
@@ -46,6 +47,9 @@ type Tab = 'members' | 'requests' | 'invited' | 'declined';
  * are both legitimate and used to be impossible to tell apart.
  */
 export function CircleManageScreen() {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CircleManage'>>();
   const { circleId, tab: openOn } = route.params;
@@ -64,6 +68,8 @@ export function CircleManageScreen() {
   const [tab, setTab] = useState<Tab>(openOn ?? 'members');
   const [inviting, setInviting] = useState(false);
   const [query, setQuery] = useState('');
+  /** People invited since this sheet opened, so the row flips at once. */
+  const [justInvited, setJustInvited] = useState<Set<number>>(new Set());
   const candidates = useCircleInviteCandidates(inviting ? circleId : null, query);
 
   const data = manage.data;
@@ -268,7 +274,7 @@ export function CircleManageScreen() {
                       }}
                     >
                       <Pressable
-                        onPress={() => navigation.navigate('UserProfile', { id: r.member.id })}
+                        onPress={() => openProfile(r.member.id)}
                         accessibilityRole="button"
                         accessibilityLabel={`Open ${r.member.name}’s Space`}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
@@ -409,15 +415,23 @@ export function CircleManageScreen() {
                   </Txt>
                 </View>
                 <Button
-                  title={c.invited ? 'Invited' : 'Invite'}
-                  variant={c.invited ? 'secondary' : 'primary'}
+                  /*
+                   * Invite is a thing you do once. Until the list comes back
+                   * from the server saying so, the row remembers the tap — the
+                   * alternative is a button that looks untouched for a second
+                   * and invites the same person twice.
+                   */
+                  title={c.invited || justInvited.has(c.member.id) ? 'Invited' : 'Invite'}
+                  variant={c.invited || justInvited.has(c.member.id) ? 'secondary' : 'primary'}
                   size="sm"
                   full={false}
-                  disabled={c.invited}
+                  disabled={c.invited || justInvited.has(c.member.id)}
                   loading={invite.isPending && invite.variables?.memberId === c.member.id}
-                  onPress={() =>
+                  onPress={() => {
+                    const memberId = c.member.id;
+                    setJustInvited((prev) => new Set(prev).add(memberId));
                     invite.mutate(
-                      { circleId, memberId: c.member.id },
+                      { circleId, memberId },
                       {
                         onSuccess: (res) =>
                           toast({
@@ -425,10 +439,19 @@ export function CircleManageScreen() {
                             title: res.state === 'member' ? `${c.member.name} is in` : 'Invitation sent',
                             message: res.state === 'member' ? 'They had already asked.' : 'They can accept it from their Circles.',
                           }),
-                        onError: (e) => toast({ kind: 'error', title: 'Couldn’t invite them', message: (e as Error).message }),
+                        // The list is the truth: if the invitation did not land,
+                        // the row goes back to Invite instead of lying about it.
+                        onError: (e) => {
+                          setJustInvited((prev) => {
+                            const next = new Set(prev);
+                            next.delete(memberId);
+                            return next;
+                          });
+                          toast({ kind: 'error', title: 'Couldn’t invite them', message: (e as Error).message });
+                        },
                       },
-                    )
-                  }
+                    );
+                  }}
                 />
               </View>
             ))

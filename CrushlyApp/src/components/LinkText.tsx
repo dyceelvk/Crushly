@@ -6,6 +6,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import type { RootStackParamList } from '../navigation/types';
 import { useToast } from './Toast';
 import { profileIdByUsername } from '../api/service';
+import { useProfileTap } from '../lib/useProfileTap';
 import { tokenize } from '../lib/links';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -145,6 +146,9 @@ export function LinkText({
  */
 function Mention({ handle, color }: { handle: string; color: any }) {
   const navigation = useNavigation<Nav>();
+  /* A @handle is a picture you cannot see: it follows the same rule as every
+     avatar — the Moment first when there is something live. */
+  const openProfile = useProfileTap();
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
 
@@ -157,7 +161,7 @@ function Mention({ handle, color }: { handle: string; color: any }) {
         toast({ kind: 'info', title: `No one here is @${handle}`, message: 'They may have changed their handle.' });
         return;
       }
-      navigation.navigate('UserProfile', { id });
+      openProfile(id);
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t open that Space', message: (e as Error).message });
     } finally {

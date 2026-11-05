@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { Pill, VerifiedBadge } from '../../components/Badges';
 import { Button } from '../../components/Button';
@@ -33,6 +34,9 @@ import type { RootStackParamList } from '../../navigation/types';
  * already whispering with, in a different room, with a different header.
  */
 export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
@@ -91,7 +95,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
                 }}
               >
                 <Pressable
-                  onPress={() => navigation.navigate('UserProfile', { id: entry.member.id })}
+                  onPress={() => openProfile(entry.member.id)}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${entry.member.name}’s Space`}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}

@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../../components/Txt';
+import { useProfileTap } from '../../lib/useProfileTap';
 import { Segmented } from '../../components/Segmented';
 import { ProfileTile } from '../../components/ProfileCard';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
@@ -29,6 +30,9 @@ type Tab = 'incoming' | 'outgoing' | 'mutual';
 const STRIP = 46;
 
 export function CrushesScreen({ embedded = false, initial }: { embedded?: boolean; initial?: Tab } = {}) {
+  /* Every picture on this screen opens a Moment when there is one live, and the
+     Space otherwise — the same handler every other screen uses. */
+  const openProfile = useProfileTap();
   const route = useRoute<RouteProp<RootStackParamList, 'CrushList'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
@@ -172,7 +176,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
           </View>
         }
         renderItem={({ item }) => (
-          <ProfileTile profile={item} width={tileW} caption={caption(item)} onOpen={() => navigation.navigate('UserProfile', { id: item.id })} footer={footer(item)} />
+          <ProfileTile profile={item} width={tileW} caption={caption(item)} onOpen={() => openProfile(item.id)} footer={footer(item)} />
         )}
         ListEmptyComponent={
           isLoading ? null : isError ? (
