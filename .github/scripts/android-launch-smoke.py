@@ -727,6 +727,8 @@ def walk():
     if tap('Circles', tries=2):
         shot('{:02d}-space-circles-list'.format(n))
         n += 1
+        # The creator opens straight away from here now, which is also the check
+        # that the Space's Circles tab has a door at all.
         if tap('Start a Circle'):
             seen = shot('{:02d}-circle-creator'.format(n))
             n += 1

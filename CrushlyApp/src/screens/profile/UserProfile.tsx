@@ -505,12 +505,36 @@ export function SpaceScreen({
               />
             ) : null}
             {tab === 'circles' ? (
-              <SpaceCircles
-                items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
-                loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
-                onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
-                onPreview={(circleId) => navigation.navigate('CirclePreview', { circleId })}
-              />
+              <View style={{ gap: space.sm }}>
+                {/* The room you start, and the rooms you are in, live on one
+                    page — and until now that page had no door on the Space it
+                    belongs to. Two actions, one page. */}
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <Button
+                    title="Start a Circle"
+                    variant="secondary"
+                    size="sm"
+                    icon="add"
+                    full={false}
+                    style={{ flex: 1 }}
+                    onPress={() => navigation.navigate('Circles', { create: true })}
+                  />
+                  <Button
+                    title="All your Circles"
+                    variant="ghost"
+                    size="sm"
+                    full={false}
+                    style={{ flex: 1 }}
+                    onPress={() => navigation.navigate('Circles')}
+                  />
+                </View>
+                  <SpaceCircles
+                  items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
+                  loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
+                  onOpen={(circleId) => navigation.navigate('Circle', { circleId })}
+                  onPreview={(circleId) => navigation.navigate('CirclePreview', { circleId })}
+                />
+              </View>
             ) : null}
             {tab === 'about' ? (
               <SpaceAbout

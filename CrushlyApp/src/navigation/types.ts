@@ -43,7 +43,8 @@ export type RootStackParamList = {
   Verification: undefined;
   Plus: { feature?: string } | undefined;
   MomentViewer: { userId: number; mine?: boolean };
-  Circles: undefined;
+  /** `create` opens the creator straight away — used by the Space's Circles tab. */
+  Circles: { create?: boolean } | undefined;
   Circle: { circleId: number };
   /** A room you are not in yet: what it is, who is in it, and the way in. */
   CirclePreview: { circleId: number };

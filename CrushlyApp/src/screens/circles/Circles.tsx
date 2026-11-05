@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -43,6 +43,7 @@ import type { RootStackParamList } from '../../navigation/types';
  */
 export function CirclesScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Circles'>>();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { colors } = useTheme();
@@ -51,7 +52,9 @@ export function CirclesScreen() {
   const decide = useDecideCircleRequest();
   const invitations = useCircleInvitations();
   const respond = useRespondCircleInvitation();
-  const [creating, setCreating] = useState(false);
+  // "Start a Circle" on the Space opens this page already open on the creator,
+  // so the button does not put you on a page you then have to press twice.
+  const [creating, setCreating] = useState(Boolean(route.params?.create));
   const toast = useToast();
 
   const items = circles.data?.items ?? [];
