@@ -156,8 +156,17 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 9 cold start and relaunch
+      - name: Android 9 cold start, sign in and walk
+        # This is the round the app gets walked on a real Android system image.
+        # A green build used to mean only that the APK launched: the walk now
+        # signs in and photographs every surface, so a caption under the tab bar
+        # or a link landing on the wrong segment fails here instead of on a
+        # phone in someone's hand.
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          CRUSHLY_WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
+          CRUSHLY_WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
+          CRUSHLY_WALK_OUT: ../walk
         with:
           api-level: 28
           target: default
@@ -210,11 +219,11 @@ jobs:
             | head -n 1)
           if [ -n "$existing_digest" ]; then
             # Two different things land here and they must not be confused:
-            # (a) the same sources rebuilt — APK builds are not reproducible, so
-            #     ${version} was re-run for a change that never entered the app
-            #     (a workflow or check script). The tested artefact for this
-            #     version is already out; republishing is impossible by law and
-            #     unnecessary, so the walk stays meaningful and this stays green.
+            # (a) the same sources rebuilt — APK builds are not byte-reproducible,
+            #     so ${version} was re-run for a change that never entered the app
+            #     (a workflow file, a check script). The tested artefact for this
+            #     version is already out; swapping bytes under it is forbidden, so
+            #     the rebuild is not republished and this stays green.
             # (b) genuinely new app sources under a version that already shipped
             #     — that is a forgotten bump, and it has to be loud.
             if ! ../.github/scripts/app-sources-match-release.sh "$tag"; then
@@ -295,6 +304,14 @@ jobs:
         with:
           name: Crushly-Android-test-APK
           path: CrushlyApp/apk/
+          retention-days: 14
+      - name: Keep the walk
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-walk
+          path: walk/
+          if-no-files-found: warn
           retention-days: 14
       - name: Build log on failure
         if: failure()
