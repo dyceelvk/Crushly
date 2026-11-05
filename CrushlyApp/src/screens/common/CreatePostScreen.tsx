@@ -769,7 +769,7 @@ function ComposerLeft({
       </View>
 
       {/* Advanced options */}
-      <SettingsRow label="Advanced options" hint="Allow comments, remix, etc." icon="settings-outline" />
+      <SettingsRow label="Advanced options" hint="Allow comments, remix, etc." icon="options-outline" />
 
       {/* Schedule post */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

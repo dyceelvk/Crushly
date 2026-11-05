@@ -563,7 +563,13 @@ export function SpaceScreen({
         ) : null}
         <View style={{ paddingTop: insets.top + space.sm, paddingHorizontal: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {/* The same corner, whoever is reading. A visitor gets the way back;
-              the owner gets the gear. Neither ever sees both. */}
+              the owner gets the gear. Neither ever sees both.
+
+              The icon language, so nobody has to guess twice:
+                ⚙️  a gear always opens settings — here, the whole of Settings.
+                ✏️  a pencil always edits the thing behind it — here, your Space.
+              The gear on Notifications opens notification settings for the same
+              reason: a gear means settings, wherever it is drawn. */}
           {mine ? (
             <IconButton icon="settings-outline" variant={scrolled ? 'surface' : 'glass'} label="Settings" onPress={() => navigation.navigate('Settings')} />
           ) : goBack ? (
