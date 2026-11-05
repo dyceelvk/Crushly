@@ -457,6 +457,13 @@ def assert_discover(seen):
         fail('Discover has no title on its own page')
     title = min(titles, key=lambda n: n['y'])
     page = find(seen, 'From everyone') or find(seen, 'Nothing public yet') or find(seen, 'Search people')
+    # The Moments row lives between the two, so it is the last thing that may
+    # sit there. Measuring from the title alone called a full row of somebody's
+    # Moments "a band of nothing" — the check was right about the fault it was
+    # written for and wrong about the page it now measures.
+    moments = find(seen, 'Moments')
+    if moments is not None and page is not None and title['y2'] < moments['y'] < page['y']:
+        title = moments
     if page and page['y'] > title['y2']:
         gap = page['y'] - title['y2']
         if gap > 80:
