@@ -82,14 +82,24 @@ jobs:
         run: |
           set -euo pipefail
           # A deploy that silently ships a cached or empty export is how "no
-          # changes were made" happens. The string below only exists in the
-          # one-post-per-screen feed, so it is a cheap, honest check.
-          if ! grep -rqF 'In your Circle' dist --include='*.js'; then
-            echo "::error::The export does not contain the new feed. Refusing to deploy."
-            ls -la dist | head
-            exit 1
-          fi
-          echo "::notice::Export contains the new feed."
+          # changes were made" happens. The check used to look for 'In your
+          # Circle' — a string from the one-post-per-screen feed, which 1.0.52
+          # removed. `FeedPost` is imported by nothing now, so the bundler
+          # correctly drops it and the guard failed on a *good* build for two
+          # releases' worth of pushes.
+          #
+          # These two strings are on surfaces the app actually renders today:
+          # the Crushes empty state and the Whispers subtitle. If either is
+          # missing, the export is not this tree.
+          for needle in 'Crushes shows what the people' 'Where a Crush turns into a conversation'; do
+            if ! grep -rqF "$needle" dist --include='*.js'; then
+              echo "::error::The export does not contain '$needle'. Refusing to deploy."
+              ls -la dist | head
+              exit 1
+            fi
+          done
+          size=$(find dist/_expo/static/js/web -name 'index-*.js' -printf '%s\n' | sort -n | tail -1)
+          echo "::notice::Export contains the current surfaces; main bundle is ${size} bytes."
 
       - name: Publish, then prove the live site is this build
         env:

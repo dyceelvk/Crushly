@@ -84,7 +84,14 @@ jobs:
             *)
               echo "::warning::Host is not the Session pooler (*.pooler.supabase.com). GitHub runners often cannot reach the direct/db.* host (IPv6-only). Use the project's Connect button → Session pooler → URI." ;;
           esac
-          if ! out=$(supabase db push --db-url "$SUPABASE_DB_URL" 2>&1); then
+          # `--include-all` is required, not decorative. The live database is
+          # already ahead of three of these files: it recorded a version that
+          # lives in no commit (`20261104151119`, see that file for the full
+          # story), so the pending files are *older* than the newest recorded
+          # migration. Without the flag the CLI stops with "Found local migration
+          # files to be inserted before the last migration on remote database"
+          # and applies nothing.
+          if ! out=$(supabase db push --db-url "$SUPABASE_DB_URL" --include-all 2>&1); then
             safe_out=$(printf '%s' "$out" | sed -E 's#(://[^:/]+):.*@(.*)$#\1:***@\2#' | tr '\n' ' ' | cut -c1-800)
             echo "::error::supabase db push failed: $safe_out"
             printf '%s\n' "$out" | sed -E 's#(://[^:/]+):.*@(.*)$#\1:***@\2#'
@@ -130,7 +137,25 @@ jobs:
               missing=1
             fi
           done
-          for col in posts.edit vibes.edit; do
+
+          # The RPCs that shipped broken once, because the migration that writes
+          # them was in the repository but never applied: the Circles highlight
+          # carousel, the join-request inbox, the Ask-to-join button and the
+          # Crushes post feed were all calling functions the database had never
+          # heard of, and every one of them failed into silence rather than an
+          # error anyone would report. If these are ever missing again, this run
+          # says so by name.
+          for fn in crush_posts_feed circle_highlights my_circle_requests decide_circle_request request_join_circle circle_request_state flow_ranked_feed; do
+            have=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from pg_proc where proname = '$fn' and pronamespace = 'public'::regnamespace);")
+            if [ "$have" != "t" ]; then
+              echo "::error::public.$fn is missing — the app calls it and the database cannot answer. Migration 20261104090000 or 20261104140000 did not land."
+              missing=1
+            fi
+          done
+          # `vibes.edit` used to be checked here. Vibes is gone — 20261104130000
+          # drops the table — so the check now only covers the post side of the
+          # same edit feature.
+          for col in posts.body posts.edit; do
             table=${col%%.*}
             column=${col##*.}
             have=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from information_schema.columns where table_schema='public' and table_name='$table' and column_name='$column');")
@@ -145,3 +170,52 @@ jobs:
           fi
 
           echo "::notice::Database schema is live: profiles, signup trigger, engagement and clip-edit support verified; no demo data."
+
+      - name: The repository and the database agree on the migration history
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          # A push can be perfectly green and still leave the two lists
+          # disagreeing — that is exactly how three migrations sat in the
+          # repository for a day without ever running, while the app shipped
+          # features that called the functions they create.
+          #
+          # Two questions, both answered here:
+          #   * is every file in supabase/migrations recorded as applied?
+          #   * is every recorded version present as a file?
+          #
+          # A version in the database with no file is the more dangerous of the
+          # two: `supabase db push` then refuses to run at all, so no schema
+          # change can ship until somebody notices. That is what this step is
+          # for, and it is why 20261104151119_..._picks_of.sql exists.
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client
+
+          ls supabase/migrations \
+            | grep -E '^[0-9]{14}_.+\.sql$' \
+            | cut -d_ -f1 \
+            | sort > /tmp/in_repo.txt
+
+          psql "$SUPABASE_DB_URL" -tAc \
+            "select version from supabase_migrations.schema_migrations order by version" \
+            | sed '/^$/d' | sort > /tmp/in_db.txt
+
+          echo "::notice::Migration files here: $(wc -l < /tmp/in_repo.txt), recorded in the database: $(wc -l < /tmp/in_db.txt)"
+
+          not_applied=$(comm -23 /tmp/in_repo.txt /tmp/in_db.txt)
+          no_file=$(comm -13 /tmp/in_repo.txt /tmp/in_db.txt)
+
+          bad=0
+          if [ -n "$not_applied" ]; then
+            echo "::error::In the repository but not applied to the database: $(echo $not_applied)"
+            echo "These files have never run. Anything the app calls from them does not exist."
+            bad=1
+          fi
+          if [ -n "$no_file" ]; then
+            echo "::error::Applied to the database but missing from the repository: $(echo $no_file)"
+            echo "supabase db push will refuse to run until a file with each of these versions exists here."
+            bad=1
+          fi
+          if [ "$bad" != "0" ]; then
+            exit 1
+          fi
+          echo "::notice::Migration history matches in both directions."
