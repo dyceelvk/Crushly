@@ -35,11 +35,13 @@ begin
 
   -- As the schema owner: these fixtures are not what is being tested, the
   -- ranking and the visibility are.
-  insert into public.posts (author_id, body, media_url, audience)
-    values (a_id, 'first clip', 'https://cdn.example.com/a/one.mp4', 'everyone')
+  /* Explicit times: "newest wins" has to be a fact about the fixture, not a
+     coin toss between two rows written in the same millisecond. */
+  insert into public.posts (author_id, body, media_url, audience, created_at)
+    values (a_id, 'first clip', 'https://cdn.example.com/a/one.mp4', 'everyone', public.now_ms() - 86400000)
     returning id into clip_a;
-  insert into public.posts (author_id, body, media_url, audience)
-    values (a_id, 'same author, newer', 'https://cdn.example.com/a/two.mp4', 'everyone')
+  insert into public.posts (author_id, body, media_url, audience, created_at)
+    values (a_id, 'same author, newer', 'https://cdn.example.com/a/two.mp4', 'everyone', public.now_ms() - 3600000)
     returning id into clip_a2;
   insert into public.posts (author_id, body, media_url, audience)
     values (b_id, 'another clip', 'https://cdn.example.com/b/one.mov', 'everyone')
@@ -48,7 +50,7 @@ begin
     values (a_id, 'just a photo', 'https://cdn.example.com/a/one.jpg', 'everyone')
     returning id into photo_a;
   insert into public.posts (author_id, body, media_url, audience, circle_id)
-    values (a_id, 'a clip for the room', 'https://cdn.example.com/a/circle.mp4', 'connections', circle_id)
+    values (a_id, 'a clip for the room', 'https://cdn.example.com/a/circle.mp4', 'circle', circle_id)
     returning id into circle_clip;
   insert into public.circle_members (circle_id, member_id, role) values (circle_id, a_id, 'owner');
 
@@ -68,10 +70,20 @@ begin
 
   /* One per author: Marcus has two clips, and only one may appear. */
   assert (select count(*) from jsonb_array_elements(rail) e
-           where (e->>'author'->>'id')::bigint = a_id) = 1,
+           where (e->'author'->>'id')::bigint = a_id) = 1,
     'the rail should carry one clip per author';
 
-  /* And the one it carries is his newest, because same author means same score. */
+  /* A photograph posted since must not push the clip out of the rail: "one clip
+     per author" is counted over clips, not over everything somebody posted. */
+  reset role;
+  insert into public.posts (author_id, body, media_url, audience, created_at)
+    values (a_id, 'a photo, even newer', 'https://cdn.example.com/a/new.jpg', 'everyone', public.now_ms());
+  set role authenticated;
+  assert exists (select 1 from jsonb_array_elements(public.trending_clips(12)) e
+                  where (e->>'id')::bigint = clip_a2),
+    'a newer photo must not evict an older clip from the rail';
+
+  /* And the one it carries is his newest clip, because same author means same score. */
   assert (clip_a2 = any(ids)) and not (clip_a = any(ids)),
     'the newest clip of an author is the one the rail keeps';
 
