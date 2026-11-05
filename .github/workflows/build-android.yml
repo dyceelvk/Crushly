@@ -194,11 +194,11 @@ jobs:
           # rebuild of the same app rather than mistaken for a forgotten bump.
           app_sources=$(git -C "$(git rev-parse --show-toplevel)" ls-tree -r HEAD -- "$(git rev-parse --show-prefix)" | sha256sum | cut -d' ' -f1)
           if ! gh release view "$tag" >/dev/null 2>&1; then
+            notes="Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM."
+            notes="${notes}"$'\n\n'"App sources: ${app_sources}"
             gh release create "$tag" --prerelease \
               --title "Crushly ${version} — Android 9+ testing" \
-              --notes "Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM.
-
-App sources: ${app_sources}"
+              --notes "$notes"
           fi
           # Release tags are immutable in the app: never silently point an
           # existing version at different bytes. If an APK already exists, its

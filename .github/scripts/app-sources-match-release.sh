@@ -20,7 +20,7 @@ top=$(git rev-parse --show-toplevel)
 current=$(git -C "$top" ls-tree -r HEAD -- "$appdir" | sha256sum | cut -d' ' -f1)
 
 recorded=$(gh release view "$tag" --json body -q .body 2>/dev/null \
-  | sed -n 's/^App sources: \([0-9a-f]\{64\}\)$/\1/p' | tail -n 1)
+  | sed -n 's/^[[:space:]]*App sources: \([0-9a-f]\{64\}\)$/\1/p' | tail -n 1)
 
 if [ -z "$recorded" ]; then
   echo "$tag carries no record of the sources it was built from (it predates the record), so this build cannot be shown to match it."
