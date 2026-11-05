@@ -447,8 +447,13 @@ def assert_discover(seen):
     # about the fault it was written for and wrong about the page it now
     # measures. So the reference is the bottom-most thing in the band.
     if page and page['y'] > title['y2']:
-        between = [n for n in seen if n['on_screen'] and title['y2'] < n['y'] < page['y']]
-        reference = max(n['y2'] for n in between) if between else title['y2']
+        # Only things that end above the feed count: a full-screen container that
+        # starts in the band and runs past the bottom would otherwise become the
+        # reference and turn the gap negative, which hides exactly the void this
+        # check exists to find.
+        between = [n for n in seen
+                   if n['on_screen'] and title['y2'] < n['y'] and n['y2'] <= page['y']]
+        reference = max((n['y2'] for n in between), default=title['y2'])
         gap = page['y'] - reference
         if gap > 80:
             fail('Discover leaves {} px of nothing above the feed'.format(gap))
