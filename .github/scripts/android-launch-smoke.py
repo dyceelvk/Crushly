@@ -646,6 +646,17 @@ def assert_connections(seen):
     log('connections: composer above the feed; checked')
     if find(seen, 'Circles you could join'):
         log('connections: rooms you are not in are offered inside the feed; checked')
+    # A card that is taller than the screen is a card whose button nobody can
+    # reach, and the accessibility dump knows: say which nodes are enormous,
+    # with their bounds, so a layout that only breaks on a device can be found
+    # from a log instead of a photograph.
+    for node in sorted(seen, key=lambda n: n['y2'] - n['y1'], reverse=True)[:4]:
+        tall = node['y2'] - node['y1']
+        if tall > 200:
+            log('connections: tall node {}{} y {}..{}'.format(
+                node['class'].rsplit('.', 1)[-1],
+                ' "' + (node['text'] or node['desc'])[:24] + '"' if (node['text'] or node['desc']) else '',
+                node['y1'], node['y2']))
 
 
 def walk():

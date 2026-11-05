@@ -106,26 +106,35 @@ export function DiscoverCard({
         </Txt>
       </Pressable>
 
+      {/*
+        The row is given a height instead of asking its children for one.
+
+        A button told to `flex: 1` inside a row whose own height is undecided
+        grew to fill the card on a real device — the same markup measured fine in
+        a browser, which is exactly why the height is pinned here rather than
+        trusted: forty points is what a small button is.
+      */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           gap: space.sm,
+          minHeight: 40,
           paddingHorizontal: space.md,
           paddingBottom: space.md,
         }}
       >
-        <Button
-          title={action.label}
-          variant={action.kind === 'join' || action.kind === 'accept' ? 'primary' : 'secondary'}
-          size="sm"
-          full={false}
-          loading={busy}
-          disabled={!action.pressable}
-          icon={action.kind === 'join' ? 'enter-outline' : action.kind === 'request' ? 'hand-left-outline' : action.kind === 'accept' ? 'checkmark' : action.kind === 'pending' ? 'time-outline' : undefined}
-          onPress={() => onJoin(action.kind)}
-          style={{ flex: 1 }}
-        />
+        <View style={{ flex: 1, height: 40 }}>
+          <Button
+            title={action.label}
+            variant={action.kind === 'join' || action.kind === 'accept' ? 'primary' : 'secondary'}
+            size="sm"
+            loading={busy}
+            disabled={!action.pressable}
+            icon={action.kind === 'join' ? 'enter-outline' : action.kind === 'request' ? 'hand-left-outline' : action.kind === 'accept' ? 'checkmark' : action.kind === 'pending' ? 'time-outline' : undefined}
+            onPress={() => onJoin(action.kind)}
+          />
+        </View>
         <Pressable
           onPress={onOpen}
           accessibilityRole="button"

@@ -74,3 +74,9 @@ jobs:
       - run: npx playwright test --config e2e/verification.config.ts
         env:
           E2E_START_SERVER: '1'
+      # The Connections feed, offline: a room you are not in has to be offered
+      # inside the feed, with its one door actually on the screen. A discovery
+      # card taller than the phone is the bug this catches.
+      - run: npx playwright test --config e2e/circles.config.ts
+        env:
+          E2E_START_SERVER: '1'
