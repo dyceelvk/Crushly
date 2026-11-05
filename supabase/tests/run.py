@@ -113,6 +113,10 @@ def main() -> int:
         # surface with a ranking, so it is tested for what it must never show.
         if not run_file(ROOT / 'circles_and_clips.sql'):
             return 1
+        # Your own post is a post: you may Crush it, it belongs in Crushes, and
+        # both feeds can be walked to the end instead of stopping at one page.
+        if not run_file(ROOT / 'own_posts_and_paging.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

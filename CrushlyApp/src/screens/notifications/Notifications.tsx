@@ -40,11 +40,11 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
   const name = n.actor?.name ?? 'Someone';
   switch (n.kind) {
     case 'crush':
-      return { title: `${name} sent you a Crush.` };
+      return { title: `${name} added up with you.` };
     case 'deep_crush':
-      return { title: `${name} sent you a Big Crush.`, detail: n.body ? `“${n.body}”` : undefined };
+      return { title: `${name} sent you a Big Up.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'mutual':
-      return { title: `You and ${name} have a Mutual Crush.`, detail: 'Say hello while the feeling’s fresh.' };
+      return { title: `You and ${name} both added up.`, detail: 'Say hello while it’s fresh.' };
     case 'message':
       return { title: `${name} sent you a Whisper.`, detail: n.body || undefined };
     case 'moment_reply':
@@ -192,7 +192,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
               <EmptyState
                 icon="notifications-outline"
                 title="All quiet for now"
-                message="Crushes, Mutual Crushes and Whispers will show up here."
+                message="Add ups, add backs and Whispers will show up here."
                 action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
               />
             )

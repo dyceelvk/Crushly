@@ -85,7 +85,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <IconButton icon="close" label={`Pass on ${p.name}`} size={40} onPress={() => pass.mutate(p.id, { onSuccess: () => refetch() })} color={colors.textSecondary} />
             <View style={{ flex: 1 }}>
-              <Button title="Crush back" size="sm" variant="crush" loading={pendingId === p.id} onPress={() => crushOn(p)} />
+              <Button title="Add back" size="sm" variant="crush" loading={pendingId === p.id} onPress={() => crushOn(p)} />
             </View>
           </View>
         </View>
@@ -102,25 +102,25 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
   };
 
   const caption = (p: Profile) => {
-    if (tab === 'incoming') return p.crush.receivedDeep ? `Big Crush · ${p.at ? timeAgoLong(p.at) : ''}` : `Sent you a Crush · ${p.at ? timeAgoLong(p.at) : ''}`;
-    if (tab === 'outgoing') return p.at ? `You sent a Crush · ${timeAgoLong(p.at)}` : 'You sent a Crush';
-    return p.at ? `Mutual · ${timeAgoLong(p.at)}` : 'Mutual Crush';
+    if (tab === 'incoming') return p.crush.receivedDeep ? `Big Up · ${p.at ? timeAgoLong(p.at) : ''}` : `Added up with you · ${p.at ? timeAgoLong(p.at) : ''}`;
+    if (tab === 'outgoing') return p.at ? `You added up · ${timeAgoLong(p.at)}` : 'You added up';
+    return p.at ? `Both added up · ${timeAgoLong(p.at)}` : 'Both added up';
   };
 
   const empty = {
     incoming: {
-      title: 'No crushes yet.',
-      message: 'Your next Crush could be around the corner. A complete Space and a fresh Moment help you get noticed.',
+      title: 'Nobody’s added up yet.',
+      message: 'Somebody will. A complete Space and a fresh Moment help you get noticed.',
       action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
     outgoing: {
       title: 'Nobody’s caught your eye — yet',
-      message: 'When you Crush on someone, they’ll wait here until the feeling is mutual.',
+      message: 'When you add up with someone, they’ll wait here until they add back.',
       action: { label: 'Start discovering', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
     mutual: {
-      title: 'Your Mutual Crushes live here',
-      message: 'When you both feel it, you’ll find each other here — ready to say hello.',
+      title: 'People who added back live here',
+      message: 'When you both add up, you’ll find each other here — ready to say hello.',
       action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) },
     },
   }[tab];
@@ -153,16 +153,16 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
               value={tab}
               onChange={setTab}
               options={[
-                { value: 'incoming', label: 'Crushing on you', count: data?.incoming.length },
-                { value: 'outgoing', label: 'Your crushes', count: data?.outgoing.length },
-                { value: 'mutual', label: 'Mutual', count: data?.mutual.length },
+                { value: 'incoming', label: 'Added up with you', count: data?.incoming.length },
+                { value: 'outgoing', label: 'You added up', count: data?.outgoing.length },
+                { value: 'mutual', label: 'Added back', count: data?.mutual.length },
               ]}
             />
             {tab === 'incoming' && data?.incoming.length ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="lock-closed-outline" size={14} color={colors.textMuted} />
                 <Txt variant="small" color="textMuted" style={{ flex: 1 }}>
-                  Only you can see who’s crushing on you. Crush back to make it mutual.
+                  Only you can see who’s added up with you. Add back and you’re both in.
                 </Txt>
               </View>
             ) : null}

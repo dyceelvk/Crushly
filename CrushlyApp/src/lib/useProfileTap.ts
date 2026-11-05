@@ -16,8 +16,8 @@ import { useCallback, useRef } from 'react';
 import { useNavigation, useNavigationState } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
-import { useLiveMomentUsers } from '../api/hooks';
-import { profileDestination } from './profileTap';
+import { useLiveMomentUsers, useMe } from '../api/hooks';
+import { momentViewerParams, profileDestination } from './profileTap';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -27,6 +27,11 @@ const DOUBLE_TAP_MS = 700;
 export function useProfileTap(): (userId: number | null | undefined) => void {
   const navigation = useNavigation<Nav>();
   const live = useLiveMomentUsers();
+  /* Your own picture is a door too. Without this, tapping your own ring asked
+     the viewer for somebody else's Moment and found nothing, because yours are
+     not in that list. */
+  const me = useMe();
+  const meId = me.data?.id ?? null;
   const lastTap = useRef<{ userId: number; at: number } | null>(null);
 
   /*
@@ -49,9 +54,9 @@ export function useProfileTap(): (userId: number | null | undefined) => void {
       lastTap.current = { userId, at: now };
 
       const where = profileDestination({ userId, liveMoments: live, viewingMomentOf });
-      if (where === 'moment') navigation.navigate('MomentViewer', { userId });
+      if (where === 'moment') navigation.navigate('MomentViewer', momentViewerParams(userId, meId));
       else navigation.navigate('UserProfile', { id: userId });
     },
-    [navigation, live, viewingMomentOf],
+    [navigation, live, viewingMomentOf, meId],
   );
 }

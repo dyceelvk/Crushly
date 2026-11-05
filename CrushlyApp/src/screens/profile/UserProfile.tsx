@@ -246,7 +246,7 @@ export function SpaceScreen({
 
   const message = async () => {
     if (!p.canMessage) {
-      toast({ kind: 'info', title: 'Not yet', message: p.messageBlockReason || 'Send a Crush first.' });
+      toast({ kind: 'info', title: 'Not yet', message: p.messageBlockReason || 'Add up with them first.' });
       return;
     }
     try {
@@ -281,9 +281,15 @@ export function SpaceScreen({
         contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
         showsVerticalScrollIndicator={false}
         onScroll={(e) => {
-          const y = e.nativeEvent.contentOffset.y;
-          const next = y > heroH - (insets.top + 64);
+          const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+          const next = contentOffset.y > heroH - (insets.top + 64);
           if (next !== scrolled) setScrolled(next);
+          /* A Space holds more than one page. When the reader gets within a
+             screen of the end, the next page is asked for — the list below is
+             long enough that nothing else would ever ask. */
+          if (tab === 'crushes' && contentOffset.y + layoutMeasurement.height >= contentSize.height - 600) {
+            posts.loadOlder();
+          }
         }}
         scrollEventThrottle={16}
       >
@@ -319,7 +325,7 @@ export function SpaceScreen({
           <View style={{ position: 'absolute', left: gutter, right: gutter, bottom: space.md }}>
             <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
               {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
-              {p.crush.mutual ? <Pill tone="glass" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
+              {p.crush.mutual ? <Pill tone="glass" label="Both added up" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
               {keep.data?.keepsYou ? <Pill tone="glass" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} /> : null}
             </View>
           </View>
@@ -334,7 +340,7 @@ export function SpaceScreen({
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
           <View style={{ marginTop: -46, flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }}>
             <Pressable
-              onPress={p.moments.length ? () => navigation.navigate('MomentViewer', { userId: p.id }) : undefined}
+              onPress={p.moments.length ? () => navigation.navigate('MomentViewer', { userId: p.id, mine }) : undefined}
               accessibilityRole="button"
               accessibilityLabel={p.moments.length ? `View ${p.name}’s Moments` : `${p.name}’s photo`}
             >
@@ -428,11 +434,11 @@ export function SpaceScreen({
                 <Pill tone="neutral" label={p.activity} />
               ) : null}
               {p.crush.mutual ? (
-                <Pill tone="crush" label="Mutual Crush" icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
+                <Pill tone="crush" label="Both added up" icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
               ) : p.crush.received ? (
                 <Pill
                   tone="crush"
-                  label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'}
+                  label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'}
                   icon={<Ionicons name="heart" size={11} color={colors.crush} />}
                 />
               ) : null}
@@ -448,7 +454,7 @@ export function SpaceScreen({
           {!mine && p.crush.note ? (
             <View style={{ marginTop: space.lg, backgroundColor: colors.goldSoft, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: colors.goldLine }}>
               <Txt variant="label" color="gold">
-                Big Crush note
+                Big Up note
               </Txt>
               <Txt variant="accent" style={{ marginTop: 6 }}>
                 “{p.crush.note}”
@@ -490,11 +496,12 @@ export function SpaceScreen({
             >
             {tab === 'crushes' ? (
               <SpacePosts
-                items={posts.data?.items ?? []}
+                items={posts.posts}
                 loading={posts.isLoading}
+                loadingMore={posts.isFetchingNextPage}
                 failed={posts.isError}
                 name={p.name}
-                onRetry={() => void posts.refetch()}
+                onRetry={() => void posts.refresh()}
               />
             ) : null}
             {tab === 'moments' ? (
@@ -626,11 +633,11 @@ export function SpaceScreen({
             {p.crush.mutual ? (
               <CrushButton onPress={message} label="Whisper" crushed name={p.name} size={54} />
             ) : (
-              <CrushButton onPress={onCrush} crushed={p.crush.sent} loading={pendingId === p.id} name={p.name} size={54} label={p.crush.sent ? 'Crushed' : p.crush.received ? 'Crush back' : 'Crush'} />
+              <CrushButton onPress={onCrush} crushed={p.crush.sent} loading={pendingId === p.id} name={p.name} size={54} label={p.crush.sent ? 'Added up' : p.crush.received ? 'Add back' : 'Add up'} />
             )}
           </View>
           {!p.crush.mutual ? (
-            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs a Mutual Crush`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
+            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs them to add back`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
           ) : null}
           <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />
         </View>
@@ -646,12 +653,14 @@ export function SpaceScreen({
 function SpacePosts({
   items,
   loading,
+  loadingMore,
   failed,
   name,
   onRetry,
 }: {
   items: Post[];
   loading: boolean;
+  loadingMore?: boolean;
   failed: boolean;
   name: string;
   onRetry: () => void;
@@ -682,7 +691,7 @@ function SpacePosts({
     return (
       <EmptyState
         icon="heart-outline"
-        title="No Crushes yet"
+        title="Nothing shared yet"
         message={`${name} hasn’t shared anything yet. What they share lands here.`}
       />
     );
@@ -696,6 +705,9 @@ function SpacePosts({
           <PostCard post={post} secondPerson={false} active={false} />
         </View>
       ))}
+      {/* The end of a Space is not the end of the posts. This is the quiet
+          promise that the next page is on its way. */}
+      {loadingMore ? <Skeleton style={{ height: 240, borderRadius: radius.lg }} /> : null}
     </View>
   );
 }

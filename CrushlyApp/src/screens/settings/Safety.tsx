@@ -26,7 +26,7 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
   const tools: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
     { icon: 'ban-outline', title: 'Cut Off', body: 'Open any Space or Whisper, tap ··· and choose Cut Off. They’re never told.' },
     { icon: 'flag-outline', title: 'Flag', body: 'Same menu. Flags are confidential and reviewed by a person.' },
-    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends the Mutual Crush and closes your Whisper.' },
+    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends the mutual add up and closes your Whisper.' },
   ];
 
   return (
@@ -115,7 +115,7 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
     <Screen>
       <Header title="Privacy & visibility" back />
 
-      <Group title="Discovery" footer="When hidden, you won’t appear in Discover, but people you’ve crushed on can still see your Space.">
+      <Group title="Discovery" footer="When hidden, you won’t appear in Discover, but people you’ve added up with can still see your Space.">
         <ListRow title="Show me in Discover" icon="compass-outline" toggle={{ value: p.discoverable, onChange: (v) => set({ discoverable: v }) }} />
         <ListRow title="Incognito" subtitle="Only people you Crush on can see you" icon="glasses-outline" iconTone="gold" value="Plus" toggle={{ value: p.incognito, onChange: (v) => set({ incognito: v }) }} last />
       </Group>
@@ -143,11 +143,11 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         value={p.whoCanMessage}
         onChange={(v) => set({ whoCanMessage: v })}
         options={[
-          { value: 'mutual', label: 'Mutual Crushes' },
+          { value: 'mutual', label: 'People who added back' },
           { value: 'crushes', label: 'My crushes' },
           { value: 'everyone', label: 'Everyone' },
         ]}
-        footer={{ mutual: 'Only people you both crushed on.', crushes: 'People you’ve crushed on can Whisper you first.', everyone: 'Anyone who can see your Space can start a Whisper.' }[p.whoCanMessage]}
+        footer={{ mutual: 'Only people who added back.', crushes: 'People you’ve added up with can Whisper you first.', everyone: 'Anyone who can see your Space can start a Whisper.' }[p.whoCanMessage]}
       />
       <Choice
         title="Who can Crush on me"

@@ -11,7 +11,7 @@ type Props = {
   onPress: () => void;
   crushed?: boolean;
   loading?: boolean;
-  /** 'pill' shows the word "Crush"; 'round' is icon-only (tiles). */
+  /** 'pill' shows the word "Add up"; 'round' is icon-only (tiles). */
   shape?: 'pill' | 'round';
   size?: number;
   label?: string;
@@ -45,9 +45,9 @@ export function CrushButton({ onPress, crushed, loading, shape = 'pill', size = 
     prev.current = crushed;
   }, [crushed, pop, ring, reduceMotion, native]);
 
-  const text = label ?? (crushed ? 'Crushed' : 'Crush');
+  const text = label ?? (crushed ? 'Added up' : 'Add up');
   const who = name || 'this member';
-  const a11y = label && label !== 'Crush' && label !== 'Crushed' ? `${label}, ${who}` : crushed ? `You crushed on ${who}` : `Crush on ${who}`;
+  const a11y = label && label !== 'Add up' && label !== 'Added up' ? `${label}, ${who}` : crushed ? `You added up with ${who}` : `Add up with ${who}`;
   const height = shape === 'pill' ? size : size;
   const width = shape === 'pill' ? undefined : size;
 

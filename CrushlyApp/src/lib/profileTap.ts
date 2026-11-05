@@ -27,6 +27,18 @@ export type ProfileTapInput = {
   viewingMomentOf?: number | null;
 };
 
+/**
+ * The Moment viewer's route params for a tapped picture.
+ *
+ * Yours and somebody else's are not the same screen: the viewer keeps your own
+ * Moment in one group and everyone else in another, so opening your own ring
+ * without saying whose it is asks for a Moment that is not in that list and
+ * finds nothing. A ring you can tap must always open something.
+ */
+export function momentViewerParams(userId: number, viewerId: number | null | undefined): { userId: number; mine: boolean } {
+  return { userId, mine: viewerId != null && userId === viewerId };
+}
+
 export function profileDestination({ userId, liveMoments, viewingMomentOf }: ProfileTapInput): ProfileDestination {
   // Inside this person's Moment already: the picture is the way out to their
   // Space. Reopening the viewer would be a door that leads to itself.

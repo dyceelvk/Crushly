@@ -63,7 +63,7 @@ export const FeatureCard = memo(function FeatureCard({ profile, onOpen, onCrush,
           <LinearGradient colors={colors.photoScrim} locations={[0.45, 0.72, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '62%' }} />
           <View style={{ position: 'absolute', top: space.md, left: space.md, right: space.md, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
-            {p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Crush on you' : 'Crushing on you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
+            {p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
             <View style={{ flex: 1 }} />
             <IconButton icon="ellipsis-horizontal" variant="glass" size={40} label={`More options for ${p.name}`} onPress={onMore} />
           </View>
@@ -119,7 +119,7 @@ export const FeatureCard = memo(function FeatureCard({ profile, onOpen, onCrush,
           </View>
           <IconButton
             icon="sparkles"
-            label={`Send ${p.name} a Big Crush${deepLeft != null ? `. ${deepLeft} left today` : ''}`}
+            label={`Send ${p.name} a Big Up${deepLeft != null ? `. ${deepLeft} left today` : ''}`}
             size={56}
             iconSize={22}
             variant="gold"

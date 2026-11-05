@@ -42,7 +42,7 @@ const STRIP = 46;
  *
  * Two surfaces, both of which are lists of posts:
  *
- *   Crushes      the people you have a Crush with — you on them, them on you.
+ *   Crushes      you, and the people you've added up with.
  *   Connections  the people and Circles you are connected to, newest first.
  *
  * Flow is not one of them any more. Flow was the clip surface — a full-screen
@@ -75,7 +75,7 @@ export function FeedScreen() {
   const [tab, setTab] = useState<'crushes' | 'connections'>(
     route.params?.tab === 'connections' ? 'connections' : 'crushes',
   );
-  // A notification about a Crush opens Crushes, a Circle opens Connections.
+  // A notification about an add up opens Crushes, a Circle opens Connections.
   useEffect(() => {
     if (route.params?.tab === 'connections' || route.params?.tab === 'crushes') setTab(route.params.tab);
   }, [route.params?.tab]);
@@ -160,7 +160,7 @@ export function FeedScreen() {
                       ? 'A post lands in a Circle the moment somebody writes one there. Show all to see everything you are connected to.'
                       : circles?.items.length
                         ? 'Post something and it will show up here, for you first.'
-                        : 'Follow the people and Circles you want to hear from, and their Crushes land here — or join a Circle below.'
+                        : 'Post something, follow the people you want to hear from, or join a Circle below.'
                   }
                   action={{ label: 'Say something', onPress: () => navigation.navigate('CreatePost') }}
                   secondary={{

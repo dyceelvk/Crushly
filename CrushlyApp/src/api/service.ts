@@ -419,7 +419,10 @@ export async function recordPostFeedback(
  */
 export async function crushesFeed(limit = 20, after?: number | null): Promise<FlowPage> {
   const page = await rpc<FlowPage>('crush_posts_feed', { p_limit: limit, p_after: after ?? null });
-  return { items: page?.items ?? [] };
+  /* The cursor travels with the page. Rebuilding the object without it is how
+     this feed stayed exactly one page long while looking paged: `hasNextPage`
+     was never true, so nothing ever asked for the second page. */
+  return { items: page?.items ?? [], nextCursor: page?.nextCursor ?? null };
 }
 
 /**
@@ -638,9 +641,13 @@ export async function closeOnes(limit = 50): Promise<{ items: CloseOne[] }> {
  * client had ever called it, so a Space could show who somebody is and never
  * what they had made.
  */
-export async function spacePosts(authorId: number, limit = 20, after: number | null = null): Promise<{ items: Post[] }> {
-  const page = await rpc<{ items: Post[] }>('space_posts', { p_author_id: authorId, p_limit: limit, p_after: after });
-  return { items: page?.items ?? [] };
+export async function spacePosts(authorId: number, limit = 20, after: number | null = null): Promise<{ items: Post[]; nextCursor: number | null }> {
+  const page = await rpc<{ items: Post[]; nextCursor?: number | null }>('space_posts', {
+    p_author_id: authorId,
+    p_limit: limit,
+    p_after: after,
+  });
+  return { items: page?.items ?? [], nextCursor: page?.nextCursor ?? null };
 }
 
 /**

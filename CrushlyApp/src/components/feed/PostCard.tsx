@@ -118,8 +118,10 @@ export function PostCard({
             size={38}
             ring={p.author.verified ? 'gold' : undefined}
             /* A ring on the picture of somebody with a Moment live right now:
-               the cheapest true thing a feed can tell you. */
-            momentRing={momentRing(p.author.id, !p.mine && momentRings.has(p.author.id))}
+               the cheapest true thing a feed can tell you. It is drawn on your
+               own picture too — your Moment is as openable as anyone's, and a
+               ring you can see but cannot use is a lie about a door. */
+            momentRing={momentRing(p.author.id, momentRings.has(p.author.id))}
           />
           <View style={{ flexShrink: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>

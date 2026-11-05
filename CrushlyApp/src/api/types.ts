@@ -354,6 +354,15 @@ export type CircleMessagesPage = { items: CircleMessage[] };
 
 export type FlowPage = {
   items: Post[];
+  /**
+   * Where the next page starts, or null at the end.
+   *
+   * Both Crushes and a Space used to return `items` and nothing else, so a feed
+   * was exactly one page long — twenty posts and then silence, which reads as
+   * "my posts are gone" rather than "that is the whole feed". The value is the
+   * id of the last row, the same thing the pager sends back as `p_after`.
+   */
+  nextCursor?: number | null;
 };
 
 /**

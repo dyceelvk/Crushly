@@ -34,14 +34,14 @@ export function useCrushFlow() {
         } else {
           toast({
             kind: 'crush',
-            title: opts.deep ? `Big Crush sent to ${p.name}` : `You crushed on ${p.name}`,
-            message: opts.deep ? 'You’ll stand out at the top of their Crushes.' : 'If it’s mutual, you’ll be the first to know.',
+            title: opts.deep ? `Big Up sent to ${p.name}` : `You added up with ${p.name}`,
+            message: opts.deep ? 'You’ll stand out at the top of their add ups.' : 'If they add back, you’ll be the first to know.',
             avatar: p.photos[0]?.url ?? null,
           });
         }
         return res;
       } catch (e) {
-        toast({ kind: 'error', title: 'Crush not sent', message: (e as Error).message });
+        toast({ kind: 'error', title: 'Add up not sent', message: (e as Error).message });
         return null;
       }
     },

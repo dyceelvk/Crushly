@@ -97,9 +97,9 @@ const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }>
     title: 'Help center',
     intro: 'Quick answers to common questions.',
     blocks: [
-      { h: 'What’s a Crush?', p: 'It’s how you say “I’m interested.” If they Crush on you too, it’s a Mutual Crush and you can start talking.' },
-      { h: 'What’s a Big Crush?', p: 'A Crush with a note that appears at the top of their Crushes. You get 3 a day.' },
-      { h: 'Who can Whisper me?', p: 'By default, only Mutual Crushes. Change it in Privacy & visibility.' },
+      { h: 'What’s an add up?', p: 'It’s how you say “I’m here.” If they add back, the two of you can start talking.' },
+      { h: 'What’s a Big Up?', p: 'An add up with a note that appears at the top of their add ups. You get 3 a day.' },
+      { h: 'Who can Whisper me?', p: 'By default, only people who added back. Change it in Privacy & visibility.' },
       { h: 'How does verification work?', p: 'Tap “Verify with Didit”. Crushly hands you to our identity partner, which captures a live selfie and checks your ID, then brings you straight back. Opening the check submits nothing on its own, and photos from your gallery can’t be used.' },
       { h: 'How do Moments work?', p: 'Share a photo or a few words. Moments disappear after 24 hours. Replies arrive as private Whispers.' },
       { h: 'How do I take a break?', p: 'Settings → Account & security → Hide my Space. Your Whispers stay open.' },

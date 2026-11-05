@@ -132,7 +132,7 @@ export function MessagesScreen() {
       {filteredFresh.length ? (
         <View style={{ marginTop: space.xl }}>
           <Txt variant="label" color="gold" style={{ marginBottom: space.sm }}>
-            New Mutual Crushes
+            They added back
           </Txt>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.md, paddingRight: space.md }}>
             {filteredFresh.map((p) => (

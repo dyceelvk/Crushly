@@ -101,11 +101,11 @@ export function MutualCrushScreen({ navigation, route }: ScreenProps<'MutualCrus
       </View>
 
       <Animated.View style={{ alignItems: 'center', marginTop: space.xxl, paddingHorizontal: space.xl, opacity: text, transform: [{ translateY: text.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
-        <Txt variant="hero" color={c.text} align="center" accessibilityRole="header" accessibilityLabel={`It's a Mutual Crush with ${name}`}>
-          It’s a Crush.
+        <Txt variant="hero" color={c.text} align="center" accessibilityRole="header" accessibilityLabel={`You and ${name} both added up`}>
+          You both added up.
         </Txt>
         <Txt variant="accent" color={c.textSecondary} align="center" style={{ marginTop: space.xs }}>
-          You and {name} both felt something.
+          You and {name} both made a move.
         </Txt>
         <Txt variant="caption" color={c.textMuted} align="center" style={{ marginTop: space.sm, maxWidth: 300 }}>
           A Whisper is open between you. Nobody else can see it.

@@ -258,14 +258,35 @@ export const useCircleMessages = (circleId: number) =>
     refetchInterval: 8_000,
   });
 
-/** What this member has posted. The RPC has always existed; nothing called it. */
-export const useSpacePosts = (memberId: number, enabled = true) =>
-  useQuery({
+/**
+ * What this member has posted, a page at a time.
+ *
+ * This used to be one query for one page: the newest twenty posts and nothing
+ * after them, with no cursor to ask for the rest. On a Space with more than
+ * twenty posts that is the bug people reported by hand — you scroll, and the
+ * posts stop, as though the older ones had been taken away. It pages now, with
+ * `loadOlder` reaching for the next cursor as the list approaches its end.
+ */
+export function useSpacePosts(memberId: number, enabled = true) {
+  const on = enabled && Number.isFinite(memberId) && memberId > 0;
+  const query = useInfiniteQuery({
     queryKey: keys.spacePosts(memberId),
-    queryFn: () => service.spacePosts(memberId),
-    enabled: enabled && Number.isFinite(memberId) && memberId > 0,
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => service.spacePosts(memberId, 20, pageParam),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: on,
     staleTime: 20_000,
   });
+  const posts = useMemo<Post[]>(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
+  return {
+    ...query,
+    posts,
+    loadOlder: () => {
+      if (!query.isFetchingNextPage && query.hasNextPage) void query.fetchNextPage();
+    },
+    refresh: () => void query.refetch(),
+  };
+}
 
 /** Rewriting your own post: the words, and who can see it. */
 export function useEditPost() {
@@ -538,25 +559,30 @@ export function useSavePost() {
  * `keys.savedPosts` was already listed in `POST_LIST_HEADS`, so un-saving a post
  * from this list repaints the list itself rather than leaving a stale row.
  */
-/** Crushes: a post feed of the people you share a Crush with. */
+/**
+ * Crushes: a post feed of the people you share a Crush with, and you.
+ *
+ * The paging used to be a single query whose cursor was a piece of state: when
+ * the list reached its end it asked for the older page and *replaced* what was
+ * on screen with it — so scrolling did not reveal older posts, it swapped the
+ * feed for a different one, and anything you had been reading vanished. Pages
+ * accumulate now, in the order the server ranked them.
+ */
 export function useCrushesFeed(limit = 20) {
-  const [after, setAfter] = useState<number | null>(null);
-  const query = useQuery({
-    queryKey: [...keys.crushesFeed, limit, after],
-    queryFn: () => service.crushesFeed(limit, after),
+  const query = useInfiniteQuery({
+    queryKey: [...keys.crushesFeed, limit],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => service.crushesFeed(limit, pageParam),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
-  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  const posts = useMemo<Post[]>(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
   return {
     ...query,
     posts,
     loadOlder: () => {
-      const oldest = posts[posts.length - 1];
-      if (oldest && !query.isFetching) setAfter(oldest.id);
+      if (!query.isFetchingNextPage && query.hasNextPage) void query.fetchNextPage();
     },
-    refresh: () => {
-      setAfter(null);
-      return query.refetch();
-    },
+    refresh: () => void query.refetch(),
   };
 }
 

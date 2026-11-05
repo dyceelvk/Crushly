@@ -148,7 +148,7 @@ function ComposerRow({ onCompose }: { onCompose: () => void }) {
       <Pressable
         onPress={onCompose}
         accessibilityRole="button"
-        accessibilityLabel="Write a Crush"
+        accessibilityLabel="Write a post"
         style={({ pressed }) => ({
           flex: 1,
           flexDirection: 'row',

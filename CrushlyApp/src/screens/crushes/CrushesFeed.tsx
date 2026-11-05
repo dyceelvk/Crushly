@@ -92,11 +92,19 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
         flexGrow: 1,
       }}
       renderItem={({ item }) => <PostCard post={item} />}
+      /* The next page is fetched as the end approaches, and the footer says so
+         quietly — a feed that simply stops mid-scroll is what made people think
+         their older posts had been removed. */
+      ListFooterComponent={
+        feed.isFetchingNextPage ? (
+          <Skeleton style={{ height: 240, borderRadius: 20, marginTop: space.md }} />
+        ) : null
+      }
       ListEmptyComponent={
         <EmptyState
           icon="heart-outline"
           title="No Crushes yet"
-          message="Crushes shows what the people you’ve Crushed on are sharing — pictures and words. Crush someone in Discover and their Crushes land here."
+          message="Crushes is what you and the people you’ve added up with are sharing — pictures and words. Post something, or add up with someone in Discover."
           action={{
             label: 'Find people',
             onPress: () => navigation.navigate('Main', { screen: 'Discover' }),

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { profileDestination, liveMomentUserIds } from './profileTap';
+import { liveMomentUserIds, momentViewerParams, profileDestination } from './profileTap';
 
 const live = (...ids: number[]) => new Set(ids);
 
@@ -46,4 +46,14 @@ test('no Moments at all is an empty set, not a crash', () => {
   assert.equal(liveMomentUserIds(undefined).size, 0);
   assert.equal(liveMomentUserIds(null).size, 0);
   assert.equal(liveMomentUserIds({ others: [] }).size, 0);
+});
+
+test('your own ring opens your own Moment, not somebody else’s screen', () => {
+  assert.deepEqual(momentViewerParams(1, 1), { userId: 1, mine: true });
+  assert.deepEqual(momentViewerParams(4, 1), { userId: 4, mine: false });
+});
+
+test('a ring tapped before the viewer’s own id is known still opens a Moment', () => {
+  assert.deepEqual(momentViewerParams(4, null), { userId: 4, mine: false });
+  assert.deepEqual(momentViewerParams(4, undefined), { userId: 4, mine: false });
 });
