@@ -610,7 +610,11 @@ def assert_space_header(seen):
     time.sleep(0.9)
     about = nodes() or []
     shot('12b-space-about')
-    if not any(find(about, w) for w in ('Nothing here yet', 'About me', 'Looking for', 'Interests')):
+    # The walk account has words and nothing else, so the words are the proof.
+    # An account with interests or facts would show one of those instead.
+    if not any(find(about, w) for w in ('Checking where things live.',
+                                        'Nothing here yet', 'About me',
+                                        'Looking for', 'Interests')):
         fail('the About tab shows none of the words, the interests or the facts')
     if not tap('Crushes', tries=3):
         fail('could not get back to the Crushes tab')

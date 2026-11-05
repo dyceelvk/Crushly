@@ -124,7 +124,7 @@ export function FeedScreen() {
               message={
                 circles?.items.length
                   ? 'Post something and it will show up here, for you first.'
-                  : 'Follow the people and Circles you want to hear from, and their posts land here.'
+                  : 'Follow the people and Circles you want to hear from, and their Crushes land here.'
               }
               action={{ label: 'Share a post', onPress: () => navigation.navigate('CreatePost') }}
               secondary={{ label: 'Find people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}

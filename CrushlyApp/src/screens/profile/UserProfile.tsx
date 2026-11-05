@@ -610,7 +610,7 @@ export function SpaceScreen({
 
 /* ------------------------------------------------------- the three panels */
 
-/** What they've posted, in the same card the Flow uses. */
+/** What they have posted. On this product a post is a Crush. */
 function SpacePosts({
   items,
   loading,
@@ -640,7 +640,7 @@ function SpacePosts({
     return (
       <EmptyState
         icon="cloud-offline-outline"
-        title="Couldn’t load their posts"
+        title="Couldn’t load their Crushes"
         message="This is usually the connection, not the post."
         action={{ label: 'Try again', onPress: onRetry }}
       />
@@ -649,9 +649,9 @@ function SpacePosts({
   if (!shown.length) {
     return (
       <EmptyState
-        icon="document-text-outline"
-        title="Nothing posted yet"
-        message={`${name} hasn’t shared anything yet.`}
+        icon="heart-outline"
+        title="No Crushes yet"
+        message={`${name} hasn’t shared anything yet. What they share lands here.`}
       />
     );
   }

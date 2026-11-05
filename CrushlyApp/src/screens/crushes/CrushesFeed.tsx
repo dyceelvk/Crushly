@@ -95,8 +95,8 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       ListEmptyComponent={
         <EmptyState
           icon="heart-outline"
-          title="No posts here yet"
-          message="Crushes shows what the people you’ve Crushed on are posting — pictures and words. Crush someone in Discover and their posts land here."
+          title="No Crushes yet"
+          message="Crushes shows what the people you’ve Crushed on are sharing — pictures and words. Crush someone in Discover and their Crushes land here."
           action={{
             label: 'Find people',
             onPress: () => navigation.navigate('Main', { screen: 'Discover' }),
