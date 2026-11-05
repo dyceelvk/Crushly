@@ -38,7 +38,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ScreenProps, RootStackParamList } from '../../navigation/types';
 import { useMe, useMoments, useMyCircles } from '../../api/hooks';
 import type { Me } from '../../api/types';
-import { Group, ListRow } from '../../components/ListRow';
 
 /**
  * A visitor's Space, and the owner's, from one component.
@@ -167,6 +166,15 @@ export function SpaceScreen({
   const keepClose = useKeepClose();
   const letGo = useLetGo();
   const [index, setIndex] = useState(0);
+  /**
+   * Whether the page has scrolled past the cover.
+   *
+   * The header sits over the photograph while the photograph is there, and
+   * becomes a bar of the page's own colour once it is not — which is the only
+   * way a control can be over a picture and over white text at the same time
+   * without drawing a box around itself in the case where it does not need one.
+   */
+  const [scrolled, setScrolled] = useState(false);
 
   /**
    * A Space is what they have made and where they belong: their Flows, their
@@ -257,7 +265,16 @@ export function SpaceScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 + insets.bottom }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
+        showsVerticalScrollIndicator={false}
+        onScroll={(e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          const next = y > heroH - (insets.top + 64);
+          if (next !== scrolled) setScrolled(next);
+        }}
+        scrollEventThrottle={16}
+      >
         <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative' }}>
           <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32} accessibilityLabel={`${p.photos.length} photos`}>
             {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
@@ -275,26 +292,14 @@ export function SpaceScreen({
             style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '42%' }}
           />
           <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.75, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} pointerEvents="none" />
-          <View style={{ position: 'absolute', top: insets.top + space.sm, left: gutter, right: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {/* The same corner, whoever is reading. A visitor gets the way back;
-                the owner gets the gear, because the Space is the top of the app
-                for them and Settings has to live somewhere they can reach it
-                without a drawer. Neither ever sees both. */}
-            {mine ? (
-              <IconButton icon="settings-outline" variant="glass" label="Settings" onPress={() => navigation.navigate('Settings')} />
-            ) : goBack ? (
-              <IconButton icon="chevron-back" variant="glass" label="Go back" onPress={goBack} />
-            ) : null}
-            <View style={{ flex: 1, flexDirection: 'row', gap: 4, justifyContent: 'center' }} accessibilityElementsHidden>
-              {p.photos.length > 1
-                ? p.photos.map((ph, i) => <View key={ph.id} style={{ flex: 1, maxWidth: 40, height: 3, borderRadius: 2, backgroundColor: i === index ? '#fff' : 'rgba(255,255,255,0.35)' }} />)
-                : null}
-            </View>
-            {mine ? (
-              <IconButton icon="create-outline" variant="glass" label="Edit Space" onPress={() => navigation.navigate('EditProfile')} />
-            ) : (
-              <IconButton icon="ellipsis-horizontal" variant="glass" label={`More options for ${p.name}`} onPress={() => openActions(member)} />
-            )}
+          {/* The dots stay with the photograph, because they count photographs.
+              Everything else that used to share this row is a control, and a
+              control belongs in the header above, where it does not scroll
+              away. */}
+          <View style={{ position: 'absolute', top: insets.top + space.sm + 8, left: gutter, right: gutter, flexDirection: 'row', gap: 4, justifyContent: 'center' }} accessibilityElementsHidden>
+            {p.photos.length > 1
+              ? p.photos.map((ph, i) => <View key={ph.id} style={{ flex: 1, maxWidth: 40, height: 3, borderRadius: 2, backgroundColor: i === index ? '#fff' : 'rgba(255,255,255,0.35)' }} />)
+              : null}
           </View>
           {/* Only the state pills live on the cover now. The name, the face and
               the actions sit under it, on the page background, which is what
@@ -559,17 +564,7 @@ export function SpaceScreen({
 
 
 
-          {mine ? (
-            /* Everything the drawer used to hold, on the Space where it belongs.
-               A row that opens a blank page is worse than no row, so each of
-               these lands on the screen it names. */
-            <Group title="Your space" style={{ marginTop: space.xxl }}>
-              <ListRow title="Your Circles" subtitle="The rooms you are part of" icon="people-outline" onPress={() => navigation.navigate('Circles')} />
-              <ListRow title="Your Moments" subtitle="Today, then gone" icon="aperture-outline" onPress={() => navigation.navigate('Moments')} />
-              <ListRow title="Picked" subtitle="Saved posts. Only you can see this." icon="bookmark-outline" onPress={() => navigation.navigate('SavedPosts')} />
-              <ListRow title="Settings" subtitle="Account, appearance, privacy" icon="settings-outline" onPress={() => navigation.navigate('Settings')} last />
-            </Group>
-          ) : (
+          {mine ? null : (
             <View style={{ marginTop: space.xxl, flexDirection: 'row', justifyContent: 'center', gap: space.lg }}>
               <Pressable onPress={() => openActions(member)} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}>
                 <Ionicons name="flag-outline" size={15} color={colors.textMuted} />
@@ -581,6 +576,59 @@ export function SpaceScreen({
           )}
         </View>
       </ScrollView>
+
+      {/* ------------------------------------------------------- the header
+          Settings, Picked and Edit, held at the top of the page.
+
+          They used to be a row at the bottom of the feed ("Your Circles", "Your
+          Moments", "Picked", "Settings"), which meant the further you posted,
+          the further your own account's controls moved. Circles and Moments are
+          the tabs above and always were — the same two destinations drawn twice
+          — so those rows are gone. Settings and Picked live here now, over the
+          cover while the cover is what is behind them, and on the page's own
+          colour once it has scrolled away.
+
+          Pinned rather than inside the ScrollView: a control that scrolls is a
+          control you have to find. */}
+      <View
+        pointerEvents="box-none"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30 }}
+      >
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 60,
+            backgroundColor: scrolled ? colors.bg : 'transparent',
+            borderBottomWidth: scrolled ? 1 : 0,
+            borderBottomColor: colors.border,
+          }}
+        />
+        {!scrolled ? (
+          <LinearGradient
+            colors={['rgba(7,7,8,0.55)', 'transparent']}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 96 }}
+            pointerEvents="none"
+          />
+        ) : null}
+        <View style={{ paddingTop: insets.top + space.sm, paddingHorizontal: gutter, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* The same corner, whoever is reading. A visitor gets the way back;
+              the owner gets the gear. Neither ever sees both. */}
+          {mine ? (
+            <IconButton icon="settings-outline" variant={scrolled ? 'surface' : 'glass'} label="Settings" onPress={() => navigation.navigate('Settings')} />
+          ) : goBack ? (
+            <IconButton icon="chevron-back" variant={scrolled ? 'surface' : 'glass'} label="Go back" onPress={goBack} />
+          ) : null}
+          <View style={{ flex: 1 }} />
+          {mine ? (
+            <IconButton icon="bookmark-outline" variant={scrolled ? 'surface' : 'glass'} label="Picked" onPress={() => navigation.navigate('SavedPosts')} />
+          ) : null}
+          {mine ? (
+            <IconButton icon="create-outline" variant={scrolled ? 'surface' : 'glass'} label="Edit Space" onPress={() => navigation.navigate('EditProfile')} />
+          ) : (
+            <IconButton icon="ellipsis-horizontal" variant={scrolled ? 'surface' : 'glass'} label={`More options for ${p.name}`} onPress={() => openActions(member)} />
+          )}
+        </View>
+      </View>
 
       {/* Persistent action bar — for people you are not. */}
       {mine ? null : (

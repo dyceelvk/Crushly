@@ -552,6 +552,44 @@ def assert_appearance():
     return_to_tabs()
 
 
+def assert_space_header(seen):
+    """The Space's own controls live at the top of it, and stay there.
+
+    They used to be four rows at the bottom of the page — "Your Circles", "Your
+    Moments", "Picked", "Settings" — so the more you posted the further your own
+    account's controls moved. Circles and Moments were the tabs above already, so
+    those are gone; Settings and Picked are in a pinned header now. Two things
+    are asserted, not one: that they are at the top, and that they are still
+    there after the page has been scrolled to its end.
+    """
+    top = SCREEN[1] * 0.28
+    for label in ('Settings', 'Picked'):
+        node = find(seen, label)
+        if node is None:
+            fail('the Space has no "{}" control in its header'.format(label))
+        if node['y'] > top:
+            fail('"{}" sits {} px down the page, not in the header'.format(label, node['y']))
+    for row in ('Your Circles', 'Your Moments'):
+        if find(seen, row):
+            fail('the Space still lists "{}" at the bottom; it is a tab above'.format(row))
+
+    for _ in range(7):
+        swipe_up()
+    time.sleep(0.8)
+    after = nodes() or []
+    held = [label for label in ('Settings', 'Picked')
+            if (find(after, label) or {}).get('y', SCREEN[1]) <= top]
+    if len(held) < 2:
+        fail('the Space header scrolled away with the page (still at the top: {})'.format(
+            ', '.join(held) or 'nothing'))
+    shot('12a-space-scrolled')
+    log('space header: Settings and Picked held at the top after scrolling; bottom rows gone; checked')
+    # Back to the top of the page for whoever walks next.
+    for _ in range(8):
+        adb('shell', 'input', 'swipe', '160', '240', '160', '560', '180')
+        time.sleep(0.35)
+
+
 def walk():
     """Photograph every surface, in the order the app presents them."""
     seen = shot('04-home')
@@ -583,7 +621,9 @@ def walk():
     for label, name in (('Whispers', '11-whispers'),
                         ('Space', '12-space')):
         tap(label)
-        shot(name)
+        seen = shot(name)
+        if label == 'Space':
+            assert_space_header(seen)
 
     # Close Ones is a segment of Whispers, not a tab of its own: walk in the way
     # a person would, from the tab.
