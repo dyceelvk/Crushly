@@ -99,9 +99,9 @@ def main() -> int:
         # answer — enforced by the functions, not by the button.
         if not run_file(ROOT / 'circle_requests.sql'):
             return 1
-        # Media is private, by the bucket flag and by the policy — not by a
-        # dashboard setting somebody made once.
-        if not run_file(ROOT / 'storage_privacy.sql'):
+        # Circles can be found, and there are exactly three ways in: open,
+        # approved, or invited — each enforced here rather than by a button.
+        if not run_file(ROOT / 'circle_discovery.sql'):
             return 1
         if not run_file(ROOT / 'shared_post.sql'):
             return 1
