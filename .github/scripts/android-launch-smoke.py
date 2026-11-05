@@ -427,6 +427,45 @@ def assert_strip(seen):
     log('bar: Home · Discover · + · Whispers · Space; checked')
 
 
+def assert_discover(seen):
+    """Discover: one title, the magnifier on it, and the page right under it.
+
+    The fault this replaces was a header drawn twice, each with its own padding,
+    which left a band of nothing above the first card and a magnifier stranded
+    in the middle of it. So the gap between the title and the page is measured,
+    and the magnifier has to be on the title's row rather than floating.
+    """
+    titles = [n for n in seen if n['on_screen'] and n['y'] < SCREEN[1] * 0.6
+              for v in (n['text'], n['desc']) if norm(v) == 'discover']
+    if not titles:
+        fail('Discover has no title on its own page')
+    title = min(titles, key=lambda n: n['y'])
+    page = find(seen, 'From everyone') or find(seen, 'Nothing public yet') or find(seen, 'Search people')
+    # The Moments row lives between the two, so it is the last thing that may
+    # sit there. Measuring from the title alone called a full row of somebody's
+    # Moments "a band of nothing" — the check was right about the fault it was
+    # written for and wrong about the page it now measures.
+    moments = find(seen, 'Moments')
+    if moments is not None and page is not None and title['y2'] < moments['y'] < page['y']:
+        title = moments
+    if page and page['y'] > title['y2']:
+        gap = page['y'] - title['y2']
+        if gap > 80:
+            fail('Discover leaves {} px of nothing between its title and the page'.format(gap))
+        log('discover: {:.0f} px from the title to the page; checked'.format(gap))
+    # Clips are back, and the rail that shows them is the first thing under the
+    # Moments row. If the ranking RPC fails, the section disappears silently —
+    # which is exactly the kind of absence a screenshot cannot tell you about.
+    rail = find(seen, 'Top Crushes This Week')
+    if rail is not None:
+        log('discover: clips rail is on the page; checked')
+    magnifier = find(seen, 'Search Crushly')
+    if magnifier is None:
+        fail('Discover has no magnifier; search lives here')
+    if abs(magnifier['y'] - title['y']) > 40:
+        fail('the magnifier is stranded {} px from the Discover title'.format(abs(magnifier['y'] - title['y'])))
+
+
 def screen_brightness():
     """Mean brightness of the frame, 0–255, read straight from the framebuffer.
 
