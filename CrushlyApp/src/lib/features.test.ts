@@ -6,19 +6,19 @@ const photo = { id: 1, mediaKind: 'photo' as const };
 const clip = { id: 2, mediaKind: 'video' as const };
 const words = { id: 3, mediaKind: null };
 
-test('this build does not show clips', () => {
-  assert.equal(VIDEO_ENABLED, false, 'video is switched off until there is a room to announce it in');
+test('clips are back on', () => {
+  assert.equal(VIDEO_ENABLED, true, 'video is part of the product again');
 });
 
-test('a clip is not shown; a photo and a few words are', () => {
-  assert.equal(isShown(clip), false);
+test('a clip is shown, and so is a photo and a few words', () => {
+  assert.equal(isShown(clip), true);
   assert.equal(isShown(photo), true);
   assert.equal(isShown(words), true);
 });
 
-test('a list drops clips and keeps the rest in order', () => {
+test('a list keeps every post, in order', () => {
   const list = shownPosts([photo, clip, words, { id: 4, mediaKind: 'video' as const }]);
-  assert.deepEqual(list.map((p) => p.id), [1, 3]);
+  assert.deepEqual(list.map((p) => p.id), [1, 2, 3, 4]);
 });
 
 test('an empty list stays empty and is not shared with the caller', () => {

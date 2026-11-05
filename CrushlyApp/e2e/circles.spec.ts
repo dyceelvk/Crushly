@@ -34,6 +34,21 @@ const CIRCLE = {
   state: 'none',
 };
 
+const CLIP = {
+  id: 77,
+  body: 'Sunday go sharp',
+  mediaUrl: 'https://verification-test.supabase.co/storage/v1/object/public/media/clip.mp4',
+  mediaKind: 'video',
+  edit: null,
+  audience: 'everyone',
+  createdAt: Date.now() - 3600_000,
+  author: { id: 9, name: 'Ada Nwosu', username: 'ada', verified: false, photos: [] },
+  mine: false,
+  likeCount: 12_400,
+  liked: false,
+  commentCount: 12,
+};
+
 async function signedIn(page: Page, notifications: unknown[] = []) {
   const profile = {
     id: 1,
@@ -78,6 +93,8 @@ async function signedIn(page: Page, notifications: unknown[] = []) {
         return [];
       case 'discover_circles':
         return [CIRCLE];
+      case 'trending_clips':
+        return [CLIP];
       case 'my_circle_invitations':
       case 'my_circle_requests':
         return [];
@@ -183,4 +200,31 @@ test('a join request is announced by name, from the person to the room', async (
   // The sheet slides up; the sentence has to survive the animation.
   await expect(page.getByText('Ada Nwosu asked to join Sunday go sharp oh.', { exact: true })).toBeVisible({ timeout: 20000 });
   await page.screenshot({ path: 'walk-web/notification-request.png', fullPage: false });
+});
+
+/**
+ * Discover, offline: the clips rail. Clips came back to the product, and the
+ * thing that makes them visible is a tile that opens the post — so the check is
+ * that the rail exists, is titled, and carries its own number.
+ */
+async function openDiscover(page: Page) {
+  await page.goto('/');
+  const tab = page.getByText('Discover', { exact: true }).first();
+  await tab.waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForTimeout(1500);
+  const box = await tab.boundingBox();
+  if (!box) throw new Error('the Discover tab has no box');
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(1500);
+}
+
+test('the week’s clips are offered on Discover, with their Crushes', async ({ page }) => {
+  await signedIn(page);
+  await openDiscover(page);
+
+  await expect(page.getByText('Top Crushes This Week', { exact: true })).toBeVisible({ timeout: 20000 });
+  // The caption on the tile and the number under it both come from the post.
+  await expect(page.getByText('Sunday go sharp', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/12\.4K Crushes/).first()).toBeVisible();
+  await page.screenshot({ path: 'walk-web/discover-clips.png', fullPage: false });
 });

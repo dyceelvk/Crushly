@@ -109,6 +109,10 @@ def main() -> int:
         # and able to say why each post is where it is.
         if not run_file(ROOT / 'ranked_feed.sql'):
             return 1
+        # Clips are back on. The rail that makes them visible is a public
+        # surface with a ranking, so it is tested for what it must never show.
+        if not run_file(ROOT / 'circles_and_clips.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

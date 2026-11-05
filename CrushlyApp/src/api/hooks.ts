@@ -107,6 +107,10 @@ export const useSearch = (query: string) =>
     staleTime: 15_000,
   });
 
+/** Discover's clips rail. Same TTL as the public feed it sits above. */
+export const useTrendingClips = () =>
+  useQuery({ queryKey: ['trending-clips'] as const, queryFn: () => service.trendingClips(12), staleTime: 30_000 });
+
 export const usePublicFlow = () =>
   useQuery({ queryKey: keys.publicFlow, queryFn: () => service.publicFlow(), staleTime: 30_000 });
 

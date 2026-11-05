@@ -351,7 +351,8 @@ def assert_strip(seen):
     """Home reads Crushes → Connections, and the bar reads
     Home → Discover → (+) → Whispers → Space.
 
-    The strip had three words while Flow — the clip surface — was one of them.
+    The strip had three words while Flow was one of them, and Flow is gone: what
+    is left is where you look at people, not a second feed.
     Clips are not in this build, so the third tab is gone and this asserts the
     two that remain, in order, in one row. A sorted list of x coordinates cannot
     be read two ways, which is why the order is checked and not eyeballed.
@@ -369,7 +370,7 @@ def assert_strip(seen):
     if missing:
         fail('the Home strip is missing ' + ', '.join(missing))
     if 'flow' in points:
-        fail('the Home strip still carries a Flow tab; clips are not in this build')
+        fail('the Home strip still carries a Flow tab')
 
     # "Crushes" may also be a heading or the bar, so keep to the row that holds
     # both words.
@@ -424,56 +425,6 @@ def assert_strip(seen):
     if 'crushes' in bar_keys:
         fail('Crushes is still a tab in the bar; it belongs on the strip')
     log('bar: Home · Discover · + · Whispers · Space; checked')
-
-
-#: Labels only a clip carries. Used to assert video is off the surface, not
-#: merely unreachable from the tab we removed.
-CLIP_WORDS = ('original sound', 'sound:', 'a clip', 'video post', 'watch the clip')
-
-
-def assert_no_clips(seen, where):
-    hit = []
-    for n in seen:
-        text = norm(n['text'] + ' ' + n['desc'])
-        for word in CLIP_WORDS:
-            if word in text:
-                hit.append(text[:70])
-    if hit:
-        fail('a clip is on screen on {}: "{}"'.format(where, hit[0]))
-    log('{}: no clip, sound row or player; checked'.format(where))
-
-
-def assert_discover(seen):
-    """Discover: one title, the magnifier on it, and the page right under it.
-
-    The fault this replaces was a header drawn twice, each with its own padding,
-    which left a band of nothing above the first card and a magnifier stranded
-    in the middle of it. So the gap between the title and the page is measured,
-    and the magnifier has to be on the title's row rather than floating.
-    """
-    titles = [n for n in seen if n['on_screen'] and n['y'] < SCREEN[1] * 0.6
-              for v in (n['text'], n['desc']) if norm(v) == 'discover']
-    if not titles:
-        fail('Discover has no title on its own page')
-    title = min(titles, key=lambda n: n['y'])
-    page = find(seen, 'From everyone') or find(seen, 'Nothing public yet') or find(seen, 'Search people')
-    # The Moments row lives between the two, so it is the last thing that may
-    # sit there. Measuring from the title alone called a full row of somebody's
-    # Moments "a band of nothing" — the check was right about the fault it was
-    # written for and wrong about the page it now measures.
-    moments = find(seen, 'Moments')
-    if moments is not None and page is not None and title['y2'] < moments['y'] < page['y']:
-        title = moments
-    if page and page['y'] > title['y2']:
-        gap = page['y'] - title['y2']
-        if gap > 80:
-            fail('Discover leaves {} px of nothing between its title and the page'.format(gap))
-        log('discover: {:.0f} px from the title to the page; checked'.format(gap))
-    magnifier = find(seen, 'Search Crushly')
-    if magnifier is None:
-        fail('Discover has no magnifier; search lives here')
-    if abs(magnifier['y'] - title['y']) > 40:
-        fail('the magnifier is stranded {} px from the Discover title'.format(abs(magnifier['y'] - title['y'])))
 
 
 def screen_brightness():
@@ -670,13 +621,11 @@ def walk():
     """Photograph every surface, in the order the app presents them."""
     seen = shot('04-home')
     assert_strip(seen)
-    assert_no_clips(seen, 'Home')
 
     for label, name in (('Crushes', '05-segment-crushes'),
                         ('Connections', '06-segment-connections')):
         tap(label)
         seen = shot(name)
-        assert_no_clips(seen, name)
         if label == 'Connections':
             assert_connections(seen)
 
@@ -687,9 +636,8 @@ def walk():
     if tap('Discover'):
         seen = shot('07-discover')
         assert_discover(seen)
-        assert_no_clips(seen, 'Discover')
-    if tap('Search Crushly'):
-        shot('08-discover-search')
+        if tap('Search Crushly'):
+            shot('08-discover-search')
         return_to_tabs()
 
     # Appearance: measure it, because a preference that saves and does not paint

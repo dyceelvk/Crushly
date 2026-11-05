@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Txt } from '../../components/Txt';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { MomentsRow } from './MomentsRow';
+import { ClipRail } from '../../components/feed/ClipRail';
 import { PostCard } from '../../components/feed/PostCard';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
@@ -106,6 +107,11 @@ export function DiscoverPane() {
         showsVerticalScrollIndicator={false}
       >
         <MomentsRow />
+
+        {/* Clips, this week, ranked. Directly under the Moments row because both
+            answer the same question — what is worth watching right now — and
+            above the public feed because a rail is a doorway, not a wall. */}
+        <ClipRail />
 
         <View
           style={{

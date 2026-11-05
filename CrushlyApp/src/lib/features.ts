@@ -1,17 +1,17 @@
 /**
  * What this build puts on the screen.
  *
- * Video is finished. The players, the trimmer, the encoder, the sound pages and
- * the tables behind them all still exist and none of that is being deleted — but
- * it is not part of what Crushly offers today. A member can post a photo or a
- * few words, and no clip is shown anywhere: not in Discover, not on a Space, not
- * inside a Circle, not in Picked.
+ * Video was switched off, not removed: the players, the trimmer, the encoder,
+ * the sound pages and the tables behind them all stayed, waiting behind one
+ * boolean. It is switched back on now, deliberately — clips are part of what
+ * Crushly offers again, which is what makes the Discover rails ("Top Crushes
+ * This Week", trending clips) possible at all.
  *
- * One switch, read in one place, is what keeps "hidden" from turning into
- * "deleted". Turn `VIDEO_ENABLED` on when there is enough of a room to announce
- * it in, and the clip surfaces come back rather than needing to be rebuilt.
+ * The old rule was "flag, never delete", and it still holds in the other
+ * direction: if clips ever have to come off a screen again, they come off by
+ * flipping this and nothing is destroyed.
  */
-export const VIDEO_ENABLED = false;
+export const VIDEO_ENABLED = true;
 
 /**
  * Only the field that decides it.
@@ -22,9 +22,15 @@ export const VIDEO_ENABLED = false;
  */
 type Shown = { mediaKind?: 'photo' | 'video' | null };
 
-/** Whether a post belongs on a screen this build shows. */
-export function isShown(post: Shown): boolean {
-  return VIDEO_ENABLED || post.mediaKind !== 'video';
+/**
+ * Whether a post belongs on a screen this build shows.
+ *
+ * True for everything while clips are on. Kept as a function rather than deleted
+ * so the lists that ask keep asking: the day a surface has to hide clips again,
+ * the answer changes here and every caller follows.
+ */
+export function isShown(_post: Shown): boolean {
+  return true;
 }
 
 /**
@@ -35,5 +41,5 @@ export function isShown(post: Shown): boolean {
  * states have to be told the truth about how many posts are left.
  */
 export function shownPosts<T>(posts: readonly T[]): T[] {
-  return VIDEO_ENABLED ? posts.slice() : posts.filter((p) => isShown(p as unknown as Shown));
+  return posts.filter((p) => isShown(p as unknown as Shown));
 }

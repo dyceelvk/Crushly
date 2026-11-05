@@ -154,7 +154,7 @@ jobs:
             echo "::error::notifications does not accept the circle_* kinds — the notification migration did not land."
             missing=1
           fi
-          for fn in discover_circles circle_preview join_circle invite_to_circle circle_manage; do
+          for fn in discover_circles circle_preview join_circle invite_to_circle circle_manage trending_clips; do
             have=$(psql "$SUPABASE_DB_URL" -tAc "select exists (select 1 from pg_proc where proname = '$fn' and pronamespace = 'public'::regnamespace);")
             if [ "$have" != "t" ]; then
               echo "::error::public.$fn is missing — discovery and membership would fall back to nothing."

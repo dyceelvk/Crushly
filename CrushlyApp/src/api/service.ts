@@ -473,6 +473,14 @@ export async function createPost(input: {
   });
 }
 
+/**
+ * The clips rail on Discover: the week's most-Crushed clips, one per author,
+ * already filtered to what this member may see. `mediaKind` is always `video`.
+ */
+export async function trendingClips(limit = 12): Promise<Post[]> {
+  return (await rpc<Post[]>('trending_clips', { p_limit: limit })) ?? [];
+}
+
 export async function deletePost(postId: number): Promise<void> {
   await rpc<boolean>('delete_post', { p_post_id: postId });
 }

@@ -53,21 +53,20 @@ type PostType = 'Flows' | 'Stories' | 'Moments';
 type PostKind = 'flow' | 'moment';
 
 const BOARDS: { kind: PostKind; title: string; blurb: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { kind: 'flow', title: 'Post', blurb: 'Words and photos. Stays until you take it down.', icon: 'albums-outline' },
+  { kind: 'flow', title: 'Post', blurb: 'Words, photos and clips. Stays until you take it down.', icon: 'albums-outline' },
   { kind: 'moment', title: 'Moment', blurb: 'One glimpse. Gone in 24 hours.', icon: 'aperture-outline' },
 ];
 
 /**
- * Create Post — the composer for text and photo posts.
+ * Create Post — the composer for words, photos and clips.
  *
- * Video is not offered in this build: the picker takes images, and a clip that
- * arrives anyway (a share sheet, a stale web blob) is refused with a sentence
- * rather than uploaded into a post nothing will draw. The trim screen, the
- * editor and the encoders are all still here, behind `VIDEO_ENABLED`.
+ * Video is offered again (`VIDEO_ENABLED`), and it goes trim-first: a clip opens
+ * the dedicated trim screen the moment it is picked, then the full workbench for
+ * cuts, looks, text and stickers. A photo goes straight in. A clip longer than a
+ * minute is refused with a sentence rather than silently shortened.
  *
  * Layout follows the design: view at top, editors above tabs, tabs below
- * editors, add-text bar at the bottom. Video goes trim-first (dedicated trim
- * screen right after picking), then the full editor for captions/filters/etc.
+ * editors, add-text bar at the bottom.
  */
 export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'>) {
   const insets = useSafeAreaInsets();
@@ -161,9 +160,9 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const pickMedia = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        // Images only while `VIDEO_ENABLED` is off — the library filter is the
-        // first of the three places video is stopped (picker, composer, feeds).
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        // Both, now that clips are part of the product. The picker's own limit
+        // is the first of the checks; the composer's is the one that decides.
+        mediaTypes: VIDEO_ENABLED ? ImagePicker.MediaTypeOptions.All : ImagePicker.MediaTypeOptions.Images,
         videoMaxDuration: MAX_VIDEO_SECONDS,
         quality: 0.8,
         allowsMultipleSelection: true,
@@ -175,13 +174,6 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         const isVideo = asset.mimeType?.startsWith('video/') ?? false;
         const sizeBytes = asset.fileSize ?? 0;
         const durationMs = asset.duration ?? 0;
-
-        if (isVideo && !VIDEO_ENABLED) {
-          // A clip can still reach us from a share sheet or a stale web blob.
-          // Say why instead of posting something no surface will show.
-          toast({ kind: 'error', title: 'Photos and words for now', message: 'Crushly takes pictures and text. Video is coming back later.' });
-          continue;
-        }
 
         if (isVideo && durationMs > MAX_VIDEO_SECONDS * 1000) {
           toast({ kind: 'error', title: 'That clip is too long', message: 'Posts can carry up to one minute of video.' });

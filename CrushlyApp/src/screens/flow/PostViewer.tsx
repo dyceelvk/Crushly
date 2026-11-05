@@ -19,7 +19,6 @@ import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState } from '../../components/States';
-import { VIDEO_ENABLED } from '../../lib/features';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { EditPostSheet } from '../../components/EditPostSheet';
 import { useMemberActions } from '../../state/memberActions';
@@ -282,26 +281,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       },
     }),
   ).current;
-
-  /**
-   * A clip is not a post this build shows.
-   *
-   * Clips are filtered out of every list, so the only way one reaches this
-   * screen is a link written before video was switched off — a shared post, a
-   * message. It gets a sentence rather than a stage that would play it.
-   */
-  if (!VIDEO_ENABLED && post?.mediaKind === 'video') {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.sm }}>
-        <EmptyState
-          icon="videocam-off-outline"
-          title="Video isn’t here yet"
-          message="Crushly shows photos and words for now. This clip will play when video comes back."
-          action={{ label: 'Close', onPress: close }}
-        />
-      </View>
-    );
-  }
 
   if (!post) {
     const loading = (flow.isLoading || postQuery.isLoading) && postQuery.data === undefined;
