@@ -441,18 +441,18 @@ def assert_discover(seen):
         fail('Discover has no title on its own page')
     title = min(titles, key=lambda n: n['y'])
     page = find(seen, 'From everyone') or find(seen, 'Nothing public yet') or find(seen, 'Search people')
-    # The Moments row lives between the two, so it is the last thing that may
-    # sit there. Measuring from the title alone called a full row of somebody's
-    # Moments "a band of nothing" — the check was right about the fault it was
-    # written for and wrong about the page it now measures.
-    moments = find(seen, 'Moments')
-    if moments is not None and page is not None and title['y2'] < moments['y'] < page['y']:
-        title = moments
+    # The band between the title and the feed is now several sections deep — the
+    # Moments row, then the clips rail — and it will grow again. Measuring from
+    # the title called each new section "a band of nothing": the check was right
+    # about the fault it was written for and wrong about the page it now
+    # measures. So the reference is the bottom-most thing in the band.
     if page and page['y'] > title['y2']:
-        gap = page['y'] - title['y2']
+        between = [n for n in seen if n['on_screen'] and title['y2'] < n['y'] < page['y']]
+        reference = max(n['y2'] for n in between) if between else title['y2']
+        gap = page['y'] - reference
         if gap > 80:
-            fail('Discover leaves {} px of nothing between its title and the page'.format(gap))
-        log('discover: {:.0f} px from the title to the page; checked'.format(gap))
+            fail('Discover leaves {} px of nothing above the feed'.format(gap))
+        log('discover: {:.0f} px from the last section to the feed; checked'.format(gap))
     # Clips are back, and the rail that shows them is the first thing under the
     # Moments row. If the ranking RPC fails, the section disappears silently —
     # which is exactly the kind of absence a screenshot cannot tell you about.
