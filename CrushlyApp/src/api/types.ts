@@ -439,6 +439,8 @@ export type FullProfile = Profile & {
 export type Privacy = {
   showDistance: boolean;
   showOnline: boolean;
+  /** Being seen online and being timestamped are different disclosures. */
+  showActivity: boolean;
   readReceipts: boolean;
   discoverable: boolean;
   profileVisibility: 'everyone' | 'connections';
@@ -505,6 +507,25 @@ export type CrushesResponse = {
   requestCount: number;
 };
 
+/**
+ * The Whisper header's three questions, answered by the database once and then
+ * kept live by the conversation's channel.
+ *
+ * `online` and `activity` are null when either side has switched that
+ * visibility off — which the screen must treat as "nothing to say", not as
+ * "offline".
+ */
+export type PeerPresence = {
+  peerId: number;
+  online: boolean | null;
+  activity: string | null;
+  /** Read receipts need both members; false means no tick is ever shown. */
+  receipts: boolean;
+  /** May this member's own presence be announced on the channel? */
+  announce: boolean;
+  closed: boolean;
+};
+
 export type Peer = { id: number; name: string; verified: boolean; photo: string | null; online: boolean | null };
 
 export type MessageKind = 'text' | 'photo' | 'voice' | 'video' | 'call' | 'sticker' | 'profile' | 'post' | 'moment_reply';
@@ -520,6 +541,12 @@ export type Message = {
   meta: Record<string, any>;
   createdAt: number;
   readAt: number | null;
+  /**
+   * When the other device actually had this message — the sender's information,
+   * and only ever present on messages I sent. Delivery is not a receipt: it says
+   * "arrived", never "read".
+   */
+  deliveredAt?: number | null;
   reactions: { userId: number; kind: string }[];
   /** client-only: optimistic send state */
   pending?: boolean;

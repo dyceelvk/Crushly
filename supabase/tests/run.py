@@ -131,6 +131,11 @@ def main() -> int:
         # Keep Close is not part of any of it.
         if not run_file(ROOT / 'add_up_requests.sql'):
             return 1
+        # Whisper is live: delivery is stamped once by the recipient, reading
+        # implies having, receipts stay behind both switches, and the private
+        # channel is only joinable by the two members of an open thread.
+        if not run_file(ROOT / 'whisper_live.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

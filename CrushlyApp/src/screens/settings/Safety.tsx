@@ -125,6 +125,14 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         <ListRow title="Show my age" icon="calendar-outline" toggle={{ value: p.showAge, onChange: (v) => set({ showAge: v }) }} />
         <ListRow title="Show my city" icon="business-outline" toggle={{ value: p.showCity, onChange: (v) => set({ showCity: v }) }} />
         <ListRow title="Show when I’m online" subtitle="If off, you won’t see others’ status either" icon="radio-button-on-outline" toggle={{ value: p.showOnline, onChange: (v) => set({ showOnline: v }) }} />
+        {/* Being seen online and being timestamped are different disclosures: a
+            dot says "here now", a label says "here at 21:14". */}
+        <ListRow
+          title="Show when I was last active"
+          subtitle={p.showOnline ? 'A time, not just a dot' : 'Needs “Show when I’m online” on'}
+          icon="time-outline"
+          toggle={{ value: p.showActivity && p.showOnline, onChange: (v) => set({ showActivity: v }), disabled: !p.showOnline }}
+        />
         <ListRow title="Read receipts" subtitle="If off, you won’t see others’ either" icon="checkmark-done-outline" toggle={{ value: p.readReceipts, onChange: (v) => set({ readReceipts: v }) }} last />
       </Group>
 

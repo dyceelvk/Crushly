@@ -15,7 +15,7 @@ import {
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
 import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
-  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage} from './types';
+  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
 
 /**
  * The Crushly data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -180,6 +180,7 @@ export async function getMe(): Promise<Me> {
     privacy: {
       showDistance: !!privacy.show_distance,
       showOnline: !!privacy.show_online,
+      showActivity: privacy.show_activity !== false,
       readReceipts: !!privacy.read_receipts,
       discoverable: !!privacy.discoverable,
       profileVisibility: privacy.profile_visibility,
@@ -322,6 +323,7 @@ export async function updatePreferences(prefs: Preferences): Promise<Me> {
 const PRIVACY_FIELDS: Record<string, [string, 'bool' | readonly string[]]> = {
   showDistance: ['show_distance', 'bool'],
   showOnline: ['show_online', 'bool'],
+  showActivity: ['show_activity', 'bool'],
   readReceipts: ['read_receipts', 'bool'],
   discoverable: ['discoverable', 'bool'],
   showAge: ['show_age', 'bool'],
@@ -1248,6 +1250,28 @@ async function uploadToMessages(uri: string, mimeType: string): Promise<string> 
 
 export async function markConversationRead(conversationId: number): Promise<void> {
   await rpc('mark_conversation_read', { p_conversation_id: conversationId });
+}
+
+/**
+ * "I have these now."
+ *
+ * Called when a message reaches this device, which is a weaker claim than
+ * reading it — so it is a separate call and a separate column. Idempotent on the
+ * server: the stamp is the first arrival and never moves.
+ */
+export async function markMessagesDelivered(
+  conversationId: number,
+  upToId?: number,
+): Promise<{ upTo: number; count: number }> {
+  return rpc('mark_messages_delivered', {
+    p_conversation_id: conversationId,
+    p_up_to_id: upToId ?? null,
+  });
+}
+
+/** What the header may say about them — presence, receipts, and my own switch. */
+export async function peerPresence(conversationId: number): Promise<PeerPresence> {
+  return rpc('peer_presence', { p_conversation_id: conversationId });
 }
 
 export async function reactToMessage(messageId: number, kind = 'crush'): Promise<Message> {

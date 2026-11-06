@@ -4,10 +4,13 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClie
 import * as service from './service';
 import type { SendDraft } from './service';
 import { liveMomentUserIds } from '../lib/profileTap';
+import { openWhisperLive, type WhisperLive, type WhisperLiveStatus } from '../lib/whisperLive';
+import { applyUpTo } from '../lib/messageStatus';
+import { stillTyping } from '../lib/presence';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
-  Post, PostComment, ReactionKind, RankedPost, FlowCursor,
+  Post, PostComment, ReactionKind, RankedPost, FlowCursor, PeerPresence,
 } from './types';
 
 export const keys = {
@@ -1078,7 +1081,15 @@ export function useMomentReaction() {
 
 /* ------------------------------------------------------------------- chat */
 
-const POLL_MS = 3000;
+/**
+ * The safety net behind the conversation channel.
+ *
+ * While the channel is live, messages do not wait for this. It exists for the
+ * cases a socket cannot cover: a phone that slept, a network that changed, a
+ * broadcast lost in flight. Twenty seconds is slow enough to be free and fast
+ * enough that a dropped signal is never a lost Whisper.
+ */
+const SAFETY_POLL_MS = 20_000;
 
 /**
  * Conversation state: initial page, incremental polling for new messages,
@@ -1098,28 +1109,95 @@ export function useSendMessage() {
   });
 }
 
+/**
+ * A Whisper, live.
+ *
+ * The old implementation asked the server "anything new?" every three seconds
+ * for as long as the screen was open. That is not a conversation, it is a
+ * queue — and it made typing, recording and presence impossible, because there
+ * was nothing to say them over.
+ *
+ * Now the thread has a private channel (`lib/whisperLive.ts`), and the channel
+ * carries signals only: "something new", "I have it", "I read it", "I am
+ * typing", "I am recording", "I am here". Messages still arrive through
+ * `get_messages`, so every audience, block and receipt rule keeps applying.
+ *
+ * A slow poll stays behind it — `SAFETY_POLL_MS` — because a socket can be
+ * asleep, a phone can change networks, and losing a message is not an acceptable
+ * failure mode for a Whisper. It is a safety net, not the mechanism: while the
+ * channel is live, new messages land in well under a second.
+ */
 export function useChat(conversationId: number) {
   const qc = useQueryClient();
+  const { data: me } = useMe();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [presence, setPresence] = useState<PeerPresence | null>(null);
+  const [live, setLive] = useState<WhisperLiveStatus>('connecting');
+  const [peerHere, setPeerHere] = useState(false);
+  const [peerTypingAt, setPeerTypingAt] = useState(0);
+  const [peerRecordingAt, setPeerRecordingAt] = useState(0);
   const lastIdRef = useRef(0);
   const lastReadRef = useRef<number | null>(null);
+  const liveRef = useRef<WhisperLive | null>(null);
+  const presenceRef = useRef<PeerPresence | null>(null);
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+
+  /* ------------------------------------------------------------ receipts */
 
   const markRead = useCallback(() => {
+    const peers = presenceRef.current;
     service.markConversationRead(conversationId).then(() => {
+      // The tick the sender sees comes from the channel, not from a poll — and
+      // only when both of them have left read receipts on.
+      if (peers?.receipts) liveRef.current?.read(lastIdRef.current);
       qc.invalidateQueries({ queryKey: keys.badges });
       qc.invalidateQueries({ queryKey: keys.conversations });
     }).catch(() => {});
   }, [conversationId, qc]);
+
+  /**
+   * Delivery: a weaker claim than reading, and a separate call.
+   *
+   * It is worth making because "Sent" without "Delivered" cannot tell you the
+   * difference between a message that is on their phone and a message that is
+   * sitting in a queue — and that difference is the whole reason to look.
+   */
+  const markDelivered = useCallback(async (upTo: number) => {
+    try {
+      const res = await service.markMessagesDelivered(conversationId, upTo > 0 ? upTo : undefined);
+      if (res.count > 0 && res.upTo > 0) liveRef.current?.delivered(res.upTo);
+    } catch {
+      /* the next open, or the poll, will try again */
+    }
+  }, [conversationId]);
 
   const applyReadState = useCallback((lastReadMine: number | null) => {
     lastReadRef.current = lastReadMine;
     if (!lastReadMine) return;
     setMessages((prev) => prev.map((m) => (m.mine && !m.readAt && m.id <= lastReadMine ? { ...m, readAt: Date.now() } : m)));
   }, []);
+
+  /* ------------------------------------------------------------ fetching */
+
+  const absorb = useCallback((incoming: Message[]) => {
+    if (!incoming.length) return;
+    const highest = incoming[incoming.length - 1].id;
+    lastIdRef.current = Math.max(lastIdRef.current, highest);
+    setMessages((prev) => {
+      const known = new Set(prev.map((m) => m.id));
+      const fresh = incoming.filter((m) => !known.has(m.id));
+      return fresh.length ? [...prev, ...fresh] : prev;
+    });
+    if (incoming.some((m) => !m.mine)) {
+      void markDelivered(highest);
+      markRead();
+    }
+  }, [markDelivered, markRead]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1129,45 +1207,120 @@ export function useChat(conversationId: number) {
       setMessages(res.items);
       setHasMore(res.hasMore);
       lastIdRef.current = res.items.length ? res.items[res.items.length - 1].id : 0;
+      void markDelivered(lastIdRef.current);
       markRead();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [conversationId, markRead]);
+  }, [conversationId, markDelivered, markRead]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  /** One incremental fetch. Used by the channel, the poll and the reconnect. */
+  const catchUp = useCallback(async () => {
+    try {
+      const res = await service.getMessages(conversationId, { after: lastIdRef.current });
+      absorb(res.items);
+      if (res.lastReadMine !== lastReadRef.current) applyReadState(res.lastReadMine);
+    } catch {
+      /* transient; the next nudge retries */
+    }
+  }, [absorb, applyReadState, conversationId]);
+
+  /* ------------------------------------------------------------- presence */
+
+  useEffect(() => {
+    let cancelled = false;
+    service.peerPresence(conversationId).then((p) => {
+      if (cancelled) return;
+      presenceRef.current = p;
+      setPresence(p);
+      liveRef.current?.setPresence(p.announce);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [conversationId]);
+
+  /* --------------------------------------------------------------- channel */
+
+  useEffect(() => {
+    if (!Number.isFinite(conversationId) || conversationId <= 0) return;
+    const chat = openWhisperLive({
+      conversationId,
+      myId: me?.id ?? null,
+      announcePresence: presenceRef.current?.announce ?? false,
+      events: {
+        onNewMessage: () => void catchUp(),
+        onDelivered: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'deliveredAt')),
+        onRead: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'readAt')),
+        onTyping: (at) => setPeerTypingAt(at),
+        onRecording: (at) => setPeerRecordingAt(at),
+        onPeerHere: (here) => setPeerHere(here),
+        onStatus: (s) => {
+          setLive(s);
+          // A channel that has just come back may have missed things. Catching
+          // up on arrival is the difference between "live" and "caught up".
+          if (s === 'live') void catchUp();
+        },
+      },
+    });
+    liveRef.current = chat;
+    return () => {
+      chat.close();
+      liveRef.current = null;
+      setPeerHere(false);
+    };
+  }, [catchUp, conversationId, me?.id]);
+
+  /* ---------------------------------------------------------- safety poll */
+
   useEffect(() => {
     if (loading || error) return;
     let cancelled = false;
-    const tick = async () => {
+    const tick = () => {
+      if (cancelled) return;
       if (AppState.currentState !== 'active') return;
-      try {
-        const res = await service.getMessages(conversationId, { after: lastIdRef.current });
-        if (cancelled) return;
-        if (res.items.length) {
-          lastIdRef.current = res.items[res.items.length - 1].id;
-          setMessages((prev) => {
-            const known = new Set(prev.map((m) => m.id));
-            return [...prev, ...res.items.filter((m) => !known.has(m.id))];
-          });
-          if (res.items.some((m) => !m.mine)) markRead();
-        }
-        if (res.lastReadMine !== lastReadRef.current) applyReadState(res.lastReadMine);
-      } catch {
-        /* transient; next tick retries */
-      }
+      void catchUp();
     };
-    const timer = setInterval(tick, POLL_MS);
+    const timer = setInterval(tick, SAFETY_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [conversationId, loading, error, markRead, applyReadState]);
+  }, [catchUp, error, loading]);
+
+  /*
+   * Backgrounding the app is a statement about presence: you are not here. So
+   * the presence we announce stops with it, and starts again on return — the
+   * same rule the badges poll already follows, for the same reason.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      const active = state === 'active';
+      liveRef.current?.setPresence(active && (presenceRef.current?.announce ?? false));
+      if (!active) liveRef.current?.typing(false);
+      if (active) void catchUp();
+    });
+    return () => sub.remove();
+  }, [catchUp]);
+
+  /* Typing and recording expire on their own: a dropped socket must not leave
+     somebody "typing" for the rest of the evening. */
+  const typingLive = stillTyping(peerTypingAt);
+  const recordingLive = stillTyping(peerRecordingAt);
+  useEffect(() => {
+    if (!typingLive && !recordingLive) return;
+    const t = setInterval(() => {
+      setPeerTypingAt((at) => (stillTyping(at) ? at : 0));
+      setPeerRecordingAt((at) => (stillTyping(at) ? at : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [recordingLive, typingLive]);
+
+  /* -------------------------------------------------------------- sending */
 
   const loadOlder = useCallback(async () => {
     if (!hasMore || loadingMore || !messages.length) return;
@@ -1208,6 +1361,7 @@ export function useChat(conversationId: number) {
         },
         createdAt: Date.now(),
         readAt: null,
+        deliveredAt: null,
         reactions: [],
         pending: true,
       };
@@ -1219,6 +1373,11 @@ export function useChat(conversationId: number) {
           const without = prev.filter((m) => m.id !== saved.id);
           return without.map((m) => (m.localId === localId ? saved : m));
         });
+        // The server has it: tell the other phone rather than waiting for it to
+        // ask. Content-free — the id is the whole payload.
+        liveRef.current?.announce(saved.id);
+        // Typing ends when the message begins.
+        liveRef.current?.typing(false);
         qc.invalidateQueries({ queryKey: keys.conversations });
         return { ok: true as const };
       } catch (e) {
@@ -1236,7 +1395,33 @@ export function useChat(conversationId: number) {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
   }, []);
 
-  return { messages, loading, error, reload: load, hasMore, loadOlder, loadingMore, send, discard, react };
+  /** Call on every keystroke; the channel throttles itself. */
+  const typing = useCallback((on: boolean) => liveRef.current?.typing(on), []);
+
+  /** Call when the recorder opens and closes. */
+  const recording = useCallback((on: boolean) => liveRef.current?.recording(on), []);
+
+  return {
+    messages,
+    loading,
+    error,
+    reload: load,
+    hasMore,
+    loadOlder,
+    loadingMore,
+    send,
+    discard,
+    react,
+    typing,
+    recording,
+    /* Live state, named for what it is. */
+    live,
+    peerHere,
+    peerTyping: typingLive,
+    peerRecording: recordingLive,
+    presence,
+    receipts: presence?.receipts ?? false,
+  };
 }
 
 export type ChatDraft = Parameters<ReturnType<typeof useChat>['send']>[0];

@@ -6,6 +6,9 @@ import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, 
 import { Txt } from '../../components/Txt';
 import { Avatar, Photo } from '../../components/Photo';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { presenceDot, presenceLabel, presenceState } from '../../lib/presence';
+import { TypingDots } from '../../components/TypingDots';
+import { RecordingWave } from '../../components/RecordingWave';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
@@ -38,8 +41,80 @@ const ICEBREAKERS = [
 ];
 
 type Row =
-  | { type: 'msg'; m: Message; first: boolean; last: boolean; seen: boolean }
+  | { type: 'msg'; m: Message; first: boolean; last: boolean }
   | { type: 'day'; key: string; label: string };
+
+
+/**
+ * The line under their name.
+ *
+ * Four presence states, and the two ephemeral ones come first because they are
+ * about *now* rather than about *last time*:
+ *
+ *   typing     they are writing to you this second
+ *   recording  they are holding the mic
+ *   here       their socket is on this conversation
+ *   online/away/offline  what the database is allowed to say
+ *
+ * The presence that comes from the channel is live; the fallback comes from the
+ * thread's own data, so a socket that has not connected yet still shows
+ * something true. Nothing here is animated when nothing is happening.
+ */
+function HeaderState({
+  peerName,
+  here,
+  typing,
+  recording,
+  presence,
+  fallbackOnline,
+  live,
+}: {
+  peerName: string;
+  here: boolean;
+  typing: boolean;
+  recording: boolean;
+  presence: { online: boolean | null; activity: string | null } | null;
+  fallbackOnline: boolean;
+  live: 'connecting' | 'live' | 'offline';
+}) {
+  const { colors } = useTheme();
+  if (typing) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <TypingDots color={colors.textSecondary} />
+        <Txt variant="caption" color="textSecondary" accessibilityLiveRegion="polite">
+          typing
+        </Txt>
+      </View>
+    );
+  }
+  if (recording) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} accessibilityLiveRegion="polite">
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.crush }} />
+        <Txt variant="caption" color="textSecondary">
+          Recording a voice note
+        </Txt>
+      </View>
+    );
+  }
+  const state = presence
+    ? presenceState({ live: here, online: presence.online, activity: presence.activity })
+    : presenceState({ live: here, online: fallbackOnline, activity: null });
+  const label = presenceLabel(state, presence?.activity ?? null);
+  const dot = presenceDot(state);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      {dot !== 'none' ? (
+        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot === 'live' ? colors.success : colors.gold }} />
+      ) : null}
+      <Txt variant="caption" color={state === 'here' || state === 'online' ? 'success' : 'textMuted'}>
+        {label}
+        {live === 'connecting' ? ' · connecting' : ''}
+      </Txt>
+    </View>
+  );
+}
 
 export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const { conversationId } = route.params;
@@ -63,7 +138,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [recording, setRecording] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  // Metering is what makes the waveform real rather than decorative.
+  const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
   const recState = useAudioRecorderState(recorder, 250);
 
   /* ------------------------------------------------------------ video notes */
@@ -167,7 +243,6 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     const msgs = chat.messages;
-    const lastMineRead = [...msgs].reverse().find((m) => m.mine && m.readAt && m.id > 0);
     let prevDay = '';
     msgs.forEach((m, i) => {
       const day = new Date(m.createdAt).toDateString();
@@ -183,7 +258,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         new Date(a.createdAt).toDateString() !== new Date(b.createdAt).toDateString();
       const first = breaks(prev, m);
       const last = breaks(m, next);
-      out.push({ type: 'msg', m, first, last, seen: lastMineRead?.id === m.id && msgs[msgs.length - 1]?.mine === true });
+      out.push({ type: 'msg', m, first, last });
     });
     return out.reverse(); // inverted list
   }, [chat.messages]);
@@ -233,6 +308,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     const body = text.trim();
     if (!body) return;
     setText('');
+    chat.typing(false);
     haptic.tap();
     send({ kind: 'text', body });
   };
@@ -257,6 +333,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       recorder.record();
       haptic.soft();
       setRecording(true);
+      chat.recording(true);
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t start recording', message: (e as Error).message });
     }
@@ -271,6 +348,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       /* already stopped */
     }
     setRecording(false);
+    chat.recording(false);
     if (!keep) return;
     if (duration < 1 || !recorder.uri) return toast({ kind: 'info', title: 'Too short', message: 'Hold on a little longer to record a voice note.' });
     send({ kind: 'voice', uri: recorder.uri, duration, mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a' });
@@ -340,9 +418,15 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 </Txt>
                 {peer?.verified ? <VerifiedBadge size={15} /> : null}
               </View>
-              <Txt variant="caption" color={peer?.online ? 'success' : 'textMuted'}>
-                {peer?.online ? 'Online now' : 'Mutual Crush'}
-              </Txt>
+              <HeaderState
+                peerName={peer?.name ?? ''}
+                here={chat.peerHere}
+                typing={chat.peerTyping}
+                recording={chat.peerRecording}
+                presence={chat.presence ? { online: chat.presence.online, activity: chat.presence.activity } : null}
+                fallbackOnline={!!peer?.online}
+                live={chat.live}
+              />
             </View>
           </Pressable>
           <IconButton
@@ -444,7 +528,6 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       message={item.m}
                       firstInGroup={item.first}
                       lastInGroup={item.last}
-                      showSeen={item.seen}
                       showTime={item.last}
                       peerName={peer?.name ?? ''}
                       onLongPress={setActionFor}
@@ -520,12 +603,14 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               {recording ? (
                 <>
                   <IconButton icon="trash-outline" label="Discard recording" onPress={() => stopRecording(false)} color={colors.danger} />
-                  <View style={{ flex: 1, height: 44, borderRadius: 22, backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 10 }} accessibilityLiveRegion="polite">
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.crush }} />
+                  <View style={{ flex: 1, height: 44, borderRadius: 22, backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10 }} accessibilityLiveRegion="polite">
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.crush }} />
                     <Txt variant="bodyStrong">{durationLabel(Math.round((recState.durationMillis || 0) / 1000))}</Txt>
-                    <Txt variant="small" color="textMuted">
-                      Recording…
-                    </Txt>
+                    {/* Every bar is a sample of the microphone, not a decoration:
+                        with no metering available the bars simply sit low. */}
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <RecordingWave level={recState.metering ?? null} color={colors.crush} />
+                    </View>
                   </View>
                   <IconButton icon="arrow-up" variant="crush" label="Send voice note" onPress={() => stopRecording(true)} color={colors.crush} />
                 </>
@@ -544,7 +629,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                     <TextInput
                       ref={inputRef}
                       value={text}
-                      onChangeText={setText}
+                      onChangeText={(v) => {
+                        setText(v);
+                        // Typing is a rhythm, not a keystroke stream: the
+                        // channel throttles this and it expires by itself.
+                        chat.typing(v.trim().length > 0);
+                      }}
                       placeholder="Say something worth replying to..."
                       placeholderTextColor={colors.textMuted}
                       multiline

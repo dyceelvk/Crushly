@@ -16,6 +16,7 @@ import { mediaUrl } from '../api/client';
 import { mediaSource } from '../lib/mediaHost';
 import { MOMENT_STYLES, STICKERS } from '../lib/catalog';
 import { clockTime, durationLabel } from '../lib/format';
+import { messageStatus } from '../lib/messageStatus';
 
 export const REACTIONS: { key: string; label: string; emoji?: string }[] = [
   { key: 'crush', label: 'Crush' },
@@ -30,7 +31,6 @@ type Props = {
   firstInGroup: boolean;
   /** Last bubble of the run — the one that carries the tail and the time. */
   lastInGroup: boolean;
-  showSeen: boolean;
   /** Prints the clock time under this bubble. */
   showTime: boolean;
   peerName: string;
@@ -45,10 +45,35 @@ type Props = {
   onOpenReply?: (id: number) => void;
 };
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showSeen, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onOpenPost, onRetry, onOpenReply }: Props) {
+/**
+ * What happened to a message I sent, in one glyph.
+ *
+ *   sent       ✓    the server has it
+ *   delivered  ✓✓   their device has it
+ *   read       ✓✓   in gold — they opened the thread
+ *
+ * "Sending" is a spinner and "failed" is an error line, because those two are
+ * states to act on rather than facts to note.
+ */
+const StatusTick = memo(function StatusTick({ status }: { status: 'sent' | 'delivered' | 'read' }) {
+  const { colors } = useTheme();
+  if (status === 'sent') return <Ionicons name="checkmark" size={13} color={colors.textSecondary} accessibilityLabel="Sent" />;
+  const read = status === 'read';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityLabel={read ? 'Read' : 'Delivered'}>
+      <Ionicons name="checkmark" size={13} color={read ? colors.gold : colors.textSecondary} />
+      <Ionicons name="checkmark" size={13} color={read ? colors.gold : colors.textSecondary} style={{ marginLeft: -6 }} />
+    </View>
+  );
+});
+
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onOpenPost, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
   const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile' || m.kind === 'post';
+  /* Only my own messages carry a status; theirs are not mine to report. */
+  const status = messageStatus(m);
+  const statusWord = status === 'sending' ? ', sending' : status === 'sent' ? ', sent' : status === 'delivered' ? ', delivered' : status === 'read' ? ', read' : '';
   const bg = m.mine ? colors.crushDeep : colors.card;
   const ink = m.mine ? '#FFFFFF' : colors.text;
 
@@ -67,7 +92,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
   };
 
   const reactionSummary = summarize(m.reactions);
-  const a11y = `${m.mine ? 'You' : peerName}: ${describe(m)}. ${clockTime(m.createdAt)}${m.pending ? ', sending' : ''}${m.failed ? ', not sent, tap to retry' : ''}${reactionSummary.length ? `, reactions: ${reactionSummary.map((r) => r.key).join(', ')}` : ''}`;
+  const a11y = `${m.mine ? 'You' : peerName}: ${describe(m)}. ${clockTime(m.createdAt)}${statusWord}${m.failed ? ', not sent, tap to retry' : ''}${reactionSummary.length ? `, reactions: ${reactionSummary.map((r) => r.key).join(', ')}` : ''}`;
 
   return (
     <View style={{ alignItems: m.mine ? 'flex-end' : 'flex-start', marginTop: firstInGroup ? 10 : 3 }}>
@@ -121,14 +146,15 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
           </Txt>
         </Pressable>
       ) : m.pending ? (
-        <ActivityIndicator size="small" color={colors.textMuted} style={{ marginTop: 4, transform: [{ scale: 0.7 }] }} />
-      ) : showSeen || showTime ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginHorizontal: 4 }}>
+          <ActivityIndicator size="small" color={colors.textMuted} style={{ transform: [{ scale: 0.7 }] }} />
+          <Txt variant="caption" color="textMuted">Sending…</Txt>
+        </View>
+      ) : showTime || status ? (
         // The time was only ever in the accessibility label, so a sighted member
         // had no idea when anything was said unless the day rolled over.
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginHorizontal: 4 }}>
-          {showSeen ? (
-            <Txt variant="caption" color="gold">Seen</Txt>
-          ) : null}
+          {status === 'sent' || status === 'delivered' || status === 'read' ? <StatusTick status={status} /> : null}
           {showTime ? (
             <Txt variant="caption" color="textMuted">{clockTime(m.createdAt)}</Txt>
           ) : null}
