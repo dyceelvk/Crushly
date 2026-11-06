@@ -117,6 +117,11 @@ def main() -> int:
         # both feeds can be walked to the end instead of stopping at one page.
         if not run_file(ROOT / 'own_posts_and_paging.sql'):
             return 1
+        # Crushes shows eligible posts, not only your connections' posts: three
+        # members' Space posts reach a reader who has added up with none of them,
+        # while audience, blocks and Circle rooms still hold.
+        if not run_file(ROOT / 'crushes_is_the_feed.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

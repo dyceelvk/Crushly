@@ -19,16 +19,23 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const STRIP = 46;
 
 /**
- * Crushes: a post feed.
+ * Crushes: the posts Crushly is publishing, as they are published.
  *
- * It is the posts of the people you have a Crush with — you on them, them on
- * you, both — and it is the same anatomy as any other feed on the product,
- * because a post is a post. What it is *not* is a directory of people, a list
- * of profiles, or a page of suggestions: those answer "who", and this answers
+ * This is the discovery surface for posts, and it reads the same `posts` rows
+ * every other surface reads — the same id, the same author, the same media and
+ * the same counts. What it is *not* is a directory of people, a list of
+ * profiles, or a page of suggestions: those answer "who", and this answers
  * "what did they post".
  *
- * Clips are not here. Flow is the clip surface; Crushes is pictures and words,
- * which is the division the strip already implies by keeping the two apart.
+ * It used to be the posts of the people you had added up with, which is why a
+ * member could publish in their Space and never see their own feed move: the
+ * page was a list of relationships wearing a feed's clothes. Now the only thing
+ * that keeps a post out is the audience its author chose — `can_view_post` in
+ * the database decides, so a connections-only post stays with connections and a
+ * Circle post stays in its room.
+ *
+ * A clip is a post, so clips are here too. Flow still ranks them for the
+ * surface built for them.
  *
  * The card is the same `PostCard` the Space, the Picks list and the search
  * results use, so Crush, Comment, Share and Pick are the same code with the
@@ -103,9 +110,13 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       ListEmptyComponent={
         <EmptyState
           icon="heart-outline"
-          title="No Crushes yet"
-          message="Crushes is what you and the people you’ve added up with are sharing — pictures and words. Post something, or add up with someone in Discover."
+          title="Nothing published yet"
+          message="Crushes is everything Crushly is posting. The first post lands here the moment somebody publishes one — yours included."
           action={{
+            label: 'Say something',
+            onPress: () => navigation.navigate('CreatePost'),
+          }}
+          secondary={{
             label: 'Find people',
             onPress: () => navigation.navigate('Main', { screen: 'Discover' }),
           }}

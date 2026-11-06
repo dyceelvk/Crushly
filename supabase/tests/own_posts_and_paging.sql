@@ -90,9 +90,20 @@ begin
                where (e->>'id')::bigint = theirs),
     'somebody else''s post must not be marked as yours';
 
-  /* Someone you have no Crush with is still not in it — including their post.
-     The stranger is found by asking the tables rather than assuming a name: the
-     seed already has Crushes between most of the demo community. */
+  /* Someone you share no Add up with.
+   *
+   * This used to assert the opposite — "Crushes is not a firehose: no Crush, no
+   * post" — and that rule is what broke the page: a member published in their
+   * Space and the post never reached Crushes, because the feed was really a list
+   * of the people you had added up with, drawn as posts. Crushes is the
+   * discovery surface now, so a member you share nothing with is in it, and what
+   * keeps a post out is the audience the author chose, not the absence of a
+   * relationship. Both halves are asserted here so neither can drift back:
+   *   - their public post belongs in the feed;
+   *   - their connections-only post does not.
+   *
+   * The stranger is found by asking the tables rather than assuming a name: the
+   * seed already has Crushes between most of the demo community. */
   reset role;
   select p.id into stranger_id from public.profiles p
    where p.id <> viewer_id
@@ -101,20 +112,30 @@ begin
         where (c.from_id = viewer_id and c.to_id = p.id)
            or (c.to_id = viewer_id and c.from_id = p.id)
      )
+     and not exists (
+       select 1 from public.connections cn
+        where cn.user_a = least(viewer_id, p.id) and cn.user_b = greatest(viewer_id, p.id)
+     )
    order by p.id
    limit 1;
 
   if stranger_id is not null then
     insert into public.posts (author_id, body, audience, created_at)
       values (stranger_id, 'a stranger', 'everyone', public.now_ms() + 20);
+    insert into public.posts (author_id, body, audience, created_at)
+      values (stranger_id, 'a stranger, quietly', 'connections', public.now_ms() + 21);
 
     perform set_config('request.jwt.claim.sub', viewer_uuid::text, false);
     set local role authenticated;
     page1 := public.crush_posts_feed(50, null);
-    assert not exists (
+    assert exists (
       select 1 from jsonb_array_elements(page1->'items') e
        where e->>'body' = 'a stranger'
-    ), 'Crushes is not a firehose: no Crush, no post';
+    ), 'Crushes is the discovery feed: a public post belongs in it whoever wrote it';
+    assert not exists (
+      select 1 from jsonb_array_elements(page1->'items') e
+       where e->>'body' = 'a stranger, quietly'
+    ), 'a connections-only post must not reach a member who is not a connection';
     reset role;
   end if;
 
@@ -166,9 +187,16 @@ begin
      exactly what one unhurried request would have returned. Comparing against a
      single big page rather than against a hand-written visibility query keeps
      this test about the cursor instead of re-implementing the feed in the test. */
-  assert (select count(distinct w) from unnest(walked) w)
-       = jsonb_array_length(public.crush_posts_feed(50, null)->'items'),
-    'walking the cursor must reach every post one big page would return';
+  /* Crushes can hold more posts than one request may return — the cap is 50 —
+     so "the walk equals one big page" is only true on a small feed. What has to
+     hold on any feed: the walk reaches every post the first big page holds, and
+     it never hands the same post back twice. */
+  assert not exists (
+    select 1 from jsonb_array_elements(public.crush_posts_feed(50, null)->'items') e
+     where (e->>'id')::bigint <> all(walked)
+  ), 'walking the cursor must reach every post one big page would return';
+  assert (select count(*) from unnest(walked) w) = (select count(distinct w) from unnest(walked) w),
+    'a walk must not hand the same post back twice';
   assert (select count(distinct w) from unnest(walked) w) > 20,
     'the fixture must be longer than a single page, or paging is not being tested';
   assert oldest = any(walked), 'the last post of a Space must be reachable by paging';

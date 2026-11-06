@@ -38,6 +38,28 @@ export const keys = {
   crushesFeed: ['crushes-feed'] as const,
 };
 
+/**
+ * Every list a post is offered on, refreshed together.
+ *
+ * A post is one row, and it is drawn by several surfaces: Flow, Crushes, the
+ * Space it was written in, the saved drawer. Invalidation used to name one of
+ * them, so a member could publish in their Space, open Crushes, and find the
+ * page exactly as it was — the posts were there, the screen was holding a stale
+ * page until the app restarted. Nothing about that looks like a cache problem
+ * from the outside; it looks like the post was never published.
+ *
+ * Prefix keys on purpose: `crushes-feed` matches `['crushes-feed', 20]`, and
+ * `space-posts` matches every Space, because a post can be the newest row on
+ * more than one of them.
+ */
+function postsChanged(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: keys.flow });
+  void qc.invalidateQueries({ queryKey: keys.publicFlow });
+  void qc.invalidateQueries({ queryKey: keys.crushesFeed });
+  void qc.invalidateQueries({ queryKey: ['space-posts'] });
+  void qc.invalidateQueries({ queryKey: keys.savedPosts });
+}
+
 /* ------------------------------------------------------------------ queries */
 
 export const useMe = (enabled = true) =>
@@ -296,8 +318,7 @@ export function useEditPost() {
       service.editPost(input),
     onSuccess: (post) => {
       qc.setQueryData(keys.post(post.id), post);
-      void qc.invalidateQueries({ queryKey: keys.flow });
-      void qc.invalidateQueries({ queryKey: keys.publicFlow });
+      postsChanged(qc);
     },
   });
 }
@@ -446,7 +467,7 @@ export function useCreatePost() {
   return useMutation({
     mutationFn: (input: Parameters<typeof service.createPost>[0]) => service.createPost(input),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.flow });
+      postsChanged(qc);
       void qc.invalidateQueries({ queryKey: keys.me });
     },
   });
@@ -456,7 +477,7 @@ export function useDeletePost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (postId: number) => service.deletePost(postId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.flow }),
+    onSuccess: () => postsChanged(qc),
   });
 }
 
@@ -466,7 +487,7 @@ export function useReactToPost() {
     mutationFn: ({ postId, liked, kind }: { postId: number; liked: boolean; kind?: ReactionKind }) =>
       service.reactToPost(postId, liked, kind),
     onSuccess: (_r, vars) => {
-      void qc.invalidateQueries({ queryKey: keys.flow });
+      postsChanged(qc);
       void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
     },
   });
@@ -574,6 +595,15 @@ export function useCrushesFeed(limit = 20) {
     initialPageParam: null as number | null,
     queryFn: ({ pageParam }) => service.crushesFeed(limit, pageParam),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    /*
+     * Crushes is everyone's posts, so it changes without this member doing
+     * anything. Publishing invalidates it (postsChanged), but somebody *else*
+     * publishing cannot invalidate anything on this phone — so the page is
+     * refreshed quietly on the same rhythm the rest of the app already keeps for
+     * live surfaces, and a member who leaves it open is not reading yesterday.
+     */
+    staleTime: 20_000,
+    refetchInterval: 60_000,
   });
   const posts = useMemo<Post[]>(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
   return {

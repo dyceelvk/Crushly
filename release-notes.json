@@ -1,3 +1,4 @@
 {
-  "1.0.64": "Every request now has a deadline: 15 seconds for a question, 5 minutes for an upload, and then it says the connection failed instead of spinning forever."
+  "1.0.64": "Every request now has a deadline: 15 seconds for a question, 5 minutes for an upload, and then it says the connection failed instead of spinning forever.",
+  "1.0.65": "Crushes now shows what Crushly is posting, not just the people you have added up with \u2014 and a new post reaches the feed without a restart."
 }
