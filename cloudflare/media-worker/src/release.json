@@ -1,10 +1,10 @@
 {
-  "version": "1.0.68",
-  "versionCode": 68,
+  "version": "1.0.69",
+  "versionCode": 69,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.68-Android9plus.apk",
-  "notes": "Whisper is live. Messages arrive as they are sent, you can see when someone is typing or recording a voice note, and every Whisper you send now tells you whether it was sent, delivered or read.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.68/Crushly-1.0.68-Android9plus.apk",
-  "bytes": 95243799,
-  "sha256": "f070932b4e2a5201827a31c1fe01fbc4979c97b32e231d03d7fb73e992569c7a"
+  "file": "Crushly-1.0.69-Android9plus.apk",
+  "notes": "Video notes are ten seconds and round. A Moment opens only from the ring around the picture, a Moment you have already watched now looks watched, and Top Crushes This Week only shows clips people actually crushed.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.69/Crushly-1.0.69-Android9plus.apk",
+  "bytes": 95244987,
+  "sha256": "dc63befe7ee97d5e5e5fb53c25f3e50ce4e3addc4942c4126374c13039a93573"
 }
