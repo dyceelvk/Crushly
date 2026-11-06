@@ -7,7 +7,18 @@ import { Button } from './Button';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
 
-const MAX_SECONDS = 60;
+/**
+ * How long a video note may be.
+ *
+ * Ten seconds, because a note is a glance rather than a clip: it keeps the file
+ * small enough to send on a phone data plan and small enough to keep, which is
+ * the whole point of the format. The database holds the line at a little over
+ * this (see `send_message`) so an older build cannot quietly upload a minute.
+ */
+export const MAX_SECONDS = 10;
+
+/** A circle, so the note reads as a note and not as a video in a feed. */
+const NOTE_SIZE = 260;
 
 export type VideoNoteResult = { uri: string; duration: number; mimeType: string };
 
@@ -130,7 +141,7 @@ export function VideoNoteRecorder({
           <Txt variant="heading" color="#fff">
             Record a video note
           </Txt>
-          <View style={{ width: '100%', aspectRatio: 3 / 4, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: colors.goldLine }}>
+          <View style={{ width: NOTE_SIZE, height: NOTE_SIZE, borderRadius: NOTE_SIZE / 2, overflow: 'hidden', backgroundColor: '#000', borderWidth: 2, borderColor: colors.goldLine }}>
             {browserElement('video', {
               ref: videoRef,
               autoPlay: true,

@@ -8,7 +8,7 @@ import { useMoments } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
-import { momentRing } from '../../lib/momentRings';
+import { momentRingState } from '../../lib/momentRings';
 import type { Moment, MomentAuthor } from '../../api/types';
 import type { RootStackParamList } from '../../navigation/types';
 import { MomentPreview } from '../moments/Moments';
@@ -111,7 +111,7 @@ function MomentTile({ tile, onPress }: { tile: Tile; onPress: () => void }) {
           name={author.name}
           size={18}
           ring={author.mutual ? 'crush' : undefined}
-          momentRing={momentRing(author.id, unread)}
+          momentRing={momentRingState(author.id, true, !unread)}
         />
         <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ flexShrink: 1 }}>
           {tile.mine ? 'You' : author.name}

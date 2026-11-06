@@ -345,23 +345,60 @@ function MomentQuote({ m }: { m: Message }) {
   );
 }
 
+/**
+ * A video note is a circle, and it stays a circle.
+ *
+ * A note is ten seconds and a glance — the shape says that before the timer
+ * does, and it keeps the bubble the same size whatever the camera was holding
+ * when it was recorded. The picture is cropped to fill the circle (`cover`)
+ * rather than letterboxed: inside a round frame a letterbox is a bar of black
+ * pretending to be part of the message.
+ */
+const NOTE_BUBBLE = 208;
+
 function VideoNoteBubble({ m }: { m: Message }) {
   const { colors } = useTheme();
   const player = useVideoPlayer(m.mediaUrl ? mediaSource(mediaUrl(m.mediaUrl)) : null, (p) => {
     p.loop = false;
   });
+  const duration = Number(m.meta.duration) || 0;
   return (
-    <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000', width: 220 }}>
+    <View
+      style={{
+        width: NOTE_BUBBLE,
+        height: NOTE_BUBBLE,
+        borderRadius: NOTE_BUBBLE / 2,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+        borderWidth: 1.5,
+        borderColor: colors.goldLine,
+      }}
+    >
       <VideoView
         player={player}
-        style={{ width: 220, height: 280 }}
-        // `cover` cut the sides off a landscape note. A note is watched, not
-        // cropped: letterbox it and keep the whole picture.
-        contentFit="contain"
+        style={{ width: NOTE_BUBBLE, height: NOTE_BUBBLE }}
+        contentFit="cover"
         nativeControls
-        accessibilityLabel={`Video note, ${durationLabel(Number(m.meta.duration) || 0)}`}
+        accessibilityLabel={`Video note, ${durationLabel(duration)}`}
       />
-      {m.pending ? <ActivityIndicator size="small" color={colors.gold} style={{ position: 'absolute', top: 8, right: 8 }} /> : null}
+      {/* The length is part of what a circle cannot show on its own. */}
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 12,
+          alignSelf: 'center',
+          backgroundColor: 'rgba(0,0,0,0.55)',
+          borderRadius: 999,
+          paddingHorizontal: 8,
+          paddingVertical: 2,
+        }}
+        pointerEvents="none"
+      >
+        <Txt variant="caption" color="#fff">
+          {durationLabel(duration)}
+        </Txt>
+      </View>
+      {m.pending ? <ActivityIndicator size="small" color={colors.gold} style={{ position: 'absolute', top: 14, right: 14 }} /> : null}
     </View>
   );
 }

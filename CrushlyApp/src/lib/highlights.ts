@@ -16,8 +16,17 @@ export type HighlightCaption = {
   icon: 'trophy' | 'chatbubbles-outline' | 'chatbubble-ellipses';
 };
 
-export function describeHighlight(h: Pick<CircleHighlight, 'kind' | 'likes' | 'comments'>): HighlightCaption {
+export function describeHighlight(
+  h: Pick<CircleHighlight, 'kind' | 'likes' | 'comments'>,
+): HighlightCaption | null {
   if (h.kind === 'conversation') return { caption: 'Most Talked Conversation', icon: 'chatbubble-ellipses' };
+  /*
+   * The database no longer offers a post with nothing on it (see the 1.0.69
+   * migration), and this is the same rule stated where the words are chosen: a
+   * tile cannot claim "Most Crushed Post" for a post nobody crushed. Null means
+   * there is nothing to say, and the tile is not drawn.
+   */
+  if (h.likes <= 0 && h.comments <= 0) return null;
   if (h.comments > h.likes) return { caption: 'Most Talked Post', icon: 'chatbubbles-outline' };
   return { caption: 'Most Crushed Post', icon: 'trophy' };
 }

@@ -335,7 +335,9 @@ function PreviewTile({
   onPress: () => void;
   colors: ReturnType<typeof useTheme>['colors'];
 }) {
-  const { caption, icon } = describeHighlight(highlight);
+  const described = describeHighlight(highlight);
+  if (!described) return null;
+  const { caption, icon } = described;
   const size = Math.max(52, Math.min(width, 76));
 
   return (

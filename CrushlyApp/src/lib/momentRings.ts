@@ -29,6 +29,17 @@ export function momentRingColor(userId: number): string {
 }
 
 /**
+ * The ring a viewed Moment keeps.
+ *
+ * A ring that has been watched is not the same thing as no ring at all: there is
+ * still something live behind this picture, and the picture is still the door to
+ * it. So a viewed Moment wears a quiet ring rather than losing it — which is the
+ * difference between "you have seen this" and "there is nothing here", and the
+ * reason the Moments surface can say *Viewed* instead of looking empty.
+ */
+export const MOMENT_RING_SEEN = 'rgba(255,255,255,0.30)';
+
+/**
  * The ring a picture should wear, or `null` when there is nothing live.
  *
  * Kept as a separate function rather than folded into the one above so a caller
@@ -37,4 +48,13 @@ export function momentRingColor(userId: number): string {
  */
 export function momentRing(userId: number, live: boolean): string | null {
   return live ? momentRingColor(userId) : null;
+}
+
+/**
+ * The same question with the answer the Moments surfaces actually have: live and
+ * seen are two booleans, and they produce three rings.
+ */
+export function momentRingState(userId: number, live: boolean, seen: boolean): string | null {
+  if (!live) return null;
+  return seen ? MOMENT_RING_SEEN : momentRingColor(userId);
 }

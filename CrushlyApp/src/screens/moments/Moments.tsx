@@ -17,7 +17,7 @@ import type { Moment, MomentGroup } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { MOMENT_STYLES } from '../../lib/catalog';
-import { momentRing } from '../../lib/momentRings';
+import { momentRingState } from '../../lib/momentRings';
 import { EditedClip } from '../../components/EditedClip';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
@@ -207,7 +207,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
       accessibilityLabel={`${group.user.name}'s Moment${group.moments.length > 1 ? `s, ${group.moments.length}` : ''}, ${timeAgo(latest.createdAt)} ago${group.hasUnseen ? ', new' : ''}`}
       style={({ pressed }) => ({ width, opacity: pressed ? 0.85 : 1 })}
     >
-      <View style={{ width, height: h, borderRadius: width * 0.3, padding: 2.5, borderWidth: 1.5, borderColor: group.hasUnseen ? colors.gold : colors.border }}>
+      <View style={{ width, height: h, borderRadius: width * 0.3, padding: 2.5, borderWidth: 1.5, borderColor: group.hasUnseen ? colors.gold : colors.borderStrong }}>
         <View style={{ flex: 1, borderRadius: width * 0.3 - 3, overflow: 'hidden', backgroundColor: colors.card }}>
           <MomentPreview
             moment={latest}
@@ -237,7 +237,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
           name={group.user.name}
           size={18}
           ring={group.user.mutual ? 'crush' : null}
-          momentRing={momentRing(group.user.id, group.hasUnseen)}
+          momentRing={momentRingState(group.user.id, true, !group.hasUnseen)}
         />
         <Txt variant="smallStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
           {group.user.name}
@@ -245,7 +245,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
         <VerifiedBadge size={12} tier={group.user.badgeTier ?? (group.user.verified ? 'verified' : 'none')} />
       </View>
       <Txt variant="caption" color="textMuted" align="center">
-        {timeAgo(latest.createdAt)}
+        {group.hasUnseen ? timeAgo(latest.createdAt) : `Viewed · ${timeAgo(latest.createdAt)}`}
       </Txt>
     </Pressable>
   );

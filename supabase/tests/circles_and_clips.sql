@@ -3,8 +3,15 @@
 -- The rail is a public surface with a ranking, which is exactly the kind of
 -- thing that quietly leaks: a clip written into a Circle, a clip from someone
 -- this member is blocked with, a clip the member may not see. So this asserts
--- what the rail is *for* — public clips, one per author, newest-and-most-Crushed
--- first — and what it is never allowed to be.
+-- what the rail is *for* — public clips that earned a Crush, one per author,
+-- most-Crushed first — and what it is never allowed to be.
+--
+-- 1.0.69 changed one thing here on purpose: the rail used to admit a clip
+-- merely for being recent, which is how a post with no Crushes, no comments and
+-- no views came to sit on a rail titled "Top Crushes This Week". A fixture clip
+-- that has never been crushed is now, correctly, not on the rail — so the
+-- fixtures below carry the Crushes they need before the rail is expected to
+-- hold them.
 do $$
 declare
   viewer_uuid uuid;
@@ -54,6 +61,13 @@ begin
     returning id into circle_clip;
   insert into public.circle_members (circle_id, member_id, role) values (circle_id, a_id, 'owner');
 
+  /* A clip earns its place. Marcus's newer clip has two Crushes and his older one
+     has a single Crush, so the newer one is the clip that represents him; Jayden's
+     clip starts with two so the counting assertions below have something to count. */
+  insert into public.post_reactions (post_id, user_id) values (clip_a, viewer_id);
+  insert into public.post_reactions (post_id, user_id) values (clip_a2, viewer_id), (clip_a2, b_id);
+  insert into public.post_reactions (post_id, user_id) values (clip_b, viewer_id), (clip_b, a_id);
+
   perform set_config('request.jwt.claim.sub', viewer_uuid::text, false);
   set role authenticated;
 
@@ -83,9 +97,14 @@ begin
                   where (e->>'id')::bigint = clip_a2),
     'a newer photo must not evict an older clip from the rail';
 
-  /* And the one it carries is his newest clip, because same author means same score. */
+  /* And the one it carries is the clip of his that earned more, not merely the
+     one he posted later — one slot per author goes to the author's best. */
   assert (clip_a2 = any(ids)) and not (clip_a = any(ids)),
-    'the newest clip of an author is the one the rail keeps';
+    'the most crushed clip of an author is the one the rail keeps';
+
+  /* A clip nobody has crushed is not a Top Crush. */
+  assert not exists (select 1 from jsonb_array_elements(rail) e where (e->>'likeCount')::int = 0),
+    'the rail must not carry a clip with no Crushes';
 
   /* Everything on the rail is a clip, by the field the client reads. */
   assert (select bool_and(e->>'mediaKind' = 'video') from jsonb_array_elements(rail) e),
@@ -96,15 +115,17 @@ begin
             from jsonb_array_elements(rail) e),
     'a rail item must carry its Crushes and comments, or the tile has nothing to say';
 
-  /* Crushes raise a clip. Written as the schema owner: a reaction is the
-     fixture here, the counting is the thing under test. */
+  /* A third Crush on one clip raises it to the top of the rail. */
   reset role;
-  insert into public.post_reactions (post_id, user_id) values (clip_b, viewer_id), (clip_b, a_id);
+  insert into public.post_reactions (post_id, user_id) values (clip_b, 5);
   set role authenticated;
 
   assert (select (e->>'likeCount')::int from jsonb_array_elements(public.trending_clips(12)) e
-           where (e->>'id')::bigint = clip_b) = 2,
+           where (e->>'id')::bigint = clip_b) = 3,
     'Crushes should be counted on the rail';
+  assert (select (e->>'id')::bigint from jsonb_array_elements(public.trending_clips(12)) e
+            order by (e->>'likeCount')::int desc limit 1) = clip_b,
+    'the most crushed clip leads the rail';
 
   /* A blocked pair never sees each other's clips. */
   reset role;

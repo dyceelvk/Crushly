@@ -25,6 +25,7 @@ import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { celebrated } from '../crushes/MutualCrush';
+import { MOMENT_RING_SEEN } from '../../lib/momentRings';
 import { joinAction, policyLabel } from '../../lib/circleAccess';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
@@ -164,6 +165,14 @@ export function SpaceScreen({
   const query = mine ? meQ : otherQ;
 
   const moments = useMoments();
+  /* Whether this Space's live Moments have been watched, read from the same
+     response every ring on every screen is drawn from — not from a second
+     question the backend would have to answer differently. */
+  const momentSeen = (() => {
+    if (mine) return true;
+    const group = moments.data?.others?.find((g) => g.user.id === id);
+    return group ? !group.hasUnseen : false;
+  })();
   const { run: crushOn, pendingId } = useCrushFlow();
   const undo = useUndoCrush();
   const accept = useAcceptAddUp();
@@ -380,6 +389,11 @@ export function SpaceScreen({
           It carries the Moments ring when there is something to watch, so the
           ring is still the way in — it just is not a second avatar floating in
           the middle of a name line.
+
+          Three states, the same three the Moments row uses: a coloured ring for
+          something you have not watched, a quiet ring for something you have,
+          and no ring at all when there is nothing live. A viewed Moment keeps
+          its ring because the door is still there; it just stops shouting.
         */}
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
           <View style={{ marginTop: -46, flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }}>
@@ -389,7 +403,13 @@ export function SpaceScreen({
               accessibilityLabel={p.moments.length ? `View ${p.name}’s Moments` : `${p.name}’s photo`}
             >
               <LinearGradient
-                colors={p.moments.length ? [colors.gold, colors.crush, colors.goldDeep] : ['transparent', 'transparent']}
+                colors={
+                  !p.moments.length
+                    ? ['transparent', 'transparent']
+                    : momentSeen
+                      ? [MOMENT_RING_SEEN, MOMENT_RING_SEEN]
+                      : [colors.gold, colors.crush, colors.goldDeep]
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{ width: FACE + 8, height: FACE + 8, borderRadius: (FACE + 8) / 2, alignItems: 'center', justifyContent: 'center' }}

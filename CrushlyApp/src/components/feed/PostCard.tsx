@@ -67,7 +67,11 @@ export function PostCard({
   const momentRings = useLiveMomentUsers();
   /* One handler for every face in the card — the author and everyone in the
      comments — so the feed cannot invent a second rule. */
-  const openProfile = useProfileTap();
+  /* Two doors off one header, because they lead to different rooms: the ringed
+     picture is offering a Moment, the name and the rest of the row are the way
+     to the Space. Tapping a name has never meant "play a story". */
+  const openName = useProfileTap();
+  const openRing = useProfileTap({ ring: true });
 
   const whisper = async () => {
     try {
@@ -107,22 +111,35 @@ export function PostCard({
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingTop: space.sm }}>
         <Pressable
-          onPress={() => openProfile(p.author.id)}
+          onPress={() => openName(p.author.id)}
           accessibilityRole="button"
           accessibilityLabel={`Open ${authorName}’s Space`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
         >
-          <Avatar
-            uri={p.author.photos[0]?.url ?? null}
-            name={p.author.name}
-            size={38}
-            ring={p.author.verified ? 'gold' : undefined}
-            /* A ring on the picture of somebody with a Moment live right now:
-               the cheapest true thing a feed can tell you. It is drawn on your
-               own picture too — your Moment is as openable as anyone's, and a
-               ring you can see but cannot use is a lie about a door. */
-            momentRing={momentRing(p.author.id, momentRings.has(p.author.id))}
-          />
+          {/* The ring is the target: only a picture that is actually wearing one
+              opens a Moment. */}
+          <Pressable
+            onPress={() => openRing(p.author.id)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              momentRings.has(p.author.id)
+                ? `Play ${authorName}’s Moment`
+                : `Open ${authorName}’s Space`
+            }
+            hitSlop={6}
+          >
+            <Avatar
+              uri={p.author.photos[0]?.url ?? null}
+              name={p.author.name}
+              size={38}
+              ring={p.author.verified ? 'gold' : undefined}
+              /* A ring on the picture of somebody with a Moment live right now:
+                 the cheapest true thing a feed can tell you. It is drawn on your
+                 own picture too — your Moment is as openable as anyone's, and a
+                 ring you can see but cannot use is a lie about a door. */
+              momentRing={momentRing(p.author.id, momentRings.has(p.author.id))}
+            />
+          </Pressable>
           <View style={{ flexShrink: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Txt variant="bodyStrong" numberOfLines={1}>
@@ -296,7 +313,7 @@ export function PostCard({
         }}
         onOpenAuthor={(id) => {
           setCommentsOpen(false);
-          openProfile(id);
+          openName(id);
         }}
       />
     </View>

@@ -24,7 +24,15 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 /** Two taps inside this window are one tap: a picture is easy to hit twice. */
 const DOUBLE_TAP_MS = 700;
 
-export function useProfileTap(): (userId: number | null | undefined) => void {
+/**
+ * `ring: true` is a statement about the *picture on screen*, not about the
+ * screen: call it from an avatar that is drawn with `momentRing` right now.
+ * Everything else keeps the default and opens the Space, which is why a chat
+ * header, a name in a notification or a row in Search can no longer fall into
+ * somebody's Moment by accident.
+ */
+export function useProfileTap(options: { ring?: boolean } = {}): (userId: number | null | undefined) => void {
+  const surface = options.ring ? 'ring' : 'plain';
   const navigation = useNavigation<Nav>();
   const live = useLiveMomentUsers();
   /* Your own picture is a door too. Without this, tapping your own ring asked
@@ -53,10 +61,10 @@ export function useProfileTap(): (userId: number | null | undefined) => void {
       if (lastTap.current && lastTap.current.userId === userId && now - lastTap.current.at < DOUBLE_TAP_MS) return;
       lastTap.current = { userId, at: now };
 
-      const where = profileDestination({ userId, liveMoments: live, viewingMomentOf });
+      const where = profileDestination({ userId, surface, liveMoments: live, viewingMomentOf });
       if (where === 'moment') navigation.navigate('MomentViewer', momentViewerParams(userId, meId));
       else navigation.navigate('UserProfile', { id: userId });
     },
-    [navigation, live, viewingMomentOf, meId],
+    [navigation, live, viewingMomentOf, meId, surface],
   );
 }

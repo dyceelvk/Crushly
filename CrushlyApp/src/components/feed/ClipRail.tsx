@@ -1,8 +1,9 @@
 /**
  * Top Crushes This Week — a rail of clips on Discover.
  *
- * Nine-by-sixteen, one author each, ranked by the backend (Crushes, comments
- * counting for three, the last seven days first). The rail is the reason clips
+ * Nine-by-sixteen, one author each, ranked by the backend on what the title
+ * promises: the last seven days, the most Crushes first, comments breaking a
+ * tie, and nothing at all that nobody has crushed. The rail is the reason clips
  * earned their way back into the product: a clip is the one kind of post that
  * can be a picture of itself at this size.
  *
