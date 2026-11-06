@@ -1,0 +1,3 @@
+{
+  "1.0.64": "Every request now has a deadline: 15 seconds for a question, 5 minutes for an upload, and then it says the connection failed instead of spinning forever."
+}

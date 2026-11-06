@@ -25,6 +25,22 @@ jobs:
       - run: npm test
       - run: npm run build:web
 
+  release-notes:
+    name: The offered build says what it changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # 1.0.64 was offered to phones under the previous release's sentence: the
+      # APK changed, the note under it did not, because release.json carried
+      # that field forward and nobody compared it to the version being built.
+      # The lookup is by version, so a forgotten entry fails here in seconds
+      # instead of after a 40-minute APK build that cannot be announced.
+      - run: python3 .github/scripts/test_update_notes.py
+      - run: python3 .github/scripts/update_notes.py --check
+
   media-worker:
     name: Media Worker bundles & config is valid
     runs-on: ubuntu-latest

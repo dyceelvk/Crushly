@@ -19,6 +19,11 @@ forever, and installing it changed nothing. A code must still only rise; that
 is enforced against the previous *manifest* code, and the fix for a regression
 is to bump `android.versionCode`, not to invent a bigger number here.
 
+The note a phone reads is never inherited: it is looked up in
+`release-notes.json` by the version being announced (see `update_notes.py`),
+and an announcement without one refuses to run rather than carrying the
+previous release's sentence forward.
+
 `minVersionCode` is deliberately left alone. Raising it tells every phone below
 that number it *must* update rather than merely may, which is a decision a
 person makes, not a build.
@@ -29,6 +34,9 @@ import json
 import pathlib
 import re
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from update_notes import note_for  # noqa: E402  (sibling script, same directory)
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 APP_JSON = ROOT / 'CrushlyApp' / 'app.json'
@@ -50,7 +58,7 @@ def version_code(app: dict) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--notes', default=None, help='What the update says about itself.')
+    ap.add_argument('--notes', default=None, help='Overrides release-notes.json; rarely right.')
     ap.add_argument('--bytes', type=int, default=None, help='Exact size of the APK, so a member can check the download.')
     ap.add_argument('--sha256', default=None, help='SHA-256 of the APK, published on the download page.')
     ap.add_argument('--check', action='store_true', help='Report whether it is up to date without writing.')
@@ -59,10 +67,13 @@ def main() -> int:
     app = json.loads(APP_JSON.read_text())
     version = app['expo']['version']
     release = json.loads(RELEASE_JSON.read_text())
+    # Looked up before anything is written: a version that cannot describe
+    # itself must fail here, while nothing has been told to anyone.
+    notes = args.notes if args.notes is not None else note_for(version)
 
     if (
         version == release['version']
-        and args.notes in (None, release['notes'])
+        and notes in (None, release['notes'])
         and args.bytes in (None, release.get('bytes'))
         and args.sha256 in (None, release.get('sha256'))
     ):
@@ -90,7 +101,7 @@ def main() -> int:
         'versionCode': code,
         'minVersionCode': release['minVersionCode'],
         'file': file_name,
-        'notes': args.notes if args.notes is not None else release['notes'],
+        'notes': notes,
         'upstream': f'https://github.com/{REPO}/releases/download/android-test-{version}/{file_name}',
         # Kept when not supplied, so a release can be re-announced without
         # losing the fingerprint already published for it.
@@ -105,6 +116,7 @@ def main() -> int:
 
     RELEASE_JSON.write_text(json.dumps(release, indent=2) + '\n')
     print(f"release.json now describes {version} (versionCode {code}).")
+    print(f"it says: {notes}")
     print('changed=true')
     return 0
 
