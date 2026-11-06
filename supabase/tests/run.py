@@ -122,6 +122,10 @@ def main() -> int:
         # while audience, blocks and Circle rooms still hold.
         if not run_file(ROOT / 'crushes_is_the_feed.sql'):
             return 1
+        # Notifications are social: no Whisper rows, follows announced once and
+        # switchable, mentions land on their post, Crush still notifies.
+        if not run_file(ROOT / 'notifications_social.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

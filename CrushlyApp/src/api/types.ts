@@ -549,6 +549,13 @@ export type NotificationKind =
   | 'verification_rejected'
   | 'post_reaction'
   | 'post_comment'
+  /** Somebody named you with `@handle`. `refId` is the post it was written in. */
+  | 'post_mention'
+  /**
+   * Somebody started keeping you close. Not a connection request and not an
+   * event that needs answering: it opens their Space and nothing else.
+   */
+  | 'keep'
   /**
    * The four things a Circle can say. `refId` is the Circle's id, not a
    * request id: every one of them is answered by opening the room.

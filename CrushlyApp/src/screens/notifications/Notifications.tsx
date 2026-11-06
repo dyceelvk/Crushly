@@ -13,7 +13,6 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
-import { celebrated } from '../crushes/MutualCrush';
 import { circleNotificationText, circleRoute } from '../../lib/circleNotifications';
 import { useProfileTap } from '../../lib/useProfileTap';
 import type { ScreenProps } from '../../navigation/types';
@@ -29,6 +28,8 @@ const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphM
   verification_rejected: { name: 'shield-outline', tone: 'textSecondary' },
   post_reaction: { name: 'heart-outline', tone: 'crush' },
   post_comment: { name: 'chatbubble-outline', tone: 'textSecondary' },
+  post_mention: { name: 'at-outline', tone: 'gold' },
+  keep: { name: 'eye-outline', tone: 'gold' },
   circle_request: { name: 'person-add-outline', tone: 'gold' },
   circle_approved: { name: 'checkmark-circle', tone: 'success' },
   circle_joined: { name: 'people-circle-outline', tone: 'success' },
@@ -36,17 +37,38 @@ const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphM
   circle_invite: { name: 'mail-outline', tone: 'gold' },
 };
 
+/**
+ * What a notification says, in the words the product uses.
+ *
+ * Every line here names the person, says what they did, and stops. The three
+ * relationships are not interchangeable and must not be made to sound alike:
+ * a profile is an **Add up** (a request a person answers), following is
+ * **Keeping close** (nobody's permission needed), and a post is a **Crush**
+ * (engagement, undone by tapping again). Writing "added up with you" for a
+ * Crush, or "following you" for an Add up, is how the three became one feature
+ * wearing three names.
+ */
 export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { actor: { name: string } | null }): { title: string; detail?: string } {
   const name = n.actor?.name ?? 'Someone';
   switch (n.kind) {
     case 'crush':
-      return { title: `${name} added up with you.` };
+      return { title: `${name} added you up.`, detail: 'Accept or decline it in Crushes.' };
     case 'deep_crush':
-      return { title: `${name} sent you a Big Up.`, detail: n.body ? `“${n.body}”` : undefined };
+      return { title: `${name} added you up and sent a note.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'mutual':
-      return { title: `You and ${name} both added up.`, detail: 'Say hello while it’s fresh.' };
+      return { title: `${name} accepted your Add Up request.` };
+    case 'keep':
+      return { title: `${name} started keeping you close.` };
+    case 'post_reaction':
+      return { title: `${name} crushed on your post.`, detail: 'See what’s happening there.' };
+    case 'post_comment':
+      return { title: `${name} commented on your post.`, detail: n.body ? `“${n.body}”` : undefined };
+    case 'post_mention':
+      return { title: `${name} mentioned you in a post.`, detail: n.body ? `“${n.body}”` : undefined };
+    /* A Whisper is answered in Whisper. It has no line here on purpose: the
+       database no longer writes these rows, and an old one is not drawn. */
     case 'message':
-      return { title: `${name} sent you a Whisper.`, detail: n.body || undefined };
+      return { title: '' };
     case 'moment_reply':
       return { title: `${name} replied to your Moment.`, detail: n.body || undefined };
     case 'moment_reaction': {
@@ -75,7 +97,16 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
   const { contentWidth, gutter } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useNotifications();
   const markRead = useMarkNotificationsRead();
-  const unread = (data ?? []).filter((n) => !n.read).length;
+  /**
+   * Social activity only.
+   *
+   * The database stopped writing `message` rows (a Whisper belongs in the Whisper
+   * inbox, where it can be read and answered in one place). Rows written before
+   * that rule existed are dropped here as well, so the centre is not a museum of
+   * old conversations on any phone that installed an earlier build.
+   */
+  const items = (data ?? []).filter((n) => n.kind !== 'message');
+  const unread = items.filter((n) => !n.read).length;
 
   // Opening the center marks everything as seen after a beat (unread styling stays for this visit).
   useEffect(() => {
@@ -86,20 +117,28 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
   }, [unread > 0]);
 
   const openProfile = useProfileTap();
+  /**
+   * Where a notification goes.
+   *
+   * Each destination is the thing the notification is about, and nothing else:
+   * an Add up opens the request where it can be accepted or declined, an
+   * accepted one opens the person's Space, a follow opens the follower's Space,
+   * and a Crush, a comment or a mention opens the exact post. Taking somebody to
+   * a feed and hoping they find it is the same as not answering the tap.
+   */
   const open = (n: AppNotification) => {
     switch (n.kind) {
       case 'crush':
       case 'deep_crush':
+        // The request itself, with Accept and Decline — not a list of people.
         return navigation.navigate('CrushList', { tab: 'incoming' });
       case 'mutual':
-        // An unseen match opens the moment; one you have already been shown is
-        // just a way back to the person.
-        if (n.actor && !celebrated.has(n.actor.id)) {
-          celebrated.add(n.actor.id);
-          return navigation.navigate('MutualCrush', { userId: n.actor.id, name: n.actor.name, photo: n.actor.photo });
-        }
-        return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('CrushList', { tab: 'mutual' });
-      case 'message':
+      case 'keep':
+        return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Discover' });
+      case 'post_reaction':
+      case 'post_comment':
+      case 'post_mention':
+        return n.refId ? navigation.navigate('PostViewer', { postId: n.refId }) : navigation.navigate('Main', { screen: 'Flows' });
       case 'moment_reply':
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
       case 'moment_reaction':
@@ -123,10 +162,9 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       <View style={{ paddingTop: insets.top, paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm }}>
           <IconButton icon="chevron-back" variant="plain" label="Go back" onPress={() => navigation.goBack()} />
-          {/* The menu row that opens this is called Notifications, and it says
-              it carries "Crushes, Whispers and everything else" — so the screen
-              cannot call itself Crush Alerts, which promised only one of the
-              three. One place, one name. */}
+          {/* One place, one name. What it carries is social activity — add ups,
+              Keep Closes, Crushes, comments and mentions — and never a private
+              conversation, which lives in Whisper. */}
           <Txt variant="heading" style={{ flex: 1 }} accessibilityRole="header">
             Notifications
           </Txt>
@@ -137,7 +175,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
         <LoadingBlock label="Loading notifications" />
       ) : (
         <FlatList
-          data={data ?? []}
+          data={items}
           keyExtractor={(n) => String(n.id)}
           contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: space.xxxl, width: '100%', maxWidth: contentWidth, alignSelf: 'center', flexGrow: 1 }}
           renderItem={({ item: n }) => {
@@ -192,7 +230,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
               <EmptyState
                 icon="notifications-outline"
                 title="All quiet for now"
-                message="Add ups, add backs and Whispers will show up here."
+                message="Add ups, Keep Closes, Crushes and comments will show up here. Whispers stay in Whisper."
                 action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
               />
             )

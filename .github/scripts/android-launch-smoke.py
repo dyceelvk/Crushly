@@ -398,9 +398,17 @@ def assert_strip(seen):
         fail('the strip has no bell; notifications open from here')
     if abs(bell['y'] - magnifier['y']) > 40:
         fail('the bell is not on the strip with the magnifier')
+    # Scoped to the strip's own row. The word search used to run over the whole
+    # screen, which was safe only while the feed was empty: the first post that
+    # appears carries a "More options for <author>" control of its own, and that
+    # is a post's menu, not a way out of the drawer this check is about. A post
+    # card is allowed to have one; the chrome is not.
+    strip_row = [n for n in seen if n['on_screen'] and n['y'] // 40 == row]
     for word in ('menu', 'open menu', 'more options', 'navigation menu'):
-        if find(seen, word):
-            fail('the strip still carries a "{}" control; the drawer is gone'.format(word))
+        for n in strip_row:
+            for value in (n['desc'], n['text']):
+                if word in norm(value):
+                    fail('the strip still carries a "{}" control; the drawer is gone'.format(word))
 
     screen = SCREEN[0] or max(n['x2'] for n in seen if n['on_screen'])
     for key in ('crushes', 'connections'):
