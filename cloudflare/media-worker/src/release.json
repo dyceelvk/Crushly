@@ -1,10 +1,10 @@
 {
-  "version": "1.0.64",
-  "versionCode": 64,
+  "version": "1.0.66",
+  "versionCode": 66,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.64-Android9plus.apk",
-  "notes": "Every request now has a deadline: 15 seconds for a question, 5 minutes for an upload, and then it says the connection failed instead of spinning forever.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.64/Crushly-1.0.64-Android9plus.apk",
-  "bytes": 95224327,
-  "sha256": "c3d5c27ed2b720fabf1c4ed1ec573bb8464ad765c7db9fa197ae7d5432961a72"
+  "file": "Crushly-1.0.66-Android9plus.apk",
+  "notes": "Crushes now shows everything Crushly publishes, and Notifications only speaks about people: add ups, Keep Closes, Crushes, comments and mentions \u2014 never a private Whisper.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.66/Crushly-1.0.66-Android9plus.apk",
+  "bytes": 95224887,
+  "sha256": "cdf3c9cb39930cfc573cfd2ff460e8b0317e44923bcd675099817621a615a448"
 }
