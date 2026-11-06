@@ -1,10 +1,10 @@
 {
-  "version": "1.0.67",
-  "versionCode": 67,
+  "version": "1.0.68",
+  "versionCode": 68,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.67-Android9plus.apk",
-  "notes": "Adding up is a request now. Send one and it waits for an answer; when somebody adds up with you, accept or decline it right there \u2014 and you can take back a request you have not had an answer to.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.67/Crushly-1.0.67-Android9plus.apk",
-  "bytes": 95230331,
-  "sha256": "942c92c7a856e34341cf7bcd6d4648b290cc6bce824853e05370b3852eded356"
+  "file": "Crushly-1.0.68-Android9plus.apk",
+  "notes": "Whisper is live. Messages arrive as they are sent, you can see when someone is typing or recording a voice note, and every Whisper you send now tells you whether it was sent, delivered or read.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.68/Crushly-1.0.68-Android9plus.apk",
+  "bytes": 95243799,
+  "sha256": "f070932b4e2a5201827a31c1fe01fbc4979c97b32e231d03d7fb73e992569c7a"
 }
