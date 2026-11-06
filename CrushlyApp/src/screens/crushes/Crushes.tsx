@@ -13,9 +13,9 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useCrushes, useMarkNotificationsRead, useOpenConversation, usePass } from '../../api/hooks';
+import { useAcceptAddUp, useCancelAddUp, useCrushes, useDeclineAddUp, useMarkNotificationsRead, useOpenConversation, usePass } from '../../api/hooks';
 import type { Profile } from '../../api/types';
-import { useCrushFlow } from '../discover/Discover';
+import { celebrated } from './MutualCrush';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
@@ -41,8 +41,10 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
   const { contentWidth, gutter, columns } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useCrushes();
   const [tab, setTab] = useState<Tab>(initial ?? route.params?.tab ?? 'incoming');
-  const { run: crushOn, pendingId } = useCrushFlow();
   const pass = usePass();
+  const accept = useAcceptAddUp();
+  const decline = useDeclineAddUp();
+  const cancel = useCancelAddUp();
   const open = useOpenConversation();
   const markRead = useMarkNotificationsRead();
 
@@ -82,10 +84,35 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
               </Txt>
             </View>
           ) : null}
+          {/* A request is answered, not "added back to". Accept and decline are
+              the two answers; declining also passes on them, so the same person
+              does not come round again in Discover the next evening. */}
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <IconButton icon="close" label={`Pass on ${p.name}`} size={40} onPress={() => pass.mutate(p.id, { onSuccess: () => refetch() })} color={colors.textSecondary} />
+            <IconButton
+              icon="close"
+              label={`Decline ${p.name}’s request`}
+              size={40}
+              onPress={() => decline.mutate(p.id, { onSuccess: () => pass.mutate(p.id, { onSuccess: () => refetch() }) })}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Button title="Add back" size="sm" variant="crush" loading={pendingId === p.id} onPress={() => crushOn(p)} />
+              <Button
+                title="Accept"
+                size="sm"
+                variant="crush"
+                loading={accept.isPending && accept.variables === p.id}
+                onPress={() =>
+                  accept.mutate(p.id, {
+                    onSuccess: (r) => {
+                      if (r.connected) {
+                        celebrated.add(p.id);
+                        navigation.navigate('MutualCrush', { userId: p.id, name: p.name, photo: p.photos[0]?.url });
+                      }
+                    },
+                    onError: (e) => toast({ kind: 'error', title: 'Request not accepted', message: (e as Error).message }),
+                  })
+                }
+              />
             </View>
           </View>
         </View>
@@ -98,12 +125,29 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
         </View>
       );
     }
-    return null;
+    /* Outgoing: the only thing left to do with a question you asked is to take
+       it back. */
+    return (
+      <View style={{ marginTop: 8 }}>
+        <Button
+          title="Cancel request"
+          size="sm"
+          variant="secondary"
+          loading={cancel.isPending && cancel.variables === p.id}
+          onPress={() =>
+            cancel.mutate(p.id, {
+              onSuccess: () => toast({ kind: 'info', title: 'Request cancelled', message: `${p.name} won’t see it anymore.` }),
+              onError: (e) => toast({ kind: 'error', title: 'Couldn’t cancel', message: (e as Error).message }),
+            })
+          }
+        />
+      </View>
+    );
   };
 
   const caption = (p: Profile) => {
     if (tab === 'incoming') return p.crush.receivedDeep ? `Big Up · ${p.at ? timeAgoLong(p.at) : ''}` : `Added up with you · ${p.at ? timeAgoLong(p.at) : ''}`;
-    if (tab === 'outgoing') return p.at ? `You added up · ${timeAgoLong(p.at)}` : 'You added up';
+    if (tab === 'outgoing') return p.at ? `Waiting on them · ${timeAgoLong(p.at)}` : 'Waiting on them';
     return p.at ? `Both added up · ${timeAgoLong(p.at)}` : 'Both added up';
   };
 

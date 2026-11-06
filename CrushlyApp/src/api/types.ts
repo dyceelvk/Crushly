@@ -15,12 +15,28 @@ export type Lifestyle = Partial<{
   zodiac: string;
 }>;
 
+/**
+ * Add Up, read from your side of the pair.
+ *
+ * `sent` and `received` mean *a request is waiting* — not "somebody once felt
+ * something". An accepted request is a connection (`mutual`); a declined one is
+ * neither, and `sentStatus` carries that so a screen can say what happened
+ * instead of pretending the question is still open.
+ */
+export type AddUpStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | null;
+
 export type CrushState = {
+  /** A request from me is waiting for them. */
   sent: boolean;
+  sentStatus: AddUpStatus;
   sentDeep: boolean;
+  /** A request from them is waiting for me — Accept / Decline go here. */
   received: boolean;
+  receivedStatus: AddUpStatus;
   receivedDeep: boolean;
   note: string | null;
+  /** When my request was answered, if it has been. */
+  respondedAt: number | null;
   mutual: boolean;
 };
 
@@ -478,7 +494,16 @@ export type Me = {
 
 export type DiscoverPage = { items: Profile[]; nextOffset: number | null; total: number; viewerHasLocation: boolean };
 
-export type CrushesResponse = { incoming: Profile[]; outgoing: Profile[]; mutual: Profile[] };
+export type CrushesResponse = {
+  /** Requests waiting for an answer from me. */
+  incoming: Profile[];
+  /** Requests of mine waiting for an answer. */
+  outgoing: Profile[];
+  /** Connections. */
+  mutual: Profile[];
+  /** How many requests are waiting for me, for the badge. */
+  requestCount: number;
+};
 
 export type Peer = { id: number; name: string; verified: boolean; photo: string | null; online: boolean | null };
 
@@ -586,7 +611,13 @@ export type Badges = {
 
 export type BlockedMember = { id: number; name: string; photo: string | null; blockedAt: number };
 
-export type CrushResult = { mutual: boolean; isNew: boolean; profile: Profile | null };
+export type CrushResult = {
+  mutual: boolean;
+  isNew: boolean;
+  /** What the pair is now: a request waiting, an answer, or an existing connection. */
+  request: 'pending' | 'accepted' | 'connected';
+  profile: Profile | null;
+};
 
 /* ----------------------------------------------------------------- search */
 

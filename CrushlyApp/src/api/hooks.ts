@@ -943,11 +943,49 @@ export function useCrush() {
       service.crush(id, { deep, note }),
     onSuccess: (_res, { id }) => {
       removeFromDiscover(qc, id);
-      qc.invalidateQueries({ queryKey: keys.crushes });
-      qc.invalidateQueries({ queryKey: keys.user(id) });
-      qc.invalidateQueries({ queryKey: keys.me });
-      qc.invalidateQueries({ queryKey: keys.badges });
+      addUpChanged(qc, id);
     },
+  });
+}
+
+/**
+ * Answering a request.
+ *
+ * Accept, decline and cancel all change the same three things — the pair, the
+ * person's Space, and the Crushes lists — so they invalidate them the same way.
+ * A request answered in one place must not still be a request in another.
+ */
+function addUpChanged(qc: QueryClient, id: number) {
+  void qc.invalidateQueries({ queryKey: keys.crushes });
+  void qc.invalidateQueries({ queryKey: keys.user(id) });
+  void qc.invalidateQueries({ queryKey: keys.discover });
+  void qc.invalidateQueries({ queryKey: keys.me });
+  void qc.invalidateQueries({ queryKey: keys.badges });
+  void qc.invalidateQueries({ queryKey: keys.conversations });
+  postsChanged(qc);
+}
+
+export function useAcceptAddUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => service.acceptAddUp(id),
+    onSuccess: (_r, id) => addUpChanged(qc, id),
+  });
+}
+
+export function useDeclineAddUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => service.declineAddUp(id),
+    onSuccess: (_r, id) => addUpChanged(qc, id),
+  });
+}
+
+export function useCancelAddUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => service.cancelAddUp(id),
+    onSuccess: (_r, id) => addUpChanged(qc, id),
   });
 }
 

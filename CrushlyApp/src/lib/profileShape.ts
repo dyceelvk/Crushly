@@ -42,14 +42,27 @@ const photos = (v: unknown): Photo[] =>
         .filter((p) => !!p.url)
     : [];
 
+/* A status is one of five known strings or it is nothing. Anything else — a
+   newer server's sixth value, a typo — becomes "no answer", which every screen
+   already knows how to draw. */
+const ADD_UP_STATUSES = ['pending', 'accepted', 'declined', 'cancelled'] as const;
+
+const addUpStatus = (v: unknown): CrushState['sentStatus'] =>
+  typeof v === 'string' && (ADD_UP_STATUSES as readonly string[]).includes(v)
+    ? (v as NonNullable<CrushState['sentStatus']>)
+    : null;
+
 const crushState = (v: unknown): CrushState => {
   const c = isObject(v) ? v : {};
   return {
     sent: bool(c.sent),
+    sentStatus: addUpStatus(c.sentStatus),
     sentDeep: bool(c.sentDeep),
     received: bool(c.received),
+    receivedStatus: addUpStatus(c.receivedStatus),
     receivedDeep: bool(c.receivedDeep),
     note: nilableStr(c.note),
+    respondedAt: nilableNum(c.respondedAt),
     mutual: bool(c.mutual),
   };
 };

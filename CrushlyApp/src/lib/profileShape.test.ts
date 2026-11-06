@@ -49,6 +49,18 @@ test('the crush state is a full object even when the payload has none', () => {
   const c = profileShape({ id: 5 }).crush;
   assert.deepEqual(c, { sent: false, sentDeep: false, received: false, receivedDeep: false, note: null, mutual: false });
   assert.deepEqual(profileShape({ id: 5, crush: { mutual: true } }).crush.mutual, true);
+
+  /* Add Up statuses survive the boundary when they are real, and become "no
+     answer" when they are not — a screen must never have to guess what a sixth
+     status would mean. */
+  const asked = profileShape({ id: 6, crush: { sent: true, sentStatus: 'pending', receivedStatus: 'declined', respondedAt: 1730 } });
+  assert.equal(asked.crush.sentStatus, 'pending');
+  assert.equal(asked.crush.receivedStatus, 'declined');
+  assert.equal(asked.crush.respondedAt, 1730);
+  const odd = profileShape({ id: 7, crush: { sentStatus: 'maybe', receivedStatus: 3, respondedAt: 'soon' } });
+  assert.equal(odd.crush.sentStatus, null);
+  assert.equal(odd.crush.receivedStatus, null);
+  assert.equal(odd.crush.respondedAt, null);
 });
 
 test('a lifestyle with one bad value keeps the good ones', () => {

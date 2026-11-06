@@ -1,5 +1,6 @@
 {
   "1.0.64": "Every request now has a deadline: 15 seconds for a question, 5 minutes for an upload, and then it says the connection failed instead of spinning forever.",
   "1.0.65": "Crushes now shows what Crushly is posting, not just the people you have added up with \u2014 and a new post reaches the feed without a restart.",
-  "1.0.66": "Crushes now shows everything Crushly publishes, and Notifications only speaks about people: add ups, Keep Closes, Crushes, comments and mentions \u2014 never a private Whisper."
+  "1.0.66": "Crushes now shows everything Crushly publishes, and Notifications only speaks about people: add ups, Keep Closes, Crushes, comments and mentions \u2014 never a private Whisper.",
+  "1.0.67": "Adding up is a request now. Send one and it waits for an answer; when somebody adds up with you, accept or decline it right there \u2014 and you can take back a request you have not had an answer to."
 }

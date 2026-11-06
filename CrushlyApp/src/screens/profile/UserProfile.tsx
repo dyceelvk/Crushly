@@ -19,11 +19,12 @@ import { Pill, VerifiedBadge } from '../../components/Badges';
 import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
+import { useAcceptAddUp, useDeclineAddUp, useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
 import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
+import { celebrated } from '../crushes/MutualCrush';
 import { joinAction, policyLabel } from '../../lib/circleAccess';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
@@ -83,7 +84,11 @@ function asFullProfile(me: Me, moments: MomentSummary[]): FullProfile {
     interests: pr.interests,
     sharedInterests: [],
     photos: pr.photos,
-    crush: { sent: false, sentDeep: false, received: false, receivedDeep: false, note: null, mutual: false },
+    crush: {
+      sent: false, sentStatus: null, sentDeep: false,
+      received: false, receivedStatus: null, receivedDeep: false,
+      note: null, respondedAt: null, mutual: false,
+    },
     canMessage: false,
     acceptsCrushes: true,
     languages: pr.languages,
@@ -161,6 +166,8 @@ export function SpaceScreen({
   const moments = useMoments();
   const { run: crushOn, pendingId } = useCrushFlow();
   const undo = useUndoCrush();
+  const accept = useAcceptAddUp();
+  const decline = useDeclineAddUp();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
   const keep = useKeepState(id, !mine);
@@ -257,11 +264,29 @@ export function SpaceScreen({
     }
   };
 
+  /*
+   * One control, four states, and the state decides what it does.
+   *
+   * Add up → a request goes out. Request sent → the same control withdraws it,
+   * because a question you asked is a question you may take back. Accept →
+   * their request becomes a connection, which is worth the celebration screen.
+   * Connected → the control hands over to Whisper.
+   */
   const onCrush = () => {
     if (p.crush.mutual) return message();
+    if (p.crush.received) {
+      accept.mutate(p.id, {
+        onSuccess: (r) => {
+          if (r.connected) celebrated.add(p.id);
+          navigation.navigate('MutualCrush', { userId: p.id, name: p.name, photo: p.photos[0]?.url });
+        },
+        onError: (e) => toast({ kind: 'error', title: 'Request not accepted', message: (e as Error).message }),
+      });
+      return;
+    }
     if (p.crush.sent) {
       undo.mutate(p.id, {
-        onSuccess: () => toast({ kind: 'info', title: 'Crush withdrawn', message: `${p.name} won’t see it anymore.` }),
+        onSuccess: () => toast({ kind: 'info', title: 'Request withdrawn', message: `${p.name} won’t see it anymore.` }),
         onError: (e) => toast({ kind: 'error', title: 'Couldn’t withdraw', message: (e as Error).message }),
       });
       return;
@@ -272,6 +297,25 @@ export function SpaceScreen({
     }
     crushOn(p);
   };
+
+  /* A decline is deliberately quiet: it changes two lists and tells nobody. */
+  const onDecline = () => {
+    decline.mutate(p.id, {
+      onSuccess: () => toast({ kind: 'info', title: 'Request declined', message: `${p.name} won’t be told.` }),
+      onError: (e) => toast({ kind: 'error', title: 'Couldn’t decline', message: (e as Error).message }),
+    });
+  };
+
+  /* What the one control is, right now. Kept in one place so the bar and the
+     pill in the hero can never disagree about the same pair. */
+  const addUp: { label: string; done: boolean } = p.crush.mutual
+    ? { label: 'Connected', done: true }
+    : p.crush.received
+      ? { label: 'Accept', done: false }
+      : p.crush.sent
+        ? { label: 'Request sent', done: true }
+        : { label: 'Add up', done: false };
+  const addUpBusy = pendingId === p.id || accept.isPending || undo.isPending;
 
   const lifestyle = lifestyleFacts(p);
 
@@ -399,18 +443,25 @@ export function SpaceScreen({
                 <Pressable
                   onPress={onCrush}
                   accessibilityRole="button"
-                  accessibilityLabel={p.crush.mutual ? `Whisper ${p.name}` : p.crush.sent ? 'Withdraw your Crush' : `Crush on ${p.name}`}
+                  accessibilityLabel={
+                    p.crush.mutual ? `Whisper ${p.name}` : p.crush.received ? `Accept ${p.name}’s Add Up request`
+                      : p.crush.sent ? 'Withdraw your Add Up request' : `Add up with ${p.name}`
+                  }
                   hitSlop={8}
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 5,
                     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-                    backgroundColor: p.crush.sent ? colors.crushSoft : colors.card,
-                    borderWidth: 1, borderColor: p.crush.sent ? colors.crushLine : colors.border,
+                    backgroundColor: addUp.done ? colors.crushSoft : colors.card,
+                    borderWidth: 1, borderColor: addUp.done ? colors.crushLine : colors.border,
                   }}
                 >
-                  <Ionicons name={p.crush.mutual ? 'chatbubble-ellipses' : p.crush.sent ? 'heart' : 'heart-outline'} size={12} color={colors.crush} />
-                  <Txt variant="caption" color={p.crush.sent ? 'crush' : 'textSecondary'}>
-                    {p.crush.mutual ? 'Whisper' : p.crush.sent ? 'Crushed' : 'Crush'}
+                  <Ionicons
+                    name={p.crush.mutual ? 'chatbubble-ellipses' : p.crush.received ? 'person-add' : addUp.done ? 'checkmark' : 'person-add-outline'}
+                    size={12}
+                    color={colors.crush}
+                  />
+                  <Txt variant="caption" color={addUp.done ? 'crush' : 'textSecondary'}>
+                    {p.crush.mutual ? 'Whisper' : addUp.label}
                   </Txt>
                 </Pressable>
                 </>
@@ -633,10 +684,21 @@ export function SpaceScreen({
             {p.crush.mutual ? (
               <CrushButton onPress={message} label="Whisper" crushed name={p.name} size={54} />
             ) : (
-              <CrushButton onPress={onCrush} crushed={p.crush.sent} loading={pendingId === p.id} name={p.name} size={54} label={p.crush.sent ? 'Added up' : p.crush.received ? 'Add back' : 'Add up'} />
+              <CrushButton onPress={onCrush} crushed={addUp.done} loading={addUpBusy} name={p.name} size={54} label={addUp.label} />
             )}
           </View>
-          {!p.crush.mutual ? (
+          {/* While their request is waiting, the second slot is the answer to it:
+              accepting is the one thing this Space can do that the first button
+              alone would not let you refuse. */}
+          {p.crush.received && !p.crush.mutual ? (
+            <IconButton
+              icon="close-outline"
+              label={`Decline ${p.name}’s Add Up request`}
+              size={54}
+              onPress={onDecline}
+              color={colors.textMuted}
+            />
+          ) : !p.crush.mutual ? (
             <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs them to add back`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
           ) : null}
           <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />

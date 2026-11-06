@@ -1101,6 +1101,32 @@ export async function crush(id: number, opts: { deep?: boolean; note?: string } 
   });
 }
 
+/**
+ * Add Up: ask to connect.
+ *
+ * The verb is old and the mechanism is new — the database turns this into a
+ * request a person answers, and answers one from the other side if it is already
+ * waiting. `request` says which of those happened.
+ */
+export async function addUp(id: number, opts: { deep?: boolean; note?: string } = {}): Promise<CrushResult> {
+  return crush(id, opts);
+}
+
+/** Accept the request they sent you: the pair becomes a connection. */
+export async function acceptAddUp(id: number): Promise<{ connected: boolean; profile: Profile | null }> {
+  return rpc('accept_connection_request', { p_from_id: id });
+}
+
+/** Decline it. Nothing is sent back — a refusal is not news. */
+export async function declineAddUp(id: number): Promise<{ declined: boolean }> {
+  return rpc('decline_connection_request', { p_from_id: id });
+}
+
+/** Withdraw a request of mine that has not been answered. */
+export async function cancelAddUp(id: number): Promise<{ cancelled: boolean }> {
+  return rpc('cancel_connection_request', { p_to_id: id });
+}
+
 export async function uncrush(id: number): Promise<void> {
   await rpc('uncrush_member', { p_target_id: id });
 }
