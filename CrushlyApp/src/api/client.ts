@@ -14,6 +14,7 @@ import {
 import type { MediaKind } from '../lib/mediaHost';
 import { storage } from '../lib/storage';
 import { isMissingFunctionResponse } from '../lib/errors';
+import { fetchWithDeadline } from '../lib/requestClock';
 
 /**
  * Supabase client and shared transport helpers.
@@ -65,6 +66,10 @@ export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABAS
     // code-verifier to find in that browser's storage).
     flowType: 'implicit',
   },
+  /* One deadline for every request the app makes: RPCs and auth get 15 seconds,
+     uploads get five minutes. Wired here rather than in each service function so
+     nothing can be added later that quietly forgets it. */
+  global: { fetch: fetchWithDeadline((input, init) => fetch(input as RequestInfo, init)) },
 });
 
 export class ApiError extends Error {
@@ -109,6 +114,12 @@ export function requireConfig(): void {
 export function toApiError(err: unknown): ApiError {
   const e = err as { message?: string; code?: string | number; status?: number };
   const message = String(e?.message ?? 'Something went wrong. Please try again.');
+  /**
+   * A request that ran out of time is a network problem, not a server error:
+   * status 0 is what every screen already treats as "try again", and it keeps
+   * the sentence `lib/requestClock` wrote instead of replacing it with a 500.
+   */
+  if (e?.code === 'REQUEST_TIMEOUT') return new ApiError(0, message, 'REQUEST_TIMEOUT');
   const m = /^__CRUSHLY__(\d+?)__([a-z0-9_]*?)__([\s\S]*)$/.exec(message);
   if (m) return new ApiError(Number(m[1]), m[3] || message, m[2] || undefined);
   if (/invalid path specified/i.test(message)) {
