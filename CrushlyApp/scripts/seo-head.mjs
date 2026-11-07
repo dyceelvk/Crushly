@@ -30,6 +30,18 @@ const VERIFY = String(
   process.env.GOOGLE_SITE_VERIFICATION ?? 'YeeCgU2SU9k12xZv_iPTCFhwBmskf_9z3auJ4TQnTAw',
 ).trim();
 
+// Google can render the app's JavaScript, but it is slower and more expensive
+// for it to do so. Giving it the same words in plain HTML costs nothing and is
+// the honest version of the page: what Crushly is, and why there is nothing to
+// see without JavaScript.
+const NOSCRIPT = `<noscript>
+      <div style="max-width:540px;margin:56px auto;padding:0 24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#17120E;color:#B5A38C;">
+        <h1 style="font-size:24px;line-height:1.35;color:#F3DDA6;margin:0 0 14px;">Crushly &mdash; where crushes become conversations</h1>
+        <p style="font-size:15px;line-height:1.8;margin:0 0 12px;">Crushly is a social app for the moment before you speak. Post a Moment that disappears in 24 hours, join a Space around something you actually care about, and find out who was already curious about you.</p>
+        <p style="font-size:15px;line-height:1.8;margin:0;">Free on Android and in the browser. This page needs JavaScript enabled &mdash; the app itself runs once it loads.</p>
+      </div>
+    </noscript>`;
+
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const indexFile = `${dist}index.html`;
 
@@ -86,9 +98,10 @@ const tags = [
   .join('\n');
 
 const withTitle = html.replace(/<title>[^<]*<\/title>/, `<title>${TITLE}</title>`);
-const patched = withTitle.replace(/<\/head>/i, `${tags}\n  </head>`);
+const withNoscript = withTitle.replace(/<noscript>[\s\S]*?<\/noscript>/i, NOSCRIPT);
+const patched = withNoscript.replace(/<\/head>/i, `${tags}\n  </head>`);
 
-if (patched === withTitle) {
+if (patched === withNoscript) {
   console.error('seo-head: found no </head> to inject into — refusing to ship an unlabelled page.');
   process.exit(1);
 }
