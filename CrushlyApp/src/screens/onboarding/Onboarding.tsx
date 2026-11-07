@@ -506,7 +506,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
       await updatePrivacy.mutateAsync({ showOnline, discoverable });
       await completeOnboarding();
       await refresh(); // flips the navigator to the main app
-      toast({ kind: 'success', title: 'Welcome to Crushly', message: 'Your Space is live. Find someone worth knowing.' });
+      toast({ kind: 'success', title: 'You’re on Crushly', message: 'Your space is ready. Start with a feeling.' });
     } catch (e) {
       setFinishing(false);
       toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
-import { CrushlyMark } from '../../components/Logo';
+import { Logo } from '../../components/Logo';
 import { Glow, LightSweep } from '../../components/Ambient';
 import { useTheme } from '../../theme/ThemeProvider';
 import { palettes, fonts } from '../../theme/tokens';
@@ -34,24 +34,19 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
   }, [fade, lift, tagline, reduceMotion]);
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Follow the feeling.">
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Follow the feelings.">
       <Glow size={460} color={c.primary} opacity={0.8} style={{ position: 'absolute' }} />
       <Glow size={380} color={c.crush} opacity={0.5} style={{ position: 'absolute', top: -140, right: -120 }} />
       <LightSweep duration={1300} />
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
-        <CrushlyMark size={92} />
-        {fontsReady ? (
-          <Animated.Text style={{ fontFamily: fonts.display, fontSize: 40, color: c.text, marginTop: 18, letterSpacing: -0.4 }}>Crushly</Animated.Text>
-        ) : (
-          <View style={{ height: 66 }} />
-        )}
+        <Logo size={78} />
         <Animated.Text
           style={{
             fontFamily: fontsReady ? fonts.medium : undefined, fontSize: 15, color: c.textSecondary, marginTop: 8, letterSpacing: 0.4,
             opacity: tagline,
           }}
         >
-          Follow the feeling.
+          Follow the feelings.
         </Animated.Text>
       </Animated.View>
     </View>

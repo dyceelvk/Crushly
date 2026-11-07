@@ -51,7 +51,7 @@ test.afterEach(async () => {
 
 async function signUpViaApp(page: Page, email: string, password: string) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Get Started', exact: true }).click();
+  await page.getByRole('button', { name: 'Start with a feeling', exact: true }).click();
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('checkbox', { name: /18 or older/ }).check();
@@ -109,7 +109,7 @@ test('password reset: verify with the emailed code', async ({ page }) => {
   created.push(data.user.id);
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'I already have an account', exact: true }).click();
+  await page.getByRole('button', { name: 'I’m already on Crushly', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
   await page.getByRole('link', { name: /Forgot password/ }).click();
   await page.getByLabel('Email', { exact: true }).fill(email);
