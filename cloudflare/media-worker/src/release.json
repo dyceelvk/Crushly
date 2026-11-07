@@ -1,10 +1,10 @@
 {
-  "version": "1.0.77",
-  "versionCode": 77,
+  "version": "1.0.78",
+  "versionCode": 78,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.77-Android9plus.apk",
-  "notes": "Every sheet now has a close button in the corner, so the Create Circle sheet \u2014 and every other one \u2014 can be put away with one tap instead of a swipe or the back key.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.77/Crushly-1.0.77-Android9plus.apk",
-  "bytes": 95010939,
-  "sha256": "0ed385d494e849b9106b5ee209a6eb295b706d76cebf02621c4d95b26139d04b"
+  "file": "Crushly-1.0.78-Android9plus.apk",
+  "notes": "Typing your password no longer sends you to the reset screen by accident, and a Space opens with its cover as a band across the top \u2014 picture, name, Add up and all four tabs on one screen instead of a photograph and nothing else.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.78/Crushly-1.0.78-Android9plus.apk",
+  "bytes": 95010911,
+  "sha256": "604b40d8d3820b51987e663977c5b6dc9d12e621305f331e5720775276d86302"
 }
