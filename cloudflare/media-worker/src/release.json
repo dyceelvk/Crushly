@@ -1,10 +1,10 @@
 {
-  "version": "1.0.74",
-  "versionCode": 74,
+  "version": "1.0.75",
+  "versionCode": 75,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.74-Android9plus.apk",
-  "notes": "Clips play again in the Crushes feed and the Flow viewer \u2014 the file was being asked for without the key that unlocks it \u2014 and a new build now installs from inside the app instead of sending you back to the browser for 95 MB.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.74/Crushly-1.0.74-Android9plus.apk",
-  "bytes": 95003971,
-  "sha256": "50dfc98a44fe1fee3d9595b1f07c21bff56fc06d21c1ded511aec213d369bb1b"
+  "file": "Crushly-1.0.75-Android9plus.apk",
+  "notes": "A clip is the card in Crushes now \u2014 the picture fills it, the person and their words sit on it, and only Crush and comment cover the frame \u2014 and in the Flow viewer the rail and the caption sit lower, so the video has the middle of the screen to itself.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.75/Crushly-1.0.75-Android9plus.apk",
+  "bytes": 95011311,
+  "sha256": "5dcc652dc6b9a7febaa122fe021934cbd3feaf7c2b1360d5b8a4dab2b7019374"
 }
