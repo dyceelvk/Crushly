@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
 import type { SendDraft } from './service';
@@ -147,7 +147,11 @@ export const useAppUpdate = (currentVersionCode: number) =>
   useQuery({
     queryKey: keys.update,
     queryFn: () => service.appUpdate(),
-    enabled: Platform.OS === 'android',
+    /* Asked from every build, not just Android. The web build needs it for the
+       same reason the phone did — to know which APK is the current one and to
+       hand a member the file — and the answer is a version number and a link,
+       nothing that only a phone can use. */
+    enabled: true,
     staleTime: 6 * 60 * 60 * 1000,
     retry: 1,
     select: (u) => ({

@@ -24,6 +24,19 @@ test('a hashtag is a tag', () => {
   assert.deepEqual(matches.map((m) => [m.kind, m.value]), [['tag', 'lagos'], ['tag', 'slowmornings']]);
 });
 
+test('a handle may carry a dot, and the dot is not the sentence ending', () => {
+  // This is the shape that made a tag look broken: the suggestion list offered
+  // `ada.ng`, the post stored `@ada.ng`, and a matcher that stopped at the dot
+  // handed the profile lookup `ada` — a handle nobody has.
+  const { matches } = tokenize('thanks @ada.ng for this');
+  assert.deepEqual(matches.map((m) => [m.kind, m.value]), [['mention', 'ada.ng']]);
+});
+
+test('a full stop after a handle belongs to the sentence', () => {
+  const { matches } = tokenize('ask @ada.');
+  assert.deepEqual(matches.map((m) => [m.kind, m.value]), [['mention', 'ada']]);
+});
+
 test('an email address is not a mention', () => {
   const { matches } = tokenize('write to ada@crushly.app');
   assert.equal(matches.filter((m) => m.kind === 'mention').length, 0);

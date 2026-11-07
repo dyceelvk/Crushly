@@ -15,8 +15,14 @@ const URL_RE = /https?:\/\/[^\s<>"']+/gi;
  * Both are only ever a mention or a tag when they start a word: `mail@host` is
  * an address, not a person, and `C#5` is a note. The look-behind keeps the
  * matcher honest without needing to parse the sentence around it.
+ *
+ * A handle may carry a dot — `@ada.ng` is one member, not `@ada` followed by a
+ * full stop — so the middle of the matcher accepts one while the last character
+ * may not be one. That single character was the whole bug behind a tag that
+ * "did nothing" after posting: the suggestion list offered `ada.ng`, the post
+ * stored `@ada.ng`, and this matcher handed the lookup the handle `ada`.
  */
-const MENTION_RE = /(?<![\w@/])@([A-Za-z0-9_]{2,30})\b/g;
+const MENTION_RE = /(?<![\w@/])@([A-Za-z0-9_][A-Za-z0-9_.]{0,28}[A-Za-z0-9_])/g;
 const TAG_RE = /(?<![\w#/])#([A-Za-z0-9_]{2,40})\b/g;
 
 /** Only two schemes are ever allowed through: a page that isn't http(s) isn't a page. */

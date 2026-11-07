@@ -1435,17 +1435,36 @@ export async function searchAll(query: string): Promise<SearchResults> {
  * `@Ada` and `@ada` are the same person, which is what everyone expects.
  */
 export async function profileIdByUsername(username: string): Promise<number | null> {
-  const handle = String(username ?? '').replace(/^@/, '').trim().toLowerCase();
+  // Trailing punctuation is the sentence's, not the handle's: "ask @ada." is a
+  // mention of ada.
+  const handle = String(username ?? '')
+    .replace(/^@+/, '')
+    .trim()
+    .replace(/[.,;:!?]+$/, '')
+    .toLowerCase();
   if (!handle) return null;
   requireConfig();
-  const { data, error } = await supabase
+  const byHandle = await supabase
     .from('profiles')
     .select('id')
     .ilike('username', handle)
     .limit(1)
     .maybeSingle();
-  if (error) throw toApiError(error);
-  return data?.id ?? null;
+  if (byHandle.error) throw toApiError(byHandle.error);
+  if (byHandle.data?.id != null) return byHandle.data.id;
+
+  // The suggestion list and the handle have to agree, and when they do not the
+  // member is still right: they were shown a person, they tagged that person.
+  // So a name that matches exactly is honoured too — that is how a tag written
+  // before somebody changed their handle keeps working.
+  const byName = await supabase
+    .from('profiles')
+    .select('id')
+    .ilike('name', handle)
+    .limit(1)
+    .maybeSingle();
+  if (byName.error) return null;
+  return byName.data?.id ?? null;
 }
 
 /** Posts people chose to share with Everyone — the public side of Flows. */

@@ -36,6 +36,7 @@ import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { VIDEO_ENABLED } from '../../lib/features';
 import { fonts, radius, space } from '../../theme/tokens';
+import { DownloadAppButton } from '../../components/DownloadAppButton';
 import type { ScreenProps } from '../../navigation/types';
 
 type MediaItem = {
@@ -385,6 +386,11 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         <Txt variant="title" style={{ flex: 1 }} accessibilityRole="header">
           {kind === 'moment' ? 'New Moment' : 'New Crush'}
         </Txt>
+        {/* On the web, the editor is where somebody is most obviously writing a
+            Crush in a browser — so it is also where they are offered the app
+            they could be writing it in. Hidden on Android, where it is already
+            installed. */}
+        <DownloadAppButton />
         {/* Back to the question. Changing your mind about what this is should
             cost one tap, not a discarded draft. */}
         <Button

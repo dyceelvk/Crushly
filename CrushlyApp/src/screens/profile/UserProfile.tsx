@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -430,6 +430,8 @@ export function SpaceScreen({
           {/* The name, and the two things you can do about this person —
               one of them a chip, not a card. */}
           <View style={{ marginTop: space.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
                   {p.name}
@@ -437,7 +439,57 @@ export function SpaceScreen({
                 </Txt>
                 <VerifiedBadge size={18} tier={p.badgeTier ?? (p.verified ? 'verified' : 'none')} />
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+
+              </View>
+              {/* The action a visitor came for, in the product's own colour and
+                  on the right, where a follow lives on every app anybody has
+                  used — a rectangle, not a chip hidden under a name. It used to
+                  be a small chip in the row below, which read as a label rather
+                  than a button. */}
+              {mine ? null : (
+                <Pressable
+                  onPress={p.crush.mutual ? message : onCrush}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    p.crush.mutual ? `Whisper ${p.name}` : p.crush.received ? `Accept ${p.name}’s Add Up request`
+                      : p.crush.sent ? 'Withdraw your Add Up request' : `Add up with ${p.name}`
+                  }
+                  disabled={addUpBusy}
+                  hitSlop={6}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    paddingHorizontal: 16, paddingVertical: 10,
+                    borderRadius: radius.sm,
+                    backgroundColor: addUp.done ? colors.elevated : colors.primary,
+                    borderWidth: 1,
+                    borderColor: addUp.done ? colors.border : colors.primaryDeep,
+                    opacity: addUpBusy ? 0.6 : 1,
+                  }}
+                >
+                  {addUpBusy ? (
+                    <ActivityIndicator size="small" color={addUp.done ? colors.text : '#FFFFFF'} />
+                  ) : (
+                    <Ionicons
+                      name={p.crush.mutual ? 'chatbubble-ellipses' : p.crush.received ? 'person-add' : addUp.done ? 'checkmark' : 'add'}
+                      size={16}
+                      color={addUp.done ? colors.text : '#FFFFFF'}
+                    />
+                  )}
+                  <Txt variant="smallStrong" style={{ color: addUp.done ? colors.text : '#FFFFFF' }}>
+                    {p.crush.mutual ? 'Whisper' : addUp.label}
+                  </Txt>
+                </Pressable>
+              )}
+            </View>
+
+            {/* The handle, and the facts that read with it, sit under the name —
+                the chips come after, so nothing of the identity block ends up
+                below something that is only an action. */}
+            <Txt variant="small" color="textSecondary" style={{ marginTop: space.xs }}>
+              {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
+            </Txt>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.xs, flexWrap: 'wrap' }}>
                 {/* Keep Close and Crush are things one member does to another.
                     On your own Space there was a gold "Edit Space" chip here as
                     well as the pencil in the header — two doors to one room,
@@ -467,37 +519,10 @@ export function SpaceScreen({
                     {keep.data?.keeps ? 'Kept close' : 'Keep Close'}
                   </Txt>
                 </Pressable>
-                <Pressable
-                  onPress={onCrush}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    p.crush.mutual ? `Whisper ${p.name}` : p.crush.received ? `Accept ${p.name}’s Add Up request`
-                      : p.crush.sent ? 'Withdraw your Add Up request' : `Add up with ${p.name}`
-                  }
-                  hitSlop={8}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 5,
-                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-                    backgroundColor: addUp.done ? colors.crushSoft : colors.card,
-                    borderWidth: 1, borderColor: addUp.done ? colors.crushLine : colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name={p.crush.mutual ? 'chatbubble-ellipses' : p.crush.received ? 'person-add' : addUp.done ? 'checkmark' : 'person-add-outline'}
-                    size={12}
-                    color={colors.crush}
-                  />
-                  <Txt variant="caption" color={addUp.done ? 'crush' : 'textSecondary'}>
-                    {p.crush.mutual ? 'Whisper' : addUp.label}
-                  </Txt>
-                </Pressable>
                 </>
                 )}
               </View>
           </View>
-          <Txt variant="small" color="textSecondary" style={{ marginTop: space.sm }}>
-            {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
-          </Txt>
 
           {/* The state pills used to sit on the bottom of the cover, which put
               them directly behind the face — a rounded rectangle poking out at

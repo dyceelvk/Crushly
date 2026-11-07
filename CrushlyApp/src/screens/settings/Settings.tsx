@@ -40,6 +40,23 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   // Asked against our own Worker, never against GitHub: a member should never
   // be handed a link into the machinery.
   const update = useAppUpdate(versionCode);
+  const toast = useToast();
+
+  /* The file, or a plain answer about why there is no file. A download button
+     that silently does nothing is worse than no button, so the failure is said
+     out loud rather than swallowed. */
+  const downloadApk = () => {
+    const url = update.data?.apkUrl;
+    if (!url) {
+      toast({
+        kind: 'info',
+        title: 'No build published yet',
+        message: update.isFetching ? 'Still asking for the latest build. Try again in a moment.' : 'The Android build isn’t published to the update server yet.',
+      });
+      return;
+    }
+    Linking.openURL(url).catch((e: Error) => toast({ kind: 'error', title: 'Couldn’t open the download', message: e.message }));
+  };
 
   return (
     <Screen>
@@ -72,7 +89,23 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       <Group title="App">
         <ListRow title="Notification settings" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} />
-        <ListRow title="App version" value={version} icon="information-circle-outline" />
+        {/* The number, and the file that has it — one under the other, because a
+            version nobody can act on is trivia. This is the row the whole of
+            Crushly for Android is handed out from, on every platform. */}
+        <ListRow
+          title="App version"
+          subtitle={update.data?.versionCode ? `Android build ${update.data.versionCode}` : undefined}
+          value={version}
+          icon="information-circle-outline"
+        />
+        <ListRow
+          title="Download the app"
+          subtitle={update.data?.version ? `Crushly for Android · APK ${update.data.version}` : 'Crushly for Android · APK'}
+          value={update.data?.apkUrl ? 'APK' : undefined}
+          icon="download-outline"
+          iconTone="gold"
+          onPress={downloadApk}
+        />
         {update.data?.available ? (
           <ListRow
             title={update.data.required ? 'Update needed' : 'Update available'}

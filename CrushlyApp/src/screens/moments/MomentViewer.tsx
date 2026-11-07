@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View, type GestureResponderEvent } from 'react-native';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View, type GestureResponderEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,20 +47,37 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const { contentWidth } = useLayout();
   const qc = useQueryClient();
   const toast = useToast();
-  const { data } = useMoments();
+  const { data, isFetching } = useMoments();
   const reactM = useMomentReaction();
   const { run: crushOn } = useCrushFlow();
 
   // Freeze the sequence when the viewer opens so it doesn't reshuffle as Moments get marked seen.
+  //
+  // It is frozen only once it holds something. Opening this screen straight
+  // after posting used to catch the feed as it was *before* the new Moment was
+  // in it, freeze that empty answer, and then refuse every later one — so a
+  // Moment that had just gone live was shown as "This Moment has passed". An
+  // empty answer is now a provisional one: the next answer replaces it.
   const [groups, setGroups] = useState<Group[] | null>(null);
+  const signature = (list: Group[] | null) => (list ?? []).map((g) => g.moments.map((m) => m.id).join(',')).join('|');
   useEffect(() => {
-    if (groups || !data) return;
-    if (mine) setGroups(data.mine.moments.length ? [data.mine] : []);
-    else {
-      const i = data.others.findIndex((g) => g.user.id === userId);
-      setGroups(i >= 0 ? data.others.slice(i) : []);
-    }
+    if (!data) return;
+    const source: Group[] = mine
+      ? (data.mine.moments.length ? [data.mine] : [])
+      : (() => {
+          const i = data.others.findIndex((g) => g.user.id === userId);
+          return i >= 0 ? data.others.slice(i) : [];
+        })();
+    if (groups !== null && groups.some((g) => g.moments.length)) return; // frozen, and holding something
+    if (groups !== null && signature(source) === signature(groups)) return;
+    setGroups(source);
   }, [data, groups, mine, userId]);
+
+  // The last answer may predate whatever was just posted, so the viewer asks
+  // again the moment it opens rather than trusting a cached feed.
+  useEffect(() => {
+    void qc.invalidateQueries({ queryKey: keys.moments });
+  }, [qc]);
 
   const [gi, setGi] = useState(0);
   const [mi, setMi] = useState(() => 0);
@@ -266,14 +283,25 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       .join('   ');
   }, [moment]);
 
-  if (groups && !moment) {
+  /* Only a settled answer earns the verdict. While the feed is still being
+     asked, the screen holds, because "this Moment has passed" about a Moment
+     that has not finished arriving is the one thing it must never say. */
+  if (groups && !moment && !isFetching) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top, justifyContent: 'center' }}>
         <EmptyState icon="aperture-outline" title="This Moment has passed" message="Moments disappear after 24 hours." action={{ label: 'Back to Moments', onPress: close }} />
       </View>
     );
   }
-  if (!moment || !group) return <View style={{ flex: 1, backgroundColor: c.bg }} />;
+  /* Nothing to draw yet. A black screen is how a Moment that has not arrived
+     yet looks — briefly, and only while the feed is being asked. */
+  if (!moment || !group) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={c.textMuted} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

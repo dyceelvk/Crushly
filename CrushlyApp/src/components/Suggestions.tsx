@@ -69,13 +69,20 @@ export function Suggestions({
 
   const rows =
     kind === 'mention'
-      ? (people ?? []).map((p) => ({
-          key: `u${p.id}`,
-          value: p.username,
-          label: p.name,
-          detail: `@${p.username}${p.connected ? ' · Connected' : ''}`,
-          photo: p.photo,
-        }))
+      ? (people ?? [])
+          // Only a person with a handle can be tagged: the word this list writes
+          // into the post is the handle, and a row without one would write
+          // "@undefined" into somebody's words. The leading @ is stripped for
+          // the same reason — the input already supplies it.
+          .map((p) => ({ ...p, username: String(p.username ?? '').replace(/^@+/, '').trim() }))
+          .filter((p) => p.username.length > 0)
+          .map((p) => ({
+            key: `u${p.id}`,
+            value: p.username,
+            label: p.name,
+            detail: `@${p.username}${p.connected ? ' · Connected' : ''}`,
+            photo: p.photo,
+          }))
       : (tags ?? []).map((t) => ({
           key: `t${t.tag}`,
           value: t.tag,
