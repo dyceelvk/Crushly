@@ -1,10 +1,10 @@
 {
-  "version": "1.0.69",
-  "versionCode": 69,
+  "version": "1.0.71",
+  "versionCode": 71,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.69-Android9plus.apk",
-  "notes": "Video notes are ten seconds and round. A Moment opens only from the ring around the picture, a Moment you have already watched now looks watched, and Top Crushes This Week only shows clips people actually crushed.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.69/Crushly-1.0.69-Android9plus.apk",
-  "bytes": 95244987,
-  "sha256": "dc63befe7ee97d5e5e5fb53c25f3e50ce4e3addc4942c4126374c13039a93573"
+  "file": "Crushly-1.0.71-Android9plus.apk",
+  "notes": "A Space has one Add up, under the name, with Whisper beside it \u2014 the footer bar that covered the last post is gone, and Share lives in the three dots.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.71/Crushly-1.0.71-Android9plus.apk",
+  "bytes": 94932563,
+  "sha256": "98980f50ef96093301ea5e47b7a6bbe3951514ee3834d4bb8e29aa451a72df92"
 }
