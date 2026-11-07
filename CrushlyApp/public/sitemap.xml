@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One entry on purpose. Crushly's web export is a single-page app: every screen
+  after the landing shell is client-rendered and most of it is behind sign-in.
+  Listing routes a crawler cannot render as separate pages would be a sitemap
+  full of soft 404s, which is worse than a short honest one.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://mecrushly.vercel.app/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
