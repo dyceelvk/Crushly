@@ -391,7 +391,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       <LinearGradient
         pointerEvents="none"
         colors={['rgba(7,7,8,0)', 'rgba(7,7,8,0.72)', 'rgba(7,7,8,0.96)']}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 430 }}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 380 }}
       />
 
       {/* ------------------------------------------------------------ top bar */}
@@ -435,7 +435,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         style={{
           position: 'absolute',
           right: gutter,
-          bottom: insets.bottom + 168,
+          bottom: insets.bottom + 132,
           alignItems: 'center',
           gap: space.lg,
           maxWidth: Math.min(contentWidth, 420) / 2,
@@ -473,7 +473,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           position: 'absolute',
           left: gutter,
           right: gutter + 76,
-          bottom: insets.bottom + 132,
+          bottom: insets.bottom + 92,
         }}
       >
         <Pressable

@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { Button } from '../../components/Button';
 import { PostCard } from '../../components/feed/PostCard';
+import { CrushClipCard } from '../../components/feed/CrushClipCard';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
 import { useCrushesFeed } from '../../api/hooks';
@@ -112,7 +113,13 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       }}
       renderItem={({ item, index }) => (
         <Measured index={index} id={item.id} onReport={focus.report}>
-          <PostCard post={item} active={item.id === focus.activeId} />
+          {/* A clip is the card; a photograph and a written post keep the card
+              they were designed for. See CrushClipCard. */}
+          {item.mediaKind === 'video' && item.mediaUrl ? (
+            <CrushClipCard post={item} active={item.id === focus.activeId} />
+          ) : (
+            <PostCard post={item} active={item.id === focus.activeId} />
+          )}
         </Measured>
       )}
       /* The next page is fetched as the end approaches, and the footer says so
