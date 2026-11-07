@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from './Txt';
 import { Button } from './Button';
@@ -62,8 +63,23 @@ export function BottomSheet({ visible, onClose, title, subtitle, children, foote
               borderBottomLeftRadius: wide ? radius.xl : 0, borderBottomRightRadius: wide ? radius.xl : 0,
             }}
           >
-            <View style={{ alignItems: 'center', paddingTop: 10 }}>
+            {/* A sheet is a page you are standing in, and every page needs a
+                visible way out. The grabber said "drag me" and the backdrop
+                said "tap me" to anyone who already knew, but a sheet with no
+                close button is a room whose door is a trick: on a phone the only
+                ways out were a swipe nobody advertises and the Android back key.
+                So there is a close, in the corner it belongs in. */}
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 10, minHeight: 34, paddingHorizontal: space.md }}>
               <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
+              <Pressable
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                hitSlop={12}
+                style={{ position: 'absolute', right: space.md, top: 6, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.elevated }}
+              >
+                <Ionicons name="close" size={17} color={colors.text} />
+              </Pressable>
             </View>
             {title ? (
               <View style={{ paddingHorizontal: space.xl, paddingTop: space.md, paddingBottom: space.xs }}>
