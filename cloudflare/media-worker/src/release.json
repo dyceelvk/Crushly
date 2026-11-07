@@ -1,10 +1,10 @@
 {
-  "version": "1.0.76",
-  "versionCode": 76,
+  "version": "1.0.77",
+  "versionCode": 77,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.76-Android9plus.apk",
-  "notes": "Your Space now looks like a Space: the cover is the picture itself with a softened copy of it behind, the Crushes tab is a wall of tall tiles you pick from instead of a feed, every tab on the page stays on the screen and tappable, and tapping a face opens the picture \u2014 or the Moments behind it, with a choice once you have seen both.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.76/Crushly-1.0.76-Android9plus.apk",
-  "bytes": 95010667,
-  "sha256": "d0e5d2e77954d0269983746a74ba517fb679055ca1173e168f0fb3680216a6c6"
+  "file": "Crushly-1.0.77-Android9plus.apk",
+  "notes": "Every sheet now has a close button in the corner, so the Create Circle sheet \u2014 and every other one \u2014 can be put away with one tap instead of a swipe or the back key.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.77/Crushly-1.0.77-Android9plus.apk",
+  "bytes": 95010939,
+  "sha256": "0ed385d494e849b9106b5ee209a6eb295b706d76cebf02621c4d95b26139d04b"
 }
