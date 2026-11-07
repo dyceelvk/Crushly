@@ -1,10 +1,10 @@
 {
-  "version": "1.0.72",
-  "versionCode": 72,
+  "version": "1.0.73",
+  "versionCode": 73,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.72-Android9plus.apk",
-  "notes": "Signing up now tells you the truth about the email: the code signs you in on your phone, the link confirms you in a browser, and if a code never came, sign-in sends a fresh one.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.72/Crushly-1.0.72-Android9plus.apk",
-  "bytes": 94936675,
-  "sha256": "c62d5b6b988ead23407bfe58feb42db351463068e7ee19a15cbe39fed75c5055"
+  "file": "Crushly-1.0.73-Android9plus.apk",
+  "notes": "One clip plays at a time \u2014 the one you are looking at \u2014 and that is the preview; everything else waits its turn, which is what stops the feed from wading.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.73/Crushly-1.0.73-Android9plus.apk",
+  "bytes": 94940943,
+  "sha256": "3ec3943d9b0b81cd07c3f7bf01274d35877c26d0f147e0a473571f315f3ab576"
 }
