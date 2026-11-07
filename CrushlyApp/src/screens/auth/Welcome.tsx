@@ -98,7 +98,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
             accessibilityRole="header"
             style={compact ? { fontSize: 32, lineHeight: 38 } : undefined}
           >
-            {'Welcome to\nCrushly'}
+            {'Follow the\nfeelings.'}
           </Txt>
           <View style={{ alignItems: 'center', marginTop: space.md }}>
             {/* A short rule is what makes the two halves read as one lockup
@@ -106,7 +106,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
             <View style={{ width: 36, height: 1, backgroundColor: colors.primaryLine }} />
           </View>
           <Txt variant="accent" color="textSecondary" align="center" style={{ marginTop: space.md }}>
-            {'Meet people. Make connections.\nFollow the feeling.'}
+            {'Not the follower count.\nNot the algorithm’s opinion.'}
           </Txt>
         </Animated.View>
 
@@ -115,7 +115,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
         {/* -------------------------------------------------------- actions */}
         <Animated.View style={rise(actions, 10)}>
           <View style={{ gap: space.sm }}>
-            <Button title="Get Started" onPress={() => navigation.navigate('SignUp')} />
+            <Button title="Start with a feeling" onPress={() => navigation.navigate('SignUp')} />
             {Platform.OS === 'web' ? (
               <Button
                 title="Get the Android app"
@@ -132,7 +132,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
           <Pressable
             onPress={() => navigation.navigate('SignIn')}
             accessibilityRole="button"
-            accessibilityLabel="I already have an account, sign in"
+            accessibilityLabel="I’m already on Crushly, sign in"
             hitSlop={HIT / 2}
             style={({ pressed }) => ({
               marginTop: space.lg,
@@ -144,12 +144,12 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
             })}
           >
             <Txt variant="bodyStrong" color="textSecondary">
-              I already have an account
+              I’m already on Crushly
             </Txt>
           </Pressable>
 
           <Txt variant="caption" color="textMuted" align="center" style={{ marginTop: space.xs }}>
-            For adults 18+. Private by design.
+            For adults 18+. Built for real connection.
           </Txt>
         </Animated.View>
       </View>
