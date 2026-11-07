@@ -867,16 +867,22 @@ def main():
         if not wait_for(['Follow the feelings'], 90, 'process exited during startup'):
             fail('the follow-the-feelings opening did not appear')
 
-        # 2. The opening's own doors. This used to be "one tap anywhere, which
-        #    is the whole interaction on that screen", then a wait for the old
-        #    copy — "Welcome to Crushly" and "Get Started" — which no longer
-        #    exists: the opening screen *is* Welcome now, with one line and two
-        #    buttons. So the tap advanced nothing and the walk failed a release
-        #    that was perfectly good, and no APK got published. Read the screen
-        #    the app actually draws instead of a coordinate or a retired label.
-        if not wait_for(['Start with a feeling', "I'm already on Crushly"], 30,
-                        'process exited on the opening screen'):
-            fail('the opening did not offer a door to sign in')
+        # 2. The opening is two screens, not one:
+        #      the sentence, which says "Tap anywhere to begin" and means it;
+        #      then Welcome, which offers two named doors.
+        #    The tap is right; the wait that followed it was not — it looked
+        #    for "Welcome to Crushly" and "Get Started", copy that has been
+        #    retired, so a good release failed here and no APK was published.
+        #    Tap where the screen tells you to, then expect the doors it draws.
+        if not tap('Tap anywhere to begin', tries=2):
+            size = adb('shell', 'wm', 'size', check=False).strip().split()[-1]
+            w, h = (int(v) for v in size.split('x'))
+            adb('shell', 'input', 'tap', str(w // 2), str(h // 2))
+        time.sleep(2)
+
+        if not wait_for(['Start with a feeling', "I'm already on Crushly"], 60,
+                        'process exited after the opening screen'):
+            fail('tapping the opening did not reach Welcome')
         time.sleep(2)
 
         logs = adb('logcat', '-d', '-b', 'crash', check=False)
