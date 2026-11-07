@@ -136,10 +136,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
   // mediaSource() is a plain string on web but { uri, headers } on native when
   // the file is behind the media Worker.
+  /**
+   * The whole source, header included.
+   *
+   * This used to unwrap `{ uri, headers }` and keep only the `uri`, so the full
+   * screen player asked the media Worker for a private file with no token and
+   * was told 401 — a black stage, and a play button that did nothing because
+   * there was nothing loaded to play.
+   */
   const resolveVideoUri = useCallback((mediaPath: string | null) => {
     if (!mediaPath) return '';
-    const resolved = mediaSource(mediaUrl(mediaPath));
-    return typeof resolved === 'string' ? resolved : resolved.uri;
+    return mediaSource(mediaUrl(mediaPath));
   }, []);
 
   const reactWith = useCallback(

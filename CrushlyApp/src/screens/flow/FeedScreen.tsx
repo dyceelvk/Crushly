@@ -151,10 +151,10 @@ export function FeedScreen() {
           windowSize={7}
           initialNumToRender={3}
           maxToRenderPerBatch={4}
-          renderItem={({ item: row }) => {
+          renderItem={({ item: row, index }) => {
             if (row.kind === 'item') {
               return (
-                <Measured id={row.item.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+                <Measured index={index} id={row.item.id} onReport={focus.report}>
                   <PostCard post={row.item} active={row.item.id === focus.activeId} />
                 </Measured>
               );

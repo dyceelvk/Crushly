@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { useVideoPlayer, type VideoPlayer } from 'expo-video';
+import { useVideoPlayer, type VideoPlayer, type VideoSource } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
 import { PlayPauseFlash } from './PlayPauseFlash';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
@@ -86,6 +86,13 @@ function useNativeRatio(player: VideoPlayer | null, alreadyKnown: boolean): numb
  *   the state is shown. A video that cannot be paused, and cannot say whether it
  *   is playing, is not a video — it is an animation.
  */
+/** The URL inside a source, whatever shape the caller handed over. */
+function sourceUrl(source: VideoSource): string {
+  if (typeof source === 'string') return source;
+  if (source && typeof source === 'object' && 'uri' in source) return source.uri ?? '';
+  return '';
+}
+
 export function EditedClip({
   uri,
   live,
@@ -102,7 +109,13 @@ export function EditedClip({
   onDoubleTap,
   accessibilityLabel,
 }: {
-  uri: string;
+  /**
+   * The clip. A plain URL for a local file, or `{ uri, headers }` for anything
+   * behind the media Worker — which is every clip a member posts. Passing the
+   * bare URL of a private file got a 401 and drew a black rectangle, which is
+   * exactly what the feed showed: dark, and no amount of tapping helped.
+   */
+  uri: VideoSource;
   live: LiveEdit | null;
   style?: StyleProp<ViewStyle>;
   autoPlay?: boolean;
@@ -175,7 +188,7 @@ export function EditedClip({
   // part its author removed.
   const cuts = live?.cuts && live.cuts.length ? live.cuts : null;
 
-  const webRatio = useWebRatio(uri);
+  const webRatio = useWebRatio(sourceUrl(uri));
   const nativeRatio = useNativeRatio(player, webRatio != null);
   const frame = videoFrame({ measured: webRatio ?? nativeRatio, aspect: look.aspect, fallback: fallbackRatio });
 
@@ -410,7 +423,7 @@ export function EditedClip({
       accessibilityLabel={!controls ? accessibilityLabel : undefined}
     >
       <VideoEditCanvas
-        backdrop={bands ? <BackdropClip uri={uri} /> : null}
+        backdrop={bands ? <BackdropClip source={uri} /> : null}
         player={player}
         edit={edit}
         clipTime={clipTime}
@@ -449,8 +462,8 @@ export function EditedClip({
  * take, and pausing it whenever another clip claims the audio would leave the
  * stage half black again while the clip on top kept playing.
  */
-function BackdropClip({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri, (p) => {
+function BackdropClip({ source }: { source: VideoSource }) {
+  const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
   });

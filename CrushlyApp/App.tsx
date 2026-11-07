@@ -13,6 +13,7 @@ import { AppState, View } from 'react-native';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import { AuthProvider, useAuth } from './src/state/auth';
 import { ToastProvider } from './src/components/Toast';
+import { UpdateGate } from './src/components/UpdateGate';
 import { MemberActionsProvider } from './src/state/memberActions';
 import { BootCanvas } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -133,6 +134,10 @@ export default function App() {
           <AuthProvider>
             <ToastProvider>
               <Shell />
+              {/* Offered above the app rather than inside a screen: an update is
+                  not a settings-page event, and a member who never opens
+                  Settings would never hear about one. */}
+              <UpdateGate />
             </ToastProvider>
           </AuthProvider>
         </ThemeProvider>

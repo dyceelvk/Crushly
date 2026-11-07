@@ -3,7 +3,7 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.73",
+    "version": "1.0.74",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -32,13 +32,14 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.REQUEST_INSTALL_PACKAGES"
       ],
       "blockedPermissions": [
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 73
+      "versionCode": 74
     },
     "web": {
       "favicon": "./assets/favicon.png",

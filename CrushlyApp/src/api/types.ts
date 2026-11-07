@@ -683,5 +683,8 @@ export type AppUpdate = {
   versionCode: number;
   minVersionCode: number;
   apkUrl: string | null;
+  /** Size of the file the endpoint is offering, when it says. */
+  bytes?: number | null;
+  sha256?: string | null;
   notes: string;
 };

@@ -49,7 +49,7 @@ export function MomentPreview({
     return (
       <View style={[{ overflow: 'hidden', backgroundColor: '#000' }, style]}>
         <EditedClip
-          uri={mediaSource(mediaUrl(moment.mediaUrl)) as string}
+          uri={mediaSource(mediaUrl(moment.mediaUrl))}
           live={moment.edit}
           style={{ width: '100%', height: '100%' }}
           autoPlay={autoPlay}

@@ -79,8 +79,8 @@ export function SavedPostsScreen() {
           windowSize={7}
           initialNumToRender={3}
           maxToRenderPerBatch={4}
-          renderItem={({ item }) => (
-            <Measured id={item.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+          renderItem={({ item, index }) => (
+            <Measured index={index} id={item.id} onReport={focus.report}>
               <PostCard post={item} active={item.id === focus.activeId} />
             </Measured>
           )}

@@ -143,8 +143,8 @@ export function DiscoverPane() {
           <ErrorState error={feed.error} message="Posts didn’t load." onRetry={refresh} />
         ) : posts.length ? (
           <View style={{ gap: space.md }}>
-            {posts.map((p) => (
-              <Measured key={p.id} id={p.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+            {posts.map((p, index) => (
+              <Measured key={p.id} index={index} id={p.id} onReport={focus.report}>
                 <PostCard post={p} secondPerson={false} active={p.id === focus.activeId} />
               </Measured>
             ))}

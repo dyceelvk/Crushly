@@ -15,6 +15,8 @@ import { useToast } from '../Toast';
 import { CommentsSheet } from './CommentsSheet';
 import { useDeletePost, useLiveMomentUsers, useMe, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
+import { mediaUrl } from '../../api/client';
+import { mediaSource } from '../../lib/mediaHost';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { HIT, elevation, radius, space, stroke } from '../../theme/tokens';
@@ -213,7 +215,11 @@ export function PostCard({
                  `EditedClip` measures the source now and shapes its own box;
                  `maxHeight` still stops a tall clip owning the screen. */
               <EditedClip
-                uri={p.mediaUrl}
+                /* The file is private: it lives behind the media Worker, which
+                   answers 401 to a request without the member's token. This is
+                   the line that was missing, and the reason every clip in the
+                   feed and the Flow viewer was a black box. */
+                uri={mediaSource(mediaUrl(p.mediaUrl))}
                 live={p.edit}
                 autoPlay={active}
                 holdToPause

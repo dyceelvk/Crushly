@@ -110,8 +110,8 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
         paddingBottom: space.xxxl,
         flexGrow: 1,
       }}
-      renderItem={({ item }) => (
-        <Measured id={item.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+      renderItem={({ item, index }) => (
+        <Measured index={index} id={item.id} onReport={focus.report}>
           <PostCard post={item} active={item.id === focus.activeId} />
         </Measured>
       )}

@@ -255,7 +255,7 @@ function SharedPostBubble({ m }: { m: Message }) {
         {media && !video ? (
           <Photo uri={media} fit="cover" style={{ width: 72, height: 72 }} alt="" />
         ) : media && video ? (
-          <EditedClip uri={media} live={null} style={{ width: 72, height: 72 }} />
+          <EditedClip uri={mediaSource(mediaUrl(media) ?? null)} live={null} style={{ width: 72, height: 72 }} />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.elevated }}>
             <Ionicons name="document-text-outline" size={22} color={colors.textMuted} />
