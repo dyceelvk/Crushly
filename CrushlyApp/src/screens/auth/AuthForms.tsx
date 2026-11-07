@@ -264,11 +264,17 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
           {/* Recovery belongs to the password field, so it sits under it and
               aligns to the far edge — reading distance, not a centred chip
               competing with the form. */}
+          {/* No hitSlop here, deliberately.
+              This link sits directly under the password field, and `hitSlop`
+              grew its touch area 22 px in every direction — including upwards,
+              over the bottom of the field. So the lower half of the password box
+              was secretly the reset link: tap the field to type and you were
+              carried off to "Forgot your password?". The link is already 44 pt
+              tall on its own, which is the target size it needed. */}
           <Pressable
             onPress={() => navigation.navigate('ForgotPassword')}
             accessibilityRole="link"
             accessibilityLabel="Forgot your password? Reset it"
-            hitSlop={HIT / 2}
             style={({ pressed }) => ({
               alignSelf: 'flex-end',
               minHeight: HIT,

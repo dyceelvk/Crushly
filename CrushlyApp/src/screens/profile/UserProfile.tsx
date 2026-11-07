@@ -248,7 +248,15 @@ export function SpaceScreen({
   // A cover, not a portrait: wide enough to read as the backdrop of the Space,
   // short enough that the face, the name and the tabs are all on the first
   // screen without scrolling.
-  const heroH = Math.min(heroW * 0.98, 460);
+  /* The cover is a band across the top, not a page of its own.
+     At 0.98 the cover alone was most of the screen, so the name, the Add up and
+     the tabs were pushed below the fold and the Space opened on a photograph and
+     nothing else. A photograph that fills its own height also leaves the
+     letterboxed bands a whole frame is supposed to avoid, which read as the
+     picture having been cropped and the rest of the space abandoned. 0.62 is a
+     cover: the picture is still the first thing you see, and the person, the
+     Add up and the four tabs are on the same screen with it. */
+  const heroH = Math.min(heroW * 0.62, 320);
   /** The photo behind the blurred cover: the one the reader is looking at. */
   const backdrop = p?.photos?.[index]?.url || p?.photos?.[0]?.url || '';
 
