@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "Crushly \u2014 follow the feelings. A social space for real connection.",
+    "description": "Crushly — follow the feelings. A social space for real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
