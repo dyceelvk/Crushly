@@ -1,10 +1,10 @@
 {
-  "version": "1.0.75",
-  "versionCode": 75,
+  "version": "1.0.76",
+  "versionCode": 76,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.75-Android9plus.apk",
-  "notes": "A clip is the card in Crushes now \u2014 the picture fills it, the person and their words sit on it, and only Crush and comment cover the frame \u2014 and in the Flow viewer the rail and the caption sit lower, so the video has the middle of the screen to itself.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.75/Crushly-1.0.75-Android9plus.apk",
-  "bytes": 95011311,
-  "sha256": "5dcc652dc6b9a7febaa122fe021934cbd3feaf7c2b1360d5b8a4dab2b7019374"
+  "file": "Crushly-1.0.76-Android9plus.apk",
+  "notes": "Your Space now looks like a Space: the cover is the picture itself with a softened copy of it behind, the Crushes tab is a wall of tall tiles you pick from instead of a feed, every tab on the page stays on the screen and tappable, and tapping a face opens the picture \u2014 or the Moments behind it, with a choice once you have seen both.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.76/Crushly-1.0.76-Android9plus.apk",
+  "bytes": 95010667,
+  "sha256": "d0e5d2e77954d0269983746a74ba517fb679055ca1173e168f0fb3680216a6c6"
 }
