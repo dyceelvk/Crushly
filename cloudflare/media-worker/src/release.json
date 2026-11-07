@@ -1,10 +1,10 @@
 {
-  "version": "1.0.71",
-  "versionCode": 71,
+  "version": "1.0.72",
+  "versionCode": 72,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.71-Android9plus.apk",
-  "notes": "A Space has one Add up, under the name, with Whisper beside it \u2014 the footer bar that covered the last post is gone, and Share lives in the three dots.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.71/Crushly-1.0.71-Android9plus.apk",
-  "bytes": 94932563,
-  "sha256": "98980f50ef96093301ea5e47b7a6bbe3951514ee3834d4bb8e29aa451a72df92"
+  "file": "Crushly-1.0.72-Android9plus.apk",
+  "notes": "Signing up now tells you the truth about the email: the code signs you in on your phone, the link confirms you in a browser, and if a code never came, sign-in sends a fresh one.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.72/Crushly-1.0.72-Android9plus.apk",
+  "bytes": 94936675,
+  "sha256": "c62d5b6b988ead23407bfe58feb42db351463068e7ee19a15cbe39fed75c5055"
 }
