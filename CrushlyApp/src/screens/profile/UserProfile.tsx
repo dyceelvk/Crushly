@@ -407,8 +407,11 @@ export function SpaceScreen({
                   Moment behind the door, a plain one when there is not. The
                   ring used to be laid down under the face with a screen of
                   background colour between them, so a corner of it showed at
-                  the edge of the picture like something hiding behind it. */}
-              {p.moments.length ? (
+                  the edge of the picture like something hiding behind it.
+                  On your own Space there is no ring at all: it is a door to
+                  your own Moments, which the tab underneath already opens, and
+                  on your own picture it reads as a shape stuck behind it. */}
+              {!mine && p.moments.length ? (
                 <LinearGradient
                   colors={momentSeen ? [MOMENT_RING_SEEN, MOMENT_RING_SEEN] : [colors.gold, colors.crush, colors.goldDeep]}
                   start={{ x: 0, y: 0 }}
