@@ -11,7 +11,6 @@ import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Tabs } from '../../components/Tabs';
-import { BlurView } from 'expo-blur';
 import { useMemberCircles } from '../../api/hooks';
 import { resolveTheme } from '../../lib/circleThemes';
 import { ThemeTile } from '../../components/ThemePicker';
@@ -331,7 +330,7 @@ export function SpaceScreen({
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: space.sm + 54 + Math.max(insets.bottom, space.md) + space.lg }}
         showsVerticalScrollIndicator={false}
         onScroll={(e) => {
           const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
@@ -352,17 +351,13 @@ export function SpaceScreen({
               <Photo key={ph.id} uri={ph.url || null} style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
             ))}
           </ScrollView>
-          <LinearGradient colors={['rgba(7,7,8,0.55)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 120 }} pointerEvents="none" />
-          {/* The bottom of the cover blurs and fades into the page — the picture
-              ends, the person's name begins, and no hard edge is asked to do
-              that job on its own. */}
-          <BlurView
-            intensity={26}
-            tint="dark"
-            pointerEvents="none"
-            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '42%' }}
-          />
-          <LinearGradient colors={colors.photoScrim} locations={[0.4, 0.75, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }} pointerEvents="none" />
+          {/* One even veil over the whole photograph — five per cent, edge to
+              edge — and nothing else. The cover used to blur and darken across
+              its bottom third, which read as a bruise lying on the picture
+              rather than a frame around it, and it buried whatever the person
+              had chosen to show at the bottom of their own cover. A photograph
+              that needs shading to be legible is the wrong photograph. */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(7,7,8,0.05)' }} />
           {/* The dots stay with the photograph, because they count photographs.
               Everything else that used to share this row is a control, and a
               control belongs in the header above, where it does not scroll
@@ -396,33 +391,45 @@ export function SpaceScreen({
           its ring because the door is still there; it just stops shouting.
         */}
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
-          <View style={{ marginTop: -46, flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }}>
+          {/* The face stands on the edge of the cover by half, alone on its own
+              line. The name used to sit beside it, so on a narrow phone a long
+              name and two chips had to fit in whatever width the face left —
+              the row leaned on the photograph and on the face. Everything under
+              the face is a column now: no line is asked to share space it does
+              not have. */}
+          <View style={{ marginTop: -(FACE / 2 + 4), flexDirection: 'row', alignItems: 'flex-start' }}>
             <Pressable
               onPress={p.moments.length ? () => navigation.navigate('MomentViewer', { userId: p.id, mine }) : undefined}
               accessibilityRole="button"
               accessibilityLabel={p.moments.length ? `View ${p.name}’s Moments` : `${p.name}’s photo`}
             >
-              <LinearGradient
-                colors={
-                  !p.moments.length
-                    ? ['transparent', 'transparent']
-                    : momentSeen
-                      ? [MOMENT_RING_SEEN, MOMENT_RING_SEEN]
-                      : [colors.gold, colors.crush, colors.goldDeep]
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{ width: FACE + 8, height: FACE + 8, borderRadius: (FACE + 8) / 2, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <View style={{ width: FACE + 2, height: FACE + 2, borderRadius: (FACE + 2) / 2, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-                  <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={FACE - 4} />
+              {/* Two rings, both even: a coloured one only when there is a
+                  Moment behind the door, a plain one when there is not. The
+                  ring used to be laid down under the face with a screen of
+                  background colour between them, so a corner of it showed at
+                  the edge of the picture like something hiding behind it. */}
+              {p.moments.length ? (
+                <LinearGradient
+                  colors={momentSeen ? [MOMENT_RING_SEEN, MOMENT_RING_SEEN] : [colors.gold, colors.crush, colors.goldDeep]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{ width: FACE + 9, height: FACE + 9, borderRadius: (FACE + 9) / 2, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <View style={{ padding: 2.5, borderRadius: FACE, backgroundColor: colors.bg }}>
+                    <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={FACE} />
+                  </View>
+                </LinearGradient>
+              ) : (
+                <View style={{ padding: 2.5, borderRadius: FACE, backgroundColor: colors.bg }}>
+                  <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={FACE} />
                 </View>
-              </LinearGradient>
+              )}
             </Pressable>
+          </View>
 
-            {/* The name, and the two things you can do about this person —
-                one of them a chip, not a card. */}
-            <View style={{ flex: 1, minWidth: 0, paddingBottom: 2 }}>
+          {/* The name, and the two things you can do about this person —
+              one of them a chip, not a card. */}
+          <View style={{ marginTop: space.sm }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
                   {p.name}
@@ -487,7 +494,6 @@ export function SpaceScreen({
                 </>
                 )}
               </View>
-            </View>
           </View>
           <Txt variant="small" color="textSecondary" style={{ marginTop: space.sm }}>
             {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
@@ -660,7 +666,7 @@ export function SpaceScreen({
         />
         {!scrolled ? (
           <LinearGradient
-            colors={['rgba(7,7,8,0.55)', 'transparent']}
+            colors={['rgba(7,7,8,0.38)', 'transparent']}
             style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 96 }}
             pointerEvents="none"
           />
@@ -696,7 +702,10 @@ export function SpaceScreen({
       <View
         style={{
           position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: Math.max(insets.bottom, space.md), paddingTop: space.sm,
-          paddingHorizontal: gutter, backgroundColor: colors.glass, borderTopWidth: 1, borderTopColor: colors.border,
+          /* Opaque, not glass. A translucent bar let the words of the post
+             underneath read straight through the Add up button — two texts on
+             top of each other, which is exactly what a footer must never do. */
+          paddingHorizontal: gutter, backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.border,
         }}
       >
         <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', maxWidth: contentWidth - gutter * 2, width: '100%', alignSelf: 'center' }}>
