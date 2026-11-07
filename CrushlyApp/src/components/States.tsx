@@ -22,21 +22,29 @@ type EmptyProps = {
 export function EmptyState({ icon = 'sparkles-outline', title, message, action, secondary, style }: EmptyProps) {
   const { colors } = useTheme();
   return (
-    <View style={[{ alignItems: 'center', paddingVertical: space.xxxl, paddingHorizontal: space.xl }, style]}>
-      <View style={{ width: 96, height: 96, alignItems: 'center', justifyContent: 'center', marginBottom: space.lg }}>
+    /* A notice, not a poster.
+       The empty state used to be a 96 px halo around a 64 px disc with an xl
+       button under it — half a screen, in the middle of a page, to say that one
+       tab in particular had nothing in it yet. On a Space that page also has a
+       cover, a face, a name and four tabs above it, so the notice pushed
+       everything else out of reach and read as though the Space itself were
+       empty. Smaller halo, smaller disc, a small button: enough to be seen,
+       never enough to take the page. */
+    <View style={[{ alignItems: 'center', paddingVertical: space.xxl, paddingHorizontal: space.lg }, style]}>
+      <View style={{ width: 76, height: 76, alignItems: 'center', justifyContent: 'center', marginBottom: space.md }}>
         <LinearGradient
           colors={[colors.primarySoft, 'transparent']}
-          style={{ position: 'absolute', width: 96, height: 96, borderRadius: 48 }}
+          style={{ position: 'absolute', width: 76, height: 76, borderRadius: 38 }}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
         />
         <View
           style={{
-            width: 64, height: 64, borderRadius: 32, borderWidth: 1, borderColor: colors.primaryLine,
+            width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: colors.primaryLine,
             alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card,
           }}
         >
-          {icon === 'crush' ? <CrushIcon size={28} color={colors.primary} /> : <Ionicons name={icon} size={26} color={colors.primary} />}
+          {icon === 'crush' ? <CrushIcon size={22} color={colors.primary} /> : <Ionicons name={icon} size={21} color={colors.primary} />}
         </View>
       </View>
       <Txt variant="title" align="center" accessibilityRole="header">
@@ -48,13 +56,13 @@ export function EmptyState({ icon = 'sparkles-outline', title, message, action, 
         </Txt>
       ) : null}
       {action ? (
-        <View style={{ marginTop: space.xl, alignSelf: 'stretch', maxWidth: 320, width: '100%', marginHorizontal: 'auto' }}>
-          <Button title={action.label} onPress={action.onPress} variant={action.variant || 'primary'} size="md" />
+        <View style={{ marginTop: space.lg, alignSelf: 'stretch', maxWidth: 300, width: '100%', marginHorizontal: 'auto' }}>
+          <Button title={action.label} onPress={action.onPress} variant={action.variant || 'primary'} size="sm" />
         </View>
       ) : null}
       {secondary ? (
         <View style={{ marginTop: space.xs, alignSelf: 'stretch', maxWidth: 320, width: '100%' }}>
-          <Button title={secondary.label} onPress={secondary.onPress} variant="ghost" size="md" />
+          <Button title={secondary.label} onPress={secondary.onPress} variant="ghost" size="sm" />
         </View>
       ) : null}
     </View>

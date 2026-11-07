@@ -19,7 +19,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/tokens';
 import { DUR, EASE_OUT, duration as dur } from '../lib/motion';
@@ -43,12 +43,16 @@ export function Tabs<T extends string>({
 }) {
   const { colors, reduceMotion } = useTheme();
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 20 }}
-      accessibilityLabel={accessibilityLabel}
-    >
+    /* A row, not a scroll area.
+       This was a horizontal ScrollView, and that one word was a trap: when the
+       labels and their counts added up to more than the width of the phone — a
+       notch wider, a bigger system font — the row silently became something you
+       scroll, so the last tabs sat off the right edge with nothing to say so.
+       Inside a page that scrolls up and down, a sideways drag is the gesture the
+       page usually wins, so the tab you could not see was also the tab you could
+       not reach. Now the row fits: tabs shrink, labels stay on one line, and
+       every tab in the list is on the screen and tappable at any size. */
+    <View style={{ flexDirection: 'row', gap: 20 }} accessibilityLabel={accessibilityLabel}>
       {tabs.map((t) => (
         <Tab
           key={t.id}
@@ -61,7 +65,7 @@ export function Tabs<T extends string>({
           ms={dur(DUR.label, reduceMotion)}
         />
       ))}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -105,7 +109,7 @@ function Tab({
       accessibilityState={{ selected: active }}
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       hitSlop={8}
-      style={{ paddingVertical: 6 }}
+      style={{ paddingVertical: 6, flexShrink: 1, minWidth: 0 }}
     >
       <Animated.View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, opacity: lit.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
         <Text
@@ -114,6 +118,9 @@ function Tab({
             fontSize: 15,
             color,
           }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
           maxFontSizeMultiplier={1.3}
         >
           {label}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { CrushIcon } from '../../components/Logo';
@@ -9,6 +10,7 @@ import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Chip, ChipGroup } from '../../components/Chip';
+import { BottomSheet } from '../../components/BottomSheet';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Tabs } from '../../components/Tabs';
 import { useMemberCircles } from '../../api/hooks';
@@ -29,6 +31,9 @@ import { joinAction, policyLabel } from '../../lib/circleAccess';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MomentPreview } from '../moments/Moments';
 import { PostCard } from '../../components/feed/PostCard';
+import { ClipThumb } from '../../components/ClipThumb';
+import { mediaSource } from '../../lib/mediaHost';
+import { mediaUrl } from '../../api/client';
 import { shownPosts } from '../../lib/features';
 import type { Post } from '../../api/types';
 import { radius, space } from '../../theme/tokens';
@@ -100,6 +105,18 @@ function asFullProfile(me: Me, moments: MomentSummary[]): FullProfile {
 
 /** Diameter of the round face that sits on the cover. */
 const FACE = 84;
+
+/**
+ * Whose Moments have been opened from their picture this session.
+ *
+ * The picture is two things at once — the photograph, and a door to the Moments
+ * behind it — and a plain tap cannot mean both forever. The first tap opens the
+ * Moments, because that is what a ring around a face promises. Once you have
+ * been in and come back out, the promise is kept, so the next tap asks which one
+ * you meant instead of guessing. Kept at module level so walking to another
+ * Space and back does not forget.
+ */
+const momentsOpened = new Set<number>();
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -182,6 +199,9 @@ export function SpaceScreen({
   const keepClose = useKeepClose();
   const letGo = useLetGo();
   const [index, setIndex] = useState(0);
+  /** The full-screen picture, and the chooser that decides which door opens. */
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [faceMenu, setFaceMenu] = useState(false);
   /**
    * Whether the page has scrolled past the cover.
    *
@@ -223,11 +243,38 @@ export function SpaceScreen({
       : null
     : otherQ.data ?? null;
 
+  const { height: windowH } = useWindowDimensions();
   const heroW = Math.min(width, contentWidth);
   // A cover, not a portrait: wide enough to read as the backdrop of the Space,
   // short enough that the face, the name and the tabs are all on the first
   // screen without scrolling.
   const heroH = Math.min(heroW * 0.98, 460);
+  /** The photo behind the blurred cover: the one the reader is looking at. */
+  const backdrop = p?.photos?.[index]?.url || p?.photos?.[0]?.url || '';
+
+  /**
+   * What tapping somebody's face means.
+   *
+   * No Moments, nothing to open behind the picture: tapping it shows the
+   * picture, full screen, which is the only thing it could sensibly do. With
+   * Moments, the first tap in a session opens them — that is the door the ring
+   * draws. Every tap after that asks, because by then the person has seen both
+   * and only they know which one they came back for.
+   */
+  const onFacePress = () => {
+    const who = p?.id;
+    if (!p || who == null) return;
+    if (!p.moments.length) {
+      setPhotoOpen(true);
+      return;
+    }
+    if (!momentsOpened.has(who)) {
+      momentsOpened.add(who);
+      navigation.navigate('MomentViewer', { userId: who, mine });
+      return;
+    }
+    setFaceMenu(true);
+  };
   const goBack = onBack ?? (navigation.canGoBack() ? () => navigation.goBack() : undefined);
 
   if (query.isLoading && !p) {
@@ -345,10 +392,29 @@ export function SpaceScreen({
         }}
         scrollEventThrottle={16}
       >
-        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative' }}>
+        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative', overflow: 'hidden', backgroundColor: '#0A0710' }}>
+          {/* The cover is the picture, not a crop of it.
+              A photograph forced to fill a 4:5 block loses whatever was at its
+              edges — a wide shot became a slice, and a logo became a slab of
+              letters. What a Space does now is what every video screen already
+              does: the same picture, blown up and softened, fills the cover, and
+              the picture itself sits whole on top of it. Nothing is cropped, the
+              edges are the photo's own colours, and a portrait or a landscape
+              both look deliberate. */}
+          {backdrop ? (
+            <Image
+              source={mediaSource(mediaUrl(backdrop))}
+              style={{ position: 'absolute', top: -24, left: -24, right: -24, bottom: -24 }}
+              contentFit="cover"
+              blurRadius={26}
+              transition={180}
+              cachePolicy="memory-disk"
+            />
+          ) : null}
+          <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(7,7,8,0.24)' }} />
           <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32} accessibilityLabel={`${p.photos.length} photos`}>
             {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
-              <Photo key={ph.id} uri={ph.url || null} style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
+              <Photo key={ph.id} uri={ph.url || null} fit="contain" style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
             ))}
           </ScrollView>
           {/* One even veil over the whole photograph — five per cent, edge to
@@ -399,9 +465,9 @@ export function SpaceScreen({
               not have. */}
           <View style={{ marginTop: -(FACE / 2 + 4), flexDirection: 'row', alignItems: 'flex-start' }}>
             <Pressable
-              onPress={p.moments.length ? () => navigation.navigate('MomentViewer', { userId: p.id, mine }) : undefined}
+              onPress={onFacePress}
               accessibilityRole="button"
-              accessibilityLabel={p.moments.length ? `View ${p.name}’s Moments` : `${p.name}’s photo`}
+              accessibilityLabel={p.moments.length ? `Open ${p.name}’s photo or Moments` : `See ${p.name}’s photo`}
             >
               {/* Two rings, both even: a coloured one only when there is a
                   Moment behind the door, a plain one when there is not. The
@@ -639,6 +705,7 @@ export function SpaceScreen({
                 failed={posts.isError}
                 name={p.name}
                 onRetry={() => void posts.refresh()}
+                onOpen={(postId) => navigation.navigate('PostViewer', { postId })}
               />
             ) : null}
             {tab === 'moments' ? (
@@ -697,6 +764,69 @@ export function SpaceScreen({
               visitor's report link moved in there with them. */}
         </View>
       </ScrollView>
+
+      {/* --------------------------------------------- the face, full screen
+          The picture on its own, nothing over it: the same photograph the cover
+          shows, at the size it was taken, one tap to put away. */}
+      <Modal visible={photoOpen} animationType="fade" onRequestClose={() => setPhotoOpen(false)} statusBarTranslucent>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            contentOffset={{ x: index * width, y: 0 }}
+            onScroll={onScroll}
+            scrollEventThrottle={32}
+          >
+            {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
+              <Pressable key={ph.id} onPress={() => setPhotoOpen(false)} accessibilityRole="button" accessibilityLabel="Close the picture" style={{ width, height: windowH, alignItems: 'center', justifyContent: 'center' }}>
+                <Photo uri={ph.url || null} fit="contain" style={{ width, height: windowH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority="high" />
+              </Pressable>
+            ))}
+          </ScrollView>
+          <View style={{ position: 'absolute', top: insets.top + space.sm, right: gutter }}>
+            <IconButton icon="close" label="Close the picture" variant="glass" onPress={() => setPhotoOpen(false)} />
+          </View>
+          {p.photos.length > 1 ? (
+            <View style={{ position: 'absolute', bottom: insets.bottom + space.lg, left: 0, right: 0, flexDirection: 'row', gap: 4, justifyContent: 'center' }}>
+              {p.photos.map((ph, i) => (
+                <View key={ph.id} style={{ width: 22, height: 3, borderRadius: 2, backgroundColor: i === index ? '#fff' : 'rgba(255,255,255,0.35)' }} />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+
+      {/* ---------------------------------------------- the two doors, chosen
+          A face with Moments behind it is two doors. The first tap opens the
+          Moments, because that is what the ring promises. From then on the tap
+          asks, and this is where it asks. */}
+      <BottomSheet visible={faceMenu} onClose={() => setFaceMenu(false)} title={p.name} subtitle="What would you like to see?">
+        <Pressable
+          onPress={() => { setFaceMenu(false); setPhotoOpen(true); }}
+          accessibilityRole="button"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}
+        >
+          <Ionicons name="image-outline" size={22} color={colors.text} />
+          <View style={{ flex: 1 }}>
+            <Txt variant="bodyStrong">View profile picture</Txt>
+            <Txt variant="caption" color="textSecondary">{p.photos.length > 1 ? `${p.photos.length} photos` : 'The picture on the cover'}</Txt>
+          </View>
+        </Pressable>
+        <View style={{ height: 1, backgroundColor: colors.border }} />
+        <Pressable
+          onPress={() => { setFaceMenu(false); momentsOpened.add(p.id); navigation.navigate('MomentViewer', { userId: p.id, mine }); }}
+          accessibilityRole="button"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}
+        >
+          <Ionicons name="play-circle-outline" size={22} color={colors.text} />
+          <View style={{ flex: 1 }}>
+            <Txt variant="bodyStrong">{mine ? 'View your Moments' : `View ${p.name}’s Moments`}</Txt>
+            <Txt variant="caption" color="textSecondary">{p.moments.length === 1 ? '1 Moment live' : `${p.moments.length} Moments live`}</Txt>
+          </View>
+        </Pressable>
+        <Button title="Cancel" variant="ghost" onPress={() => setFaceMenu(false)} style={{ marginTop: space.sm }} />
+      </BottomSheet>
 
       {/* ------------------------------------------------------- the header
           Settings, Picked and Edit, held at the top of the page.
@@ -771,6 +901,7 @@ function SpacePosts({
   failed,
   name,
   onRetry,
+  onOpen,
 }: {
   items: Post[];
   loading: boolean;
@@ -778,8 +909,13 @@ function SpacePosts({
   failed: boolean;
   name: string;
   onRetry: () => void;
+  onOpen: (postId: number) => void;
 }) {
   const { colors } = useTheme();
+  const { contentWidth, gutter } = useLayout();
+  const cols = 3;
+  const gap = 6;
+  const tile = (contentWidth - gutter * 2 - gap * (cols - 1)) / cols;
   // Nothing on a Space this build does not show. A clip in the list would be a
   // card that plays nothing, so it is not in the list.
   const shown = shownPosts(items);
@@ -810,18 +946,70 @@ function SpacePosts({
       />
     );
   }
+  /**
+   * A Space is a shelf, not a feed.
+   *
+   * Scrolling somebody's page used to feel exactly like scrolling Crushes: full
+   * cards, one after another, with the same weight as the timeline. It is not
+   * the same thing. A Space is where you choose what to watch, so it is a wall
+   * of tall tiles — the clip's own first frame, the words over it, and nothing
+   * else — and tapping one opens it full screen. That is also what makes a page
+   * of twenty posts readable in one look instead of twenty swipes.
+   */
   return (
-    <View style={{ gap: space.md }}>
-      {shown.map((post) => (
-        <View key={post.id} style={{ borderTopWidth: 0, borderColor: colors.border }}>
-          {/* `secondPerson={false}`: this is a list of somebody else's posts, so
-              "You" would be a lie about who wrote them. */}
-          <PostCard post={post} secondPerson={false} active={false} />
-        </View>
-      ))}
+    <View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
+        {shown.map((post) => (
+          <Pressable
+            key={post.id}
+            onPress={() => onOpen(post.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${name}’s post${post.body ? `: ${post.body}` : ''}`}
+            style={({ pressed }) => ({ width: tile, opacity: pressed ? 0.85 : 1 })}
+          >
+            <View
+              style={{
+                width: tile,
+                height: tile * 1.34,
+                borderRadius: radius.sm,
+                overflow: 'hidden',
+                backgroundColor: colors.card,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              {post.mediaKind === 'video' && post.mediaUrl ? (
+                <ClipThumb uri={mediaUrl(post.mediaUrl) ?? ''} style={{ width: '100%', height: '100%' }} />
+              ) : post.mediaUrl ? (
+                <Photo uri={post.mediaUrl} fit="cover" style={{ width: '100%', height: '100%' }} alt="" />
+              ) : (
+                <View style={{ flex: 1, padding: 8, justifyContent: 'center' }}>
+                  <Txt variant="caption" color="textSecondary" numberOfLines={4}>
+                    {post.body}
+                  </Txt>
+                </View>
+              )}
+
+              {post.mediaKind === 'video' && post.mediaUrl ? (
+                <View style={{ position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(7,7,8,0.55)', borderRadius: 999, padding: 4 }}>
+                  <Ionicons name="play" size={11} color="#FFFFFF" />
+                </View>
+              ) : null}
+
+              {post.body && post.mediaUrl ? (
+                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 7, paddingVertical: 6, backgroundColor: 'rgba(7,7,8,0.58)' }}>
+                  <Txt variant="caption" color="#FFFFFF" numberOfLines={2}>
+                    {post.body}
+                  </Txt>
+                </View>
+              ) : null}
+            </View>
+          </Pressable>
+        ))}
+      </View>
       {/* The end of a Space is not the end of the posts. This is the quiet
           promise that the next page is on its way. */}
-      {loadingMore ? <Skeleton style={{ height: 240, borderRadius: radius.lg }} /> : null}
+      {loadingMore ? <Skeleton style={{ height: tile * 1.34, borderRadius: radius.sm, marginTop: gap }} /> : null}
     </View>
   );
 }
