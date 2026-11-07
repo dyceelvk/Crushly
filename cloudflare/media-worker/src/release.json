@@ -1,10 +1,10 @@
 {
-  "version": "1.0.73",
-  "versionCode": 73,
+  "version": "1.0.74",
+  "versionCode": 74,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.73-Android9plus.apk",
-  "notes": "One clip plays at a time \u2014 the one you are looking at \u2014 and that is the preview; everything else waits its turn, which is what stops the feed from wading.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.73/Crushly-1.0.73-Android9plus.apk",
-  "bytes": 94940943,
-  "sha256": "3ec3943d9b0b81cd07c3f7bf01274d35877c26d0f147e0a473571f315f3ab576"
+  "file": "Crushly-1.0.74-Android9plus.apk",
+  "notes": "Clips play again in the Crushes feed and the Flow viewer \u2014 the file was being asked for without the key that unlocks it \u2014 and a new build now installs from inside the app instead of sending you back to the browser for 95 MB.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.74/Crushly-1.0.74-Android9plus.apk",
+  "bytes": 95003971,
+  "sha256": "50dfc98a44fe1fee3d9595b1f07c21bff56fc06d21c1ded511aec213d369bb1b"
 }
