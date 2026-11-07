@@ -82,16 +82,16 @@ jobs:
         run: |
           set -euo pipefail
           # A deploy that silently ships a cached or empty export is how "no
-          # changes were made" happens. The check used to look for 'In your
-          # Circle' — a string from the one-post-per-screen feed, which 1.0.52
-          # removed. `FeedPost` is imported by nothing now, so the bundler
-          # correctly drops it and the guard failed on a *good* build for two
-          # releases' worth of pushes.
-          #
-          # These two strings are on surfaces the app actually renders today:
-          # the Crushes empty state and the Whispers subtitle. If either is
-          # missing, the export is not this tree.
-          for needle in 'Crushes shows what the people' 'Where a Crush turns into a conversation'; do
+          # changes were made" happens. Every guard string here is ASCII-only
+          # and lives on a surface the app renders today, because a needle the
+          # bundler legitimately drops blocks a *good* build: that already
+          # happened once with 'In your Circle' and then again with the old
+          # Crushes empty-state copy, which 1.0.65 rewrote.
+          for needle in \
+            'Where a Crush turns into a conversation.' \
+            'Somebody will. A complete Space and a fresh Moment help you get noticed.' \
+            'Crushly for Android' \
+            'Moments disappear after 24 hours.'; do
             if ! grep -rqF "$needle" dist --include='*.js'; then
               echo "::error::The export does not contain '$needle'. Refusing to deploy."
               ls -la dist | head

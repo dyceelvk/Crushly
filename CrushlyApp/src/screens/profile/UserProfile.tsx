@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { ActivityIndicator, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { CrushIcon } from '../../components/Logo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
-import { CrushButton } from '../../components/CrushButton';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Tabs } from '../../components/Tabs';
@@ -330,7 +330,7 @@ export function SpaceScreen({
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: space.sm + 54 + Math.max(insets.bottom, space.md) + space.lg }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, space.md) + space.lg }}
         showsVerticalScrollIndicator={false}
         onScroll={(e) => {
           const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
@@ -450,6 +450,7 @@ export function SpaceScreen({
                   be a small chip in the row below, which read as a label rather
                   than a button. */}
               {mine ? null : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
                 <Pressable
                   onPress={p.crush.mutual ? message : onCrush}
                   accessibilityRole="button"
@@ -471,17 +472,48 @@ export function SpaceScreen({
                 >
                   {addUpBusy ? (
                     <ActivityIndicator size="small" color={addUp.done ? colors.text : '#FFFFFF'} />
+                  ) : addUp.done ? (
+                    <Ionicons name="checkmark" size={16} color={colors.text} />
                   ) : (
-                    <Ionicons
-                      name={p.crush.mutual ? 'chatbubble-ellipses' : p.crush.received ? 'person-add' : addUp.done ? 'checkmark' : 'add'}
-                      size={16}
-                      color={addUp.done ? colors.text : '#FFFFFF'}
-                    />
+                    /* The mark, not a plus. A plus is what every app in the
+                       store uses for "create", and on somebody's Space the one
+                       action is the product's own gesture — so it wears the
+                       product's own icon, the same one the whistle in the app
+                       wears. */
+                    <CrushIcon size={16} color="#FFFFFF" />
                   )}
                   <Txt variant="smallStrong" style={{ color: addUp.done ? colors.text : '#FFFFFF' }}>
                     {p.crush.mutual ? 'Whisper' : addUp.label}
                   </Txt>
                 </Pressable>
+
+                {/* One row, two doors, and the second one is the answer to a
+                    request when there is a request to answer. This used to be a
+                    footer pinned to the bottom of the page with the same Add up
+                    in it — the one action drawn twice, a screen apart, and the
+                    footer covered the last post as you read to the end. The
+                    header is always on screen, so the footer is gone and what
+                    was in it lives here. */}
+                {p.crush.mutual ? null : p.crush.received ? (
+                  <IconButton
+                    icon="close-outline"
+                    label={`Decline ${p.name}’s Add Up request`}
+                    size={40}
+                    variant="surface"
+                    color={colors.textMuted}
+                    onPress={onDecline}
+                  />
+                ) : (
+                  <IconButton
+                    icon="chatbubble-outline"
+                    label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs them to add back`}
+                    size={40}
+                    variant="surface"
+                    color={p.canMessage ? colors.text : colors.textMuted}
+                    onPress={message}
+                  />
+                )}
+                </View>
               )}
             </View>
 
@@ -725,43 +757,6 @@ export function SpaceScreen({
         </View>
       </View>
 
-      {/* Persistent action bar — for people you are not. */}
-      {mine ? null : (
-      <View
-        style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: Math.max(insets.bottom, space.md), paddingTop: space.sm,
-          /* Opaque, not glass. A translucent bar let the words of the post
-             underneath read straight through the Add up button — two texts on
-             top of each other, which is exactly what a footer must never do. */
-          paddingHorizontal: gutter, backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.border,
-        }}
-      >
-        <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', maxWidth: contentWidth - gutter * 2, width: '100%', alignSelf: 'center' }}>
-          <View style={{ flex: 1 }}>
-            {p.crush.mutual ? (
-              <CrushButton onPress={message} label="Whisper" crushed name={p.name} size={54} />
-            ) : (
-              <CrushButton onPress={onCrush} crushed={addUp.done} loading={addUpBusy} name={p.name} size={54} label={addUp.label} />
-            )}
-          </View>
-          {/* While their request is waiting, the second slot is the answer to it:
-              accepting is the one thing this Space can do that the first button
-              alone would not let you refuse. */}
-          {p.crush.received && !p.crush.mutual ? (
-            <IconButton
-              icon="close-outline"
-              label={`Decline ${p.name}’s Add Up request`}
-              size={54}
-              onPress={onDecline}
-              color={colors.textMuted}
-            />
-          ) : !p.crush.mutual ? (
-            <IconButton icon="chatbubble-outline" label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs them to add back`} size={54} onPress={message} color={p.canMessage ? colors.text : colors.textMuted} />
-          ) : null}
-          <IconButton icon="share-outline" label={`Share ${p.name}'s Space`} size={54} onPress={() => openActions(member)} />
-        </View>
-      </View>
-      )}
     </View>
   );
 }
