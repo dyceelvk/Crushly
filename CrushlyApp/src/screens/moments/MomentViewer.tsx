@@ -96,8 +96,15 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [zoneWidth, setZoneWidth] = useState(0);
   const progress = useRef(new Animated.Value(0)).current;
 
-  const group = groups?.[gi];
-  const moment = group?.moments[mi];
+  /**
+   * The list can get shorter while this screen is open — a Moment deleted, or a
+   * feed that answers again with fewer of them. Reading `groups[gi]` and
+   * `moments[mi]` straight off an index that used to be valid then points past
+   * the end, `moment` is undefined, and the screen announces that a live Moment
+   * has passed. Clamped instead: the reader is looking at a card that exists.
+   */
+  const group = groups && groups.length ? groups[Math.min(gi, groups.length - 1)] : undefined;
+  const moment = group && group.moments.length ? group.moments[Math.min(mi, group.moments.length - 1)] : undefined;
   const paused = focused || reactOpen || confirmDelete || holding;
   const playbackDurationMs = moment?.kind === 'video'
     ? Math.max(100, Math.min(60_000, moment.durationMs ?? DURATION))
@@ -284,12 +291,35 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   }, [moment]);
 
   /* Only a settled answer earns the verdict. While the feed is still being
-     asked, the screen holds, because "this Moment has passed" about a Moment
-     that has not finished arriving is the one thing it must never say. */
+     asked, the screen holds, because a verdict about a Moment that has not
+     finished arriving is the one thing it must never give.
+     
+     And the verdict has to be *true*. "This Moment has passed" is a claim about
+     a particular Moment, and this screen was opened by a person, not by an id —
+     there is no particular Moment here to make that claim about. Being told your
+     just-posted clip "has passed" when in fact nothing was ever saved as a
+     Moment is a sentence that sends people looking for a bug in the clock. So:
+     your own Space with nothing live offers to share one; somebody else's says
+     exactly what is true, which is that nothing of theirs is live right now. */
   if (groups && !moment && !isFetching) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top, justifyContent: 'center' }}>
-        <EmptyState icon="aperture-outline" title="This Moment has passed" message="Moments disappear after 24 hours." action={{ label: 'Back to Moments', onPress: close }} />
+        {mine ? (
+          <EmptyState
+            icon="aperture-outline"
+            title="Nothing of yours is live"
+            message="A Moment is a photo, a clip or a few words, and it lasts a day. You don’t have one up right now — post one and it appears here straight away."
+            action={{ label: 'Share a Moment', onPress: () => navigation.replace('MomentComposer') }}
+            secondary={{ label: 'Back to Moments', onPress: close }}
+          />
+        ) : (
+          <EmptyState
+            icon="aperture-outline"
+            title={`Nothing live from ${group?.user.name ?? 'them'} right now`}
+            message="Their Moments from the last 24 hours are gone. What they post next lands here the moment it goes up."
+            action={{ label: 'Back to Moments', onPress: close }}
+          />
+        )}
       </View>
     );
   }

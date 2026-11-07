@@ -37,12 +37,19 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export function PostCard({
   post: p,
-  active = true,
+  active = false,
   secondPerson = true,
   expanded = false,
   onOpen,
 }: {
   post: Post;
+  /**
+   * Whether this card's clip plays.
+   *
+   * False by default, and that default is the fix rather than a detail: a card
+   * that assumes it is the centre of attention makes every feed play every
+   * clip it has mounted. The list decides, through `useFeedFocus`.
+   */
   active?: boolean;
   /** True on your own feed, where "You" is right. False in a list of everyone's. */
   secondPerson?: boolean;
@@ -211,6 +218,9 @@ export function PostCard({
                 autoPlay={active}
                 holdToPause
                 loop={active}
+                /* A preview in a feed, not a screening: moving picture, silent,
+                   sound when the reader opens the post. */
+                muted
                 // In the corner, not over the picture: this clip sits inside the
                 // card's own "open the post" pressable, and a full-surface
                 // control here swallowed every tap meant for the post view.

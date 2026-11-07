@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { Button } from '../../components/Button';
 import { PostCard } from '../../components/feed/PostCard';
+import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
 import { useCrushesFeed } from '../../api/hooks';
 import { shownPosts } from '../../lib/features';
@@ -48,6 +49,8 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
   const insets = useSafeAreaInsets();
   const { contentWidth } = useLayout();
   const feed = useCrushesFeed();
+  // Which card is in front of the reader — the only one whose clip plays.
+  const focus = useFeedFocus();
 
   const onEndReached = useCallback(() => {
     feed.loadOlder();
@@ -84,6 +87,15 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       data={shownPosts(feed.posts)}
       keyExtractor={(p) => String(p.id)}
       showsVerticalScrollIndicator={false}
+      /* `listProps` carries the scroll offset and the viewport height to the
+         focus line; without it every mounted clip plays at once. */
+      {...focus.listProps}
+      /* Fewer rows alive at a time. Each mounted clip owns a native player, so a
+         default window of twenty-one cards meant twenty-one of them, paused or
+         not — the single largest cost in this feed on a real phone. */
+      windowSize={7}
+      initialNumToRender={3}
+      maxToRenderPerBatch={4}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
       refreshControl={
@@ -98,7 +110,11 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
         paddingBottom: space.xxxl,
         flexGrow: 1,
       }}
-      renderItem={({ item }) => <PostCard post={item} />}
+      renderItem={({ item }) => (
+        <Measured id={item.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+          <PostCard post={item} active={item.id === focus.activeId} />
+        </Measured>
+      )}
       /* The next page is fetched as the end approaches, and the footer says so
          quietly — a feed that simply stops mid-scroll is what made people think
          their older posts had been removed. */

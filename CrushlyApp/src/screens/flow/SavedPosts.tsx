@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Header, Screen, useLayout } from '../../components/Layout';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { PostCard } from '../../components/feed/PostCard';
+import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useSavedPosts } from '../../api/hooks';
 import { shownPosts } from '../../lib/features';
 import { space } from '../../theme/tokens';
@@ -37,6 +38,7 @@ export function SavedPostsScreen() {
   const { colors } = useTheme();
   const { contentWidth } = useLayout();
   const saved = useSavedPosts();
+  const focus = useFeedFocus();
 
   const onEndReached = useCallback(() => {
     saved.loadOlder();
@@ -73,7 +75,15 @@ export function SavedPostsScreen() {
             paddingBottom: space.xl,
             flexGrow: 1,
           }}
-          renderItem={({ item }) => <PostCard post={item} />}
+          {...focus.listProps}
+          windowSize={7}
+          initialNumToRender={3}
+          maxToRenderPerBatch={4}
+          renderItem={({ item }) => (
+            <Measured id={item.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+              <PostCard post={item} active={item.id === focus.activeId} />
+            </Measured>
+          )}
           ListEmptyComponent={
             <EmptyState
               icon="bookmark-outline"

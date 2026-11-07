@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { MomentsRow } from './MomentsRow';
 import { ClipRail } from '../../components/feed/ClipRail';
 import { PostCard } from '../../components/feed/PostCard';
+import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { keys, useCrush, usePublicFlow } from '../../api/hooks';
@@ -77,6 +78,8 @@ export function DiscoverPane() {
   const { colors } = useTheme();
   const qc = useQueryClient();
   const feed = usePublicFlow();
+  // One clip plays here too: the card the reader is on.
+  const focus = useFeedFocus();
 
   // Clips are not part of this build, so a clip in the public list is not a
   // card with a hole in it — it is not a card.
@@ -93,6 +96,7 @@ export function DiscoverPane() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
+        {...focus.listProps}
         contentContainerStyle={{
           paddingTop: space.xs,
           paddingHorizontal: gutter,
@@ -140,7 +144,9 @@ export function DiscoverPane() {
         ) : posts.length ? (
           <View style={{ gap: space.md }}>
             {posts.map((p) => (
-              <PostCard key={p.id} post={p} secondPerson={false} />
+              <Measured key={p.id} id={p.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+                <PostCard post={p} secondPerson={false} active={p.id === focus.activeId} />
+              </Measured>
             ))}
           </View>
         ) : (

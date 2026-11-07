@@ -98,6 +98,7 @@ export function EditedClip({
   fit,
   maxHeight,
   fallbackRatio = 4 / 5,
+  muted = false,
   onDoubleTap,
   accessibilityLabel,
 }: {
@@ -138,6 +139,16 @@ export function EditedClip({
   maxHeight?: number;
   /** Frame to hold before the source reports its shape. */
   fallbackRatio?: number;
+  /**
+   * Silent.
+   *
+   * A feed previews a clip the way a shop window previews a film: moving
+   * pictures, no soundtrack, and the sound only once somebody chooses it. It is
+   * also the only way a browser lets a clip start by itself at all — an unmuted
+   * autoplay is blocked outright, so a preview would simply sit still on the
+   * web.
+   */
+  muted?: boolean;
   /** Double tap, for players that keep the "double tap to react" gesture. */
   onDoubleTap?: () => void;
   accessibilityLabel?: string;
@@ -212,6 +223,10 @@ export function EditedClip({
   }, [player, look.clipVolume]);
 
   useEffect(() => {
+    if (player) player.muted = muted;
+  }, [player, muted]);
+
+  useEffect(() => {
     if (musicPlayer && look.music) musicPlayer.volume = look.music.volume;
   }, [musicPlayer, look.music]);
 
@@ -240,14 +255,14 @@ export function EditedClip({
       takeFocus(player);
       player.play();
       setPlaying(true);
-      if (look.music) musicPlayer?.play();
+      if (look.music && !muted) musicPlayer?.play();
     } else {
       releaseFocus(player);
       player.pause();
       setPlaying(false);
       musicPlayer?.pause();
     }
-  }, [player, musicPlayer, allowed, look.music]);
+  }, [player, musicPlayer, allowed, look.music, muted]);
 
   /**
    * Play/pause.

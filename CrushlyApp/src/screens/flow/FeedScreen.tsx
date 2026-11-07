@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { PostCard } from '../../components/feed/PostCard';
+import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { NotificationsSheet } from '../../components/NotificationsSheet';
 import { CrushesFeed } from '../crushes/CrushesFeed';
 import { ConnectionsTop, CircleHighlightsCard, type CircleFilter } from '../../components/feed/ConnectionsTop';
@@ -70,6 +71,7 @@ export function FeedScreen() {
   // Clips never reach a screen in this build, whichever list they came out of.
   const posts = shownPosts(following.posts);
   const { data: badges } = useBadges(true);
+  const focus = useFeedFocus();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const [tab, setTab] = useState<'crushes' | 'connections'>(
@@ -145,8 +147,18 @@ export function FeedScreen() {
         <FlatList
           data={rows}
           keyExtractor={(row) => row.key}
+          {...focus.listProps}
+          windowSize={7}
+          initialNumToRender={3}
+          maxToRenderPerBatch={4}
           renderItem={({ item: row }) => {
-            if (row.kind === 'item') return <PostCard post={row.item} />;
+            if (row.kind === 'item') {
+              return (
+                <Measured id={row.item.id} onBox={focus.setBox} onDrop={focus.dropBox}>
+                  <PostCard post={row.item} active={row.item.id === focus.activeId} />
+                </Measured>
+              );
+            }
             if (row.key === 'highlights') {
               return <CircleHighlightsCard onOpenCircle={(circleId) => navigation.navigate('Circle', { circleId })} />;
             }
