@@ -52,3 +52,23 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
     </View>
   );
 }
+
+/**
+ * The canvas behind a session restore, kept from the feed work: a launch must not
+ * begin with a screen you have to wait out, so this is the same light and the same
+ * mark as the splash, held still and dim, for only as long as the stored session
+ * takes to come back. No tagline, no sweep, no timing of its own.
+ */
+export function BootCanvas() {
+  const c = palettes.dark;
+  return (
+    <View
+      style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]}
+      accessibilityLabel="Crushly"
+    >
+      <Glow size={520} color={c.primary} opacity={0.4} style={{ position: 'absolute' }} />
+      <Glow size={520} color={c.crush} opacity={0.25} style={{ position: 'absolute', bottom: -280, right: -220 }} />
+      <Logo size={72} />
+    </View>
+  );
+}
