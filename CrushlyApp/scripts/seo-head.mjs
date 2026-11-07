@@ -22,10 +22,13 @@ const DESCRIPTION =
 const IMAGE = `${SITE}/brand/share-card.png`;
 const MARKER = '<!-- crushly-seo -->';
 
-// Set GOOGLE_SITE_VERIFICATION in the build env (Vercel project settings or the
-// deploy workflow) to the content string Search Console gives you, and the
-// ownership meta tag rides along with every deploy.
-const VERIFY = String(process.env.GOOGLE_SITE_VERIFICATION ?? '').trim();
+// Search Console ownership. The value is public by design - it ships in the
+// HTML of every page - so it lives here rather than in a secret. The env var
+// still wins if one is ever set, so another property can be added without a
+// code change.
+const VERIFY = String(
+  process.env.GOOGLE_SITE_VERIFICATION ?? 'YeeCgU2SU9k12xZv_iPTCFhwBmskf_9z3auJ4TQnTAw',
+).trim();
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const indexFile = `${dist}index.html`;
