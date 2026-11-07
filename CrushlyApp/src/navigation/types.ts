@@ -23,7 +23,9 @@ export type RootStackParamList = {
   Follow: undefined;
   Welcome: undefined;
   SignIn: undefined;
-  SignUp: undefined;
+  /** `email` opens straight on the code entry, for somebody whose
+   *  account exists but was never confirmed — they need a code, not a form. */
+  SignUp: { email?: string } | undefined;
   ForgotPassword: undefined;
   SetPassword: undefined;
   OnboardingIntentions: undefined;

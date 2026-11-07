@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { drawPosePair, isCompleteOtp, passwordStrength, sanitizeOtp, signUpOutcome } from './auth';
+import { drawPosePair, emailSendMessage, isCompleteOtp, passwordStrength, sanitizeOtp, signUpOutcome } from './auth';
 
 test('sanitizeOtp keeps digits only and caps at 6', () => {
   assert.equal(sanitizeOtp(''), '');
@@ -67,4 +67,26 @@ test('signUpOutcome separates a new address from one that already has an account
   // Defensive: no user at all is still treated as "nothing was sent".
   assert.equal(signUpOutcome({ session: null, user: { identities: null } }), 'already-registered');
   assert.equal(signUpOutcome({ session: null, user: null }), 'confirm-email');
+});
+
+test('emailSendMessage separates the one-minute wait from the hourly cap', () => {
+  // The exact body GoTrue returns for a second send inside the cooldown.
+  assert.match(
+    emailSendMessage('For security purposes, you can only request this after 44 seconds.'),
+    /try again in 44 seconds/i,
+  );
+  // The hourly allowance says the hour, not a countdown.
+  assert.doesNotMatch(emailSendMessage('email rate limit exceeded'), /seconds/i);
+});
+
+test('emailSendMessage names the hourly cap instead of shrugging', () => {
+  // GoTrue's own wording for the project-wide hourly allowance.
+  assert.match(emailSendMessage('email rate limit exceeded'), /this hour/i);
+  assert.match(emailSendMessage('over_email_send_rate_limit'), /this hour/i);
+  assert.match(emailSendMessage('Too many requests'), /this hour/i);
+  // A rejected recipient is a typo, not a queue.
+  assert.match(emailSendMessage('Email address not authorized'), /could not receive mail/i);
+  // Anything unrecognised still says something a person can do.
+  assert.match(emailSendMessage(''), /wait a minute/i);
+  assert.match(emailSendMessage('boom'), /wait a minute/i);
 });

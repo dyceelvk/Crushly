@@ -58,3 +58,36 @@ export function signUpOutcome(result: {
   if (result.user && (result.user.identities?.length ?? 0) === 0) return 'already-registered';
   return 'confirm-email';
 }
+
+/**
+ * Why an auth email did not arrive, in words a member can act on.
+ *
+ * The project sends through its own SMTP, and Supabase caps auth mail at a
+ * number of messages per hour for the *whole project* — every sign-up, resend
+ * and password reset shares one allowance. When that runs out GoTrue answers
+ * 429 and the screen used to say "couldn't send just now", which reads like a
+ * typo rather than a queue. The one useful fact is that an earlier email still
+ * holds a working code, so say that.
+ */
+export function emailSendMessage(raw: string): string {
+  const text = String(raw ?? '');
+  /**
+   * Two different refusals arrive with the same error code, and telling them
+   * apart matters: the per-address cooldown is over in under a minute, the
+   * hourly cap is not. GoTrue names the seconds only in the first.
+   */
+  const wait = /you can only request this after (\d+) seconds?/i.exec(text);
+  if (wait) {
+    return `One email a minute per address — try again in ${wait[1]} seconds.`;
+  }
+  if (/too many|rate limit|over_email_send_rate_limit/i.test(text)) {
+    return 'Crushly has sent as many emails as it can this hour. A code from an earlier email still works — or try again in a little while.';
+  }
+  if (/not authorized|invalid.*recipient|mailbox|address.*rejected/i.test(text)) {
+    return 'That address could not receive mail. Check it for typos — or sign in if you already have a Space.';
+  }
+  if (/invalid.*(smtp|login|credentials)|auth/i.test(text)) {
+    return 'Crushly couldn’t send mail just now. This is on us, not on you — try again shortly.';
+  }
+  return 'Couldn’t send that just now — wait a minute and try again.';
+}

@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
-import { signUpOutcome } from '../lib/auth';
+import { emailSendMessage, signUpOutcome } from '../lib/auth';
 import { keys } from '../api/hooks';
 import { getMe, webOrigin } from '../api/service';
 import type { Me } from '../api/types';
@@ -135,7 +135,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         const msg = String(error.message ?? '');
         if (/invalid login credentials/i.test(msg)) throw new ApiError(401, 'That email and password don’t match.');
-        if (/not confirmed/i.test(msg)) throw new ApiError(403, 'Your email isn’t confirmed yet — enter the code from your inbox during sign up, or run sign up again to get a new code.');
+        // A stable code, so the sign-in screen can offer the way out of this
+        // state instead of only describing it.
+        if (/not confirmed/i.test(msg)) throw new ApiError(403, 'Your email isn’t confirmed yet. We can send you a fresh code.', 'email-unconfirmed');
         if (!msg) throw new ApiError(400, 'Enter your email and password.');
         throw new ApiError(error.status ?? 400, msg);
       }
@@ -184,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           throw new ApiError(409, 'An account with this email already exists. Try signing in.');
         }
         if (/rate limit|too many/i.test(msg)) {
-          throw new ApiError(429, 'Too many emails just now. Give it an hour and try again — or sign in if you already have a Space.');
+          throw new ApiError(429, emailSendMessage(msg), 'email-rate-limit');
         }
         throw new ApiError(error.status ?? 400, msg || 'We couldn’t create your account. Please try again.');
       }

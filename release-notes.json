@@ -6,5 +6,6 @@
   "1.0.68": "Whisper is live. Messages arrive as they are sent, you can see when someone is typing or recording a voice note, and every Whisper you send now tells you whether it was sent, delivered or read.",
   "1.0.69": "Video notes are ten seconds and round. A Moment opens only from the ring around the picture, a Moment you have already watched now looks watched, and Top Crushes This Week only shows clips people actually crushed.",
   "1.0.70": "A gold ring now sits around somebody else\u2019s picture and never around your own, and your Space shows only what you actually post.",
-  "1.0.71": "A Space has one Add up, under the name, with Whisper beside it \u2014 the footer bar that covered the last post is gone, and Share lives in the three dots."
+  "1.0.71": "A Space has one Add up, under the name, with Whisper beside it \u2014 the footer bar that covered the last post is gone, and Share lives in the three dots.",
+  "1.0.72": "Signing up now tells you the truth about the email: the code signs you in on your phone, the link confirms you in a browser, and if a code never came, sign-in sends a fresh one."
 }

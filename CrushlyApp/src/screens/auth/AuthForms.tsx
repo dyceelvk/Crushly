@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthScaffold, AuthSwitch } from '../../components/AuthScaffold';
@@ -7,7 +7,7 @@ import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import * as service from '../../api/service';
 import { useAuthProviders } from '../../api/providers';
-import { sanitizeOtp, passwordStrength } from '../../lib/auth';
+import { emailSendMessage, sanitizeOtp, passwordStrength } from '../../lib/auth';
 import { errorLine } from '../../lib/errors';
 import { ApiError, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
@@ -108,12 +108,63 @@ function Banner({ message }: { message: string }) {
   );
 }
 
+/**
+ * "Send it again" — one button, because there is one email.
+ *
+ * It used to be two: "Verify with code" and "Get a link", where the second sent
+ * a brand-new mail. But the confirmation email already carries both a code and a
+ * link, so asking for "a link" asked for something that had already arrived, and
+ * paid for it out of a project-wide hourly budget that is small. What a person
+ * actually needs at this point is the same mail again, or a way in without it.
+ */
+function SendAnother({
+  busy,
+  sent,
+  cooldown,
+  onPress,
+}: {
+  busy: boolean;
+  sent: boolean;
+  cooldown: number;
+  onPress: () => void;
+}) {
+  return (
+    <View style={{ gap: space.xs }}>
+      <Button
+        title={cooldown > 0 ? `Email me another (${cooldown}s)` : 'Email me another'}
+        variant="outline"
+        icon="mail-outline"
+        loading={busy}
+        disabled={cooldown > 0}
+        onPress={onPress}
+        accessibilityHint="Sends the same email again, with a fresh code and link"
+      />
+      <Txt variant="small" color={sent ? 'gold' : 'textMuted'} align="center">
+        {sent
+          ? 'Sent. The newest email is the one that works — the older codes stop counting.'
+          : 'The email has both a 6-digit code and a link. It lasts an hour.'}
+      </Txt>
+    </View>
+  );
+}
+
 export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /**
+   * The address exists but was never confirmed.
+   *
+   * This is the state three of the first twelve accounts were left in: the
+   * sign-up screen said "check your inbox", the code never came, and the way
+   * back in said only that the email was unconfirmed. A message that describes
+   * a dead end without opening it is the same as no message, so this flag puts
+   * a real "send me a fresh code" beside it.
+   */
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [resending, setResending] = useState(false);
   const passwordRef = useRef<TextInput>(null);
   const google = useGoogleSignIn(setError);
 
@@ -123,12 +174,34 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
       return;
     }
     setError(null);
+    setUnconfirmed(false);
     setLoading(true);
     try {
       await signIn(e.trim(), p);
     } catch (err) {
       setError(errorLine(err));
+      setUnconfirmed(err instanceof ApiError && err.code === 'email-unconfirmed');
       setLoading(false);
+    }
+  };
+
+  /** Send a fresh code and hand the address to the sign-up screen's code entry. */
+  const sendFreshCode = async () => {
+    const to = email.trim().toLowerCase();
+    if (!to || resending) return;
+    setResending(true);
+    setError(null);
+    try {
+      await service.resendConfirmation(to);
+      navigation.navigate('SignUp', { email: to });
+    } catch (err) {
+      setError(
+        err instanceof ApiError && (err.isNetwork || err.status === 0)
+          ? errorLine(err)
+          : emailSendMessage(err instanceof Error ? err.message : ''),
+      );
+    } finally {
+      setResending(false);
     }
   };
 
@@ -141,6 +214,20 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
     >
       {!isConfigured ? <NotConfiguredNotice /> : null}
       {error ? <Banner message={error} /> : null}
+      {unconfirmed ? (
+        <View style={{ marginBottom: rhythm.group }}>
+          <Button
+            title="Send me a fresh code"
+            variant="outline"
+            icon="mail-outline"
+            loading={resending}
+            onPress={() => void sendFreshCode()}
+          />
+          <Txt variant="small" color="textMuted" align="center" style={{ marginTop: space.xs }}>
+            It goes to {email.trim() || 'your address'} and signs you in with a 6-digit code.
+          </Txt>
+        </View>
+      ) : null}
       {google.enabled ? (
         <View style={{ marginBottom: rhythm.group }}>
           <GoogleOption onPress={() => void google.start()} busy={google.busy} />
@@ -219,21 +306,41 @@ export function SignInScreen({ navigation }: ScreenProps<'SignIn'>) {
   );
 }
 
-export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
+export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
   const { colors } = useTheme();
   const { signUp, verifySignupOtp } = useAuth();
-  const [email, setEmail] = useState('');
+  /**
+   * A member can arrive here already holding an unconfirmed account: they signed
+   * up, the code never reached them, and sign-in told them so. `email` is that
+   * address — they land on the code entry with a code already on its way, not on
+   * a "create your account" form that would refuse them.
+   */
+  const handed = route?.params?.email?.trim().toLowerCase() ?? '';
+  const [email, setEmail] = useState(handed);
   const [password, setPassword] = useState('');
   const [adult, setAdult] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; adult?: string; form?: string }>({});
   const [loading, setLoading] = useState(false);
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  const [resent, setResent] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [sentTo, setSentTo] = useState<string | null>(handed || null);
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'choose' | 'code'>('choose');
+  const [mode, setMode] = useState<'choose' | 'code'>(handed ? 'code' : 'choose');
   const [linkState, setLinkState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  /**
+   * When another email may be sent.
+   *
+   * GoTrue allows a small number of auth emails an hour for the whole project,
+   * and every "send me another" spends one of them. Counting down on screen is
+   * not decoration: it is what stops one impatient minute from using up the
+   * afternoon for everybody.
+   */
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown((c) => (c <= 1 ? 0 : c - 1)), 1000);
+    return () => clearInterval(t);
+  }, [cooldown > 0]);
   const passwordRef = useRef<TextInput>(null);
   const google = useGoogleSignIn((m) => setErrors(m ? { form: m } : {}));
 
@@ -274,14 +381,29 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
     }
   };
 
-  const sendLink = async () => {
-    if (!sentTo || linkState === 'busy') return;
+  /**
+   * Send the confirmation email again — the same one, which carries both a code
+   * and a link, so there is nothing to choose between two buttons. Rate limits
+   * are per project, not per person, so a send is only offered when the last one
+   * is a minute old, and the wait is counted on screen rather than refused after
+   * the fact with "too many emails".
+   */
+  const sendAnother = async () => {
+    if (!sentTo || linkState === 'busy' || cooldown > 0) return;
     setLinkState('busy');
     try {
       await service.resendConfirmation(sentTo);
       setLinkState('done');
-    } catch {
+      setCooldown(60);
+    } catch (err) {
       setLinkState('error');
+      // A connection that failed and a mail server that refused are different
+      // problems, and the first one must not be described as the second.
+      setErrors({
+        form: err instanceof ApiError && (err.isNetwork || err.status === 0)
+          ? errorLine(err)
+          : emailSendMessage(err instanceof Error ? err.message : ''),
+      });
     }
   };
 
@@ -290,10 +412,26 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
       <AuthScaffold
         title="Check your inbox"
         lede={
-          <>
-            We sent a code and a link to <Txt variant="bodyStrong">{sentTo}</Txt>. Use whichever you
-            prefer — you’ll be signed in automatically either way.
-          </>
+          Platform.OS === 'web' ? (
+            <>
+              We sent a code and a link to <Txt variant="bodyStrong">{sentTo}</Txt>. Either one signs
+              you in here — the code, or the button in the email.
+            </>
+          ) : (
+            /*
+             * On a phone the two are not interchangeable, and saying they were
+             * was a promise the app could not keep: the link opens a browser and
+             * signs in *there*, so the person came back to a phone that was
+             * still signed out. The code is the way in on the device they are
+             * holding; the link is what confirms the address if they would
+             * rather do it in a browser first.
+             */
+            <>
+              We sent a code to <Txt variant="bodyStrong">{sentTo}</Txt>. Type it below — that is
+              what signs you in on this phone. The email also has a link, which confirms your
+              address in a browser.
+            </>
+          )
         }
         cta={
           mode === 'code' ? (
@@ -305,21 +443,13 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
 
         {mode === 'choose' ? (
           <View style={{ gap: space.sm }}>
-            <Button title="Verify with code" icon="keypad-outline" onPress={() => setMode('code')} />
-            <Button title="Get a link" variant="outline" icon="link-outline" loading={linkState === 'busy'} onPress={() => void sendLink()} />
-            {linkState === 'done' ? (
-              <Txt variant="small" color="gold" align="center" style={{ marginTop: 4 }}>
-                Link sent! Open the newest email and tap “Confirm my email”.
-              </Txt>
-            ) : linkState === 'error' ? (
-              <Txt variant="small" color="danger" align="center">
-                Couldn’t send just now — wait a minute and try again.
-              </Txt>
-            ) : (
-              <Txt variant="small" color="textMuted" align="center">
-                The code is fastest. The link works great from your phone.
-              </Txt>
-            )}
+            <Button title="Enter the code" icon="keypad-outline" onPress={() => setMode('code')} />
+            <SendAnother
+              busy={linkState === 'busy'}
+              sent={linkState === 'done'}
+              cooldown={cooldown}
+              onPress={() => void sendAnother()}
+            />
           </View>
         ) : (
           <>
@@ -364,20 +494,12 @@ export function SignUpScreen({ navigation }: ScreenProps<'SignUp'>) {
               </Txt>
             ) : null}
             <View style={{ marginTop: space.lg, gap: space.sm }}>
-              <Button title="Get a link instead" variant="outline" icon="link-outline" loading={linkState === 'busy'} onPress={() => void sendLink()} />
-              {linkState === 'done' ? (
-                <Txt variant="small" color="gold" align="center">
-                  Link sent! Open the newest email and tap “Confirm my email”.
-                </Txt>
-              ) : linkState === 'error' ? (
-                <Txt variant="small" color="danger" align="center">
-                  Couldn’t send just now — wait a minute and try again.
-                </Txt>
-              ) : (
-                <Txt variant="small" color="textMuted" align="center">
-                  No code? We can email a link instead.
-                </Txt>
-              )}
+              <SendAnother
+                busy={linkState === 'busy'}
+                sent={linkState === 'done'}
+                cooldown={cooldown}
+                onPress={() => void sendAnother()}
+              />
             </View>
           </>
         )}
