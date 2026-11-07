@@ -261,7 +261,11 @@ def sign_in():
         fail('no walk credentials in the environment (CRUSHLY_WALK_EMAIL / CRUSHLY_WALK_PASSWORD)')
     # Welcome offers "Get Started" (create an account) and a quieter line for
     # people who already have one. The walk takes the second.
-    if not tap('I already have an account', tries=3):
+    # "I already have an account" was this door's copy until the opening was
+    # rewritten; both are tried so the walk survives the next rewording too.
+    if not (tap('I already have an account', tries=1)
+            or tap("I'm already on Crushly", tries=2)
+            or tap('Sign in', tries=1)):
         # Some builds land straight on the form; only fail if the form is absent too.
         if not find(nodes() or [], 'Welcome back'):
             fail('could not reach the sign-in form from Welcome')
@@ -283,7 +287,9 @@ def sign_in():
     time.sleep(1.0)
     if not tap('Sign in', tries=3, required=True):
         return False
-    if wait_for(['Connections', 'Whispers'], 120, 'process exited while signing in'):
+    # The tab bar says Home / Discover / Whispers / Space. "Connections" is a
+    # segment inside the feed, not something a signed-in launch guarantees.
+    if wait_for(['Discover', 'Whispers'], 120, 'process exited while signing in'):
         log('signed in as the walk account')
         return True
     shot('01-sign-in-stuck')
@@ -861,16 +867,16 @@ def main():
         if not wait_for(['Follow the feelings'], 90, 'process exited during startup'):
             fail('the follow-the-feelings opening did not appear')
 
-        # 2. One tap anywhere, which is the whole interaction on that screen.
-        size = adb('shell', 'wm', 'size', check=False).strip().split()[-1]
-        w, h = (int(v) for v in size.split('x'))
-        adb('shell', 'input', 'tap', str(w // 2), str(h // 2))
-        time.sleep(2)
-
-        # 3. Welcome, which is where signing in starts.
-        if not wait_for(['Welcome to Crushly', 'Get Started'], 60,
-                        'process exited after the opening screen'):
-            fail('tapping the opening did not reach Welcome')
+        # 2. The opening's own doors. This used to be "one tap anywhere, which
+        #    is the whole interaction on that screen", then a wait for the old
+        #    copy — "Welcome to Crushly" and "Get Started" — which no longer
+        #    exists: the opening screen *is* Welcome now, with one line and two
+        #    buttons. So the tap advanced nothing and the walk failed a release
+        #    that was perfectly good, and no APK got published. Read the screen
+        #    the app actually draws instead of a coordinate or a retired label.
+        if not wait_for(['Start with a feeling', "I'm already on Crushly"], 30,
+                        'process exited on the opening screen'):
+            fail('the opening did not offer a door to sign in')
         time.sleep(2)
 
         logs = adb('logcat', '-d', '-b', 'crash', check=False)
