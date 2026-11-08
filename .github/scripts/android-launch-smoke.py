@@ -750,6 +750,9 @@ def walk():
     typed = [n['text'] for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
     if not typed or typed[0] != 'Local moment draft check': fail('Moment text did not reach the editor intact')
     moment_text = typed[0]
+    # Android's IME can cover the fixed footer while uiautomator still reports
+    # the footer behind it. Dismiss the keyboard before actually tapping Save.
+    back()
     tap('Save draft', required=True)
     if not wait_for(['Discover', 'Whispers'], 30, 'left Moment draft save'):
         fail('saving Moment draft did not leave the editor')
