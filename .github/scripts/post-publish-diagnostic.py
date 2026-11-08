@@ -33,7 +33,7 @@ def main():
     token = decode(raw).get('access_token')
     if code != 200 or not token: raise RuntimeError('walk account sign-in failed (HTTP %s)' % code)
     headers = {'apikey': key, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
-    wh = {'Authorization': 'Bearer ' + token, 'Content-Type': 'video/mp4', 'X-Media-Kind': 'posts'}
+    wh = {'User-Agent': 'Crushly-Publish-Diagnostic/1.0', 'Authorization': 'Bearer ' + token, 'Content-Type': 'video/mp4', 'X-Media-Kind': 'posts'}
     def rpc(name, payload):
         return request(base + '/rest/v1/rpc/' + name, 'POST', json.dumps(payload).encode(), headers)
     def upload(size):
@@ -52,7 +52,7 @@ def main():
         print('Text post error:', str(decode(raw).get('message', ''))[:300])
         failures.append('text post RPC')
     code, raw = upload(1024 * 1024)
-    print('Small media upload: HTTP', code, 'error:', str(decode(raw).get('error', 'non-JSON response' if code != 201 else ''))[:300])
+    print('Small media upload: HTTP', code, 'error:', str(decode(raw).get('error', raw[:250].decode('utf-8', 'replace') if code != 201 else ''))[:300])
     url = decode(raw).get('url')
     if code != 201 or not url:
         failures.append('small upload')
@@ -76,7 +76,7 @@ def main():
             print('Small media cleanup: HTTP', rc)
             if rc not in (200, 204, 404): failures.append('small media cleanup')
     code, raw = upload(30 * 1024 * 1024)
-    print('30 MB media upload: HTTP', code, 'error:', str(decode(raw).get('error', 'non-JSON response' if code != 201 else ''))[:300])
+    print('30 MB media upload: HTTP', code, 'error:', str(decode(raw).get('error', raw[:250].decode('utf-8', 'replace') if code != 201 else ''))[:300])
     large_url = decode(raw).get('url')
     if code != 201 or not large_url:
         failures.append('30 MB upload')
