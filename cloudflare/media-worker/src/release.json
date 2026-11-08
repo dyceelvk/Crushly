@@ -1,10 +1,10 @@
 {
-  "version": "1.0.79",
-  "versionCode": 79,
+  "version": "1.0.80",
+  "versionCode": 80,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.79-Android9plus.apk",
-  "notes": "Circles on your Space use compact Android controls, the Flow player keeps the whole frame in view, and the feed starts preparing nearby photos sooner while doing less work for paused clips.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.79/Crushly-1.0.79-Android9plus.apk",
-  "bytes": 95011623,
-  "sha256": "8ffe106b0cf6b54458c54879ba732a0a7adcd4177fc4da53cf02adaebb34e673"
+  "file": "Crushly-1.0.80-Android9plus.apk",
+  "notes": "Advanced options now opens, and you can choose whether people may comment on a new post. The editor no longer offers a fake scheduling switch or silently drops additional media.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.80/Crushly-1.0.80-Android9plus.apk",
+  "bytes": 95015791,
+  "sha256": "999add74cfdd53e684de62543be0f2f497d87d1dbee9a104b239d38e8faf59a7"
 }
