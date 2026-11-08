@@ -38,7 +38,9 @@ const LIFECYCLE = {
 
 const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account';
 const AUTH_TTL_MS = 23 * 60 * 60 * 1000; // B2 tokens last 24h; refresh early
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // matches media_upload_ticket's ceiling
+// Match the database and app's largest allowed media; the ticket still enforces
+// smaller per-kind limits (e.g. photos and Moments).
+const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
 
 /**
  * Backblaze wants a SHA-1 with every upload, and hashing is the only real work

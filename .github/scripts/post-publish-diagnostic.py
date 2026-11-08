@@ -39,8 +39,15 @@ def main():
     def upload(size):
         return request(worker + '/m', 'POST', b'\0' * size, wh)
     def delete_object(url):
-        return request(url, 'DELETE', headers={'Authorization': 'Bearer ' + token})[0]
+        return request(url, 'DELETE', headers={'Authorization': 'Bearer ' + token, 'User-Agent': 'Crushly-Publish-Diagnostic/1.0'})[0]
     failures = []
+    orphan_path = os.environ.get('ORPHAN_PATH', '')
+    if orphan_path:
+        if not orphan_path.startswith('posts/') or '..' in orphan_path:
+            raise RuntimeError('invalid cleanup path')
+        rc = delete_object(worker + '/m/' + orphan_path)
+        print('Previous test object cleanup: HTTP', rc)
+        if rc not in (200, 204, 404): failures.append('previous test object cleanup')
     code, raw = rpc('create_post_with_options', {'p_body': 'Automated text-only publish test', 'p_media_url': None,
         'p_audience': 'connections', 'p_circle_id': None, 'p_edit': None, 'p_comments_enabled': True})
     text_id = decode(raw).get('id')

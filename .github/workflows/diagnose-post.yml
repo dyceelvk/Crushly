@@ -1,6 +1,11 @@
 name: Diagnose post publishing
 on:
   workflow_dispatch:
+    inputs:
+      orphan_path:
+        description: Optional walk-account diagnostic object to clean up
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
@@ -15,4 +20,5 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
           WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
+          ORPHAN_PATH: ${{ inputs.orphan_path }}
         run: python3 .github/scripts/post-publish-diagnostic.py
