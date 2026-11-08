@@ -34,12 +34,12 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
   }, [fade, lift, tagline, reduceMotion]);
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Crushly. Follow the feelings.">
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="Hollop. Follow the feelings.">
       <Glow size={460} color={c.primary} opacity={0.8} style={{ position: 'absolute' }} />
       <Glow size={380} color={c.crush} opacity={0.5} style={{ position: 'absolute', top: -140, right: -120 }} />
       <LightSweep duration={1300} />
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: lift }] }}>
-        <Logo size={78} />
+        <Logo size={78} color={c.text} />
         <Animated.Text
           style={{
             fontFamily: fontsReady ? fonts.medium : undefined, fontSize: 15, color: c.textSecondary, marginTop: 8, letterSpacing: 0.4,
@@ -64,11 +64,11 @@ export function BootCanvas() {
   return (
     <View
       style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]}
-      accessibilityLabel="Crushly"
+      accessibilityLabel="Hollop"
     >
       <Glow size={520} color={c.primary} opacity={0.4} style={{ position: 'absolute' }} />
       <Glow size={520} color={c.crush} opacity={0.25} style={{ position: 'absolute', bottom: -280, right: -220 }} />
-      <Logo size={72} />
+      <Logo size={72} color={c.text} />
     </View>
   );
 }

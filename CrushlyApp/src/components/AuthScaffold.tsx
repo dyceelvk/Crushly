@@ -82,7 +82,7 @@ export function AuthScaffold({ title, lede, eyebrow, children, cta, footnote, on
             onPress={onBack || (() => navigation.goBack())}
           />
         )}
-        <View style={{ flex: 1, alignItems: 'center' }} accessible accessibilityLabel="Crushly">
+        <View style={{ flex: 1, alignItems: 'center' }} accessible accessibilityLabel="Hollop">
           <Logo size={22} />
         </View>
         <View style={{ width: HIT, height: HIT }} />

@@ -265,7 +265,7 @@ def sign_in():
     # "I already have an account" was this door's copy until the opening was
     # rewritten; both are tried so the walk survives the next rewording too.
     if not (tap('I already have an account', tries=1)
-            or tap("I'm already on Crushly", tries=2)
+            or tap("I'm already on Hollop", tries=2)
             or tap('Sign in', tries=1)):
         # Some builds land straight on the form; only fail if the form is absent too.
         if not find(nodes() or [], 'Welcome back'):
@@ -397,7 +397,7 @@ def assert_strip(seen):
     # the bell next to search rather than in the corner the hamburger left, and
     # the drawer it used to open is gone — so the corner must hold nothing that
     # opens a menu.
-    magnifier = find(seen, 'Search Crushly')
+    magnifier = find(seen, 'Search Hollop')
     if magnifier is None:
         fail('the strip has no magnifier; search belongs beside the bell')
     bell = find(seen, 'Notifications')
@@ -479,7 +479,7 @@ def assert_discover(seen):
     rail = find(seen, 'Top Crushes This Week')
     if rail is not None:
         log('discover: clips rail is on the page; checked')
-    magnifier = find(seen, 'Search Crushly')
+    magnifier = find(seen, 'Search Hollop')
     if magnifier is None:
         fail('Discover has no magnifier; search lives here')
     if abs(magnifier['y'] - title['y']) > 40:
@@ -711,6 +711,63 @@ def walk():
     return_to_tabs()
     log('editor: advanced sheet opens, comments choice persists, remix status is honest; checked')
 
+    # Save a post without a network request, restart the app, and reopen it.
+    tap('Create post', required=True)
+    tap('Post', required=True)
+    if not type_into(0, 'Local post draft check'): fail('draft post text field missing')
+    back()
+    if not scroll_to('Save draft', swipes=6): fail('post Save draft button missing')
+    tap('Save draft', required=True)
+    if not wait_for(['Discover', 'Whispers'], 30, 'left post draft save'):
+        fail('saving post draft did not leave the editor')
+    adb('shell', 'am', 'force-stop', PACKAGE)
+    adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.MainActivity')
+    if not wait_for(['Discover', 'Whispers'], 90, 'restart after draft save'):
+        fail('app did not restart after saving draft')
+    tap('Create post', required=True)
+    tap('Drafts on this phone', required=True)
+    if not find(nodes() or [], 'Local post draft check'): fail('post draft did not survive restart')
+    tap('Open draft', required=True)
+    if not wait_for(['Local post draft check'], 20, 'post draft reopen'):
+        fail('post draft content was not restored')
+    tap('Cancel', required=True)
+    tap('Discard changes', required=True)
+    tap('Create post', required=True)
+    tap('Drafts on this phone', required=True)
+    tap('Delete', required=True)
+    tap('Delete draft', required=True)
+    tap('Close', required=True)
+    tap('Cancel', required=True)
+    return_to_tabs()
+    log('phone draft: post saved, survived process restart, reopened and deleted; checked')
+
+    # Also exercise the separate Moment composer; no test post is published.
+    tap('Create post', required=True)
+    tap('Moment', required=True)
+    if not type_into(0, 'Local moment draft check'): fail('Moment draft text field missing')
+    back()
+    tap('Save draft', required=True)
+    if not wait_for(['Discover', 'Whispers'], 30, 'left Moment draft save'):
+        fail('saving Moment draft did not leave the editor')
+    tap('Create post', required=True)
+    tap('Moment', required=True)
+    tap('Drafts on this phone', required=True)
+    if not find(nodes() or [], 'Local moment draft check'): fail('Moment draft is missing')
+    tap('Open draft', required=True)
+    if not wait_for(['Local moment draft check'], 20, 'Moment draft reopen'):
+        fail('Moment draft content was not restored')
+    tap('Close', required=True)
+    tap('Discard changes', required=True)
+    tap('Create post', required=True)
+    tap('Moment', required=True)
+    tap('Drafts on this phone', required=True)
+    tap('Delete', required=True)
+    tap('Delete draft', required=True)
+    tap('Close', required=True)
+    tap('Close', required=True)
+    return_to_tabs()
+    log('phone draft: Moment saved, reopened and deleted; checked')
+
     # Discover is a page, not only the door to search: photograph it before
     # opening search, or the one screen the user twice described as "a white
     # board with a search icon" is the one screen never looked at.
@@ -718,7 +775,7 @@ def walk():
     if tap('Discover'):
         seen = shot('07-discover')
         assert_discover(seen)
-        if tap('Search Crushly'):
+        if tap('Search Hollop'):
             shot('08-discover-search')
         return_to_tabs()
 
@@ -818,7 +875,7 @@ def walk():
                           ('Appearance', 'appearance'),
                           ('Privacy & visibility', 'privacy'),
                           ('Discover preferences', 'filters'),
-                          ('Crushly Plus', 'plus'),
+                          ('Hollop Plus', 'plus'),
                           ('Verification', 'verification')):
             tap('Space')
             if not tap('Settings', tries=2):
@@ -834,13 +891,13 @@ def walk():
     if tap('Notifications', tries=2):
         seen = shot('{:02d}-notifications-sheet'.format(n))
         n += 1
-        if find(seen, 'From Crushly'):
-            log('notifications: sheet with Yours and From Crushly')
-            if tap('From Crushly', tries=2):
+        if find(seen, 'From Hollop'):
+            log('notifications: sheet with Yours and From Hollop')
+            if tap('From Hollop', tries=2):
                 shot('{:02d}-notifications-from-crushly'.format(n))
                 n += 1
         else:
-            fail('the notification sheet has no "From Crushly" tab')
+            fail('the notification sheet has no "From Hollop" tab')
         # Back out of the sheet the way a person would.
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(1.5)
@@ -849,7 +906,7 @@ def walk():
     # Search with something actually typed into it: the empty state is not the
     # screen, and the results are the part people use.
     tap('Discover')
-    if tap('Search Crushly'):
+    if tap('Search Hollop'):
         type_into(0, 'spencer')
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(2.5)
@@ -905,7 +962,7 @@ def main():
         #      the sentence, which says "Tap anywhere to begin" and means it;
         #      then Welcome, which offers two named doors.
         #    The tap is right; the wait that followed it was not — it looked
-        #    for "Welcome to Crushly" and "Get Started", copy that has been
+        #    for "Welcome to Hollop" and "Get Started", copy that has been
         #    retired, so a good release failed here and no APK was published.
         #    Tap where the screen tells you to, then expect the doors it draws.
         if not tap('Tap anywhere to begin', tries=2):
@@ -914,7 +971,7 @@ def main():
             adb('shell', 'input', 'tap', str(w // 2), str(h // 2))
         time.sleep(2)
 
-        if not wait_for(['Start with a feeling', "I'm already on Crushly"], 60,
+        if not wait_for(['Start with a feeling', "I'm already on Hollop"], 60,
                         'process exited after the opening screen'):
             fail('tapping the opening did not reach Welcome')
         time.sleep(2)

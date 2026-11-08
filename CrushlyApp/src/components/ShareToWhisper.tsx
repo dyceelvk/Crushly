@@ -67,7 +67,7 @@ export function ShareToWhisper({
     if (!post) return;
     try {
       await Share.share({
-        message: post.body ? `${post.body}\n\n— on Crushly` : 'A post on Crushly',
+        message: post.body ? `${post.body}\n\n— on Hollop` : 'A post on Hollop',
       });
     } catch {
       // Backing out of the system sheet is not a failure worth reporting.
@@ -96,8 +96,8 @@ export function ShareToWhisper({
             title={query ? 'Nobody by that name' : 'No Whispers yet'}
             message={
               query
-                ? 'Try another name, or send it outside Crushly below.'
-                : 'A Whisper opens when you and somebody both Crush. Until then, send it outside Crushly below.'
+                ? 'Try another name, or send it outside Hollop below.'
+                : 'A Whisper opens when you and somebody both Crush. Until then, send it outside Hollop below.'
             }
           />
         ) : (
@@ -145,7 +145,7 @@ export function ShareToWhisper({
         <Pressable
           onPress={outside}
           accessibilityRole="button"
-          accessibilityLabel="Share outside Crushly"
+          accessibilityLabel="Share outside Hollop"
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
@@ -155,7 +155,7 @@ export function ShareToWhisper({
           })}
         >
           <Ionicons name={Platform.OS === 'ios' ? 'share-outline' : 'share-social-outline'} size={20} color={colors.textSecondary} />
-          <Txt variant="body">Share outside Crushly</Txt>
+          <Txt variant="body">Share outside Hollop</Txt>
         </Pressable>
       </View>
     </BottomSheet>

@@ -1,4 +1,4 @@
-// Crushly is a product of Riel Inc.
+// Hollop is a product of Riel Inc.
 //
 // Everything the app says about the company, and every link that points at the
 // company website, lives here — one file to change, nowhere else.

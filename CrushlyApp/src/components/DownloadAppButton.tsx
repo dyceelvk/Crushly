@@ -12,7 +12,7 @@ import { useAppUpdate } from '../api/hooks';
  * watch a Moment — and then has no way to put the thing on their phone, because
  * the download only ever lived inside the Android app they do not have yet.
  * This is that door, and it opens the same file the in-app updater opens, so
- * there is one build of Crushly for Android and not two.
+ * there is one build of Hollop for Android and not two.
  *
  * When no file is published the button says so instead of doing nothing: a
  * download control that silently does nothing is a lie about the product.
@@ -38,7 +38,7 @@ export function DownloadAppButton({
         title: 'No build published yet',
         message: isFetching
           ? 'Still asking the update server. Try again in a moment.'
-          : 'Crushly for Android isn’t on the update server yet.',
+          : 'Hollop for Android isn’t on the update server yet.',
       });
       return;
     }
@@ -59,8 +59,8 @@ export function DownloadAppButton({
       icon="download-outline"
       onPress={open}
       full={false}
-      accessibilityLabel="Download the Crushly app for Android"
-      accessibilityHint="Opens the latest Crushly APK"
+      accessibilityLabel="Download the Hollop app for Android"
+      accessibilityHint="Opens the latest Hollop APK"
     />
   );
 }

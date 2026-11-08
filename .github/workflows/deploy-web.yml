@@ -90,7 +90,7 @@ jobs:
           for needle in \
             'Where a Crush turns into a conversation.' \
             'Somebody will. A complete Space and a fresh Moment help you get noticed.' \
-            'Crushly for Android' \
+            'Hollop for Android' \
             'Moments disappear after 24 hours.'; do
             if ! grep -rqF "$needle" dist --include='*.js'; then
               echo "::error::The export does not contain '$needle'. Refusing to deploy."

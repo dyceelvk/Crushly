@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -38,6 +38,9 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { VIDEO_ENABLED } from '../../lib/features';
 import { radius, space } from '../../theme/tokens';
 import { DownloadAppButton } from '../../components/DownloadAppButton';
+import { LocalDraftsSheet, LeaveDraftSheet } from '../../components/LocalDraftsSheet';
+import { deleteLocalDraft, localDraftsAvailable, saveLocalDraft, type LocalDraft } from '../../lib/localDrafts';
+import { useAuth } from '../../state/auth';
 import type { ScreenProps } from '../../navigation/types';
 
 type MediaItem = {
@@ -75,6 +78,13 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const { contentWidth, gutter } = useLayout();
   const toast = useToast();
   const qc = useQueryClient();
+  const { me } = useAuth();
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const allowLeaving = useRef(false);
+  const pendingLeave = useRef<Parameters<typeof navigation.dispatch>[0] | null>(null);
 
   const twoCol = width >= 600;
 
@@ -137,6 +147,53 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   );
 
   const ready = body.trim().length > 0 || media.length > 0;
+
+  useEffect(() => navigation.addListener('beforeRemove', (event) => {
+    if (allowLeaving.current || (!ready && !sound)) return;
+    event.preventDefault();
+    pendingLeave.current = event.data.action;
+    setLeaveOpen(true);
+  }), [navigation, ready, sound]);
+
+  const leave = () => {
+    allowLeaving.current = true;
+    setLeaveOpen(false);
+    const action = pendingLeave.current;
+    pendingLeave.current = null;
+    if (action) navigation.dispatch(action);
+    else navigation.goBack();
+  };
+  const saveDraft = async () => {
+    if (!localDraftsAvailable || !me?.id || savingDraft) return;
+    setSavingDraft(true);
+    try {
+      const item = primaryMedia;
+      const files: Record<string, string> = item ? { media: item.uri } : {};
+      const musicUri = item?.edit?.music?.uri;
+      if (musicUri && /^(file|content):\/\//i.test(musicUri)) files.music = musicUri;
+      await saveLocalDraft(me.id, {
+        kind: 'post', body,
+        data: { audience, commentsEnabled, sound, media: item ? { ...item, uri: undefined } : null },
+        files,
+      }, draftId);
+      toast({ kind: 'success', title: 'Draft saved on this phone' });
+      leave();
+    } catch {
+      toast({ kind: 'error', title: 'Draft not saved', message: 'Your work is still here. Check phone storage and try again.' });
+    } finally { setSavingDraft(false); }
+  };
+  const openDraft = (draft: LocalDraft) => {
+    const d = draft.data as { audience?: 'everyone' | 'connections'; commentsEnabled?: boolean; sound?: {id: number; label: string} | null; media?: Omit<MediaItem, 'uri'> | null };
+    setBody(draft.body); setAudience(d.audience ?? 'everyone'); setCommentsEnabled(d.commentsEnabled ?? true); setSound(d.sound ?? null);
+    const edit = d.media?.edit && draft.files.music && d.media.edit.music
+      ? { ...d.media.edit, music: { ...d.media.edit.music, uri: draft.files.music } } : d.media?.edit;
+    setMedia(d.media && draft.files.media ? [{ ...d.media, edit, uri: draft.files.media }] : []);
+    setDraftId(draft.id); setKind('flow'); setDraftsOpen(false);
+  };
+  const draftsUi = <>
+    <LocalDraftsSheet visible={draftsOpen} owner={me?.id ?? 0} kind="post" onClose={() => setDraftsOpen(false)} onOpen={openDraft} />
+    <LeaveDraftSheet visible={leaveOpen} canSave={localDraftsAvailable && !!me?.id && ready} saving={savingDraft} onSave={() => void saveDraft()} onDiscard={leave} onClose={() => { pendingLeave.current = null; setLeaveOpen(false); }} />
+  </>;
 
   const pickMedia = async () => {
     try {
@@ -257,6 +314,8 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       void qc.invalidateQueries({ queryKey: ['space-posts'] });
       void qc.invalidateQueries({ queryKey: keys.me });
       toast({ kind: 'success', title: 'Post shared' });
+      if (draftId && me?.id) await deleteLocalDraft(me.id, draftId).catch(() => undefined);
+      allowLeaving.current = true;
       navigation.goBack();
     } catch (e) {
       // The toast washes technical detail out of the sentence it shows, which is
@@ -310,6 +369,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           }}
           showsVerticalScrollIndicator={false}
         >
+          {localDraftsAvailable && me?.id ? <Button title="Drafts on this phone" variant="outline" size="md" onPress={() => setDraftsOpen(true)} disabled={ready} /> : null}
           {BOARDS.map((b, i) => (
             <Rise key={b.kind} delay={i * 70}>
             <PressableScale
@@ -345,6 +405,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
             </Rise>
           ))}
         </ScrollView>
+        {draftsUi}
       </View>
     );
   }
@@ -396,6 +457,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {localDraftsAvailable && me?.id && !ready ? <Button title="Drafts on this phone" variant="ghost" size="sm" full={false} onPress={() => setDraftsOpen(true)} /> : null}
         {twoCol ? (
           <View style={{ flexDirection: 'row', gap: space.xl, alignItems: 'flex-start' }}>
             {/* Left column — composer */}
@@ -473,10 +535,12 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
             </Txt>
           </View>
         ) : (
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, paddingHorizontal: gutter }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 10, paddingHorizontal: gutter }}>
+            {localDraftsAvailable && me?.id ? <Button title="Save draft" size="sm" variant="outline" full={false} onPress={() => void saveDraft()} disabled={!ready || savingDraft} loading={savingDraft} /> : null}
             <Button title="Reset" size="sm" variant="ghost" full={false} onPress={() => setConfirmReset(true)} accessibilityLabel="Reset post" />
             <Button
               title="Post"
+              full={false}
               icon="paper-plane"
               variant="primary"
               disabled={!canPost}
@@ -509,9 +573,10 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       <ConfirmSheet visible={confirmReset} title="Reset this post?" message="This clears the words, media and post settings."
         confirmLabel="Reset post" destructive onCancel={() => setConfirmReset(false)} onConfirm={() => {
           setBody(''); setMedia([]); setPendingMedia(null); setAudience('everyone');
-          setCommentsEnabled(true); setSound(null); setConfirmReset(false);
+          setCommentsEnabled(true); setSound(null); setDraftId(null); setConfirmReset(false);
         }} />
 
+      {draftsUi}
       <VideoEditorModal
         visible={editorOpen}
         sourceUri={primaryMedia?.uri ?? null}

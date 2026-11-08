@@ -132,7 +132,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
           <Pressable
             onPress={() => navigation.navigate('SignIn')}
             accessibilityRole="button"
-            accessibilityLabel="I’m already on Crushly, sign in"
+            accessibilityLabel="I’m already on Hollop, sign in"
             hitSlop={HIT / 2}
             style={({ pressed }) => ({
               marginTop: space.lg,
@@ -144,7 +144,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
             })}
           >
             <Txt variant="bodyStrong" color="textSecondary">
-              I’m already on Crushly
+              I’m already on Hollop
             </Txt>
           </Pressable>
 

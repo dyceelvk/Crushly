@@ -1,23 +1,23 @@
 {
   "expo": {
-    "name": "Crushly",
+    "name": "Hollop",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.82",
+    "version": "1.0.83",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "Crushly — follow the feelings. A social space for real connection.",
+    "description": "Hollop — follow the feelings. A social space for real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
       "infoPlist": {
-        "NSCameraUsageDescription": "Crushly uses your camera for profile photos, Moments and verification selfies.",
-        "NSPhotoLibraryUsageDescription": "Crushly lets you choose photos for your profile, Moments and messages.",
-        "NSMicrophoneUsageDescription": "Crushly uses your microphone for voice calls and voice messages.",
-        "NSLocationWhenInUseUsageDescription": "Crushly uses your approximate location to show distance. Your exact location is never shared."
+        "NSCameraUsageDescription": "Hollop uses your camera for profile photos, Moments and verification selfies.",
+        "NSPhotoLibraryUsageDescription": "Hollop lets you choose photos for your profile, Moments and messages.",
+        "NSMicrophoneUsageDescription": "Hollop uses your microphone for voice calls and voice messages.",
+        "NSLocationWhenInUseUsageDescription": "Hollop uses your approximate location to show distance. Your exact location is never shared."
       }
     },
     "android": {
@@ -39,12 +39,12 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 82
+      "versionCode": 83
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "Crushly",
-      "shortName": "Crushly",
+      "name": "Hollop",
+      "shortName": "Hollop",
       "themeColor": "#2A0F2B",
       "backgroundColor": "#2A0F2B",
       "bundler": "metro",
@@ -56,7 +56,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Crushly uses your microphone for voice calls and voice messages."
+          "microphonePermission": "Hollop uses your microphone for voice calls and voice messages."
         }
       ],
       "expo-font",
@@ -71,17 +71,18 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Crushly lets you choose photos for your profile, Moments and messages.",
-          "cameraPermission": "Crushly uses your camera for profile photos, Moments and verification selfies."
+          "photosPermission": "Hollop lets you choose photos for your profile, Moments and messages.",
+          "cameraPermission": "Hollop uses your camera for profile photos, Moments and verification selfies."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Crushly uses your approximate location to show distance. Your exact location is never shared."
+          "locationWhenInUsePermission": "Hollop uses your approximate location to show distance. Your exact location is never shared."
         }
       ],
-      "./plugins/withCall"
+      "./plugins/withCall",
+      "./plugins/withLocalDraftsBackup"
     ]
   }
 }

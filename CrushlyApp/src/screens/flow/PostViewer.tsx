@@ -225,7 +225,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     if (!post) return;
     try {
       const Clipboard = await import('expo-clipboard');
-      await Clipboard.setStringAsync(post.body || `${authorName} on Crushly`);
+      await Clipboard.setStringAsync(post.body || `${authorName} on Hollop`);
       toast({ kind: 'success', title: 'Copied', message: 'The words are on your clipboard.' });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t copy', message: (e as Error).message });
@@ -236,7 +236,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     if (!post) return;
     try {
       await Share.share({
-        message: post.body ? `${post.body}\n\n— ${authorName} on Crushly` : `${authorName} on Crushly`,
+        message: post.body ? `${post.body}\n\n— ${authorName} on Hollop` : `${authorName} on Hollop`,
       });
     } catch {
       // Backing out of a share sheet is not a failure worth reporting.
@@ -696,7 +696,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           ) : null}
           <SheetRow
             icon="share-social-outline"
-            label="Share outside Crushly"
+            label="Share outside Hollop"
             onPress={() => {
               setMoreOpen(false);
               void share();

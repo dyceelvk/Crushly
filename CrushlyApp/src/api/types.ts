@@ -55,7 +55,7 @@ export type Profile = {
    * earned; 'diamond' belongs to the company's own account and to nothing else.
    */
   badgeTier?: BadgeTier;
-  /** Keep Close — Crushly's follow. True when they keep *you* close. */
+  /** Keep Close — Hollop's follow. True when they keep *you* close. */
   keepsYou?: boolean;
   distance: string | null;
   online: boolean | null;

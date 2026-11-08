@@ -95,7 +95,7 @@ export const REPORT_REASONS: { value: string; label: string; description: string
   { value: 'scam', label: 'Scam or spam', description: 'Asking for money, links, or selling something' },
   { value: 'threats_safety', label: 'Threats or outing', description: 'Threats, blackmail or exposing someone' },
   { value: 'hate_speech', label: 'Hate speech', description: 'Attacks based on identity' },
-  { value: 'underage', label: 'Might be under 18', description: 'Crushly is strictly for adults' },
+  { value: 'underage', label: 'Might be under 18', description: 'Hollop is strictly for adults' },
   { value: 'other', label: 'Something else', description: 'Tell us what happened' },
 ];
 

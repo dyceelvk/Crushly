@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, TextInput, View, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -26,12 +26,22 @@ import { VIDEO_ENABLED } from '../../lib/features';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
+import { LocalDraftsSheet, LeaveDraftSheet } from '../../components/LocalDraftsSheet';
+import { deleteLocalDraft, localDraftsAvailable, saveLocalDraft, type LocalDraft } from '../../lib/localDrafts';
+import { useAuth } from '../../state/auth';
 
 export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer'>) {
   const { colors } = useTheme();
   const { contentWidth, gutter } = useLayout();
   const toast = useToast();
   const qc = useQueryClient();
+  const { me } = useAuth();
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const allowLeaving = useRef(false);
+  const pendingLeave = useRef<Parameters<typeof navigation.dispatch>[0] | null>(null);
   const [mode, setMode] = useState<'text' | 'photo' | 'video'>('text');
   const [body, setBody] = useState('');
   const [style, setStyle] = useState<MomentStyle>('champagne');
@@ -47,6 +57,43 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const s = MOMENT_STYLES[style];
   const max = mode === 'text' ? 280 : 200;
   const ready = mode === 'text' ? body.trim().length > 0 : mode === 'photo' ? !!photo : !!clip;
+  const hasWork = !!body.trim() || !!photo || !!clip;
+  useEffect(() => navigation.addListener('beforeRemove', (event) => {
+    if (allowLeaving.current || !hasWork) return;
+    event.preventDefault(); pendingLeave.current = event.data.action; setLeaveOpen(true);
+  }), [navigation, hasWork]);
+  const leave = () => {
+    allowLeaving.current = true; setLeaveOpen(false);
+    const action = pendingLeave.current; pendingLeave.current = null;
+    if (action) navigation.dispatch(action); else navigation.goBack();
+  };
+  const saveDraft = async () => {
+    if (!localDraftsAvailable || !me?.id || savingDraft || !hasWork) return;
+    setSavingDraft(true);
+    try {
+      const files: Record<string, string> = {};
+      if (photo) files.photo = photo.uri;
+      if (clip) files.clip = clip.uri;
+      const musicUri = clipEdit?.music?.uri;
+      if (musicUri && /^(file|content):\/\//i.test(musicUri)) files.music = musicUri;
+      await saveLocalDraft(me.id, { kind: 'moment', body, data: {
+        mode, style, audience, photo: photo ? { mimeType: photo.mimeType } : null,
+        clip: clip ? { mimeType: clip.mimeType, durationMs: clip.durationMs } : null, clipEdit,
+      }, files }, draftId);
+      toast({ kind: 'success', title: 'Draft saved on this phone' });
+      leave();
+    } catch {
+      toast({ kind: 'error', title: 'Draft not saved', message: 'Your work is still here. Check phone storage and try again.' });
+    } finally { setSavingDraft(false); }
+  };
+  const openDraft = (draft: LocalDraft) => {
+    const d = draft.data as { mode?: 'text' | 'photo' | 'video'; style?: MomentStyle; audience?: 'everyone' | 'connections'; photo?: {mimeType: string} | null; clip?: {mimeType: string; durationMs: number} | null; clipEdit?: VideoEdit | null };
+    setBody(draft.body); setMode(d.mode ?? 'text'); setStyle(d.style ?? 'champagne'); setAudience(d.audience ?? 'everyone');
+    setPhoto(d.photo && draft.files.photo ? { ...d.photo, uri: draft.files.photo } : null);
+    setClip(d.clip && draft.files.clip ? { ...d.clip, uri: draft.files.clip } : null);
+    setClipEdit(d.clipEdit && draft.files.music && d.clipEdit.music
+      ? { ...d.clipEdit, music: { ...d.clipEdit.music, uri: draft.files.music } } : d.clipEdit ?? null); setDraftId(draft.id); setDraftsOpen(false);
+  };
 
   const cam = useLiveCamera();
 
@@ -132,6 +179,8 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       });
       qc.invalidateQueries({ queryKey: keys.moments });
       toast({ kind: 'success', title: 'Your Moment is live', message: 'It’ll disappear in 24 hours.' });
+      if (draftId && me?.id) await deleteLocalDraft(me.id, draftId).catch(() => undefined);
+      allowLeaving.current = true;
       navigation.goBack();
     } catch (e) {
       toast({ kind: 'error', title: 'Moment not shared', message: (e as Error).message });
@@ -141,9 +190,15 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   };
 
   return (
-    <Screen keyboard footer={<Button title="Share Moment" onPress={share} disabled={!ready} loading={busy} />}>
+    <Screen keyboard footer={<View style={{ flexDirection: 'row', gap: space.sm }}>
+      {localDraftsAvailable && me?.id ? <Button title="Save draft" variant="outline" size="md" style={{ flex: 1 }} onPress={() => void saveDraft()} disabled={!hasWork || busy || savingDraft} loading={savingDraft} /> : null}
+      <Button title="Share Moment" size="md" style={{ flex: 1 }} onPress={share} disabled={!ready || savingDraft} loading={busy} />
+    </View>}>
       <Header title="New Moment" subtitle="Share a glimpse. Gone in 24 hours." right={<IconButton icon="close" label="Close" onPress={() => navigation.goBack()} />} />
       {cam.node}
+      {localDraftsAvailable && me?.id && !hasWork ? <Button title="Drafts on this phone" size="sm" variant="ghost" full={false} onPress={() => setDraftsOpen(true)} /> : null}
+      <LocalDraftsSheet visible={draftsOpen} owner={me?.id ?? 0} kind="moment" onClose={() => setDraftsOpen(false)} onOpen={openDraft} />
+      <LeaveDraftSheet visible={leaveOpen} canSave={localDraftsAvailable && !!me?.id && hasWork} saving={savingDraft} onSave={() => void saveDraft()} onDiscard={leave} onClose={() => { pendingLeave.current = null; setLeaveOpen(false); }} />
 
       <Segmented<'text' | 'photo' | 'video'>
         value={mode}

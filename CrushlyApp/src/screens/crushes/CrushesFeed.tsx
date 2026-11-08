@@ -25,7 +25,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const STRIP = 46;
 
 /**
- * Crushes: the posts Crushly is publishing, as they are published.
+ * Crushes: the posts Hollop is publishing, as they are published.
  *
  * This is the discovery surface for posts, and it reads the same `posts` rows
  * every other surface reads — the same id, the same author, the same media and
@@ -155,7 +155,7 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
         <EmptyState
           icon="heart-outline"
           title="Nothing published yet"
-          message="Crushes is everything Crushly is posting. The first post lands here the moment somebody publishes one — yours included."
+          message="Crushes is everything Hollop is posting. The first post lands here the moment somebody publishes one — yours included."
           action={{
             label: 'Say something',
             onPress: () => navigation.navigate('CreatePost'),

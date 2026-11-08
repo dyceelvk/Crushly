@@ -85,7 +85,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           iconTone="gold"
           onPress={() => navigation.navigate('Verification')}
         />
-        <ListRow title="Crushly Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
+        <ListRow title="Hollop Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
       </Group>
 
       <Group title="Discovery & privacy">
@@ -106,7 +106,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} />
         {/* The number, and the file that has it — one under the other, because a
             version nobody can act on is trivia. This is the row the whole of
-            Crushly for Android is handed out from, on every platform. */}
+            Hollop for Android is handed out from, on every platform. */}
         <ListRow
           title="App version"
           subtitle={update.data?.versionCode ? `Android build ${update.data.versionCode}` : undefined}
@@ -115,7 +115,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         />
         <ListRow
           title="Download the app"
-          subtitle={update.data?.version ? `Crushly for Android · APK ${update.data.version}` : 'Crushly for Android · APK'}
+          subtitle={update.data?.version ? `Hollop for Android · APK ${update.data.version}` : 'Hollop for Android · APK'}
           value={update.data?.apkUrl ? 'APK' : undefined}
           icon="download-outline"
           iconTone="gold"
@@ -133,7 +133,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         ) : (
           <ListRow
             title="You’re up to date"
-            subtitle="Crushly checks every few hours."
+            subtitle="Hollop checks every few hours."
             icon="checkmark-circle-outline"
             last
           />
@@ -158,7 +158,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
 
       <ConfirmSheet
         visible={confirmOut}
-        title="Sign out of Crushly?"
+        title="Sign out of Hollop?"
         message="Your Space stays exactly as it is. Sign back in anytime."
         confirmLabel="Sign out"
         loading={busy}

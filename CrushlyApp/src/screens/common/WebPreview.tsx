@@ -21,7 +21,7 @@ function hostOf(raw: string): string {
 }
 
 /**
- * A link, opened inside Crushly.
+ * A link, opened inside Hollop.
  *
  * Nothing in this app navigates outwards on its own. A member taps a link that
  * somebody put in a Flow or a Moment and it opens here — in our own
@@ -60,10 +60,10 @@ export function WebPreviewScreen({ route, navigation }: ScreenProps<'WebPreview'
 
   const engineNote =
     Platform.OS === 'android'
-      ? 'Shown with Chromium inside Crushly. We haven’t checked this page — it isn’t ours.'
+      ? 'Shown with Chromium inside Hollop. We haven’t checked this page — it isn’t ours.'
       : Platform.OS === 'web'
-        ? 'Shown inside Crushly, in your browser. We haven’t checked this page — it isn’t ours.'
-        : 'Shown inside Crushly. We haven’t checked this page — it isn’t ours.';
+        ? 'Shown inside Hollop, in your browser. We haven’t checked this page — it isn’t ours.'
+        : 'Shown inside Hollop. We haven’t checked this page — it isn’t ours.';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -82,7 +82,7 @@ export function WebPreviewScreen({ route, navigation }: ScreenProps<'WebPreview'
         <IconButton icon="close" label="Close preview" onPress={() => navigation.goBack()} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Txt variant="caption" color="textSecondary" numberOfLines={1}>
-            Inside Crushly
+            Inside Hollop
           </Txt>
           <Txt variant="smallStrong" numberOfLines={1}>
             {hostOf(current)}

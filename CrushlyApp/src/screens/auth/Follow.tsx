@@ -81,7 +81,7 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
             opacity: words,
           }}
         >
-          Crushly
+          Hollop
         </Animated.Text>
 
         <Animated.View

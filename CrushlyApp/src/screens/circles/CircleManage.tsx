@@ -411,7 +411,7 @@ export function CircleManageScreen() {
                     {c.member.name}
                   </Txt>
                   <Txt variant="caption" color="textMuted" numberOfLines={1}>
-                    {c.connected ? 'You’ve clicked with them' : c.member.username ? `@${c.member.username}` : 'On Crushly'}
+                    {c.connected ? 'You’ve clicked with them' : c.member.username ? `@${c.member.username}` : 'On Hollop'}
                   </Txt>
                 </View>
                 <Button
@@ -457,7 +457,7 @@ export function CircleManageScreen() {
             ))
           ) : (
             <Txt variant="small" color="textMuted">
-              Nobody to show. People only appear here if they are on Crushly and have discovery turned on.
+              Nobody to show. People only appear here if they are on Hollop and have discovery turned on.
             </Txt>
           )}
         </View>

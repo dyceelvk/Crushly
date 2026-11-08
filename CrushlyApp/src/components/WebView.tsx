@@ -12,7 +12,7 @@ export type AppWebViewProps = {
 };
 
 /**
- * Web: keep the page inside Crushly with an iframe.
+ * Web: keep the page inside Hollop with an iframe.
  *
  * On the web we cannot ship our own engine — the browser a member is already
  * using is the engine — so this is the honest version of "inside the app":

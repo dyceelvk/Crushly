@@ -1,7 +1,7 @@
 /**
- * Crushly design tokens.
+ * Hollop design tokens.
  *
- * Dark and light share the official Crushly palette: deep plum surfaces, coral
+ * Dark and light share the official Hollop palette: deep plum surfaces, coral
  * and pink accents, and an off-white reading colour. Components
  * read the active palette from `useTheme()` so transitions never reveal a
  * mismatched page behind them.

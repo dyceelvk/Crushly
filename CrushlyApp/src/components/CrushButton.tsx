@@ -21,7 +21,7 @@ type Props = {
 };
 
 /**
- * Crushly's primary action. On press: a soft scale pop and a single expanding
+ * Hollop's primary action. On press: a soft scale pop and a single expanding
  * ring — felt more than seen. Reduce Motion keeps only the color change.
  */
 export function CrushButton({ onPress, crushed, loading, shape = 'pill', size = 60, label, name, disabled, style }: Props) {
