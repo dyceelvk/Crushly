@@ -17,6 +17,7 @@
 
 import release from './release.json';
 import { uploadContentType, publicRpcError } from './uploadType';
+import { mediaCacheControl } from './cacheControl';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -626,18 +627,18 @@ export default {
       // Only ever cache bytes every signed-in member would get — a private file
       // cached under a shared key would be served to the next caller.
       const key = `${url.origin}/m/${path}`;
-      if (verdict.data.cacheable) {
+      if (verdict.data.cacheable && mediaCacheControl(path, true) !== 'private, no-store') {
         const cache = caches.default;
         const hit = await cache.match(key).catch(() => undefined);
-        if (hit) return withHeaders(hit, path);
+        if (hit) return withHeaders(hit, path, true);
       }
 
       const auth = await b2Auth(env);
       const upstream = await b2Download(env, auth, path);
       if (!upstream.ok) return fail(404, 'That file isn’t available.', origin);
 
-      const response = withHeaders(new Response(upstream.body, upstream), path);
-      if (verdict.data.cacheable) {
+      const response = withHeaders(new Response(upstream.body, upstream), path, verdict.data.cacheable === true);
+      if (verdict.data.cacheable && mediaCacheControl(path, true) !== 'private, no-store') {
         const cached = response.clone();
         void caches.default.put(key, cached).catch(() => undefined);
       }
@@ -663,12 +664,9 @@ export default {
 };
 
 /** Cache policy by kind: Moments are short-lived, chat media is never shared. */
-function withHeaders(response: Response, path: string): Response {
-  const kind = path.split('/')[0];
+function withHeaders(response: Response, path: string, cacheable: boolean): Response {
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
-  if (kind === 'messages') headers.set('Cache-Control', 'private, no-store');
-  else if (kind === 'moments') headers.set('Cache-Control', 'public, max-age=3600');
-  else headers.set('Cache-Control', 'public, max-age=604800');
+  headers.set('Cache-Control', mediaCacheControl(path, cacheable));
   return new Response(response.body, { status: response.status, headers });
 }

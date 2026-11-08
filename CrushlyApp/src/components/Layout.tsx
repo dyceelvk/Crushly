@@ -30,7 +30,7 @@ type ScreenProps = {
   refreshing?: boolean;
   onRefresh?: () => void;
   footer?: React.ReactNode;
-  scrollProps?: ScrollViewProps;
+  scrollProps?: ScrollViewProps & React.RefAttributes<ScrollView>;
   padded?: boolean;
 };
 

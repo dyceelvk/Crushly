@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, TextInput, View, Platform } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -36,6 +36,35 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   const toast = useToast();
   const qc = useQueryClient();
   const { me } = useAuth();
+  const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
+  const scrollY = useRef(0);
+  const keyboardTop = useRef<number | null>(null);
+  const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The tall Moment preview can put the focused text below the keyboard on
+  // short phones. Once the keyboard settles, scroll the actual input into view.
+  const revealInput = () => {
+    if (Platform.OS === 'web' || keyboardTop.current == null) return;
+    if (revealTimer.current) clearTimeout(revealTimer.current);
+    revealTimer.current = setTimeout(() => {
+      inputRef.current?.measureInWindow((_x, y, _width, height) => {
+        if (keyboardTop.current == null) return;
+        const overlap = y + height - (keyboardTop.current - 76);
+        if (overlap > 0) scrollRef.current?.scrollTo({ y: scrollY.current + overlap, animated: true });
+      });
+    }, 150);
+  };
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardTop.current = event.endCoordinates.screenY;
+      revealInput();
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => { keyboardTop.current = null; });
+    return () => {
+      show.remove(); hide.remove();
+      if (revealTimer.current) clearTimeout(revealTimer.current);
+    };
+  }, []);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -190,7 +219,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
   };
 
   return (
-    <Screen keyboard footer={<View style={{ flexDirection: 'row', gap: space.sm }}>
+    <Screen keyboard scrollProps={{ ref: scrollRef, onScroll: (event) => { scrollY.current = event.nativeEvent.contentOffset.y; }, scrollEventThrottle: 16 }} footer={<View style={{ flexDirection: 'row', gap: space.sm }}>
       {localDraftsAvailable && me?.id ? <Button title="Save draft" variant="outline" size="md" style={{ flex: 1 }} onPress={() => void saveDraft()} disabled={!hasWork || busy || savingDraft} loading={savingDraft} /> : null}
       <Button title="Share Moment" size="md" style={{ flex: 1 }} onPress={share} disabled={!ready || savingDraft} loading={busy} />
     </View>}>
@@ -229,6 +258,8 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
               </View>
               <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14, backgroundColor: 'rgba(0,0,0,0.45)' }}>
                 <TextInput
+                  ref={inputRef}
+                  onFocus={revealInput}
                   value={body}
                   onChangeText={setBody}
                   placeholder="Add a caption…"
@@ -249,6 +280,8 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
               </View>
               <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14, backgroundColor: 'rgba(0,0,0,0.45)' }}>
                 <TextInput
+                  ref={inputRef}
+                  onFocus={revealInput}
                   value={body}
                   onChangeText={setBody}
                   placeholder="Add a caption…"
@@ -263,6 +296,8 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
           ) : (
             <LinearGradient colors={s.colors} style={{ flex: 1, padding: space.xl, justifyContent: 'center' }}>
               <TextInput
+                ref={inputRef}
+                onFocus={revealInput}
                 value={body}
                 onChangeText={setBody}
                 placeholder="What’s the moment?"

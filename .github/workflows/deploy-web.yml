@@ -23,7 +23,9 @@
 #
 # The database job calls the real migration workflow instead of naming a single
 # file. A failed migration blocks the web deploy so a client that needs new RPCs
-# cannot replace the working site before those RPCs exist.
+# cannot replace the working site before those RPCs exist. A separate Vercel
+# Git integration can deploy independently, so releases still require the
+# database to be migrated before pushing the app commit to its production branch.
 
 name: Deploy web app
 
@@ -45,7 +47,8 @@ jobs:
   deploy:
     name: Build & deploy web
     # Search and banners require the new RPCs. Never ship a web client against
-    # a database whose migration failed; keep the previous site working instead.
+    # a database whose migration failed; a separately configured Vercel Git
+    # integration must also be sequenced before the production branch push.
     needs: database
     runs-on: ubuntu-latest
     defaults:

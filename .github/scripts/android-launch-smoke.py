@@ -743,9 +743,12 @@ def walk():
     # Also exercise the separate Moment composer; no test post is published.
     tap('Create post', required=True)
     tap('Moment', required=True)
+    if not wait_for(['Your Moment'], 15, 'Moment input visible above keyboard'):
+        fail('Moment input was hidden by the keyboard')
+    shot('06b-moment-keyboard')
     if not type_into(0, 'Local moment draft check'): fail('Moment draft text field missing')
     typed = [n['text'] for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
-    if not typed or 'draft check' not in typed[0].lower(): fail('Moment text did not reach the editor')
+    if not typed or typed[0] != 'Local moment draft check': fail('Moment text did not reach the editor intact')
     moment_text = typed[0]
     tap('Save draft', required=True)
     if not wait_for(['Discover', 'Whispers'], 30, 'left Moment draft save'):
