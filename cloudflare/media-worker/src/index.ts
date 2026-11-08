@@ -451,19 +451,6 @@ async function applyLifecycle(env: Env, origin: string | null): Promise<Response
 /* ---------------------------------------------------------------- the build */
 
 /**
- * The Android build, served from our own address.
- *
- * The file itself is kept with the release, and GitHub only ever hands out
- * signed links that expire in well under an hour — so nothing here stores or
- * forwards a link. Each request goes and fetches the build at that moment and
- * streams it straight back to the phone.
- *
- * Only names on this list are served, and the caller cannot choose a
- * destination: this is a door with one keyhole, not an open proxy. Members
- * never see the repository, and there is no token to steal — the build is
- * already public.
- */
-/**
  * What the current Android build is, as the app is told about it.
  *
  * These facts live in `release.json` rather than in code because they are not
@@ -471,29 +458,81 @@ async function applyLifecycle(env: Env, origin: string | null): Promise<Response
  * passes its tests, so a release can never be published without the Worker
  * being told about it in the same breath.
  *
- * `upstream` is deliberately not what the app is handed. The app only ever
- * sees a URL on this Worker, so where the file really lives stays ours to
- * know, and moving it one day is a change in one place rather than in every
- * phone. `versionCode` only ever goes up — a reused one would make an update
- * invisible to a phone that already installed it.
+ * `assetApi` is deliberately not what the app is handed. It lets the Worker
+ * mint a fresh, short-lived CDN redirect for each download instead of proxying
+ * a large APK. `versionCode` only ever goes up — a reused one would make an
+ * update invisible to a phone that already installed it.
  */
-const BUILDS: Record<string, string> = { [release.file]: release.upstream };
+type AndroidBuild = { assetApi: string };
+
+// `assetApi` returns a fresh, expiring `release-assets.githubusercontent.com`
+// URL. We redirect the browser to that URL instead of streaming a 95 MB APK
+// through this Worker; a failed upstream request can therefore never be saved
+// as JSON under an `.apk` filename and handed to Android's package parser.
+const BUILDS: Record<string, AndroidBuild> = {
+  [release.file]: { assetApi: release.assetApi },
+};
 
 const RELEASE = {
   version: release.version,
   versionCode: release.versionCode,
-  // Below this the app is told it must update rather than merely may.
   minVersionCode: release.minVersionCode,
   file: release.file,
   notes: release.notes,
 } as const;
 
+const RELEASE_ASSET_HOSTS = new Set([
+  'release-assets.githubusercontent.com',
+  'objects.githubusercontent.com',
+]);
+
+/** Obtain a one-hour GitHub CDN URL without exposing a repository download page. */
+async function signedAssetUrl(build: AndroidBuild): Promise<string | null> {
+  const response = await fetch(build.assetApi, {
+    headers: {
+      Accept: 'application/octet-stream',
+      'User-Agent': 'Crushly Android download',
+    },
+    // We want GitHub's short-lived CDN location, not a Worker relay of the APK.
+    redirect: 'manual',
+  }).catch(() => null);
+  if (!response || response.status < 300 || response.status >= 400) return null;
+  const location = response.headers.get('Location');
+  if (!location) return null;
+  try {
+    const parsed = new URL(location);
+    return RELEASE_ASSET_HOSTS.has(parsed.hostname) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function redirectToAsset(location: string, origin: string | null): Response {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: location,
+      // The signed destination is short-lived. Never let a browser reuse it
+      // after it expires; the next tap mints a new one.
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      ...cors(origin),
+    },
+  });
+}
+
+async function downloadRedirect(build: AndroidBuild, origin: string | null): Promise<Response> {
+  const location = await signedAssetUrl(build);
+  if (!location) {
+    return fail(503, 'The Android download is temporarily unavailable. Please return to Crushly and try again; do not open a partial .apk file.', origin);
+  }
+  return redirectToAsset(location, origin);
+}
+
 /**
- * The version check behind the in-app "Install update" button.
- *
- * Public: it says only what a member could read off the download page. It must
- * never become a place that describes how we build or where we keep things, so
- * the answer is assembled by hand rather than passed through from upstream.
+ * The update check is intentionally tiny. The actual download is a redirect
+ * endpoint without an `.apk` suffix, so a transient upstream error is rendered
+ * as an error page rather than passed to Android as a malformed package.
  */
 async function appVersion(url: URL, origin: string | null): Promise<Response> {
   const known = Object.prototype.hasOwnProperty.call(BUILDS, RELEASE.file);
@@ -503,11 +542,8 @@ async function appVersion(url: URL, origin: string | null): Promise<Response> {
       version: RELEASE.version,
       versionCode: RELEASE.versionCode,
       minVersionCode: RELEASE.minVersionCode,
-      // Our own address, built from whatever host this was asked on, so it
-      // stays correct on workers.dev and on a custom domain alike.
-      apkUrl: known ? `${url.origin}/apk/${RELEASE.file}` : null,
-      // What a member needs to check the file they just downloaded is ours:
-      // the exact byte count and the fingerprint published on the page.
+      apkUrl: known ? `${url.origin}/download` : null,
+      downloadInfoUrl: known ? `${url.origin}/download-info` : null,
       bytes: release.bytes,
       sha256: release.sha256,
       notes: RELEASE.notes,
@@ -516,8 +552,6 @@ async function appVersion(url: URL, origin: string | null): Promise<Response> {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        // Short, so a new release is seen quickly, but not so short that every
-        // phone asks on every open.
         'Cache-Control': 'public, max-age=300',
         ...cors(origin),
       },
@@ -525,52 +559,27 @@ async function appVersion(url: URL, origin: string | null): Promise<Response> {
   );
 }
 
-/** What we pass through, and nothing else. Nothing upstream sets for us. */
-const BUILD_HEADERS = [
-  'content-type', 'content-length', 'content-disposition', 'content-range',
-  'accept-ranges', 'etag', 'last-modified',
-];
+/** JSON form for the web download page; it only enables a button after GitHub gave us a real CDN URL. */
+async function downloadInfo(origin: string | null): Promise<Response> {
+  const build = BUILDS[RELEASE.file];
+  if (!build) return fail(503, 'The Android download is not configured yet.', origin);
+  const downloadUrl = await signedAssetUrl(build);
+  if (!downloadUrl) return fail(503, 'The Android download is temporarily unavailable. Please try again shortly.', origin);
+  return json({
+    version: RELEASE.version,
+    file: RELEASE.file,
+    bytes: release.bytes,
+    sha256: release.sha256,
+    downloadUrl,
+  }, 200, origin, { 'Cache-Control': 'no-store' });
+}
 
-async function apkBuild(
-  request: Request, url: URL, ctx: ExecutionContext, origin: string | null,
-): Promise<Response> {
+/** Kept for previously shared `/apk/<file>` links; they now use the safer redirect too. */
+async function apkBuild(url: URL, origin: string | null): Promise<Response> {
   const name = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
-  const release = Object.prototype.hasOwnProperty.call(BUILDS, name) ? BUILDS[name] : null;
-  if (!release) return fail(404, 'That build isn’t available.', origin);
-
-  const range = request.headers.get('Range');
-
-  // A whole download is worth keeping at the edge for a while — it is the same
-  // bytes for everybody, and the phone may well ask twice.
-  if (!range) {
-    const hit = await caches.default.match(url.toString()).catch(() => undefined);
-    if (hit) return hit;
-  }
-
-  const upstream = await fetch(release, {
-    method: request.method,
-    headers: range ? { Range: range } : undefined,
-    redirect: 'follow',
-  }).catch(() => null);
-
-  if (!upstream || (!upstream.ok && upstream.status !== 206)) {
-    return fail(502, 'The build could not be fetched just now. Try again shortly.', origin);
-  }
-
-  const headers = new Headers({ 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff', ...cors(origin) });
-  for (const h of BUILD_HEADERS) {
-    const value = upstream.headers.get(h);
-    if (value) headers.set(h, value);
-  }
-
-  const out = new Response(request.method === 'HEAD' ? null : upstream.body, {
-    status: upstream.status,
-    headers,
-  });
-  if (!range && upstream.status === 200 && request.method === 'GET') {
-    ctx.waitUntil(caches.default.put(url.toString(), out.clone()).catch(() => undefined));
-  }
-  return out;
+  const build = BUILDS[name];
+  if (!build) return fail(404, 'That build isn’t available.', origin);
+  return downloadRedirect(build, origin);
 }
 
 export default {
@@ -594,10 +603,21 @@ export default {
       return appVersion(url, origin);
     }
 
-    // The Android build. Public, like the download page that links to it.
+    // `/download` is what native update links open. It has no .apk suffix, so
+    // an upstream outage becomes an error page rather than a malformed package.
+    if (url.pathname === '/download') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
+      const build = BUILDS[RELEASE.file];
+      return build ? downloadRedirect(build, origin) : fail(503, 'The Android download is not configured yet.', origin);
+    }
+    if (url.pathname === '/download-info') {
+      if (request.method !== 'GET') return fail(405, 'Unsupported method.', origin);
+      return downloadInfo(origin);
+    }
+    // Kept for links shared before the safer resolver existed.
     if (url.pathname.startsWith('/apk/')) {
       if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
-      return apkBuild(request, url, ctx, origin);
+      return apkBuild(url, origin);
     }
 
     const { path, queryToken } = splitPath(url);

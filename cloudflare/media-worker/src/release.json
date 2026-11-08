@@ -3,8 +3,8 @@
   "versionCode": 81,
   "minVersionCode": 3,
   "file": "Crushly-1.0.81-Android9plus.apk",
+  "assetApi": "https://api.github.com/repos/dyceelvk/Crushly/releases/assets/723576785",
   "notes": "When a media upload cannot be completed, Crushly keeps your draft and reports the upload error instead of publishing a file it cannot display.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.81/Crushly-1.0.81-Android9plus.apk",
   "bytes": 95015479,
   "sha256": "ea24264e8ad48de58050b35c095ce119688a630d105e782cd779304ff053ee68"
 }

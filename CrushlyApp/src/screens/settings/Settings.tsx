@@ -33,6 +33,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const { data: me } = useMe();
   const { signOut } = useAuth();
   const { appearance } = useTheme();
+  const toast = useToast();
   const [confirmOut, setConfirmOut] = useState(false);
   const [busy, setBusy] = useState(false);
   const version = Constants.expoConfig?.version ?? '1.0.0';
@@ -40,14 +41,12 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   // Asked against our own Worker, never against GitHub: a member should never
   // be handed a link into the machinery.
   const update = useAppUpdate(versionCode);
-  const toast = useToast();
 
-  /* The file, or a plain answer about why there is no file. A download button
-     that silently does nothing is worse than no button, so the failure is said
-     out loud rather than swallowed. */
-  const downloadApk = () => {
-    const url = update.data?.apkUrl;
-    if (!url) {
+  /* The signed resolver must succeed before Android receives a package URL.
+     A download button that silently does nothing is worse than a clear answer. */
+  const openUpdate = async () => {
+    const available = update.data;
+    if (!available?.apkUrl) {
       toast({
         kind: 'info',
         title: 'No build published yet',
@@ -55,7 +54,23 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       });
       return;
     }
-    Linking.openURL(url).catch((e: Error) => toast({ kind: 'error', title: 'Couldn’t open the download', message: e.message }));
+    try {
+      // The resolver gives us a fresh GitHub CDN link before Android opens the
+      // package. A transient Worker/GitHub failure is shown as a sentence here,
+      // never saved as JSON with an .apk filename for the installer to parse.
+      if (available.downloadInfoUrl) {
+        const response = await fetch(available.downloadInfoUrl);
+        const payload = (await response.json().catch(() => null)) as { downloadUrl?: unknown } | null;
+        if (!response.ok || typeof payload?.downloadUrl !== 'string') {
+          throw new Error('The download is not ready yet. Please try again shortly.');
+        }
+        await Linking.openURL(payload.downloadUrl);
+        return;
+      }
+      await Linking.openURL(available.apkUrl);
+    } catch (error) {
+      toast({ kind: 'error', title: 'Download unavailable', message: error instanceof Error ? error.message : 'Please try again shortly.' });
+    }
   };
 
   return (
@@ -104,7 +119,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           value={update.data?.apkUrl ? 'APK' : undefined}
           icon="download-outline"
           iconTone="gold"
-          onPress={downloadApk}
+          onPress={() => { void openUpdate(); }}
         />
         {update.data?.available ? (
           <ListRow
@@ -112,9 +127,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
             subtitle={update.data.notes || `Version ${update.data.version} is ready to install.`}
             value={update.data.version}
             icon="download-outline"
-            onPress={() => {
-              if (update.data?.apkUrl) Linking.openURL(update.data.apkUrl).catch(() => undefined);
-            }}
+            onPress={() => { void openUpdate(); }}
             last
           />
         ) : (

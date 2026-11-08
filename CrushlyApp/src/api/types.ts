@@ -683,7 +683,9 @@ export type AppUpdate = {
   versionCode: number;
   minVersionCode: number;
   apkUrl: string | null;
-  /** Size of the file the endpoint is offering, when it says. */
+  /** Short-lived signed APK URL resolver, used before opening a native download. */
+  downloadInfoUrl: string | null;
+  /** Size and SHA-256 of the file the endpoint is offering. */
   bytes?: number | null;
   sha256?: string | null;
   notes: string;

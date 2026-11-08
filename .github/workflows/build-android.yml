@@ -246,12 +246,18 @@ jobs:
         run: |
           set -euo pipefail
           version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          tag="android-test-${version}"
           file="Crushly-${version}-Android9plus.apk"
           # Measured from the file that was just published, so the download
           # page can tell people exactly what they should be checking.
           bytes=$(wc -c < "apk/${file}")
           sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
-          out=$(python3 ../.github/scripts/update-worker-release.py --bytes "$bytes" --sha256 "$sha")
+          asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+            --jq '.assets[] | select(.name == "'"$file"'") | .id' \
+            | head -n 1)
+          test -n "$asset_id" || { echo "::error::Could not find the published APK asset id."; exit 1; }
+          out=$(python3 ../.github/scripts/update-worker-release.py \
+            --asset-id "$asset_id" --bytes "$bytes" --sha256 "$sha")
           printf '%s\n' "$out"
           if printf '%s' "$out" | grep -q 'changed=true'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
