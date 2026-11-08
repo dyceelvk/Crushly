@@ -1,0 +1,64 @@
+name: Verify in-app Android update
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download 1.0.80 APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Crushly-Android-test-APK
+          run-id: 42462747033
+          github-token: ${{ github.token }}
+          path: apk-check/old
+      - name: Download 1.0.81 APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Crushly-Android-test-APK
+          run-id: 42468784802
+          github-token: ${{ github.token }}
+          path: apk-check/new
+      - name: Compare package signatures and versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          old=$(find apk-check/old -name '*.apk' | head -1)
+          new=$(find apk-check/new -name '*.apk' | head -1)
+          test -n "$old" && test -n "$new"
+          for p in "$old" "$new"; do
+            "$tools/apksigner" verify "$p"
+            "$tools/aapt" dump badging "$p" | grep -E '^(package:|sdkVersion:|native-code:)'
+          done
+          oldcert=$("$tools/apksigner" verify --print-certs "$old" | grep 'certificate SHA-256 digest:' | head -1)
+          newcert=$("$tools/apksigner" verify --print-certs "$new" | grep 'certificate SHA-256 digest:' | head -1)
+          test -n "$oldcert" && [ "$oldcert" = "$newcert" ] || { echo '::error::Signing certificates do not match'; exit 1; }
+          echo 'Release signatures match.'
+          curl -fLsS --retry 2 https://crushly-media.dyceelvk.workers.dev/download -o apk-check/public.apk
+          test "$(sha256sum apk-check/public.apk | cut -d' ' -f1)" = "$(sha256sum "$new" | cut -d' ' -f1)"
+          echo 'Public download matches the 1.0.81 build artifact.'
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test update from inside old app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: python3 .github/scripts/in-app-update-walk.py
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: In-app-update-failure
+          path: update-walk/
+          if-no-files-found: ignore

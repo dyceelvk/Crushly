@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, Modal, Platform, View } from 'react-native';
+import { Modal, Platform, View } from 'react-native';
 import Constants from 'expo-constants';
 import { Txt } from './Txt';
 import { Button } from './Button';
@@ -20,11 +20,11 @@ import { downloadUpdate, installUpdate, readableSize, resolveUpdateDownload } fr
  *
  * The steps are the honest ones:
  *
- *   offer → downloading → installing → installed
+ *   offer → downloading → Android installer → unconfirmed
  *
- * There is no "silent install" and no pretending the install is done: Android's
- * own installer sheet is the confirmation, and the last screen says plainly that
- * Crushly has to be opened again before the new version is the one running.
+ * Returning from Android's installer does not prove it installed anything.
+ * A successful replacement normally closes this process; if it returns here,
+ * the currently running app must not claim success.
  */
 export function UpdateGate() {
   // The check, the download and the installer are all Android-only; the web
@@ -33,7 +33,7 @@ export function UpdateGate() {
   return <AndroidUpdateGate />;
 }
 
-type Step = 'hidden' | 'offer' | 'downloading' | 'installing' | 'installed' | 'error';
+type Step = 'hidden' | 'offer' | 'downloading' | 'installing' | 'unconfirmed' | 'error';
 
 function AndroidUpdateGate() {
   const { colors } = useTheme();
@@ -68,19 +68,18 @@ function AndroidUpdateGate() {
       const file = await downloadUpdate(url, setProgress, update.data?.bytes);
       setStep('installing');
       await installUpdate(file);
-      // The installer sheet has been shown. Whether the member taps Install is
-      // theirs to decide, and the phone tells us nothing either way — so the
-      // last screen is worded for both answers.
-      setStep('installed');
+      // Returning from the installer may mean cancellation or a parser error.
+      // A successful replacement normally terminates the old app process.
+      setStep('unconfirmed');
     } catch (e) {
       setMessage((e as Error).message || 'The update could not be downloaded.');
       setStep('error');
     }
   }, [update.data?.downloadInfoUrl, update.data?.bytes]);
 
-  /** Installing over a running app kills it; this is the only real "restart". */
-  const restart = useCallback(() => {
-    BackHandler.exitApp();
+  const dismiss = useCallback(() => {
+    setPutOff(true);
+    setStep('hidden');
   }, []);
 
   if (step === 'hidden') return null;
@@ -89,7 +88,7 @@ function AndroidUpdateGate() {
   const size = readableSize(update.data?.bytes);
 
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={required ? undefined : () => setPutOff(true)}>
+    <Modal transparent animationType="fade" visible onRequestClose={required ? undefined : dismiss}>
       <View style={{ flex: 1, backgroundColor: 'rgba(7,7,8,0.72)', justifyContent: 'center', padding: space.lg }}>
         <View
           style={{
@@ -108,13 +107,12 @@ function AndroidUpdateGate() {
                 Hello {me?.profile?.name ?? 'there'} — Crushly has a new update{version}. Update now to enjoy the new features.
               </Txt>
               <Txt variant="caption" color="textMuted">
-                {size ? `${size} · ` : ''}It installs over the version you already have, so nothing is lost and no
-                second copy is made.
+                {size ? `${size} · ` : ''}Android installs it over your current version. Save any unfinished work first.
               </Txt>
               <View style={{ height: space.sm }} />
               <Button title="Update now" icon="cloud-download-outline" onPress={run} />
               {required ? null : (
-                <Button title="Later" variant="ghost" size="md" onPress={() => setPutOff(true)} />
+                <Button title="Later" variant="ghost" size="md" onPress={dismiss} />
               )}
             </>
           ) : null}
@@ -140,15 +138,15 @@ function AndroidUpdateGate() {
             </>
           ) : null}
 
-          {step === 'installed' ? (
+          {step === 'unconfirmed' ? (
             <>
-              <Txt variant="title" color="text">Update installed</Txt>
+              <Txt variant="title" color="text">Update not confirmed</Txt>
               <Txt variant="body" color="textSecondary">
-                Refresh Crushly before it takes the changes — the version running right now is still the old one.
+                Android did not confirm that the update was installed. Your current version is still running. You can try again or check the version in Settings.
               </Txt>
               <View style={{ height: space.sm }} />
-              <Button title="Refresh" icon="refresh" onPress={restart} />
-              <Button title="Not now" variant="ghost" size="md" onPress={() => setPutOff(true)} />
+              <Button title="Try again" icon="refresh" onPress={run} />
+              {required ? null : <Button title="Later" variant="ghost" size="md" onPress={dismiss} />}
             </>
           ) : null}
 
@@ -158,7 +156,7 @@ function AndroidUpdateGate() {
               <Txt variant="body" color="textSecondary">{message}</Txt>
               <View style={{ height: space.sm }} />
               <Button title="Try again" onPress={run} />
-              <Button title="Later" variant="ghost" size="md" onPress={() => setPutOff(true)} />
+              {required ? null : <Button title="Later" variant="ghost" size="md" onPress={dismiss} />}
             </>
           ) : null}
         </View>
