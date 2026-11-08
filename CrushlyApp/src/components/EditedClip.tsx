@@ -379,7 +379,9 @@ export function EditedClip({
   }, [player]);
 
   useEffect(() => {
-    let raf = 0;
+    // A frame-by-frame JS loop ran for every mounted clip, even when paused.
+    // The native player renders video independently; JS only needs periodic
+    // updates for overlays, controls and cut boundaries.
     let last = -1;
     const tick = () => {
       const raw = player?.currentTime ?? 0;
@@ -394,14 +396,12 @@ export function EditedClip({
         last = t;
         setClipTime(t);
       }
-      // The player is the source of truth for whether the picture is moving;
-      // this keeps the disc honest when playback stops without a tap.
       const isPlaying = player?.playing ?? false;
       setPlaying((prev) => (prev === isPlaying ? prev : isPlaying));
-      raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    tick();
+    const timer = setInterval(tick, cuts ? 50 : 200);
+    return () => clearInterval(timer);
   }, [player, cuts, loop]);
 
   return (
@@ -423,7 +423,7 @@ export function EditedClip({
       accessibilityLabel={!controls ? accessibilityLabel : undefined}
     >
       <VideoEditCanvas
-        backdrop={bands ? <BackdropClip source={uri} /> : null}
+        backdrop={bands && Platform.OS === 'web' ? <BackdropClip source={uri} /> : null}
         player={player}
         edit={edit}
         clipTime={clipTime}

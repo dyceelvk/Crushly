@@ -75,7 +75,7 @@ export function Photo({
       style={[{ backgroundColor: colors.skeleton }, sized as StyleProp<ImageStyle>, style]}
       contentFit={fit}
       contentPosition={contentPosition}
-      transition={220}
+      transition={0}
       cachePolicy="memory-disk"
       priority={priority}
       recyclingKey={src}

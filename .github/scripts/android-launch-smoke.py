@@ -755,6 +755,16 @@ def walk():
     if tap('Circles', tries=2):
         shot('{:02d}-space-circles-list'.format(n))
         n += 1
+        circles_seen = nodes() or []
+        for label in ('Crushes', 'Moments', 'Circles', 'About'):
+            tab_node = find(circles_seen, label)
+            if not tab_node or tab_node['x1'] < 0 or tab_node['x2'] > SCREEN[0]:
+                fail('Space Circles: tab {} is missing or clipped horizontally'.format(label))
+        start_node = find(circles_seen, 'Start a Circle')
+        if not start_node:
+            fail('Space Circles: Start a Circle is missing')
+        if start_node['y2'] - start_node['y1'] > SCREEN[1] * 0.16:
+            fail('Space Circles: Start a Circle is abnormally tall on Android')
         # The creator opens straight away from here now, which is also the check
         # that the Space's Circles tab has a door at all.
         if tap('Start a Circle'):

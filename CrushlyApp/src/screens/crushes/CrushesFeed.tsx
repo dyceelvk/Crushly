@@ -1,5 +1,9 @@
-import React, { useCallback } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import React, { useCallback, useEffect } from 'react';
+import { FlatList, Platform, RefreshControl, View } from 'react-native';
+import { Image } from 'expo-image';
+import { mediaUrl } from '../../api/client';
+import { mediaSource } from '../../lib/mediaHost';
+import { feedImagePaths } from '../../lib/feedPrefetch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -52,6 +56,23 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
   const feed = useCrushesFeed();
   // Which card is in front of the reader — the only one whose clip plays.
   const focus = useFeedFocus();
+
+  // Start a small number of next images together, with the same auth and cache
+  // keys as Photo. Do not download video or private messages in the background.
+  // The rendered feed remains authoritative; a failed prefetch is harmless.
+  const prefetchKey = JSON.stringify(feedImagePaths(feed.posts));
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const paths = JSON.parse(prefetchKey) as string[];
+    for (const path of paths) {
+      const url = mediaUrl(path);
+      if (!url) continue;
+      const source = mediaSource(url);
+      const uri = typeof source === 'string' ? source : source.uri;
+      const headers = typeof source === 'string' ? undefined : source.headers;
+      if (uri) void Image.prefetch(uri, { cachePolicy: 'memory-disk', headers }).catch(() => undefined);
+    }
+  }, [prefetchKey]);
 
   const onEndReached = useCallback(() => {
     feed.loadOlder();

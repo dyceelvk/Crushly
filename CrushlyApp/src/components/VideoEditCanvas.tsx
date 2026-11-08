@@ -117,6 +117,9 @@ export function VideoEditCanvas({
 
       <VideoView
         player={player}
+        // TextureView respects sibling stacking and clipping on Android, unlike
+        // a SurfaceView which can float over overlays and neighbouring views.
+        surfaceType="textureView"
         style={videoStyle}
         contentFit={fit ?? (edit.aspect === 'original' ? 'contain' : 'cover')}
         nativeControls={false}

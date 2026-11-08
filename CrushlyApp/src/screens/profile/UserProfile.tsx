@@ -728,25 +728,27 @@ export function SpaceScreen({
                 {/* The room you start, and the rooms you are in, live on one
                     page — and until now that page had no door on the Space it
                     belongs to. Two actions, one page. */}
-                <View style={{ flexDirection: 'row', gap: space.sm }}>
-                  <Button
-                    title="Start a Circle"
-                    variant="secondary"
-                    size="sm"
-                    icon="add"
-                    full={false}
-                    style={{ flex: 1 }}
-                    onPress={() => navigation.navigate('Circles', { create: true })}
-                  />
-                  <Button
-                    title="All your Circles"
-                    variant="ghost"
-                    size="sm"
-                    full={false}
-                    style={{ flex: 1 }}
-                    onPress={() => navigation.navigate('Circles')}
-                  />
-                </View>
+                {mine ? (
+                  <View style={{ flexDirection: 'row', gap: space.sm }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Button
+                        title="Start a Circle"
+                        variant="secondary"
+                        size="sm"
+                        icon="add"
+                        onPress={() => navigation.navigate('Circles', { create: true })}
+                      />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Button
+                        title="All your Circles"
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => navigation.navigate('Circles')}
+                      />
+                    </View>
+                  </View>
+                ) : null}
                   <SpaceCircles
                   items={(mine ? mineCircles.data?.items : theirCircles.data?.items) ?? []}
                   loading={mine ? mineCircles.isLoading : theirCircles.isLoading}
@@ -1053,7 +1055,7 @@ function SpaceCircles({
   onPreview: (id: number) => void;
 }) {
   const { colors } = useTheme();
-  if (loading) return <LoadingBlock label="Loading their Circles" />;
+  if (loading) return <Txt variant="small" color="textMuted" style={{ paddingVertical: space.md }}>Loading Circles…</Txt>;
   if (!items.length) {
     return (
       <Txt variant="small" color="textMuted" style={{ paddingVertical: space.md }}>

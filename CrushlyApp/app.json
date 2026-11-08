@@ -3,13 +3,13 @@
     "name": "Crushly",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.78",
+    "version": "1.0.79",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "Crushly — follow the feelings. A social space for real connection.",
+    "description": "Crushly \u2014 follow the feelings. A social space for real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 78
+      "versionCode": 79
     },
     "web": {
       "favicon": "./assets/favicon.png",
