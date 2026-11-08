@@ -15,5 +15,6 @@
   "1.0.77": "Every sheet now has a close button in the corner, so the Create Circle sheet — and every other one — can be put away with one tap instead of a swipe or the back key.",
   "1.0.78": "Typing your password no longer sends you to the reset screen by accident, and a Space opens with its cover as a band across the top — picture, name, Add up and all four tabs on one screen instead of a photograph and nothing else.",
   "1.0.79": "Circles on your Space use compact Android controls, the Flow player keeps the whole frame in view, and the feed starts preparing nearby photos sooner while doing less work for paused clips.",
-  "1.0.80": "Advanced options now opens, and you can choose whether people may comment on a new post. The editor no longer offers a fake scheduling switch or silently drops additional media."
+  "1.0.80": "Advanced options now opens, and you can choose whether people may comment on a new post. The editor no longer offers a fake scheduling switch or silently drops additional media.",
+  "1.0.81": "When a media upload cannot be completed, Crushly keeps your draft and reports the upload error instead of publishing a file it cannot display."
 }

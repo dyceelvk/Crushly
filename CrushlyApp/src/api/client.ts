@@ -315,13 +315,11 @@ export async function uploadMediaFile(
   }
   const kind = bucket === 'media' ? mediaKind(path) : null;
   if (kind && moved(kind)) {
-    try {
-      return await uploadToMediaStore(kind, blob, contentType);
-    } catch (e) {
-      // A member must never lose a photo because the object store hiccuped —
-      // fall back to Supabase Storage for this upload and carry on.
-      console.warn('object store upload failed, using Supabase Storage:', (e as Error).message);
-    }
+    // A Supabase fallback path would be resolved back to the media Worker on
+    // read, even though its bytes are in a different private bucket. That could
+    // publish a post whose media never appears. Keep the draft and report the
+    // Worker error instead of silently claiming a broken upload succeeded.
+    return uploadToMediaStore(kind, blob, contentType);
   }
   const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType, upsert: true });
   if (error) throw toApiError(error);

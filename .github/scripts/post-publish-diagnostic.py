@@ -58,7 +58,8 @@ def main():
     else:
         print('Text post error:', str(decode(raw).get('message', ''))[:300])
         failures.append('text post RPC')
-    code, raw = upload(1024 * 1024)
+    video = open('/tmp/crushly-publish-test.mp4', 'rb').read()
+    code, raw = request(worker + '/m', 'POST', video, wh)
     print('Small media upload: HTTP', code, 'error:', str(decode(raw).get('error', raw[:250].decode('utf-8', 'replace') if code != 201 else ''))[:300])
     url = decode(raw).get('url')
     if code != 201 or not url:
@@ -78,7 +79,7 @@ def main():
                     failures.append('comment option readback')
                 rc, content = request(url, headers={'Authorization': 'Bearer ' + token, 'User-Agent': 'Crushly-Publish-Diagnostic/1.0'})
                 print('Published media read: HTTP', rc, 'bytes:', len(content))
-                if rc != 200 or len(content) != 1024 * 1024: failures.append('published media readback')
+                if rc != 200 or content != video: failures.append('published media readback')
         finally:
             if post_id:
                 rc, _ = rpc('delete_post', {'p_post_id': post_id})
@@ -86,6 +87,16 @@ def main():
             rc = delete_object(url)
             print('Small media cleanup: HTTP', rc)
             if rc not in (200, 204, 404): failures.append('small media cleanup')
+    android_headers = dict(wh, **{'User-Agent': 'okhttp/4.12.0'})
+    code, raw = request(worker + '/m', 'POST', video, android_headers)
+    print('Android-agent media upload: HTTP', code)
+    android_url = decode(raw).get('url')
+    if code != 201 or not android_url:
+        failures.append('Android-agent upload')
+    else:
+        rc = delete_object(android_url)
+        print('Android-agent media cleanup: HTTP', rc)
+        if rc not in (200, 204, 404): failures.append('Android-agent cleanup')
     for size_mb in (30, 75):
         code, raw = upload(size_mb * 1024 * 1024)
         print('%s MB media upload: HTTP' % size_mb, code, 'error:', str(decode(raw).get('error', raw[:250].decode('utf-8', 'replace') if code != 201 else ''))[:300], 'diagnostic:', decode(raw).get('diagnostic', ''))
