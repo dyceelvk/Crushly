@@ -123,6 +123,7 @@ def nodes(attempts=3):
             'text': ' '.join(n.get('text', '').split()),
             'desc': ' '.join(n.get('content-desc', '').split()),
             'class': n.get('class', ''),
+            'checked': n.get('checked', ''),
             'x': (x1 + x2) // 2,
             'y': (y1 + y2) // 2,
             'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2,
@@ -686,6 +687,29 @@ def walk():
         seen = shot(name)
         if label == 'Connections':
             assert_connections(seen)
+
+    # Walk the editor without publishing or touching another member's data.
+    # This used to have an Advanced row with no handler, and a schedule toggle
+    # which did not schedule anything. Exercise the real comments setting.
+    tap('Create post', required=True)
+    tap('Post', required=True)
+    if not scroll_to('Advanced options', swipes=6):
+        fail('editor Advanced options is missing')
+    tap('Advanced options', required=True)
+    seen = shot('06a-editor-advanced')
+    if not find(seen, 'Allow comments') or not find(seen, 'Remixing is not available yet'):
+        fail('editor advanced sheet is missing comments or remix availability')
+    tap('Allow comments', required=True)
+    tap('Done', required=True)
+    if not find(nodes() or [], 'Comments off'):
+        fail('editor did not retain the comments choice')
+    tap('Advanced options', required=True)
+    if not find(nodes() or [], 'Allow comments'):
+        fail('editor could not reopen Advanced options')
+    tap('Done', required=True)
+    tap('Cancel', required=True)
+    return_to_tabs()
+    log('editor: advanced sheet opens, comments choice persists, remix status is honest; checked')
 
     # Discover is a page, not only the door to search: photograph it before
     # opening search, or the one screen the user twice described as "a white

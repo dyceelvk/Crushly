@@ -447,6 +447,7 @@ export async function createPost(input: {
   videoUri?: string | null;
   videoMime?: string | null;
   edit?: LiveEdit | null;
+  commentsEnabled?: boolean;
   /** When set, the post belongs to that Circle and its audience is the Circle. */
   circleId?: number | null;
 }): Promise<Post> {
@@ -469,13 +470,27 @@ export async function createPost(input: {
       type,
     );
   }
-  return rpc<Post>('create_post', {
+  const args = {
     p_body: body,
     p_media_url: media,
     p_audience: input.audience === 'everyone' ? 'everyone' : 'connections',
     p_circle_id: input.circleId ?? null,
-    ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
+  };
+  // Legacy callers retain the old RPC; the composer uses an atomic RPC when it
+  // offers the choice, so comments are never enabled for a newly closed post.
+  if (input.commentsEnabled !== undefined) {
+    return rpc<Post>('create_post_with_options', {
+      ...args, p_edit: input.edit ?? null, p_comments_enabled: input.commentsEnabled,
+    });
+  }
+  return rpc<Post>('create_post', {
+    ...args, ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
   });
+}
+
+/** A viewer may read this only if the server says the post is visible. */
+export async function postCommentsEnabled(postId: number): Promise<boolean> {
+  return rpc<boolean>('post_comment_settings', { p_post_id: postId });
 }
 
 /**

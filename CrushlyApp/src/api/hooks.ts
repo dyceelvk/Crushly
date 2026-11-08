@@ -252,6 +252,14 @@ export const useCircle = (circleId: number) =>
     staleTime: 15_000,
   });
 
+export const usePostCommentSettings = (postId: number | null) =>
+  useQuery({
+    queryKey: ['post-comment-settings', postId],
+    queryFn: () => service.postCommentsEnabled(postId!),
+    enabled: postId !== null,
+    staleTime: 0,
+  });
+
 /** What a Circle has posted. Paginated like the Flow: older posts load on ask. */
 export function useCircleFeed(circleId: number, limit = 20) {
   const [after, setAfter] = useState<number | null>(null);

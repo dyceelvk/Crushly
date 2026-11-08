@@ -1,7 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -16,15 +15,17 @@ import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Input } from '../../components/Input';
+import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
+import { Photo } from '../../components/Photo';
+import { ClipThumb } from '../../components/ClipThumb';
 import { Segmented } from '../../components/Segmented';
 import { Suggestions } from '../../components/Suggestions';
-import { activeToken, applyToken, tokenKey } from '../../lib/mentions';
+import { activeToken, applyToken } from '../../lib/mentions';
 import { Pill } from '../../components/Badges';
 import { PressableScale } from '../../components/PressableScale';
 import { Rise } from '../../components/Rise';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useCreatePost } from '../../api/hooks';
 import { attachPostSound, createPost } from '../../api/service';
 import { keys } from '../../api/hooks';
 import { useQueryClient } from '@tanstack/react-query';
@@ -35,7 +36,7 @@ import { preparedClip } from '../../lib/videoEncode';
 import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
 import { VIDEO_ENABLED } from '../../lib/features';
-import { fonts, radius, space } from '../../theme/tokens';
+import { radius, space } from '../../theme/tokens';
 import { DownloadAppButton } from '../../components/DownloadAppButton';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -47,8 +48,6 @@ type MediaItem = {
   durationMs?: number;
   edit?: VideoEdit | null;
 };
-
-type PostType = 'Flows' | 'Stories' | 'Moments';
 
 /** The two things a person can share, in the order the product grew them. */
 type PostKind = 'flow' | 'moment';
@@ -76,9 +75,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const { contentWidth, gutter } = useLayout();
   const toast = useToast();
   const qc = useQueryClient();
-  const create = useCreatePost();
 
-  const isTablet = width >= 700;
   const twoCol = width >= 600;
 
   /**
@@ -104,13 +101,10 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   );
 
   const [body, setBody] = useState('');
-  // Where the caret is, so `@` and `#` know which word is being built.
-  const [caret, setCaret] = useState<number | null>(null);
-  const token = activeToken(body, caret);
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
-  // A board knows what it is; there is nothing left to choose underneath it.
-  const postType: PostType = 'Flows';
-  const [scheduleOn, setScheduleOn] = useState(false);
+  const [commentsEnabled, setCommentsEnabled] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
@@ -118,23 +112,10 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
   const [editorTool, setEditorTool] = useState<'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null>(null);
-  const [fontIndex, setFontIndex] = useState(0);
-
-  const FONT_OPTIONS = [
-    fonts.regular,
-    fonts.medium,
-    fonts.semibold,
-    fonts.bold,
-    fonts.display,
-    fonts.displayItalic,
-  ] as const;
-
-  const MAX_MEDIA = 10;
-  const MAX_BODY = 500;
+  const MAX_MEDIA = 1;
   const MAX_VIDEO_SECONDS = 60;
 
   const primaryMedia = media[0];
-  const videoMedia = media.find((m) => m.type === 'video');
 
   // When returning from the shared video workbench, keep its full edit recipe.
   useFocusEffect(
@@ -155,7 +136,6 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
     }, [pendingMedia])
   );
 
-  const maxBody = MAX_BODY;
   const ready = body.trim().length > 0 || media.length > 0;
 
   const pickMedia = async () => {
@@ -166,14 +146,13 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         mediaTypes: VIDEO_ENABLED ? ImagePicker.MediaTypeOptions.All : ImagePicker.MediaTypeOptions.Images,
         videoMaxDuration: MAX_VIDEO_SECONDS,
         quality: 0.8,
-        allowsMultipleSelection: true,
-        selectionLimit: MAX_MEDIA - media.length,
+        allowsMultipleSelection: false,
+        selectionLimit: 1,
       });
       if (result.canceled || !result.assets?.length) return;
 
       for (const asset of result.assets) {
-        const isVideo = asset.mimeType?.startsWith('video/') ?? false;
-        const sizeBytes = asset.fileSize ?? 0;
+        const isVideo = asset.type === 'video' || !!asset.mimeType?.startsWith('video/');
         const durationMs = asset.duration ?? 0;
 
         if (isVideo && durationMs > MAX_VIDEO_SECONDS * 1000) {
@@ -253,6 +232,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       const created = await createPost({
         body: body.trim(),
         audience,
+        commentsEnabled,
         photoUri: first?.type === 'photo' ? first.uri : undefined,
         photoMime: first?.type === 'photo' ? first.mimeType : undefined,
         videoUri,
@@ -271,8 +251,11 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         }
       }
 
-      qc.invalidateQueries({ queryKey: keys.flow });
-      qc.invalidateQueries({ queryKey: keys.me });
+      void qc.invalidateQueries({ queryKey: keys.flow });
+      void qc.invalidateQueries({ queryKey: keys.crushesFeed });
+      void qc.invalidateQueries({ queryKey: keys.publicFlow });
+      void qc.invalidateQueries({ queryKey: ['space-posts'] });
+      void qc.invalidateQueries({ queryKey: keys.me });
       toast({ kind: 'success', title: 'Post shared' });
       navigation.goBack();
     } catch (e) {
@@ -288,7 +271,6 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
 
   const canPost = !busy && ready;
 
-  const headerHeight = 60;
   const rightPanelWidth = 340;
 
   /**
@@ -423,33 +405,19 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
               setBody={setBody}
               audience={audience}
               setAudience={setAudience}
-              postType={postType}
-              scheduleOn={scheduleOn}
-              setScheduleOn={setScheduleOn}
-              maxBody={maxBody}
+              commentsEnabled={commentsEnabled}
+              openAdvanced={() => setAdvancedOpen(true)}
               media={media}
               removeMedia={removeMedia}
               pickMedia={pickMedia}
               primaryMedia={primaryMedia}
               openEditor={openEditor}
-              editing={editingMediaId === primaryMedia?.id}
-              fontIndex={fontIndex}
-              setFontIndex={setFontIndex}
-              fontOptions={FONT_OPTIONS}
             />
             </View>
 
             {/* Right column — preview + settings */}
             <View style={{ width: rightPanelWidth, minWidth: 0 }}>
-              <ComposerRight
-                primaryMedia={primaryMedia}
-                media={media}
-                postType={postType}
-                audience={audience}
-                body={body}
-                maxBody={maxBody}
-                openEditor={openEditor}
-              />
+              <ComposerRight primaryMedia={primaryMedia} />
             </View>
           </View>
         ) : (
@@ -459,29 +427,15 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
               setBody={setBody}
               audience={audience}
               setAudience={setAudience}
-              postType={postType}
-              scheduleOn={scheduleOn}
-              setScheduleOn={setScheduleOn}
-              maxBody={maxBody}
+              commentsEnabled={commentsEnabled}
+              openAdvanced={() => setAdvancedOpen(true)}
               media={media}
               removeMedia={removeMedia}
               pickMedia={pickMedia}
               primaryMedia={primaryMedia}
               openEditor={openEditor}
-              editing={editingMediaId === primaryMedia?.id}
-              fontIndex={fontIndex}
-              setFontIndex={setFontIndex}
-              fontOptions={FONT_OPTIONS}
             />
-            <ComposerRight
-              primaryMedia={primaryMedia}
-              media={media}
-              postType={postType}
-              audience={audience}
-              body={body}
-              maxBody={maxBody}
-              openEditor={openEditor}
-            />
+            <ComposerRight primaryMedia={primaryMedia} />
           </View>
         )}
 
@@ -520,7 +474,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           </View>
         ) : (
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, paddingHorizontal: gutter }}>
-            <Button title="Reset" size="sm" variant="ghost" onPress={() => {}} accessibilityLabel="Reset post" />
+            <Button title="Reset" size="sm" variant="ghost" full={false} onPress={() => setConfirmReset(true)} accessibilityLabel="Reset post" />
             <Button
               title="Post"
               icon="paper-plane"
@@ -533,6 +487,32 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           </View>
         )}
       </ScrollView>
+
+      <BottomSheet visible={advancedOpen} onClose={() => setAdvancedOpen(false)} title="Advanced options">
+        <View style={{ gap: space.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Txt variant="bodyStrong">Allow comments</Txt>
+              <Txt variant="small" color="textSecondary">Choose whether people can comment on this post.</Txt>
+            </View>
+            <Pressable onPress={() => setCommentsEnabled((v) => !v)} accessibilityRole="switch"
+              accessibilityLabel="Allow comments" accessibilityState={{ checked: commentsEnabled }}
+              style={{ width: 50, height: 44, justifyContent: 'center' }}>
+              <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: commentsEnabled ? colors.primary : colors.elevated, justifyContent: 'center', alignItems: commentsEnabled ? 'flex-end' : 'flex-start', paddingHorizontal: 4 }}>
+                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff' }} />
+              </View>
+            </Pressable>
+          </View>
+          <Txt variant="bodyStrong">Remix</Txt>
+          <Txt variant="small" color="textSecondary">Remixing is not available yet. There is no remix permission to enable.</Txt>
+          <Button title="Done" size="sm" onPress={() => setAdvancedOpen(false)} />
+        </View>
+      </BottomSheet>
+      <ConfirmSheet visible={confirmReset} title="Reset this post?" message="This clears the words, media and post settings."
+        confirmLabel="Reset post" destructive onCancel={() => setConfirmReset(false)} onConfirm={() => {
+          setBody(''); setMedia([]); setPendingMedia(null); setAudience('everyone');
+          setCommentsEnabled(true); setSound(null); setConfirmReset(false);
+        }} />
 
       <VideoEditorModal
         visible={editorOpen}
@@ -561,37 +541,25 @@ function ComposerLeft({
   setBody,
   audience,
   setAudience,
-  postType,
-  scheduleOn,
-  setScheduleOn,
-  maxBody,
+  commentsEnabled,
+  openAdvanced,
   media,
   removeMedia,
   pickMedia,
   primaryMedia,
   openEditor,
-  editing,
-  fontIndex,
-  setFontIndex,
-  fontOptions,
 }: {
   body: string;
   setBody: React.Dispatch<React.SetStateAction<string>>;
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
-  postType: 'Flows' | 'Stories' | 'Moments';
-  scheduleOn: boolean;
-  setScheduleOn: (v: boolean) => void;
-  maxBody: number;
+  commentsEnabled: boolean;
+  openAdvanced: () => void;
   media: MediaItem[];
   removeMedia: (id: string) => void;
   pickMedia: () => void;
   primaryMedia: MediaItem | undefined;
   openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
-  editing: boolean;
-  fontIndex: number;
-  setFontIndex: React.Dispatch<React.SetStateAction<number>>;
-  fontOptions: readonly string[];
 }) {
   // The caret lives here, beside the words it moves through: the input, the
   // suggestion list and the @ / # buttons are all in this column.
@@ -606,10 +574,6 @@ function ComposerLeft({
 
   const { colors } = useTheme();
 
-  const insertText = (text: string) => {
-    setBody((prev) => (prev.trim().endsWith(text.trim()) ? prev : prev + ' ' + text));
-  };
-
   return (
     <View style={{ gap: space.lg, minWidth: 0 }}>
       {/* Main view — media grid above */}
@@ -619,17 +583,15 @@ function ComposerLeft({
             Add Media
           </Txt>
           <Txt variant="caption" color="textMuted">
-            Photos, or a few words
+            One photo or video, or just words
           </Txt>
         </View>
         {media.map((m) => (
           <View key={m.id} style={{ position: 'relative', width: 88, height: 88, borderRadius: 16, overflow: 'hidden' }}>
             {m.type === 'video' ? (
-              <View style={{ width: '100%', height: '100%', backgroundColor: '#000' }}>
-                <Ionicons name="videocam-outline" size={24} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -12 }, { translateY: -12 }] }} />
-              </View>
+              <ClipThumb uri={m.uri} style={{ width: '100%', height: '100%' }} />
             ) : (
-              <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
+              <Photo uri={m.uri} style={{ width: '100%', height: '100%' }} alt="Selected photo" />
             )}
             <Pressable onPress={() => removeMedia(m.id)} accessibilityLabel="Remove media" hitSlop={8} style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="close-outline" size={16} color="#fff" />
@@ -641,7 +603,7 @@ function ComposerLeft({
             )}
           </View>
         ))}
-        {media.length < 10 && (
+        {media.length < 1 && (
           <Pressable onPress={pickMedia} accessibilityLabel="Add media" hitSlop={12} style={{ width: 88, height: 88, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name="add" size={24} color={colors.gold} />
           </Pressable>
@@ -666,7 +628,7 @@ function ComposerLeft({
           placeholder="Good energy, better days. Same me, just more focused."
           maxLength={500}
           showCount
-          style={{ minHeight: 150, fontFamily: fontOptions[fontIndex] }}
+          style={{ minHeight: 150 }}
         />
 
         {/* The list that answers a `@` or a `#`, right where the words are. */}
@@ -680,7 +642,8 @@ function ComposerLeft({
           }}
         />
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, flexWrap: 'wrap' }}>
-          {/* Media Settings — line up under the text bar */}
+          {/* Video tools are available only for a selected video. */}
+          {primaryMedia?.type === 'video' ? <>
           <Pressable onPress={() => openEditor('crop')} accessibilityLabel="Crop" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Ionicons name="crop-outline" size={18} color={colors.textMuted} />
           </Pressable>
@@ -690,9 +653,6 @@ function ComposerLeft({
           <Pressable onPress={() => openEditor('adjust')} accessibilityLabel="Adjust" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
           </Pressable>
-          <Pressable onPress={() => openEditor('stickers')} accessibilityLabel="Draw" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
-            <Ionicons name="create-outline" size={18} color={colors.textMuted} />
-          </Pressable>
           <Pressable onPress={() => openEditor('captions')} accessibilityLabel="Text" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Ionicons name="text-outline" size={18} color={colors.textMuted} />
           </Pressable>
@@ -700,10 +660,7 @@ function ComposerLeft({
             <Ionicons name="happy-outline" size={18} color={colors.textMuted} />
           </Pressable>
 
-          {/* Font cycle */}
-          <Pressable onPress={() => setFontIndex((i) => (i + 1) % fontOptions.length)} accessibilityLabel="Change font" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
-            <Txt variant="caption" style={{ color: colors.text }}>Aa</Txt>
-          </Pressable>
+          </> : null}
 
           {/* Tag people */}
           <Pressable
@@ -732,8 +689,6 @@ function ComposerLeft({
         </View>
       </View>
 
-      {/* Location */}
-      <SettingsRow label="Location" hint="Add a location (optional)" icon="location-outline" />
 
       {/* Audience */}
       <View style={{ gap: space.sm }}>
@@ -752,7 +707,7 @@ function ComposerLeft({
       </View>
 
       {/* Tag people */}
-      <SettingsRow label="Tag people" hint="Mention friends or creators" icon="person-outline" />
+      <SettingsRow label="Tag people" hint="Mention friends or creators in your words" icon="person-outline" onPress={() => insertSigil('@')} />
 
       {/* What this is. Stated, not asked: it was answered one screen ago, and
           answering it here again used to change nothing. */}
@@ -766,44 +721,18 @@ function ComposerLeft({
         <Pill label="Post" tone="gold" />
       </View>
 
-      {/* Advanced options */}
-      <SettingsRow label="Advanced options" hint="Allow comments, remix, etc." icon="options-outline" />
+      <SettingsRow label="Advanced options" hint={commentsEnabled ? 'Comments on · Remix unavailable' : 'Comments off · Remix unavailable'} icon="options-outline" onPress={openAdvanced} />
 
-      {/* Schedule post */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <View style={{ gap: 2 }}>
-          <Txt variant="label" color="textSecondary">Schedule post</Txt>
-          <Txt variant="caption" color="textMuted">Post later (optional)</Txt>
-        </View>
-        <Pressable onPress={() => setScheduleOn(!scheduleOn)} accessibilityRole="switch" accessibilityState={{ checked: scheduleOn }} hitSlop={12} style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: scheduleOn ? colors.primary : colors.elevated, alignItems: scheduleOn ? 'flex-end' : 'flex-start', justifyContent: 'center', paddingHorizontal: 4 }}>
-          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', marginHorizontal: 3 }} />
-        </Pressable>
-      </View>
-
-      <Button title="Reset" size="sm" variant="ghost" onPress={() => {}} accessibilityLabel="Reset post" />
     </View>
   );
 }
 
-/** Right column: media preview, settings panel, post preview. */
+/** Preview the selected file, not a placeholder pretending to be the post. */
 function ComposerRight({
   primaryMedia,
-  media,
-  postType,
-  audience,
-  body,
-  maxBody,
-  openEditor,
 }: {
   primaryMedia: MediaItem | undefined;
-  media: MediaItem[];
-  postType: 'Flows' | 'Stories' | 'Moments';
-  audience: 'everyone' | 'connections';
-  body: string;
-  maxBody: number;
-  openEditor: (tool?: 'crop' | 'filters' | 'adjust' | 'stickers' | 'captions' | null) => void;
 }) {
-  const { colors } = useTheme();
 
   return (
     <View style={{ gap: space.lg, minWidth: 0 }}>
@@ -811,68 +740,20 @@ function ComposerRight({
       {primaryMedia ? (
         <View style={{ borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#000', aspectRatio: primaryMedia.type === 'video' ? 9 / 16 : 1 }}>
           {primaryMedia.type === 'video' ? (
-            <View style={{ width: '100%', height: '100%', backgroundColor: '#000' }}>
-              <Ionicons name="videocam-outline" size={32} color="#666" style={{ position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -16 }, { translateY: -16 }] }} />
-              <Pressable onPress={() => openEditor('filters')} accessibilityLabel="Edit media" hitSlop={12} style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="color-wand-outline" size={16} color="#fff" />
-              </Pressable>
-              <Pressable onPress={() => openEditor()} accessibilityLabel="Close preview" hitSlop={12} style={{ position: 'absolute', top: 12, left: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="close-outline" size={16} color="#fff" />
-              </Pressable>
-            </View>
+            <ClipThumb uri={primaryMedia.uri} contentFit="contain" style={{ width: '100%', height: '100%' }} />
           ) : (
-            <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
+            <Photo uri={primaryMedia.uri} fit="contain" style={{ width: '100%', height: '100%' }} alt="Selected photo" />
           )}
         </View>
       ) : null}
 
-      {/* Post Preview */}
-      <Card title="Post Preview">
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.card }} />
-          <View style={{ flex: 1 }}>
-            <Txt variant="bodyStrong" color="text" numberOfLines={1}>
-              Crushly
-            </Txt>
-            <Txt variant="caption" color="textMuted" style={{ marginTop: 1 }}>
-              Just now
-            </Txt>
-          </View>
-        </View>
-        <View style={{ marginTop: 10, gap: 6 }}>
-          {body ? (
-            <Txt variant="body" color="text" numberOfLines={3}>
-              {body}
-            </Txt>
-          ) : null}
-          {media.length > 0 && (
-            <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', aspectRatio: 1 }}>
-              <View style={{ width: '100%', height: '100%', backgroundColor: colors.card }} />
-            </View>
-          )}
-        </View>
-        <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-          <Pressable accessibilityLabel="Crush" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
-          <Pressable accessibilityLabel="Comment" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
-          <Pressable accessibilityLabel="Share" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="share-social-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
-          <View style={{ flex: 1 }} />
-          <Pressable accessibilityLabel="More" hitSlop={12} style={{ padding: 4 }}>
-            <Ionicons name="ellipsis-vertical-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
-        </View>
-      </Card>
+
     </View>
   );
 }
 
 /** Reusable setting row with chevron. */
-function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: string; icon: keyof typeof Ionicons.glyphMap; onPress?: () => void; }) {
+function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void; }) {
   const { colors } = useTheme();
   return (
     <Pressable
@@ -894,20 +775,5 @@ function SettingsRow({ label, hint, icon, onPress }: { label: string; hint: stri
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
-  );
-}
-
-/** Card section wrapper. */
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  const { colors } = useTheme();
-  return (
-    <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginBottom: space.sm }}>
-      <View style={{ padding: space.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Txt variant="label" color="textSecondary">
-          {title}
-        </Txt>
-      </View>
-      <View style={{ padding: space.md }}>{children}</View>
-    </View>
   );
 }

@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../Photo';
 import { Txt } from '../Txt';
+import { useToast } from '../Toast';
 import { Suggestions } from '../Suggestions';
 import { useMentionInput } from '../useMentionInput';
 import { ConfirmSheet } from '../BottomSheet';
@@ -24,6 +25,7 @@ import {
   useLikePostComment,
   useMe,
   usePostComments,
+  usePostCommentSettings,
   usePostLikers,
 } from '../../api/hooks';
 import { formatCount } from '../../lib/counts';
@@ -83,9 +85,12 @@ export function CommentsSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { data: me } = useMe();
+  const toast = useToast();
 
   const postId = post?.id ?? null;
   const commentsQuery = usePostComments(visible ? postId : null);
+  const settingsQuery = usePostCommentSettings(visible ? postId : null);
+  const canComment = settingsQuery.data === true;
   const likersQuery = usePostLikers(visible ? postId : null);
   const send = useCommentOnPost(postId ?? 0);
   const likeComment = useLikePostComment(postId ?? 0);
@@ -140,21 +145,22 @@ export function CommentsSheet({
 
   const submit = useCallback(async () => {
     const body = draft.trim();
-    if (!body || sending) return;
+    if (!body || sending || !canComment) return;
     const parent = replyTo;
     setSending(true);
     setDraft('');
     setReplyTo(null);
     try {
       await send.mutateAsync({ body, parentId: parent?.id ?? null });
-    } catch {
-      // Put the words back: losing what somebody typed is worse than the error.
+    } catch (error) {
+      // Put the words back and say why nothing was sent.
       setDraft(body);
       setReplyTo(parent);
+      toast({ kind: 'error', title: 'Comment not sent', message: (error as Error).message });
     } finally {
       setSending(false);
     }
-  }, [draft, replyTo, send, sending]);
+  }, [draft, replyTo, send, sending, canComment, toast]);
 
   const startReply = useCallback((comment: PostComment) => {
     setReplyTo(comment);
@@ -237,7 +243,7 @@ export function CommentsSheet({
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 7 }}>
             <Txt style={{ fontSize: 12, color: NOIR.muted }}>{timeAgo(comment.createdAt)}</Txt>
-            {!comment.hidden ? (
+            {!comment.hidden && canComment ? (
               <Pressable onPress={() => startReply(comment)} accessibilityRole="button" hitSlop={8}>
                 <Txt style={{ fontFamily: fonts.bold, fontSize: 12.5, color: NOIR.secondary }}>Reply</Txt>
               </Pressable>
@@ -279,7 +285,7 @@ export function CommentsSheet({
         <Txt style={{ padding: 20, color: NOIR.muted, fontSize: 13 }}>Loading the conversation…</Txt>
       ) : roots.length === 0 ? (
         <Txt style={{ padding: 20, color: NOIR.muted, fontSize: 13, lineHeight: 19 }}>
-          Nothing said yet. Be the first — a comment is the cheapest way to be brave.
+          {canComment ? 'Nothing said yet. Be the first to comment.' : 'No comments yet.'}
         </Txt>
       ) : (
         roots.map((root) => (
@@ -409,7 +415,11 @@ export function CommentsSheet({
           <View style={{ flex: 1 }}>{tab === 'comments' ? commentsTab : likesTab}</View>
 
           {/* ---------------------------------------------------------- composer */}
-          {tab === 'comments' ? (
+          {tab === 'comments' && !canComment ? (
+            <Txt style={{ padding: 16, color: NOIR.muted }}>
+              {settingsQuery.isError ? 'Could not load comment settings. Reopen to retry.' : settingsQuery.isLoading ? 'Checking comment settings…' : 'Comments are turned off for this post.'}
+            </Txt>
+          ) : tab === 'comments' ? (
             <View
               style={{
                 borderTopWidth: StyleSheet.hairlineWidth,
