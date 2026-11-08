@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Make a real short video for the publish test
         run: |
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; fi
           ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x240:r=15 -t 1 -c:v libx264 -pix_fmt yuv420p -movflags +faststart /tmp/crushly-publish-test.mp4
           ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1 /tmp/crushly-publish-test.mp4
       - name: Exercise upload, post, options and cleanup
