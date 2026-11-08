@@ -272,7 +272,14 @@ def sign_in():
             fail('could not reach the sign-in form from Welcome')
     if not wait_for(['Welcome back'], 45, 'process exited on the way to sign in'):
         fail('the sign-in form never appeared')
-    fields = [n for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
+    # The title can appear before native inputs are mounted on a cold emulator.
+    fields = []
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        fields = [n for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
+        if len(fields) >= 2:
+            break
+        time.sleep(1.5)
     log('sign-in form has {} text field(s)'.format(len(fields)))
     shot('02-sign-in-form')
     if len(fields) < 2:
