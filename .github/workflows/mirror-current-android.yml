@@ -1,0 +1,29 @@
+name: Mirror current Android release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crushly-Android-test-APK
+          run-id: 42468784802
+          github-token: ${{ github.token }}
+          path: mirror-apk
+      - name: Verify and mirror published 1.0.81
+        env:
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: |
+          set -euo pipefail
+          p=$(find mirror-apk -name 'Crushly-1.0.81-Android9plus.apk' | head -1)
+          test -n "$p"
+          test "$(sha256sum "$p" | cut -d' ' -f1)" = ea24264e8ad48de58050b35c095ce119688a630d105e782cd779304ff053ee68
+          python3 .github/scripts/mirror-android-apk.py "$p"
