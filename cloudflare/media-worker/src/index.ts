@@ -623,8 +623,13 @@ export default {
         await b2Upload(env, ticket.data.path, contentType, bytes);
       } catch (e) {
         // Credentials and bucket details never reach the client.
-        console.error('upload failed:', (e as Error).message);
-        return fail(502, 'We couldn’t save that file. Try again.', origin);
+        const message = (e as Error).message ?? '';
+        console.error('upload failed:', message);
+        // Only an upstream stage and status are exposed, never credentials,
+        // paths, upstream response bodies or personal data.
+        const match = /^B2 (upload url|upload) failed \((\d{3})\)$/.exec(message);
+        return json({ error: 'We couldn’t save that file. Try again.',
+          diagnostic: match ? `${match[1]}:${match[2]}` : 'storage-unavailable' }, 502, origin);
       }
       return json(
         { path: ticket.data.path, url: `${url.origin}/m/${ticket.data.path}` },

@@ -88,7 +88,7 @@ def main():
             if rc not in (200, 204, 404): failures.append('small media cleanup')
     for size_mb in (30, 75):
         code, raw = upload(size_mb * 1024 * 1024)
-        print('%s MB media upload: HTTP' % size_mb, code, 'error:', str(decode(raw).get('error', raw[:250].decode('utf-8', 'replace') if code != 201 else ''))[:300])
+        print('%s MB media upload: HTTP' % size_mb, code, 'error:', str(decode(raw).get('error', raw[:250].decode('utf-8', 'replace') if code != 201 else ''))[:300], 'diagnostic:', decode(raw).get('diagnostic', ''))
         large_url = decode(raw).get('url')
         if code != 201 or not large_url:
             failures.append('%s MB upload' % size_mb)
