@@ -487,12 +487,10 @@ def assert_discover(seen):
 
 
 def screen_brightness():
-    """Mean brightness of the frame, 0–255, read straight from the framebuffer.
+    """Mean brightness of the top navigation canvas, excluding feed media.
 
-    Appearance cannot be asserted from an accessibility dump — light and dark
-    carry the same words — and there is no image library in the runner. The raw
-    RGBA buffer is sampled instead: a black canvas and a white one are 200-odd
-    apart, and no other change on these screens moves the mean that far.
+    Sampling the whole frame is unreliable when a dark video fills Home even
+    in light mode. The common top bar changes with appearance on both screens.
     """
     raw = subprocess.run(['adb', 'exec-out', 'screencap'], capture_output=True, timeout=120).stdout
     if len(raw) < 16:
@@ -509,10 +507,11 @@ def screen_brightness():
         return None
     px = raw[header:]
     total = bright = 0
-    step = max(1, (w * h) // 4000) * 4    # ~4,000 samples, whatever the panel
-    for i in range(0, w * h * 4 - 4, step):
-        bright += px[i] + px[i + 1] + px[i + 2]
-        total += 3
+    for y in range(max(0, int(h * .055)), min(h, int(h * .125)), max(1, h // 320)):
+        for x in range(max(0, int(w * .05)), min(w, int(w * .95)), max(1, w // 160)):
+            i = (y * w + x) * 4
+            bright += px[i] + px[i + 1] + px[i + 2]
+            total += 3
     return bright / total if total else None
 
 
