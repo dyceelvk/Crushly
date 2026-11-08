@@ -1,10 +1,10 @@
 {
-  "version": "1.0.83",
-  "versionCode": 83,
+  "version": "1.0.84",
+  "versionCode": 84,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.83-Android9plus.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.83/Crushly-1.0.83-Android9plus.apk",
-  "notes": "Crushly is now Hollop. On Android, save posts and Moments as drafts stored on this phone, then reopen them from the composer.",
-  "bytes": 95008164,
-  "sha256": "eb33d0ed691036cd8f608abe10c6a1a929135a1dcc8575ad00a9581624caabae"
+  "file": "Crushly-1.0.84-Android9plus.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.84/Crushly-1.0.84-Android9plus.apk",
+  "notes": "The app is called Holup. Your phone-only Post and Moment drafts stay on your device.",
+  "bytes": 95003648,
+  "sha256": "ca80ee47ec9234fc6685eba94e49dad41c9186d6d7c662c74f5bc3253b16c36f"
 }
