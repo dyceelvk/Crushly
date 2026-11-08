@@ -743,6 +743,9 @@ def walk():
     # Also exercise the separate Moment composer; no test post is published.
     tap('Create post', required=True)
     tap('Moment', required=True)
+    if not find(nodes() or [], 'Drafts on this phone'):
+        fail('Moment drafts must be reachable before typing')
+    tap('Your Moment', required=True)
     if not wait_for(['Your Moment'], 15, 'Moment input visible above keyboard'):
         fail('Moment input was hidden by the keyboard')
     shot('06b-moment-keyboard')

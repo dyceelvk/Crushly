@@ -304,7 +304,6 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
                 placeholderTextColor={s.ink + '88'}
                 maxLength={max}
                 multiline
-                autoFocus={Platform.OS !== 'web'}
                 accessibilityLabel="Your Moment"
                 style={[{ color: s.ink, fontFamily: fonts.display, fontSize: 26, lineHeight: 34, textAlign: 'left' }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
               />
