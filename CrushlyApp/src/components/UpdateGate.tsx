@@ -7,7 +7,7 @@ import { useAppUpdate } from '../api/hooks';
 import { useAuth } from '../state/auth';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
-import { downloadUpdate, installUpdate, readableSize } from '../lib/updates';
+import { downloadUpdate, installUpdate, readableSize, resolveUpdateDownload } from '../lib/updates';
 
 /**
  * "Update available" — and then actually doing it.
@@ -55,12 +55,17 @@ function AndroidUpdateGate() {
   }, [available, step, putOff]);
 
   const run = useCallback(async () => {
-    const url = update.data?.apkUrl;
-    if (!url) return;
+    const infoUrl = update.data?.downloadInfoUrl;
+    if (!infoUrl) {
+      setMessage('The verified Android download is not ready yet. Please try again shortly.');
+      setStep('error');
+      return;
+    }
     setStep('downloading');
     setProgress(0);
     try {
-      const file = await downloadUpdate(url, setProgress);
+      const url = await resolveUpdateDownload(infoUrl);
+      const file = await downloadUpdate(url, setProgress, update.data?.bytes);
       setStep('installing');
       await installUpdate(file);
       // The installer sheet has been shown. Whether the member taps Install is
@@ -71,7 +76,7 @@ function AndroidUpdateGate() {
       setMessage((e as Error).message || 'The update could not be downloaded.');
       setStep('error');
     }
-  }, [update.data?.apkUrl]);
+  }, [update.data?.downloadInfoUrl, update.data?.bytes]);
 
   /** Installing over a running app kills it; this is the only real "restart". */
   const restart = useCallback(() => {
