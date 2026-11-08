@@ -1,10 +1,10 @@
 {
-  "version": "1.0.80",
-  "versionCode": 80,
+  "version": "1.0.81",
+  "versionCode": 81,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.80-Android9plus.apk",
-  "notes": "Advanced options now opens, and you can choose whether people may comment on a new post. The editor no longer offers a fake scheduling switch or silently drops additional media.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.80/Crushly-1.0.80-Android9plus.apk",
-  "bytes": 95015791,
-  "sha256": "999add74cfdd53e684de62543be0f2f497d87d1dbee9a104b239d38e8faf59a7"
+  "file": "Crushly-1.0.81-Android9plus.apk",
+  "notes": "When a media upload cannot be completed, Crushly keeps your draft and reports the upload error instead of publishing a file it cannot display.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.81/Crushly-1.0.81-Android9plus.apk",
+  "bytes": 95015479,
+  "sha256": "ea24264e8ad48de58050b35c095ce119688a630d105e782cd779304ff053ee68"
 }
