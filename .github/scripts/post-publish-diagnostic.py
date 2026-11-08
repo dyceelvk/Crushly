@@ -41,8 +41,18 @@ def main():
     def delete_object(url):
         return request(url, 'DELETE', headers={'Authorization': 'Bearer ' + token})[0]
     failures = []
+    code, raw = rpc('create_post_with_options', {'p_body': 'Automated text-only publish test', 'p_media_url': None,
+        'p_audience': 'connections', 'p_circle_id': None, 'p_edit': None, 'p_comments_enabled': True})
+    text_id = decode(raw).get('id')
+    print('Text-only post RPC: HTTP', code, 'created:', bool(text_id))
+    if text_id:
+        rc, _ = rpc('delete_post', {'p_post_id': text_id})
+        if rc != 200: failures.append('text post cleanup')
+    else:
+        print('Text post error:', str(decode(raw).get('message', ''))[:300])
+        failures.append('text post RPC')
     code, raw = upload(1024 * 1024)
-    print('Small media upload: HTTP', code)
+    print('Small media upload: HTTP', code, 'error:', str(decode(raw).get('error', 'non-JSON response' if code != 201 else ''))[:300])
     url = decode(raw).get('url')
     if code != 201 or not url:
         failures.append('small upload')
@@ -66,7 +76,7 @@ def main():
             print('Small media cleanup: HTTP', rc)
             if rc not in (200, 204, 404): failures.append('small media cleanup')
     code, raw = upload(30 * 1024 * 1024)
-    print('30 MB media upload: HTTP', code)
+    print('30 MB media upload: HTTP', code, 'error:', str(decode(raw).get('error', 'non-JSON response' if code != 201 else ''))[:300])
     large_url = decode(raw).get('url')
     if code != 201 or not large_url:
         failures.append('30 MB upload')
