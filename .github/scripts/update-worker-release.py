@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Record the exact Android asset the public download endpoint may serve.
 
-This runs only after GitHub has published the APK release. The Worker stores the
-GitHub *asset API* endpoint, not a browser download URL: GitHub returns a fresh,
-short-lived release-assets URL for each request. That avoids relaying a ~95 MB
-APK through the Worker and ensures a proxy error cannot be saved as a bogus
-`.apk` file for Android's package parser.
+This runs only after GitHub has published the APK release. The Worker stores
+GitHub's release-download endpoint and asks it for a fresh, short-lived CDN
+redirect for each cache window. That avoids relaying a ~95 MB APK through the
+Worker and ensures a proxy error cannot be saved as a bogus `.apk` file for
+Android's package parser.
 
 The release note belongs to its Android version in ``release-notes.json``. A
 release without one refuses to be announced rather than reusing an old note.
@@ -34,7 +34,6 @@ def version_code(app: dict) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--asset-id', type=int, required=True, help='GitHub release asset id for the just-published APK.')
     ap.add_argument('--notes', default=None, help='Overrides release-notes.json; rarely right.')
     ap.add_argument('--bytes', type=int, required=True, help='Exact APK byte count.')
     ap.add_argument('--sha256', required=True, help='Exact SHA-256 fingerprint.')
@@ -51,7 +50,7 @@ def main() -> int:
         'versionCode': code,
         'minVersionCode': current.get('minVersionCode', 1),
         'file': f'Crushly-{version}-Android9plus.apk',
-        'assetApi': f'https://api.github.com/repos/{REPO}/releases/assets/{args.asset_id}',
+        'releaseUrl': f'https://github.com/{REPO}/releases/download/android-test-{version}/Crushly-{version}-Android9plus.apk',
         'notes': notes,
         'bytes': args.bytes,
         'sha256': args.sha256.lower(),

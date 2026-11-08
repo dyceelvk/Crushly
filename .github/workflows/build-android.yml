@@ -252,12 +252,8 @@ jobs:
           # page can tell people exactly what they should be checking.
           bytes=$(wc -c < "apk/${file}")
           sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
-          asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
-            --jq '.assets[] | select(.name == "'"$file"'") | .id' \
-            | head -n 1)
-          test -n "$asset_id" || { echo "::error::Could not find the published APK asset id."; exit 1; }
           out=$(python3 ../.github/scripts/update-worker-release.py \
-            --asset-id "$asset_id" --bytes "$bytes" --sha256 "$sha")
+            --bytes "$bytes" --sha256 "$sha")
           printf '%s\n' "$out"
           if printf '%s' "$out" | grep -q 'changed=true'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"

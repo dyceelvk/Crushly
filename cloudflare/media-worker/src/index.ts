@@ -458,19 +458,19 @@ async function applyLifecycle(env: Env, origin: string | null): Promise<Response
  * passes its tests, so a release can never be published without the Worker
  * being told about it in the same breath.
  *
- * `assetApi` is deliberately not what the app is handed. It lets the Worker
+ * `releaseUrl` is deliberately not what the app is handed. It lets the Worker
  * mint a fresh, short-lived CDN redirect for each download instead of proxying
  * a large APK. `versionCode` only ever goes up — a reused one would make an
  * update invisible to a phone that already installed it.
  */
-type AndroidBuild = { assetApi: string };
+type AndroidBuild = { releaseUrl: string };
 
-// `assetApi` returns a fresh, expiring `release-assets.githubusercontent.com`
-// URL. We redirect the browser to that URL instead of streaming a 95 MB APK
-// through this Worker; a failed upstream request can therefore never be saved
-// as JSON under an `.apk` filename and handed to Android's package parser.
+// `releaseUrl` is GitHub's release download endpoint. We ask it only for its
+// fresh, expiring `release-assets.githubusercontent.com` redirect — never for
+// the 95 MB body — so a failed upstream request cannot be saved as JSON under
+// an `.apk` filename and handed to Android's package parser.
 const BUILDS: Record<string, AndroidBuild> = {
-  [release.file]: { assetApi: release.assetApi },
+  [release.file]: { releaseUrl: release.releaseUrl },
 };
 
 const RELEASE = {
@@ -499,7 +499,7 @@ function publicAssetUrl(location: string): string | null {
 function signedAssetCacheKey(build: AndroidBuild): Request {
   // The key contains only public release metadata. The cache body holds the
   // short-lived URL and lives at Cloudflare, never in a phone or a browser cache.
-  return new Request(`https://crushly-media.dyceelvk.workers.dev/.internal/apk-url/${encodeURIComponent(build.assetApi)}`);
+  return new Request(`https://crushly-media.dyceelvk.workers.dev/.internal/apk-url/${encodeURIComponent(build.releaseUrl)}`);
 }
 
 /** Obtain a short-lived GitHub CDN URL without exposing a repository download page. */
@@ -511,11 +511,8 @@ async function signedAssetUrl(build: AndroidBuild): Promise<string | null> {
     if (location) return location;
   }
 
-  const response = await fetch(build.assetApi, {
-    headers: {
-      Accept: 'application/octet-stream',
-      'User-Agent': 'Crushly Android download',
-    },
+  const response = await fetch(build.releaseUrl, {
+    headers: { 'User-Agent': 'Crushly Android download' },
     // We want GitHub's short-lived CDN location, not a Worker relay of the APK.
     redirect: 'manual',
   }).catch(() => null);
@@ -524,7 +521,7 @@ async function signedAssetUrl(build: AndroidBuild): Promise<string | null> {
   if (!location) return null;
 
   // GitHub's CDN URLs last about an hour. Caching one for 45 minutes avoids
-  // GitHub API rate limits during a release while always expiring it early.
+  // repeatedly asking GitHub during a release while always expiring it early.
   await caches.default.put(cacheKey, new Response(location, {
     headers: { 'Cache-Control': `public, max-age=${SIGNED_ASSET_CACHE_SECONDS}` },
   })).catch(() => undefined);
