@@ -5,6 +5,11 @@ on:
     branches: [main, arena/**]
   pull_request:
   workflow_dispatch:
+    inputs:
+      apk_run_id:
+        description: Optional completed Android test run to re-walk its exact emulator APK
+        required: false
+        type: string
 
 jobs:
   app:
@@ -100,3 +105,57 @@ jobs:
       - run: npx playwright test --config e2e/space-search.config.ts
         env:
           E2E_START_SERVER: '1'
+
+  emulator-retry:
+    name: Re-walk an identical test APK
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.apk_run_id != '' && startsWith(github.ref_name, 'verify/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the APK was built from exactly these app sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_RUN: ${{ inputs.apk_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$APK_RUN" =~ ^[0-9]+$ ]]
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$APK_RUN" --jq .head_sha)
+          test "$(git rev-parse "$sha:CrushlyApp")" = "$(git rev-parse "HEAD:CrushlyApp")" || { echo 'App sources differ from the artifact build'; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          name: Android-emulator-test-APK
+          path: CrushlyApp/emulator-test
+          run-id: ${{ inputs.apk_run_id }}
+          github-token: ${{ github.token }}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Walk Android 9
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          CRUSHLY_WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
+          CRUSHLY_WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
+          CRUSHLY_WALK_OUT: ../walk
+        with:
+          api-level: 28
+          target: default
+          arch: x86_64
+          working-directory: CrushlyApp
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: python3 ../.github/scripts/android-launch-smoke.py emulator-test/app-release.apk
+      - name: Keep the Android walk
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-retry-walk
+          path: walk/
+          if-no-files-found: warn
+          retention-days: 7

@@ -331,7 +331,10 @@ def return_to_tabs(tries=4):
     time.sleep(1.5)
     adb('shell', 'am', 'start', '-n', LAUNCHER[0])
     time.sleep(8)
-    return bool(find(nodes() or [], 'Home'))
+    seen = nodes() or []
+    if not (find(seen, 'Home') and find(seen, 'Space')):
+        fail('could not return to the main tabs, even after restarting')
+    return True
 
 
 def back_out():
@@ -896,6 +899,7 @@ def walk():
         if not any(find(settings_seen, label) for label in ('You’re up to date', 'Checking for updates', 'Couldn’t check for updates')):
             fail('Settings: update status is missing')
         log('settings: installed app has no APK download or older-build update; checked')
+        return_to_tabs()
         for sub, slug in (('Account & security', 'account'),
                           ('Appearance', 'appearance'),
                           ('Privacy & visibility', 'privacy'),
@@ -930,9 +934,9 @@ def walk():
 
     # Search with something actually typed into it: the empty state is not the
     # screen, and the results are the part people use.
-    tap('Discover')
-    if tap('Search Holup'):
-        type_into(0, 'spencer')
+    tap('Discover', required=True)
+    if tap('Search Holup', required=True):
+        if not type_into(0, 'spencer'): fail('search input is missing')
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(2.5)
         seen = shot('{:02d}-search-results'.format(n))
@@ -953,9 +957,9 @@ def walk():
         return_to_tabs()
 
     # Space's own edit surface, and the three Crushes lenses.
-    tap('Space')
+    tap('Space', required=True)
     time.sleep(1.5)
-    if tap('Edit Space'):
+    if tap('Edit Space', required=True):
         shot('{:02d}-edit-space'.format(n))
         n += 1
         if not scroll_to('Space banner', swipes=4):
