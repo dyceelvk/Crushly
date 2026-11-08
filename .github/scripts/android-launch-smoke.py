@@ -703,7 +703,7 @@ def walk():
     if not find(nodes() or [], 'Comments off'):
         fail('editor did not retain the comments choice')
     tap('Advanced options', required=True)
-    if not find(nodes() or [], 'Allow comments'):
+    if not wait_for(['Allow comments'], 15, 'reopened Advanced options'):
         fail('editor could not reopen Advanced options')
     tap('Done', required=True)
     tap('Cancel', required=True)

@@ -156,6 +156,16 @@ jobs:
         run: |
           cd android
           ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || { tail -n 40 "$RUNNER_TEMP/crushly-gradle.log"; exit 1; }
+      # Keep the exact emulator build even if the walk fails, so a corrected
+      # test can be run against the same binary rather than rebuilding it.
+      - name: Keep emulator APK for test-only retries
+        if: ${{ github.ref_name != 'main' && !startsWith(github.ref_name, 'arena/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-emulator-test-APK
+          path: CrushlyApp/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 2
       - name: Enable emulator hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
