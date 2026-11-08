@@ -636,11 +636,17 @@ def assert_space_header(seen):
     # About, opened, so the tab is proven to be a tab and not a label.
     if not tap('About', tries=3):
         fail("the Space's About tab could not be tapped")
-    time.sleep(0.9)
-    about = nodes() or []
-    shot('12b-space-about')
-    # The walk account has words and nothing else, so the words are the proof.
-    # An account with interests or facts would show one of those instead.
+    # The tab loads asynchronously; wait for real content, not an empty frame.
+    about = []
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        about = nodes() or []
+        if any(find(about, w) for w in ('Checking where things live.',
+                                        'Nothing here yet', 'About me',
+                                        'Looking for', 'Interests')):
+            break
+        time.sleep(1.5)
+    shot('12b-space-about', about)
     if not any(find(about, w) for w in ('Checking where things live.',
                                         'Nothing here yet', 'About me',
                                         'Looking for', 'Interests')):
