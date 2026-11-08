@@ -36,6 +36,7 @@ export const keys = {
   publicFlow: ['public-flow'] as const,
   update: ['app-update'] as const,
   search: (q: string) => ['search', q] as const,
+  spaceBanner: (viewerId: number, targetId: number) => ['space-banner', viewerId, targetId] as const,
   keep: (id: number) => ['keep', id] as const,
   savedPosts: ['saved-posts'] as const,
   crushesFeed: ['crushes-feed'] as const,
@@ -67,6 +68,9 @@ function postsChanged(qc: QueryClient) {
 
 export const useMe = (enabled = true) =>
   useQuery({ queryKey: keys.me, queryFn: () => service.getMe(), enabled, staleTime: 30_000 });
+
+export const useSpaceBanner = (viewerId?: number, targetId?: number) =>
+  useQuery({ queryKey: keys.spaceBanner(viewerId ?? 0, targetId ?? 0), queryFn: () => service.spaceBanner(targetId!), enabled: !!viewerId && !!targetId, staleTime: 0 });
 
 export const useDiscover = () =>
   useQuery({ queryKey: keys.discover, queryFn: () => service.discover(), staleTime: 60_000 });
@@ -124,10 +128,10 @@ export function useLiveMomentUsers(): Set<number> {
 }
 
 /** Debounced by the caller: only queries once the text is worth asking about. */
-export const useSearch = (query: string) =>
+export const useSearch = (query: string, category: import('./types').SearchCategory, filters: import('./types').SearchFilters) =>
   useQuery({
-    queryKey: keys.search(query),
-    queryFn: () => service.searchAll(query),
+    queryKey: [...keys.search(query), category, filters] as const,
+    queryFn: () => service.searchAll(query, category, filters),
     enabled: query.trim().length >= 2,
     staleTime: 15_000,
   });
@@ -924,6 +928,19 @@ export function useUpdateNotificationSettings() {
     },
     onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(keys.me, ctx.prev),
     onSuccess: setMe(qc),
+  });
+}
+
+export function useSetSpaceBanner(viewerId?: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: service.setSpaceBanner,
+    onSuccess: (bannerUrl) => {
+      if (viewerId) qc.setQueryData(keys.spaceBanner(viewerId, viewerId), bannerUrl);
+    },
+    onSettled: () => {
+      if (viewerId) void qc.invalidateQueries({ queryKey: keys.spaceBanner(viewerId, viewerId) });
+    },
   });
 }
 

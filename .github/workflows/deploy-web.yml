@@ -21,10 +21,9 @@
 #     could never have succeeded either. `NETLIFY_AUTH_TOKEN` and
 #     `NETLIFY_SITE_ID` *are* set.
 #
-# The database job now calls the real migration workflow instead of naming a
-# file, and the deploy job no longer dies with it: a database problem is reported
-# by db-migrations.yml, and the web app — which is built from source and talks to
-# whatever schema is live — still ships.
+# The database job calls the real migration workflow instead of naming a single
+# file. A failed migration blocks the web deploy so a client that needs new RPCs
+# cannot replace the working site before those RPCs exist.
 
 name: Deploy web app
 
@@ -45,12 +44,9 @@ jobs:
 
   deploy:
     name: Build & deploy web
-    # Deliberately not `needs: database`: a migration failure must not be able to
-    # keep the web app from shipping. It still *waits* for the database job so a
-    # normal push applies the schema first, but it runs even when that job fails,
-    # because the failure is already visible in its own run.
+    # Search and banners require the new RPCs. Never ship a web client against
+    # a database whose migration failed; keep the previous site working instead.
     needs: database
-    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -20,7 +20,7 @@ const PHOTO_QUALITY = 0.7;
  * Picks (or captures) a photo and downsizes it before upload: faster uploads on
  * mobile data, less storage, quicker loads for everyone who views it.
  */
-export async function pickImage({ camera = false, square = false }: { camera?: boolean; square?: boolean } = {}): Promise<
+export async function pickImage({ camera = false, square = false, banner = false }: { camera?: boolean; square?: boolean; banner?: boolean } = {}): Promise<
   PickedImage | { error: string } | null
 > {
   try {
@@ -34,7 +34,7 @@ export async function pickImage({ camera = false, square = false }: { camera?: b
     const options: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
       allowsEditing: Platform.OS !== 'web',
-      aspect: square ? [1, 1] : [4, 5],
+      aspect: banner ? [16, 9] : square ? [1, 1] : [4, 5],
       quality: 0.9,
       cameraType: ImagePicker.CameraType.front,
     };

@@ -314,6 +314,7 @@ export async function uploadMediaFile(
     );
   }
   const kind = bucket === 'media' ? mediaKind(path) : null;
+  if (kind === 'banners' && !moved(kind)) throw new ApiError(503, 'Banner uploads are unavailable right now.');
   if (kind && moved(kind)) {
     // A Supabase fallback path would be resolved back to the media Worker on
     // read, even though its bytes are in a different private bucket. That could

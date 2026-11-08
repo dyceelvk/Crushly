@@ -31,6 +31,7 @@ import {
 import { formatCount } from '../../lib/counts';
 import { timeAgo } from '../../lib/format';
 import { fonts, radius } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 import type { Post, PostComment } from '../../api/types';
 
 /**
@@ -42,8 +43,7 @@ import type { Post, PostComment } from '../../api/types';
  *
  * Three things were copied from the reference because they are right:
  *
- *   * the sheet is dark whatever the rest of the app is doing, so the post
- *     above it stays the brightest thing on screen;
+ *   * the sheet follows the member's Holup light or dark appearance;
  *   * the counts live in the tab strip, so you can see how much conversation
  *     there is without scrolling to the end of it;
  *   * a comment carries who its author is *to this post* — the person who wrote
@@ -55,19 +55,6 @@ import type { Post, PostComment } from '../../api/types';
 
 type Tab = 'comments' | 'likes';
 type Sort = 'newest' | 'top';
-
-const NOIR = {
-  sheet: '#141416',
-  header: '#141416',
-  divider: 'rgba(255,255,255,0.09)',
-  text: '#FFFFFF',
-  secondary: '#A6A6AD',
-  muted: '#7C7C85',
-  field: '#1E1E20',
-  accent: '#00C6FF',
-  crush: '#FF4081',
-  gold: '#F3C969',
-};
 
 const EMOJI = ['❤️', '🔥', '😂', '😮', '😢', '👏', '🙌', '💯', '😍', '🤝', '✨', '🎶', '👀', '😭', '🥹', '💫'];
 
@@ -82,6 +69,12 @@ export function CommentsSheet({
   onClose: () => void;
   onOpenAuthor?: (authorId: number) => void;
 }) {
+  const { colors } = useTheme();
+  const NOIR = {
+    sheet: colors.card, header: colors.card, divider: colors.border,
+    text: colors.text, secondary: colors.textSecondary, muted: colors.textMuted,
+    field: colors.elevated, accent: colors.primary, crush: colors.crush, gold: colors.gold,
+  };
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { data: me } = useMe();
@@ -494,8 +487,7 @@ export function CommentsSheet({
                     }}
                     accessibilityRole="button"
                     accessibilityLabel="Mention somebody"
-                    hitSlop={8}
-                    style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+                    style={{ paddingHorizontal: 6, paddingVertical: 8 }}
                   >
                     <Txt style={{ fontFamily: fonts.bold, fontSize: 16, color: NOIR.secondary }}>@</Txt>
                   </Pressable>
@@ -504,8 +496,7 @@ export function CommentsSheet({
                     accessibilityRole="button"
                     accessibilityLabel="Emoji"
                     accessibilityState={{ expanded: emojiOpen }}
-                    hitSlop={8}
-                    style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+                    style={{ paddingHorizontal: 6, paddingVertical: 8 }}
                   >
                     <Ionicons name="happy-outline" size={20} color={emojiOpen ? NOIR.accent : NOIR.secondary} />
                   </Pressable>
@@ -523,10 +514,10 @@ export function CommentsSheet({
                     borderRadius: 19,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: draft.trim() ? NOIR.accent : 'rgba(255,255,255,0.08)',
+                    backgroundColor: draft.trim() ? NOIR.accent : colors.elevated,
                   }}
                 >
-                  <Ionicons name="arrow-up" size={19} color={draft.trim() ? '#001018' : NOIR.muted} />
+                  <Ionicons name="arrow-up" size={19} color={draft.trim() ? colors.onPrimary : NOIR.muted} />
                 </Pressable>
               </View>
             </View>

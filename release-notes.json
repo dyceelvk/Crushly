@@ -20,5 +20,6 @@
   "1.0.82": "Crushly checks Android update downloads before opening the installer and no longer reports an update as installed when Android has not confirmed it. Optional update prompts can now be dismissed.",
   "1.0.83": "Crushly is now Holup. On Android, save posts and Moments as drafts stored on this phone, then reopen them from the composer.",
   "1.0.84": "The app is called Holup. Your phone-only Post and Moment drafts stay on your device.",
-  "1.0.85": "The Holup launch screen now shows the right name. Android Settings offers Update Holup only when a newer version is available."
+  "1.0.85": "The Holup launch screen now shows the right name. Android Settings offers Update Holup only when a newer version is available.",
+  "1.0.86": "Add a separate Space banner, explore more search categories with filters, and enjoy a Holup-styled text comment sheet."
 }

@@ -23,6 +23,7 @@ import { MomentPreview } from './Moments';
 import { palettes, fonts, space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
+import { initialMomentIndex } from '../../lib/moments';
 import { timeAgo } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
@@ -40,14 +41,16 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   /* Every picture on this screen opens a Moment when there is one live, and the
      Space otherwise — the same handler every other screen uses. */
   const openProfile = useProfileTap();
-  const { userId, mine } = route.params;
+  const { userId, mine, momentId } = route.params;
+  const searchTargetUsed = useRef(false);
   const c = palettes.dark; // the viewer is always cinematic dark
   const { reduceMotion } = useTheme();
   const insets = useSafeAreaInsets();
   const { contentWidth } = useLayout();
   const qc = useQueryClient();
   const toast = useToast();
-  const { data, isFetching } = useMoments();
+  const { data, isFetching, isError, refetch } = useMoments();
+  const [targetReady, setTargetReady] = useState(momentId == null);
   const reactM = useMomentReaction();
   const { run: crushOn } = useCrushFlow();
 
@@ -61,22 +64,25 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [groups, setGroups] = useState<Group[] | null>(null);
   const signature = (list: Group[] | null) => (list ?? []).map((g) => g.moments.map((m) => m.id).join(',')).join('|');
   useEffect(() => {
-    if (!data) return;
-    const source: Group[] = mine
+    if (!data || !targetReady) return;
+    let source: Group[] = mine
       ? (data.mine.moments.length ? [data.mine] : [])
       : (() => {
           const i = data.others.findIndex((g) => g.user.id === userId);
           return i >= 0 ? data.others.slice(i) : [];
         })();
+    if (momentId != null && !source[0]?.moments.some((m) => m.id === momentId)) source = [];
     if (groups !== null && groups.some((g) => g.moments.length)) return; // frozen, and holding something
     if (groups !== null && signature(source) === signature(groups)) return;
     setGroups(source);
-  }, [data, groups, mine, userId]);
+  }, [data, groups, mine, userId, momentId, targetReady]);
 
   // The last answer may predate whatever was just posted, so the viewer asks
   // again the moment it opens rather than trusting a cached feed.
   useEffect(() => {
-    void qc.invalidateQueries({ queryKey: keys.moments });
+    let alive = true;
+    void qc.invalidateQueries({ queryKey: keys.moments }).finally(() => { if (alive) setTargetReady(true); });
+    return () => { alive = false; };
   }, [qc]);
 
   const [gi, setGi] = useState(0);
@@ -104,7 +110,9 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
    * has passed. Clamped instead: the reader is looking at a card that exists.
    */
   const group = groups && groups.length ? groups[Math.min(gi, groups.length - 1)] : undefined;
-  const moment = group && group.moments.length ? group.moments[Math.min(mi, group.moments.length - 1)] : undefined;
+  const targetIndex = !searchTargetUsed.current && gi === 0 && group ? initialMomentIndex(group.moments, momentId) : null;
+  const displayIndex = targetIndex ?? mi;
+  const moment = group && group.moments.length ? group.moments[Math.min(displayIndex, group.moments.length - 1)] : undefined;
   const paused = focused || reactOpen || confirmDelete || holding;
   const playbackDurationMs = moment?.kind === 'video'
     ? Math.max(100, Math.min(60_000, moment.durationMs ?? DURATION))
@@ -112,7 +120,16 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
 
   // Start each person's sequence at their first unseen Moment.
   useEffect(() => {
-    if (!group || mine) return;
+    if (!group) return;
+    if (!searchTargetUsed.current && momentId != null && gi === 0) {
+      const target = initialMomentIndex(group.moments, momentId);
+      if (target !== null) {
+        searchTargetUsed.current = true;
+        setMi(target);
+        return;
+      }
+    }
+    if (mine) return;
     const first = group.moments.findIndex((m) => !m.seen);
     setMi(first >= 0 ? first : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -301,10 +318,15 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
      Moment is a sentence that sends people looking for a bug in the clock. So:
      your own Space with nothing live offers to share one; somebody else's says
      exactly what is true, which is that nothing of theirs is live right now. */
+  if (targetReady && isError && !moment && !isFetching) {
+    return <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top, justifyContent: 'center' }}><EmptyState icon="cloud-offline-outline" title="Couldn’t load Moments" message="Check your connection and try again." action={{ label: 'Try again', onPress: () => { void refetch(); } }} secondary={{ label: 'Close', onPress: close }} /></View>;
+  }
   if (groups && !moment && !isFetching) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: insets.top, justifyContent: 'center' }}>
-        {mine ? (
+        {momentId != null ? (
+          <EmptyState icon="sparkles-outline" title="This Moment isn’t available" message="It may no longer be shared with you." action={{ label: 'Close', onPress: close }} />
+        ) : mine ? (
           <EmptyState
             icon="aperture-outline"
             title="Nothing of yours is live"

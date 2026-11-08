@@ -1,0 +1,120 @@
+/** Offline browser checks: mock APIs; no real accounts or uploads. */
+import { test, expect, type Page } from '@playwright/test';
+const API = 'https://verification-test.supabase.co';
+const MEDIA = 'https://crushly-media.dyceelvk.workers.dev';
+const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', 'base64');
+const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'offline@example.com' };
+const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
+const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
+const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = []) {
+  let banner: string | null = null;
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
+  await page.addInitScript(({ user, token, exp }) => localStorage.setItem('sb-verification-test-auth-token', JSON.stringify({ user, access_token: token, refresh_token: 'offline-refresh', token_type: 'bearer', expires_at: exp, expires_in: 3600 })), { user, token, exp });
+  await page.route(`${MEDIA}/**`, async (route) => {
+    if (route.request().method() === 'POST') return route.fulfill({ status: 201, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ url: `${MEDIA}/m/banners/1/test.jpg` }) });
+    if (route.request().method() === 'DELETE') return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, body: '{}' });
+    return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: image });
+  });
+  await page.route(`${API}/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = [];
+    if (path === '/auth/v1/user') body = user;
+    else if (path === '/rest/v1/profiles') body = profile;
+    else if (path === '/rest/v1/preferences') body = { age_min: 18, age_max: 99, intentions: [], interests: [] };
+    else if (path === '/rest/v1/privacy') body = { profile_visibility: 'everyone', discoverable: true, show_city: true };
+    else if (path === '/rest/v1/notification_settings') body = {};
+    else if (path === '/rest/v1/verification_requests') body = null;
+    else if (path === '/rest/v1/rpc/space_banner') body = banner;
+    else if (path === '/rest/v1/rpc/set_space_banner') { const old = banner; banner = (route.request().postDataJSON() as { p_url: string | null }).p_url; body = old; }
+    else if (path === '/rest/v1/rpc/search_holup') {
+      const params = route.request().postDataJSON() as Record<string, unknown>; calls.push(params);
+      body = { members: params.p_category === 'top' || params.p_category === 'people' ? [person] : [], posts: ['top', 'photos'].includes(String(params.p_category)) ? [onePost] : [], moments: [], sounds: params.p_category === 'sounds' ? [{ id: 20, title: 'Holiday tune' }] : [], places: params.p_category === 'places' ? [{ name: 'Lagos' }] : [], hashtags: params.p_category === 'hashtags' ? [{ tag: 'holiday' }] : [] };
+    }
+    else if (path === '/rest/v1/rpc/post_comment_settings') body = true;
+    else if (path === '/rest/v1/rpc/post_likers') body = { items: [] };
+    else if (path === '/rest/v1/rpc/post_comments_feed') body = { items: [{ id: 45, body: 'Hello there', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }] };
+    else if (path === '/rest/v1/rpc/comment_on_post') { commentCalls.push(route.request().postDataJSON() as Record<string, unknown>); body = { id: 46 }; }
+    else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
+    else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
+    else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
+    else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: [], hasMore: false };
+    else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
+    else if (path === '/rest/v1/rpc/heartbeat') body = true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'access-control-allow-origin': '*', 'access-control-expose-headers': '*' } });
+  });
+}
+test('search categories, filters and result routes work on a phone-sized web screen', async ({ page }) => {
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  await page.getByRole('button', { name: 'Search Holup' }).first().click({ timeout: 30000 });
+  await page.getByPlaceholder('Search Holup').fill('holiday');
+  for (const label of ['Top', 'Clips', 'Photos', 'People', 'Sounds', 'Places', 'Hashtags', 'Moments']) {
+    const tab = page.getByRole('tab', { name: label, exact: true }); await expect(tab).toBeVisible(); await tab.click();
+    await expect.poll(() => calls.at(-1)?.p_category).toBe(label.toLowerCase());
+  }
+  await page.getByRole('tab', { name: 'Places', exact: true }).click();
+  await page.getByRole('button', { name: 'People in Lagos' }).click();
+  await expect.poll(() => calls.at(-1)?.p_place).toBe('Lagos');
+  await page.getByPlaceholder('Search Holup').fill('holiday');
+  await page.getByRole('tab', { name: 'Hashtags', exact: true }).click();
+  await page.getByRole('button', { name: 'Search hashtag holiday' }).click();
+  await expect.poll(() => calls.at(-1)?.p_hashtag).toBe(true);
+  await page.getByRole('button', { name: 'Search options' }).click();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.getByRole('checkbox', { name: 'Past week' }).click();
+  await page.getByRole('checkbox', { name: 'Newest' }).click();
+  await page.getByLabel('Author name or username').fill('Ada');
+  await page.getByRole('button', { name: 'Apply filters' }).click();
+  await expect.poll(() => calls.at(-1)?.p_author).toBe('Ada');
+  expect(calls.at(-1)?.p_sort).toBe('newest');
+  expect(Number(calls.at(-1)?.p_since)).toBeGreaterThan(Date.now() - 8 * 86400000);
+});
+test('banner chooser uploads and removes a separate banner without changing profile photos', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Edit Space' }).click();
+  await expect(page.getByText('Space banner', { exact: true })).toBeVisible();
+  const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: 'Add banner' }).click();
+  await (await chooser).setFiles({ name: 'banner.png', mimeType: 'image/png', buffer: image });
+  await expect(page.getByRole('button', { name: 'Change banner' })).toBeVisible({ timeout: 20000 });
+  await page.getByRole('button', { name: 'Remove banner' }).click();
+  await page.getByRole('button', { name: 'Remove banner', exact: true }).last().click();
+  await expect(page.getByRole('button', { name: 'Add banner' })).toBeVisible({ timeout: 20000 });
+});
+
+
+test('filters keep the Apply control on a short phone', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await offline(page, []); await page.goto('/');
+  await page.getByRole('button', { name: 'Search Holup' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Search options' }).click();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.waitForTimeout(500);
+  const apply = page.getByRole('button', { name: 'Apply filters' });
+  const bounds = await apply.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(640);
+});
+
+
+test('comments remain text-only with replies, emoji and mentions', async ({ page }) => {
+  const sent: Record<string, unknown>[] = [];
+  await offline(page, [], sent); await page.goto('/');
+  await page.getByText('Crushes', { exact: true }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: /Comments, 1 comment/ }).first().click();
+  await expect(page.getByText('Hello there', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Reply', exact: true }).first().click();
+  await page.getByLabel('Add a comment').fill('Thanks');
+  await page.getByRole('button', { name: 'Emoji' }).click();
+  await page.getByRole('button', { name: 'Add ✨' }).click();
+  await page.getByRole('button', { name: 'Send comment' }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0].p_parent_id).toBe(45);
+  expect(sent[0].p_body).toBe('Thanks✨');
+  await page.getByRole('button', { name: 'Mention somebody' }).click();
+  await expect(page.getByLabel('Add a comment')).toHaveValue('@');
+  await expect(page.getByRole('button', { name: /attach photo|voice comment/i })).toHaveCount(0);
+});

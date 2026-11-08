@@ -15,7 +15,7 @@ import {
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
 import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
-  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
+  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
 
 /**
  * The Holup data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -263,6 +263,31 @@ export async function completeOnboarding(): Promise<Me> {
   if (missing.length) throw new ApiError(400, `Almost there — add ${missing.join(', ')} to continue.`);
   unwrap(await supabase.from('profiles').update({ onboarded: true, updated_at: Date.now() }).eq('id', id));
   return getMe();
+}
+
+/** Only ask for a banner on a Space, not on every app launch. */
+export async function spaceBanner(id: number): Promise<string | null> {
+  const banner = await rpc<unknown>('space_banner', { p_target_id: id });
+  return typeof banner === 'string' ? banner : null;
+}
+
+/** A Space banner is stored separately and never consumes a profile-photo slot. */
+export async function setSpaceBanner(picked: { uri: string; mimeType?: string } | null): Promise<string | null> {
+  let next: string | null = null;
+  if (picked) {
+    const id = await meId();
+    const type = picked.mimeType || 'image/jpeg';
+    next = await uploadMediaFile('media', `banners/${id}/banner.${extensionFor(type)}`, picked.uri, type);
+  }
+  let old: string | null;
+  try {
+    old = await rpc<string | null>('set_space_banner', { p_url: next });
+  } catch (e) {
+    if (next) await removeMediaFile(next);
+    throw e;
+  }
+  if (old && old !== next) await removeMediaFile(old);
+  return next;
 }
 
 export async function uploadPhoto(uri: string, mimeType?: string): Promise<Me> {
@@ -1435,10 +1460,13 @@ export async function tagSuggest(query: string): Promise<{ tag: string; uses: nu
 }
 
 /** Members you can already see, plus the Flows and Moments you may see. */
-export async function searchAll(query: string): Promise<SearchResults> {
+export async function searchAll(query: string, category: SearchCategory, filters: SearchFilters): Promise<SearchResults> {
   const q = String(query ?? '').trim();
-  if (q.length < 2) return { members: [], posts: [], moments: [] };
-  return rpc<SearchResults>('search_all', { p_query: q, p_limit: 8 });
+  if (q.length < 2) return { members: [], posts: [], moments: [], sounds: [], places: [], hashtags: [] };
+  return rpc<SearchResults>('search_holup', {
+    p_query: q, p_category: category, p_since: filters.since, p_sort: filters.sort,
+    p_author: filters.author, p_content: filters.content, p_hashtag: filters.hashtag, p_limit: 40, p_place: filters.place,
+  });
 }
 
 /**

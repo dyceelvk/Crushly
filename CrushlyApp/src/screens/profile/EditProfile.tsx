@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
+import { Image } from 'expo-image';
 import { Screen, Header, useLayout } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
@@ -11,11 +12,13 @@ import { ProgressBar, LoadingBlock } from '../../components/States';
 import { ListRow, Group } from '../../components/ListRow';
 import { ConfirmSheet } from '../../components/BottomSheet';
 import { useToast } from '../../components/Toast';
-import { useMe, useSetUsername, useUpdateProfile } from '../../api/hooks';
+import { useMe, useSetUsername, useSetSpaceBanner, useSpaceBanner, useUpdateProfile } from '../../api/hooks';
 import { INTENTIONS, INTERESTS, LANGUAGES, LIFESTYLE, PRONOUNS, RELATIONSHIP_INTENTIONS } from '../../lib/catalog';
 import { profileCompletion } from '../../lib/completion';
 import { birthdayLabel, capMessage, formAfterSave, formFromMe, formKey, isDirty, type ProfileForm } from '../../lib/profileForm';
-import { getApproximateLocation } from '../../lib/media';
+import { getApproximateLocation, pickImage } from '../../lib/media';
+import { mediaSource } from '../../lib/mediaHost';
+import { mediaUrl } from '../../api/client';
 import { space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -48,6 +51,9 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
   const toast = useToast();
   const update = useUpdateProfile();
   const setHandle = useSetUsername();
+  const setBanner = useSetSpaceBanner(me?.id);
+  const bannerQuery = useSpaceBanner(me?.id, me?.id);
+  const [removeBanner, setRemoveBanner] = useState(false);
   const [form, setForm] = useState<Form | null>(null);
   // What the server has, as a string. Seeded when the Space loads and re-seeded
   // after every successful save — see `lib/profileForm.ts` for why this is not
@@ -83,6 +89,7 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
 
   if (!me || !form) return <LoadingBlock label="Loading your Space" />;
 
+  const bannerUrl = bannerQuery.data ?? null;
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
 
   /**
@@ -196,6 +203,34 @@ export function EditProfileScreen({ navigation }: ScreenProps<'EditProfile'>) {
         </View>
         <ProgressBar value={pct / 100} label={`Space ${pct}% complete`} />
       </View>
+
+      <Section title="Space banner" subtitle="Choose a separate background. Without one, your profile photos fill this space.">
+        {bannerUrl ? (
+          <Image source={mediaSource(mediaUrl(bannerUrl))} style={{ width: '100%', height: 150, borderRadius: 16 }} contentFit="cover" cachePolicy="none" accessibilityLabel="Your Space banner" />
+        ) : null}
+        {bannerQuery.isError ? <Button title="Retry loading banner" variant="ghost" size="sm" onPress={() => { void bannerQuery.refetch(); }} /> : null}
+        <Button title={bannerUrl ? 'Change banner' : 'Add banner'} disabled={bannerQuery.isLoading || bannerQuery.isError} variant="secondary" size="md" icon="image-outline" loading={setBanner.isPending} onPress={async () => {
+          const picked = await pickImage({ banner: true });
+          if (!picked) return;
+          if ('error' in picked) return toast({ kind: 'error', title: 'No banner added', message: picked.error });
+          try {
+            await setBanner.mutateAsync(picked);
+            toast({ kind: 'success', title: 'Banner saved' });
+          } catch (e) {
+            toast({ kind: 'error', title: 'Couldn’t confirm the banner', message: `${(e as Error).message} Check your Space before trying again.` });
+          }
+        }} />
+        {bannerUrl ? <Button title="Remove banner" variant="ghost" size="sm" disabled={setBanner.isPending} onPress={() => setRemoveBanner(true)} /> : null}
+      </Section>
+      <ConfirmSheet visible={removeBanner} onCancel={() => setRemoveBanner(false)} title="Remove banner?" message="Your Space will use your profile photos as its background again." confirmLabel="Remove banner" destructive onConfirm={async () => {
+        setRemoveBanner(false);
+        try {
+          await setBanner.mutateAsync(null);
+          toast({ kind: 'success', title: 'Banner removed' });
+        } catch (e) {
+          toast({ kind: 'error', title: 'Couldn’t confirm removal', message: `${(e as Error).message} Check your Space before trying again.` });
+        }
+      }} />
 
       <Section title="Photos" subtitle="Show your world. Your first photo is the one people see first.">
         <PhotoGrid photos={me.profile.photos} width={contentWidth - gutter * 2} />

@@ -44,7 +44,7 @@ export type RootStackParamList = {
   EditProfile: undefined;
   Verification: undefined;
   Plus: { feature?: string } | undefined;
-  MomentViewer: { userId: number; mine?: boolean };
+  MomentViewer: { userId: number; mine?: boolean; momentId?: number };
   /** `create` opens the creator straight away — used by the Space's Circles tab. */
   Circles: { create?: boolean } | undefined;
   Circle: { circleId: number };

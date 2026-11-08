@@ -926,8 +926,21 @@ def walk():
         type_into(0, 'spencer')
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(2.5)
-        shot('{:02d}-search-results'.format(n))
+        seen = shot('{:02d}-search-results'.format(n))
         n += 1
+        for category in ('Top', 'Clips', 'Photos', 'People', 'Sounds', 'Places', 'Hashtags', 'Moments'):
+            if not find(seen, category):
+                fail('search has no visible {} category'.format(category))
+            tap(category, required=True)
+        tap('Search options', required=True)
+        tap('Filters', required=True)
+        if not wait_for(['Search filters', 'Sort by', 'Date shared'], 15, 'search filters did not open'):
+            fail('search filters are missing their controls')
+        shot('{:02d}-search-filters'.format(n))
+        n += 1
+        tap('Past week', required=True)
+        tap('Apply filters', required=True)
+        log('search: all eight categories tappable and filters applied; checked')
         return_to_tabs()
 
     # Space's own edit surface, and the three Crushes lenses.
@@ -936,6 +949,14 @@ def walk():
     if tap('Edit Space'):
         shot('{:02d}-edit-space'.format(n))
         n += 1
+        if not scroll_to('Space banner', swipes=4):
+            fail('Edit Space has no banner section')
+        seen = nodes() or []
+        if not (find(seen, 'Add banner') or find(seen, 'Change banner')):
+            fail('Edit Space has no way to choose a banner')
+        shot('{:02d}-space-banner'.format(n))
+        n += 1
+        log('Space: separate banner chooser visible; checked')
         return_to_tabs()
     # Crushes is a post feed: pictures and words from the people you share a
     # Crush with. It is not a list of people, so what is checked here is that the

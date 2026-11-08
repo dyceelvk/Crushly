@@ -27,6 +27,7 @@ function loadWith(base?: string, kinds?: string): typeof import('./mediaHost') {
 test('mediaKind reads the folder that decides a file’s rules', () => {
   assert.equal(mediaKind('moments/12/a.jpg'), 'moments');
   assert.equal(mediaKind('photos/12/a.jpg'), 'photos');
+  assert.equal(mediaKind('banners/12/a.jpg'), 'banners');
   assert.equal(mediaKind('messages/12/a.m4a'), 'messages');
   assert.equal(mediaKind('/moments/12/a.jpg'), 'moments');
   assert.equal(mediaKind('secrets/12/a.jpg'), null);
@@ -49,7 +50,7 @@ test('setting the base URL to empty switches the object store off', () => {
 
 test('every kind moves by default; the list can pull one back', () => {
   let mod = loadWith(BASE, undefined);
-  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages', 'posts', 'circles']);
+  assert.deepEqual(mod.MEDIA_KINDS, ['photos', 'moments', 'messages', 'posts', 'circles', 'banners']);
   assert.equal(mod.moved('photos'), true);
   assert.equal(mod.moved('moments'), true);
   assert.equal(mod.moved('messages'), true);

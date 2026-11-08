@@ -33,3 +33,10 @@ export function groupMomentFeed(flat: FeedMoment[], me: MomentAuthor): MomentsFe
     others,
   };
 }
+
+/** Resolve a search result before the viewer paints or records a view. */
+export function initialMomentIndex(moments: readonly { id: number }[], targetId?: number): number | null {
+  if (targetId == null) return null;
+  const index = moments.findIndex((m) => m.id === targetId);
+  return index < 0 ? null : index;
+}

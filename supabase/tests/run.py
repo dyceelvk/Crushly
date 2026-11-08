@@ -136,6 +136,8 @@ def main() -> int:
         # channel is only joinable by the two members of an open thread.
         if not run_file(ROOT / 'whisper_live.sql'):
             return 1
+        if not run_file(ROOT / 'space_search.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

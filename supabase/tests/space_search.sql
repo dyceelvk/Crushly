@@ -1,0 +1,88 @@
+-- Runs only on the throwaway migrated database, never production.
+-- Exercises the real privacy and serialization functions, not a mock schema.
+begin;
+do $test$
+declare
+  viewer_uuid uuid; author_uuid uuid; viewer_id bigint; author_id bigint; other_id bigint;
+  photo_id bigint; clip_id bigint; private_id bigint; sound_id bigint;
+  ticket jsonb; path text; url text; r jsonb; denied boolean := false;
+begin
+  select id into viewer_uuid from auth.users where email='daniel@crushly.app';
+  select id into author_uuid from auth.users where email='marcus@crushly.app';
+  select id into viewer_id from profiles where auth_user_id=viewer_uuid;
+  select id into author_id from profiles where auth_user_id=author_uuid;
+  select id into other_id from profiles where name='Jayden';
+  assert viewer_id is not null and author_id is not null and other_id is not null;
+  update profiles set city='LagosFixture' where id=author_id;
+  update profiles set city='LagosFixtureSecret' where id=other_id;
+  update privacy set profile_visibility='everyone',incognito=false,discoverable=true,show_city=true where user_id=author_id;
+  update privacy set show_city=false where user_id=other_id;
+  delete from blocks where (blocker_id=viewer_id and blocked_id=author_id) or (blocker_id=author_id and blocked_id=viewer_id);
+  insert into sounds(owner_id,title) values(author_id,'fixtureholup sound') returning id into sound_id;
+  insert into posts(author_id,body,media_url,audience,created_at) values(author_id,'hello #fixtureholup','posts/'||author_id||'/fixture.jpg','everyone',now_ms()) returning id into photo_id;
+  insert into posts(author_id,body,media_url,audience,created_at,sound_id) values(author_id,'hello #fixtureholup','posts/'||author_id||'/fixture.mp4','everyone',now_ms(),sound_id) returning id into clip_id;
+  insert into posts(author_id,body,media_url,audience,created_at) values(author_id,'hello #fixtureholupextra','posts/'||author_id||'/old.mp4','everyone',now_ms()-86400000::bigint*60) returning id into private_id;
+  insert into moments(user_id,kind,body,created_at,expires_at,audience) values(author_id,'text','hello fixtureholup',now_ms(),now_ms()+3600000,'everyone');
+  perform set_config('request.jwt.claim.sub',viewer_uuid::text,true);
+  set local role authenticated;
+  r:=search_holup('fixtureholup','photos');
+  assert jsonb_array_length(r->'posts')=1 and (r->'posts'->0->>'id')::bigint=photo_id, 'photo results wrong';
+  r:=search_holup('fixtureholup','clips',now_ms()-3600000,'newest');
+  assert jsonb_array_length(r->'posts')=1 and (r->'posts'->0->>'id')::bigint=clip_id, 'clip/date results wrong';
+  r:=search_holup('fixtureholup','clips',0,'newest','nobody');
+  assert jsonb_array_length(r->'posts')=0, 'author filter ignored';
+  r:=search_holup('fixtureholup','clips',0,'newest','','all',true);
+  assert jsonb_array_length(r->'posts')=1 and (r->'posts'->0->>'id')::bigint=clip_id, 'hashtag must match exactly';
+  r:=search_holup('fixtureholup','moments');
+  assert jsonb_array_length(r->'moments')=1, 'visible Moment absent';
+  r:=search_holup('fixtureholup','sounds');
+  assert jsonb_array_length(r->'sounds')=1 and (r->'sounds'->0->>'id')::bigint=sound_id, 'sound search wrong';
+  r:=search_holup('fixtureholup','hashtags');
+  assert jsonb_array_length(r->'hashtags')=2, 'hashtags not extracted';
+  r:=search_holup('LagosFixture','places');
+  assert jsonb_array_length(r->'places')=1 and r->'places'->0->>'name'='LagosFixture', 'hidden city leaked in places';
+  r:=search_holup('LagosFixtureSecret','people');
+  assert jsonb_array_length(r->'members')=0, 'hidden city leaked in people search';
+  r:=search_holup('LagosFixture','people',0,'relevance','','all',false,40,'LagosFixture');
+  assert jsonb_array_length(r->'members')=1 and (r->'members'->0->>'id')::bigint=author_id, 'place selection included another city';
+  reset role;
+  -- Earlier smoke cases may have created many recent rows for the seed member.
+  update photos set created_at=now_ms()-7200000 where user_id=author_id;
+  update posts set created_at=now_ms()-7200000 where posts.author_id=(select id from profiles where auth_user_id=author_uuid);
+  update moments set created_at=now_ms()-7200000 where user_id=author_id;
+  update messages set created_at=now_ms()-7200000 where sender_id=author_id;
+  update circle_messages set created_at=now_ms()-7200000 where sender_id=author_id;
+  delete from media_upload_reservations where user_id=author_id;
+  perform set_config('request.jwt.claim.sub',author_uuid::text,true);
+  set local role authenticated;
+  ticket:=media_upload_ticket('banners','image/jpeg',500);
+  path:=ticket->>'path'; url:='https://crushly-media.dyceelvk.workers.dev/m/'||path;
+  assert split_part(path,'/',2)=author_id::text, 'banner minted in another member folder';
+  assert set_space_banner(url) is null, 'first banner should not replace anything';
+  assert space_banner(author_id)=url, 'owner cannot read banner';
+  assert not can_manage_media(path,url), 'active banner can be deleted directly';
+  begin perform set_space_banner(url); exception when others then denied:=true; end;
+  assert denied, 'banner reservation reused';
+  perform set_config('request.jwt.claim.sub',viewer_uuid::text,true);
+  assert space_banner(author_id)=url and (can_view_media(path,url)->>'allowed')::boolean, 'public banner hidden';
+  reset role;
+  update privacy set incognito=true where user_id=author_id;
+  delete from connections where user_a=least(viewer_id,author_id) and user_b=greatest(viewer_id,author_id);
+  perform set_config('request.jwt.claim.sub',viewer_uuid::text,true);
+  set local role authenticated;
+  assert space_banner(author_id) is null and not (can_view_media(path,url)->>'allowed')::boolean, 'incognito banner leaked to a non-connection';
+  -- A block denies access regardless of any other rule.
+  reset role;
+  insert into blocks(blocker_id,blocked_id) values(viewer_id,author_id) on conflict do nothing;
+  set local role authenticated;
+  assert space_banner(author_id) is null and not (can_view_media(path,url)->>'allowed')::boolean, 'blocked banner leaked';
+  r:=search_holup('fixtureholup','top');
+  assert jsonb_array_length(r->'posts')=0 and jsonb_array_length(r->'sounds')=0 and jsonb_array_length(r->'moments')=0, 'blocked member visible in search';
+  perform set_config('request.jwt.claim.sub',author_uuid::text,true);
+  assert set_space_banner(null)=url, 'removal did not return old URL';
+  assert can_manage_media(path,url), 'removed banner cannot be cleaned up';
+  assert space_banner(author_id) is null, 'removed banner still present';
+  reset role;
+  raise notice 'Space banner and search tests passed';
+end $test$;
+rollback;

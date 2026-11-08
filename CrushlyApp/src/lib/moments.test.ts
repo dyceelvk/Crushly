@@ -83,3 +83,12 @@ test('mixed seen states within one person collapse to one group', () => {
   assert.equal(feed.others[0].hasUnseen, true);
   assert.deepEqual(feed.others[0].moments.map((m) => m.id), [1, 2]);
 });
+
+
+test('a search target is resolved to the actual Moment, not the first one', async () => {
+  const { initialMomentIndex } = await import('./moments');
+  const items = [{ id: 11 }, { id: 12 }, { id: 13 }];
+  assert.equal(initialMomentIndex(items, 12), 1);
+  assert.equal(initialMomentIndex(items, 99), null);
+  assert.equal(initialMomentIndex(items), null);
+});

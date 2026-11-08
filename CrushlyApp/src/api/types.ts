@@ -649,31 +649,39 @@ export type CrushResult = {
 /* ----------------------------------------------------------------- search */
 
 /** The author a search result carries — the same shape a feed row uses. */
-export type SearchAuthor = { id: number; name: string; verified: boolean; photo: string | null; mutual: boolean };
+export type SearchAuthor = { id: number; name: string; verified: boolean; photo?: string | null; photos?: Photo[]; mutual?: boolean };
 
 export type SearchPost = {
   id: number;
   body: string;
   mediaUrl: string | null;
   audience: 'connections' | 'everyone';
+  mediaKind?: 'photo' | 'video' | null;
   createdAt: number;
   author: SearchAuthor;
 };
 
 export type SearchMoment = {
   id: number;
-  kind: 'text' | 'photo';
+  mine: boolean;
+  kind: 'text' | 'photo' | 'video';
   body: string;
   mediaUrl: string | null;
   createdAt: number;
   author: SearchAuthor;
 };
 
+export type SearchCategory = 'top' | 'clips' | 'photos' | 'people' | 'sounds' | 'places' | 'hashtags' | 'moments';
+export type SearchFilters = { place: string; hashtag: boolean; since: number; sort: 'relevance' | 'newest'; author: string; content: 'all' | 'clip' | 'photo' | 'text' };
+
 /** What the search box returns: members, and what they have shared. */
 export type SearchResults = {
   members: Profile[];
   posts: SearchPost[];
   moments: SearchMoment[];
+  sounds: { id: number; title: string }[];
+  places: { name: string }[];
+  hashtags: { tag: string }[];
 };
 
 /** What our own update endpoint says the current build is. */

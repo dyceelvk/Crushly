@@ -43,7 +43,7 @@ import { haptic } from '../../lib/haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ScreenProps, RootStackParamList } from '../../navigation/types';
-import { useMe, useMoments, useMyCircles } from '../../api/hooks';
+import { useMe, useMoments, useMyCircles, useSpaceBanner } from '../../api/hooks';
 import type { Me } from '../../api/types';
 
 /**
@@ -176,7 +176,7 @@ export function SpaceScreen({
 
   // One query per reader, never both. `enabled` rather than a conditional hook,
   // so the ordering of hooks is the same on both paths.
-  const meQ = useMe(mine);
+  const meQ = useMe();
   const otherQ = useUser(id, !mine);
   const query = mine ? meQ : otherQ;
 
@@ -242,6 +242,9 @@ export function SpaceScreen({
       ? asFullProfile(meQ.data, moments.data?.mine.moments ?? [])
       : null
     : otherQ.data ?? null;
+  const bannerQ = useSpaceBanner(meQ.data?.id, p?.id);
+  const bannerUrl = bannerQ.data ?? null;
+  const bannerPending = !bannerQ.isError && (meQ.isLoading || bannerQ.isLoading);
 
   const { height: windowH } = useWindowDimensions();
   const heroW = Math.min(width, contentWidth);
@@ -409,7 +412,7 @@ export function SpaceScreen({
               the picture itself sits whole on top of it. Nothing is cropped, the
               edges are the photo's own colours, and a portrait or a landscape
               both look deliberate. */}
-          {backdrop ? (
+          {!bannerPending && !bannerUrl && backdrop ? (
             <Image
               source={mediaSource(mediaUrl(backdrop))}
               style={{ position: 'absolute', top: -24, left: -24, right: -24, bottom: -24 }}
@@ -420,11 +423,17 @@ export function SpaceScreen({
             />
           ) : null}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(7,7,8,0.24)' }} />
-          <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32} accessibilityLabel={`${p.photos.length} photos`}>
-            {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
-              <Photo key={ph.id} uri={ph.url || null} fit="contain" style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
-            ))}
-          </ScrollView>
+          {bannerPending ? (
+            <Skeleton style={{ width: heroW, height: heroH, borderRadius: 0 }} />
+          ) : bannerUrl ? (
+            <Image source={mediaSource(mediaUrl(bannerUrl))} style={{ width: heroW, height: heroH }} contentFit="cover" cachePolicy="none" accessibilityLabel={`${p.name}’s Space banner`} />
+          ) : (
+            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32} accessibilityLabel={`${p.photos.length} photos`}>
+              {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
+                <Photo key={ph.id} uri={ph.url || null} fit="contain" style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
+              ))}
+            </ScrollView>
+          )}
           {/* One even veil over the whole photograph — five per cent, edge to
               edge — and nothing else. The cover used to blur and darken across
               its bottom third, which read as a bruise lying on the picture
@@ -437,7 +446,7 @@ export function SpaceScreen({
               control belongs in the header above, where it does not scroll
               away. */}
           <View style={{ position: 'absolute', top: insets.top + space.sm + 8, left: gutter, right: gutter, flexDirection: 'row', gap: 4, justifyContent: 'center' }} accessibilityElementsHidden>
-            {p.photos.length > 1
+            {!bannerPending && !bannerUrl && p.photos.length > 1
               ? p.photos.map((ph, i) => <View key={ph.id} style={{ flex: 1, maxWidth: 40, height: 3, borderRadius: 2, backgroundColor: i === index ? '#fff' : 'rgba(255,255,255,0.35)' }} />)
               : null}
           </View>
