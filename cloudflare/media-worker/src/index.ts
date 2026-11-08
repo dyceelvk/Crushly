@@ -16,6 +16,7 @@
  */
 
 import release from './release.json';
+import { uploadContentType, publicRpcError } from './uploadType';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -136,7 +137,8 @@ async function rpc<T>(env: Env, token: string, fn: string, body: unknown): Promi
     } catch {
       /* keep the default */
     }
-    return { ok: false, status: res.status, message };
+    const publicError = publicRpcError(message, res.status);
+    return { ok: false, status: publicError.status, message: publicError.message };
   }
   return { ok: true, data: (text ? JSON.parse(text) : null) as T };
 }
@@ -580,8 +582,9 @@ export default {
     /* ------------------------------------------------------------- upload */
     if (request.method === 'POST') {
       const kind = request.headers.get('X-Media-Kind') ?? '';
-      const contentType = request.headers.get('Content-Type') ?? 'application/octet-stream';
+      const declaredType = request.headers.get('Content-Type') ?? 'application/octet-stream';
       const bytes = await request.arrayBuffer();
+      const contentType = uploadContentType(declaredType, bytes);
       if (bytes.byteLength > MAX_UPLOAD_BYTES) return fail(413, 'That file is too large.', origin);
 
       const ticket = await rpc<{ path: string }>(env, token, 'media_upload_ticket', {
