@@ -490,19 +490,17 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
 
       <BottomSheet visible={advancedOpen} onClose={() => setAdvancedOpen(false)} title="Advanced options">
         <View style={{ gap: space.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Pressable onPress={() => setCommentsEnabled((v) => !v)} accessibilityRole="switch"
+            accessibilityLabel="Allow comments" accessibilityState={{ checked: commentsEnabled }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}>
             <View style={{ flex: 1 }}>
               <Txt variant="bodyStrong">Allow comments</Txt>
               <Txt variant="small" color="textSecondary">Choose whether people can comment on this post.</Txt>
             </View>
-            <Pressable onPress={() => setCommentsEnabled((v) => !v)} accessibilityRole="switch"
-              accessibilityLabel="Allow comments" accessibilityState={{ checked: commentsEnabled }}
-              style={{ width: 50, height: 44, justifyContent: 'center' }}>
-              <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: commentsEnabled ? colors.primary : colors.elevated, justifyContent: 'center', alignItems: commentsEnabled ? 'flex-end' : 'flex-start', paddingHorizontal: 4 }}>
-                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff' }} />
-              </View>
-            </Pressable>
-          </View>
+            <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: commentsEnabled ? colors.primary : colors.elevated, justifyContent: 'center', alignItems: commentsEnabled ? 'flex-end' : 'flex-start', paddingHorizontal: 4 }}>
+              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff' }} />
+            </View>
+          </Pressable>
           <Txt variant="bodyStrong">Remix</Txt>
           <Txt variant="small" color="textSecondary">Remixing is not available yet. There is no remix permission to enable.</Txt>
           <Button title="Done" size="sm" onPress={() => setAdvancedOpen(false)} />
