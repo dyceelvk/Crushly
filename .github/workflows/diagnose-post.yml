@@ -1,0 +1,18 @@
+name: Diagnose post publishing
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  publish-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise upload, post, options and cleanup
+        env:
+          SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
+          WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
+        run: python3 .github/scripts/post-publish-diagnostic.py
