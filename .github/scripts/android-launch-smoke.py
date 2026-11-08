@@ -745,16 +745,18 @@ def walk():
     tap('Create post', required=True)
     tap('Moment', required=True)
     if not type_into(0, 'Local moment draft check'): fail('Moment draft text field missing')
-    back()
+    typed = [n['text'] for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
+    if not typed or 'draft check' not in typed[0].lower(): fail('Moment text did not reach the editor')
+    moment_text = typed[0]
     tap('Save draft', required=True)
     if not wait_for(['Discover', 'Whispers'], 30, 'left Moment draft save'):
         fail('saving Moment draft did not leave the editor')
     tap('Create post', required=True)
     tap('Moment', required=True)
     tap('Drafts on this phone', required=True)
-    if not find(nodes() or [], 'Local moment draft check'): fail('Moment draft is missing')
+    if not find(nodes() or [], moment_text): fail('Moment draft is missing or changed')
     tap('Open draft', required=True)
-    if not wait_for(['Local moment draft check'], 20, 'Moment draft reopen'):
+    if not wait_for([moment_text], 20, 'Moment draft reopen'):
         fail('Moment draft content was not restored')
     tap('Close', required=True)
     tap('Discard changes', required=True)
