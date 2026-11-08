@@ -51,18 +51,19 @@ def version():
 def fail(msg):
     image = subprocess.run(['adb','exec-out','screencap','-p'], capture_output=True, timeout=60).stdout
     (out / 'failure.png').write_bytes(image)
+    (out / 'logcat.txt').write_text(adb('logcat', '-d', '-t', '5000', check=False))
     print('::error::' + msg, flush=True)
     sys.exit(1)
 
 abis = adb('shell','getprop','ro.product.cpu.abilist').strip().split(',')
 print('Emulator ABIs:', ','.join(abis), flush=True)
-if 'armeabi-v7a' not in abis:
-    fail('Inconclusive: emulator cannot run the public 32-bit ARM build')
-adb('install', '--no-streaming', '--abi', 'armeabi-v7a', '-r', str(old))
+if 'arm64-v8a' not in abis:
+    fail('Inconclusive: emulator cannot run the public 64-bit ARM build')
+adb('install', '--no-streaming', '--abi', 'arm64-v8a', '-r', str(old))
 if version() != 80: fail('Old APK did not install as version 80')
 adb('shell','appops','set',PACKAGE,'REQUEST_INSTALL_PACKAGES','allow',check=False)
 adb('shell','am','start','-W','-n',PACKAGE+'/.MainActivity')
-deadline = time.monotonic() + 180
+deadline = time.monotonic() + 90
 while time.monotonic() < deadline:
     seen = nodes()
     if tap(seen,'Update now'):
