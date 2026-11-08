@@ -1,10 +1,10 @@
 {
-  "version": "1.0.84",
-  "versionCode": 84,
+  "version": "1.0.85",
+  "versionCode": 85,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.84-Android9plus.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.84/Crushly-1.0.84-Android9plus.apk",
-  "notes": "The app is called Holup. Your phone-only Post and Moment drafts stay on your device.",
-  "bytes": 95003648,
-  "sha256": "ca80ee47ec9234fc6685eba94e49dad41c9186d6d7c662c74f5bc3253b16c36f"
+  "file": "Crushly-1.0.85-Android9plus.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.85/Crushly-1.0.85-Android9plus.apk",
+  "notes": "The Holup launch screen now shows the right name. Android Settings offers Update Holup only when a newer version is available.",
+  "bytes": 95001012,
+  "sha256": "d8337a424d3cb599175bbe3552ca2f7849e7e8bfcea115074eae5960ea3c0a39"
 }
