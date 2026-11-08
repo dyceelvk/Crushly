@@ -237,6 +237,17 @@ jobs:
             echo "published=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mirror and verify the published APK
+        if: steps.publish.outputs.published == 'true'
+        env:
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+          python3 ../.github/scripts/mirror-android-apk.py "apk/Crushly-${version}-Android9plus.apk"
+
       - name: Tell the media Worker which build is current
         id: announce
         # Only ever point phones at bytes that are actually the published asset;

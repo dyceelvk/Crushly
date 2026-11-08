@@ -88,7 +88,7 @@ function AndroidUpdateGate() {
   const size = readableSize(update.data?.bytes);
 
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={required ? undefined : dismiss}>
+    <Modal transparent animationType="fade" visible onRequestClose={required || step === 'downloading' || step === 'installing' ? undefined : dismiss}>
       <View style={{ flex: 1, backgroundColor: 'rgba(7,7,8,0.72)', justifyContent: 'center', padding: space.lg }}>
         <View
           style={{

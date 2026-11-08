@@ -450,29 +450,8 @@ async function applyLifecycle(env: Env, origin: string | null): Promise<Response
 
 /* ---------------------------------------------------------------- the build */
 
-/**
- * What the current Android build is, as the app is told about it.
- *
- * These facts live in `release.json` rather than in code because they are not
- * written by a person: the Android workflow rewrites that file after a build
- * passes its tests, so a release can never be published without the Worker
- * being told about it in the same breath.
- *
- * `releaseUrl` is deliberately not what the app is handed. It lets the Worker
- * mint a fresh, short-lived CDN redirect for each download instead of proxying
- * a large APK. `versionCode` only ever goes up — a reused one would make an
- * update invisible to a phone that already installed it.
- */
-type AndroidBuild = { releaseUrl: string };
-
-// `releaseUrl` is GitHub's release download endpoint. We ask it only for its
-// fresh, expiring `release-assets.githubusercontent.com` redirect — never for
-// the 95 MB body — so a failed upstream request cannot be saved as JSON under
-// an `.apk` filename and handed to Android's package parser.
-const BUILDS: Record<string, AndroidBuild> = {
-  [release.file]: { releaseUrl: release.releaseUrl },
-};
-
+/** Only the exact current release is public; the rest of the private bucket remains protected. */
+const BUILDS: Record<string, true> = { [release.file]: true };
 const RELEASE = {
   version: release.version,
   versionCode: release.versionCode,
@@ -481,79 +460,38 @@ const RELEASE = {
   notes: release.notes,
 } as const;
 
-const RELEASE_ASSET_HOSTS = new Set([
-  'release-assets.githubusercontent.com',
-  'objects.githubusercontent.com',
-]);
-const SIGNED_ASSET_CACHE_SECONDS = 45 * 60;
-
-function publicAssetUrl(location: string): string | null {
+/** Stream the verified release mirror, without exposing B2 credentials. */
+async function downloadRelease(env: Env, origin: string | null, headOnly: boolean): Promise<Response> {
   try {
-    const parsed = new URL(location);
-    return RELEASE_ASSET_HOSTS.has(parsed.hostname) ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-function signedAssetCacheKey(build: AndroidBuild): Request {
-  // The key contains only public release metadata. The cache body holds the
-  // short-lived URL and lives at Cloudflare, never in a phone or a browser cache.
-  return new Request(`https://crushly-media.dyceelvk.workers.dev/.internal/apk-url/${encodeURIComponent(build.releaseUrl)}`);
-}
-
-/** Obtain a short-lived GitHub CDN URL without exposing a repository download page. */
-async function signedAssetUrl(build: AndroidBuild): Promise<string | null> {
-  const cacheKey = signedAssetCacheKey(build);
-  const cached = await caches.default.match(cacheKey).catch(() => null);
-  if (cached) {
-    const location = publicAssetUrl(await cached.text().catch(() => ''));
-    if (location) return location;
-  }
-
-  const response = await fetch(build.releaseUrl, {
-    headers: { 'User-Agent': 'Crushly Android download' },
-    // We want GitHub's short-lived CDN location, not a Worker relay of the APK.
-    redirect: 'manual',
-  }).catch(() => null);
-  if (!response || response.status < 300 || response.status >= 400) return null;
-  const location = publicAssetUrl(response.headers.get('Location') ?? '');
-  if (!location) return null;
-
-  // GitHub's CDN URLs last about an hour. Caching one for 45 minutes avoids
-  // repeatedly asking GitHub during a release while always expiring it early.
-  await caches.default.put(cacheKey, new Response(location, {
-    headers: { 'Cache-Control': `public, max-age=${SIGNED_ASSET_CACHE_SECONDS}` },
-  })).catch(() => undefined);
-  return location;
-}
-
-function redirectToAsset(location: string, origin: string | null): Response {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: location,
-      // The signed destination is short-lived. Never let a browser reuse it
-      // after it expires; the next tap mints a new one.
+    const auth = await b2Auth(env);
+    const upstream = await b2Download(env, auth, `android-releases/${RELEASE.file}`);
+    const size = Number(upstream.headers.get('content-length'));
+    if (!upstream.ok || size !== release.bytes || !upstream.body) {
+      await upstream.body?.cancel().catch(() => undefined);
+      return fail(503, 'The Android download is temporarily unavailable. Please try again.', origin);
+    }
+    const headers = new Headers({
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Length': String(release.bytes),
+      'Content-Disposition': `attachment; filename="${RELEASE.file}"`,
       'Cache-Control': 'no-store',
-      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
       ...cors(origin),
-    },
-  });
-}
-
-async function downloadRedirect(build: AndroidBuild, origin: string | null): Promise<Response> {
-  const location = await signedAssetUrl(build);
-  if (!location) {
-    return fail(503, 'The Android download is temporarily unavailable. Please return to Crushly and try again; do not open a partial .apk file.', origin);
+    });
+    if (headOnly) {
+      await upstream.body.cancel().catch(() => undefined);
+      return new Response(null, { status: 200, headers });
+    }
+    return new Response(upstream.body, { status: 200, headers });
+  } catch {
+    return fail(503, 'The Android download is temporarily unavailable. Please try again.', origin);
   }
-  return redirectToAsset(location, origin);
 }
 
 /**
  * The update check is intentionally tiny. The actual download is a redirect
- * endpoint without an `.apk` suffix, so a transient upstream error is rendered
- * as an error page rather than passed to Android as a malformed package.
+ * endpoint without an `.apk` suffix. The current release is served from a
+ * verified mirror; the new Android client also validates the downloaded file.
  */
 async function appVersion(url: URL, origin: string | null): Promise<Response> {
   const known = Object.prototype.hasOwnProperty.call(BUILDS, RELEASE.file);
@@ -580,27 +518,22 @@ async function appVersion(url: URL, origin: string | null): Promise<Response> {
   );
 }
 
-/** JSON form for the web download page; it only enables a button after GitHub gave us a real CDN URL. */
-async function downloadInfo(origin: string | null): Promise<Response> {
-  const build = BUILDS[RELEASE.file];
-  if (!build) return fail(503, 'The Android download is not configured yet.', origin);
-  const downloadUrl = await signedAssetUrl(build);
-  if (!downloadUrl) return fail(503, 'The Android download is temporarily unavailable. Please try again shortly.', origin);
+/** The app resolves this stable endpoint and validates its downloaded file. */
+async function downloadInfo(url: URL, origin: string | null): Promise<Response> {
   return json({
     version: RELEASE.version,
     file: RELEASE.file,
     bytes: release.bytes,
     sha256: release.sha256,
-    downloadUrl,
+    downloadUrl: `${url.origin}/download`,
   }, 200, origin, { 'Cache-Control': 'no-store' });
 }
 
-/** Kept for previously shared `/apk/<file>` links; they now use the safer redirect too. */
-async function apkBuild(url: URL, origin: string | null): Promise<Response> {
+/** Kept for previously shared `/apk/<file>` links. */
+async function apkBuild(url: URL, env: Env, origin: string | null, headOnly: boolean): Promise<Response> {
   const name = decodeURIComponent(url.pathname.replace(/^\/apk\//, ''));
-  const build = BUILDS[name];
-  if (!build) return fail(404, 'That build isn’t available.', origin);
-  return downloadRedirect(build, origin);
+  if (name !== RELEASE.file) return fail(404, 'That build isn’t available.', origin);
+  return downloadRelease(env, origin, headOnly);
 }
 
 export default {
@@ -624,21 +557,19 @@ export default {
       return appVersion(url, origin);
     }
 
-    // `/download` is what native update links open. It has no .apk suffix, so
-    // an upstream outage becomes an error page rather than a malformed package.
+    // Only the exact current public APK is served from the private release mirror.
     if (url.pathname === '/download') {
       if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
-      const build = BUILDS[RELEASE.file];
-      return build ? downloadRedirect(build, origin) : fail(503, 'The Android download is not configured yet.', origin);
+      return downloadRelease(env, origin, request.method === 'HEAD');
     }
     if (url.pathname === '/download-info') {
       if (request.method !== 'GET') return fail(405, 'Unsupported method.', origin);
-      return downloadInfo(origin);
+      return downloadInfo(url, origin);
     }
     // Kept for links shared before the safer resolver existed.
     if (url.pathname.startsWith('/apk/')) {
       if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
-      return apkBuild(url, origin);
+      return apkBuild(url, env, origin, request.method === 'HEAD');
     }
 
     const { path, queryToken } = splitPath(url);
