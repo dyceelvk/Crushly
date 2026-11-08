@@ -39,10 +39,10 @@ export const jurisdictionCourts = (): string =>
 
 const COMPANY_SITE: string = ''; // ← set this when the Riel landing page goes live
 
-export const SUPPORT_EMAIL = 'support@crushly.app';
-export const SAFETY_EMAIL = 'safety@crushly.app';
-export const LEGAL_EMAIL = 'legal@crushly.app';
-export const PRIVACY_EMAIL = 'privacy@crushly.app';
+export const SUPPORT_EMAIL = 'rielosInc@gmail.com';
+export const SAFETY_EMAIL = SUPPORT_EMAIL;
+export const LEGAL_EMAIL = SUPPORT_EMAIL;
+export const PRIVACY_EMAIL = SUPPORT_EMAIL;
 
 /** True while a company detail is still an unfilled placeholder. */
 export const isPlaceholder = (value: string) => value.includes('[');

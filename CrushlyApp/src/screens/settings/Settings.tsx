@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Linking } from 'react-native';
@@ -25,6 +25,8 @@ import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
 import { errorLine } from '../../lib/errors';
 import { COMPANY_NAME } from '../../lib/company';
+import { androidUpdateStatus } from '../../lib/updateDisplay';
+import { requestHolupUpdate } from '../../components/UpdateGate';
 import type { ScreenProps } from '../../navigation/types';
 
 /* ------------------------------------------------------------------ hub */
@@ -41,6 +43,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   // Asked against our own Worker, never against GitHub: a member should never
   // be handed a link into the machinery.
   const update = useAppUpdate(versionCode);
+  const updateStatus = androidUpdateStatus({ loading: update.isFetching, error: update.isError, hasData: !!update.data, available: !!update.data?.available });
 
   /* The signed resolver must succeed before Android receives a package URL.
      A download button that silently does nothing is worse than a clear answer. */
@@ -104,40 +107,39 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       <Group title="App">
         <ListRow title="Notification settings" icon="notifications-outline" onPress={() => navigation.navigate('NotificationSettings')} />
         <ListRow title="Appearance" value={{ dark: 'Dark', light: 'Light', system: 'System' }[appearance]} icon="contrast-outline" onPress={() => navigation.navigate('Appearance')} />
-        {/* The number, and the file that has it — one under the other, because a
-            version nobody can act on is trivia. This is the row the whole of
-            Holup for Android is handed out from, on every platform. */}
         <ListRow
           title="App version"
-          subtitle={update.data?.versionCode ? `Android build ${update.data.versionCode}` : undefined}
+          subtitle={Platform.OS === 'android' && versionCode ? `Android build ${versionCode}` : undefined}
           value={version}
           icon="information-circle-outline"
+          last={Platform.OS !== 'android' && Platform.OS !== 'web'}
         />
-        <ListRow
-          title="Download the app"
-          subtitle={update.data?.version ? `Holup for Android · APK ${update.data.version}` : 'Holup for Android · APK'}
-          value={update.data?.apkUrl ? 'APK' : undefined}
-          icon="download-outline"
-          iconTone="gold"
-          onPress={() => { void openUpdate(); }}
-        />
-        {update.data?.available ? (
+        {Platform.OS === 'web' ? (
           <ListRow
-            title={update.data.required ? 'Update needed' : 'Update available'}
-            subtitle={update.data.notes || `Version ${update.data.version} is ready to install.`}
-            value={update.data.version}
+            title="Download the app"
+            subtitle={update.data?.version ? `Holup for Android · APK ${update.data.version}` : 'Holup for Android · APK'}
+            value={update.data?.apkUrl ? 'APK' : undefined}
             icon="download-outline"
+            iconTone="gold"
             onPress={() => { void openUpdate(); }}
             last
           />
-        ) : (
+        ) : Platform.OS === 'android' && updateStatus === 'available' ? (
           <ListRow
-            title="You’re up to date"
-            subtitle="Holup checks every few hours."
-            icon="checkmark-circle-outline"
+            title="Update Holup"
+            subtitle={update.data?.notes || `Version ${update.data?.version} is ready to install.`}
+            value={update.data?.version}
+            icon="download-outline"
+            onPress={requestHolupUpdate}
             last
           />
-        )}
+        ) : Platform.OS === 'android' && updateStatus === 'current' ? (
+          <ListRow title="You’re up to date" subtitle="Holup checks every few hours." icon="checkmark-circle-outline" last />
+        ) : Platform.OS === 'android' && updateStatus === 'checking' ? (
+          <ListRow title="Checking for updates…" icon="refresh-outline" last />
+        ) : Platform.OS === 'android' ? (
+          <ListRow title="Couldn’t check for updates" subtitle="Tap to try again." icon="refresh-outline" onPress={() => { void update.refetch(); }} last />
+        ) : null}
       </Group>
 
       <Group title="Support">

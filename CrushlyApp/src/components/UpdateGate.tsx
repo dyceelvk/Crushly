@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal, Platform, View } from 'react-native';
+import { DeviceEventEmitter, Modal, Platform, View } from 'react-native';
 import Constants from 'expo-constants';
 import { Txt } from './Txt';
 import { Button } from './Button';
@@ -33,6 +33,13 @@ export function UpdateGate() {
   return <AndroidUpdateGate />;
 }
 
+const OPEN_UPDATE = 'holup.open-update';
+
+/** Reopen the in-app update offer after it was dismissed. */
+export function requestHolupUpdate(): void {
+  if (Platform.OS === 'android') DeviceEventEmitter.emit(OPEN_UPDATE);
+}
+
 type Step = 'hidden' | 'offer' | 'downloading' | 'installing' | 'unconfirmed' | 'error';
 
 function AndroidUpdateGate() {
@@ -53,6 +60,15 @@ function AndroidUpdateGate() {
     if (step !== 'hidden' || putOff) return;
     if (available) setStep('offer');
   }, [available, step, putOff]);
+
+  useEffect(() => {
+    const listener = DeviceEventEmitter.addListener(OPEN_UPDATE, () => {
+      if (!available) return;
+      setPutOff(false);
+      setStep((current) => current === 'hidden' ? 'offer' : current);
+    });
+    return () => listener.remove();
+  }, [available]);
 
   const run = useCallback(async () => {
     const infoUrl = update.data?.downloadInfoUrl;

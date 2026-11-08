@@ -4,7 +4,7 @@
 # Netlify was removed on 2026-11-02. It had not deployed anything successfully in
 # a long time, and its step failed with exit 127 — `bash build.sh` looked for the
 # script inside CrushlyApp/ because of this job's working-directory, while the
-# script lives at the repository root. Vercel is where mecrushly.vercel.app is
+# script lives at the repository root. Vercel is where holupapp.vercel.app is
 # served from, so Netlify is no longer a target.
 #
 # Why this file was rewritten (2026-11-02):
@@ -126,17 +126,17 @@ jobs:
           version = sys.argv[1]
           for attempt in range(20):
               try:
-                  html = urllib.request.urlopen('https://mecrushly.vercel.app', timeout=30).read().decode('utf-8', 'ignore')
+                  html = urllib.request.urlopen('https://holupapp.vercel.app', timeout=30).read().decode('utf-8', 'ignore')
                   bundle = re.search(r'/_expo/static/js/web/index-[a-f0-9]+\.js', html)
                   if bundle:
-                      js = urllib.request.urlopen('https://mecrushly.vercel.app' + bundle.group(0), timeout=90).read().decode('utf-8', 'ignore')
+                      js = urllib.request.urlopen('https://holupapp.vercel.app' + bundle.group(0), timeout=90).read().decode('utf-8', 'ignore')
                       if re.search(r'version[^0-9]{0,12}' + re.escape(version), js):
-                          print('::notice::mecrushly.vercel.app is serving ' + version + ' (' + bundle.group(0) + ')')
+                          print('::notice::holupapp.vercel.app is serving ' + version + ' (' + bundle.group(0) + ')')
                           sys.exit(0)
                       print('live bundle is not ' + version + ' yet (attempt ' + str(attempt + 1) + ')')
               except Exception as exc:
                   print('could not read the live site: ' + str(exc))
               time.sleep(15)
-          print('::error::mecrushly.vercel.app is not serving ' + version + '. This commit is not shipped until it is.')
+          print('::error::holupapp.vercel.app is not serving ' + version + '. This commit is not shipped until it is.')
           sys.exit(1)
           PY

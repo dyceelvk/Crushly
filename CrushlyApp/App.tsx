@@ -112,7 +112,7 @@ function Shell() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Crushly' }}>
+      <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'Holup' }}>
         <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
         <MemberActionsProvider>
           {/* A render error unmounts the tree and leaves a white page. The boundary

@@ -872,6 +872,21 @@ def walk():
     if tap('Settings', tries=2):
         shot('{:02d}-settings'.format(n))
         n += 1
+        if not scroll_to('App version', swipes=5):
+            fail('Settings: app version is missing')
+        settings_seen = shot('{:02d}-settings-version'.format(n)) or []
+        n += 1
+        swipe_up()
+        settings_seen += nodes() or []
+        if find(settings_seen, 'Download the app'):
+            fail('Settings: installed Android app still offers an APK download')
+        # This build is newer than the currently published version during the walk.
+        # An unavailable network check is allowed, but never offer an older build.
+        if find(settings_seen, 'Update Holup'):
+            fail('Settings: update offered even though the running build is newer')
+        if not any(find(settings_seen, label) for label in ('You’re up to date', 'Checking for updates', 'Couldn’t check for updates')):
+            fail('Settings: update status is missing')
+        log('settings: installed app has no APK download or older-build update; checked')
         for sub, slug in (('Account & security', 'account'),
                           ('Appearance', 'appearance'),
                           ('Privacy & visibility', 'privacy'),
