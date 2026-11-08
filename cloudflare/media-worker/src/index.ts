@@ -485,9 +485,32 @@ const RELEASE_ASSET_HOSTS = new Set([
   'release-assets.githubusercontent.com',
   'objects.githubusercontent.com',
 ]);
+const SIGNED_ASSET_CACHE_SECONDS = 45 * 60;
 
-/** Obtain a one-hour GitHub CDN URL without exposing a repository download page. */
+function publicAssetUrl(location: string): string | null {
+  try {
+    const parsed = new URL(location);
+    return RELEASE_ASSET_HOSTS.has(parsed.hostname) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function signedAssetCacheKey(build: AndroidBuild): Request {
+  // The key contains only public release metadata. The cache body holds the
+  // short-lived URL and lives at Cloudflare, never in a phone or a browser cache.
+  return new Request(`https://crushly-media.dyceelvk.workers.dev/.internal/apk-url/${encodeURIComponent(build.assetApi)}`);
+}
+
+/** Obtain a short-lived GitHub CDN URL without exposing a repository download page. */
 async function signedAssetUrl(build: AndroidBuild): Promise<string | null> {
+  const cacheKey = signedAssetCacheKey(build);
+  const cached = await caches.default.match(cacheKey).catch(() => null);
+  if (cached) {
+    const location = publicAssetUrl(await cached.text().catch(() => ''));
+    if (location) return location;
+  }
+
   const response = await fetch(build.assetApi, {
     headers: {
       Accept: 'application/octet-stream',
@@ -497,14 +520,15 @@ async function signedAssetUrl(build: AndroidBuild): Promise<string | null> {
     redirect: 'manual',
   }).catch(() => null);
   if (!response || response.status < 300 || response.status >= 400) return null;
-  const location = response.headers.get('Location');
+  const location = publicAssetUrl(response.headers.get('Location') ?? '');
   if (!location) return null;
-  try {
-    const parsed = new URL(location);
-    return RELEASE_ASSET_HOSTS.has(parsed.hostname) ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
+
+  // GitHub's CDN URLs last about an hour. Caching one for 45 minutes avoids
+  // GitHub API rate limits during a release while always expiring it early.
+  await caches.default.put(cacheKey, new Response(location, {
+    headers: { 'Cache-Control': `public, max-age=${SIGNED_ASSET_CACHE_SECONDS}` },
+  })).catch(() => undefined);
+  return location;
 }
 
 function redirectToAsset(location: string, origin: string | null): Response {
