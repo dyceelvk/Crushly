@@ -2,8 +2,8 @@ const { withAndroidManifest, withDangerousMod, AndroidConfig } = require('expo/c
 const fs = require('fs');
 const path = require('path');
 
-// Exclude only device-local drafts and Expo SecureStore from Android backup,
-// without turning backups off for unrelated app data.
+// Preserve Expo SecureStore’s existing backup scope: only shared preferences
+// are included, so app files (including drafts) are excluded automatically.
 module.exports = function withLocalDraftsBackup(config) {
   config = withAndroidManifest(config, (c) => {
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(c.modResults);
@@ -14,7 +14,7 @@ module.exports = function withLocalDraftsBackup(config) {
   return withDangerousMod(config, ['android', async (c) => {
     const dir = path.join(c.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res', 'xml');
     fs.mkdirSync(dir, { recursive: true });
-    const exclude = '<include domain="sharedpref" path="."/><exclude domain="file" path="hollop-drafts/"/><exclude domain="sharedpref" path="SecureStore"/>';
+    const exclude = '<include domain="sharedpref" path="."/><exclude domain="sharedpref" path="SecureStore"/>';
     fs.writeFileSync(path.join(dir, 'hollop_backup_rules.xml'), `<?xml version="1.0" encoding="utf-8"?><full-backup-content>${exclude}</full-backup-content>`);
     fs.writeFileSync(path.join(dir, 'hollop_data_extraction_rules.xml'), `<?xml version="1.0" encoding="utf-8"?><data-extraction-rules><cloud-backup>${exclude}</cloud-backup><device-transfer>${exclude}</device-transfer></data-extraction-rules>`);
     return c;
