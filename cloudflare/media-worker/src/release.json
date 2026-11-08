@@ -1,10 +1,10 @@
 {
-  "version": "1.0.78",
-  "versionCode": 78,
+  "version": "1.0.79",
+  "versionCode": 79,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.78-Android9plus.apk",
-  "notes": "Typing your password no longer sends you to the reset screen by accident, and a Space opens with its cover as a band across the top \u2014 picture, name, Add up and all four tabs on one screen instead of a photograph and nothing else.",
-  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.78/Crushly-1.0.78-Android9plus.apk",
-  "bytes": 95010911,
-  "sha256": "604b40d8d3820b51987e663977c5b6dc9d12e621305f331e5720775276d86302"
+  "file": "Crushly-1.0.79-Android9plus.apk",
+  "notes": "Circles on your Space use compact Android controls, the Flow player keeps the whole frame in view, and the feed starts preparing nearby photos sooner while doing less work for paused clips.",
+  "upstream": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.79/Crushly-1.0.79-Android9plus.apk",
+  "bytes": 95011623,
+  "sha256": "8ffe106b0cf6b54458c54879ba732a0a7adcd4177fc4da53cf02adaebb34e673"
 }
