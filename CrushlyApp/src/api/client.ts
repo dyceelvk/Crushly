@@ -101,7 +101,7 @@ export function requireConfig(): void {
   if (!isConfigured) {
     throw new ApiError(
       0,
-      'Hollop isn’t configured yet. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.',
+      'Holup isn’t configured yet. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.',
     );
   }
 }
@@ -310,7 +310,7 @@ export async function uploadMediaFile(
   if (mb > limitMb) {
     throw new ApiError(
       413,
-      `That file is ${Math.round(mb)} MB. Hollop takes up to ${limitMb} MB — trim it, or pick something shorter.`,
+      `That file is ${Math.round(mb)} MB. Holup takes up to ${limitMb} MB — trim it, or pick something shorter.`,
     );
   }
   const kind = bucket === 'media' ? mediaKind(path) : null;

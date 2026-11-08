@@ -81,7 +81,7 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
             opacity: words,
           }}
         >
-          Hollop
+          Holup
         </Animated.Text>
 
         <Animated.View

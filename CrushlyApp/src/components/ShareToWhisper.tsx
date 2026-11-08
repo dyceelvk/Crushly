@@ -67,7 +67,7 @@ export function ShareToWhisper({
     if (!post) return;
     try {
       await Share.share({
-        message: post.body ? `${post.body}\n\n— on Hollop` : 'A post on Hollop',
+        message: post.body ? `${post.body}\n\n— on Holup` : 'A post on Holup',
       });
     } catch {
       // Backing out of the system sheet is not a failure worth reporting.
@@ -96,8 +96,8 @@ export function ShareToWhisper({
             title={query ? 'Nobody by that name' : 'No Whispers yet'}
             message={
               query
-                ? 'Try another name, or send it outside Hollop below.'
-                : 'A Whisper opens when you and somebody both Crush. Until then, send it outside Hollop below.'
+                ? 'Try another name, or send it outside Holup below.'
+                : 'A Whisper opens when you and somebody both Crush. Until then, send it outside Holup below.'
             }
           />
         ) : (
@@ -145,7 +145,7 @@ export function ShareToWhisper({
         <Pressable
           onPress={outside}
           accessibilityRole="button"
-          accessibilityLabel="Share outside Hollop"
+          accessibilityLabel="Share outside Holup"
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
@@ -155,7 +155,7 @@ export function ShareToWhisper({
           })}
         >
           <Ionicons name={Platform.OS === 'ios' ? 'share-outline' : 'share-social-outline'} size={20} color={colors.textSecondary} />
-          <Txt variant="body">Share outside Hollop</Txt>
+          <Txt variant="body">Share outside Holup</Txt>
         </Pressable>
       </View>
     </BottomSheet>

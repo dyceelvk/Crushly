@@ -89,7 +89,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
           icon: icon('share-outline'),
           hint: 'Only their first name and age are shared',
           onPress: () => {
-            Share.share({ message: `Meet ${member.name}${member.age ? `, ${member.age}` : ''} on Hollop — a private space to connect.` }).catch(() => {});
+            Share.share({ message: `Meet ${member.name}${member.age ? `, ${member.age}` : ''} on Holup — a private space to connect.` }).catch(() => {});
           },
         },
         ...(member.connected
@@ -124,7 +124,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
       <ConfirmSheet
         visible={sheet === 'block'}
         title={`Cut off ${member?.name}?`}
-        message="You won’t see each other anywhere on Hollop, and your Whisper will close. He won’t be notified. You can let him back in later in Settings."
+        message="You won’t see each other anywhere on Holup, and your Whisper will close. He won’t be notified. You can let him back in later in Settings."
         confirmLabel="Cut Off"
         destructive
         loading={block.isPending}

@@ -8,7 +8,7 @@ import type { AppWebViewProps } from './WebView';
  * Android and iOS: the real thing.
  *
  * On Android this is Chromium — the system WebView — so a link opens inside
- * Hollop with a proper browser engine and never hands the member to another
+ * Holup with a proper browser engine and never hands the member to another
  * app. On iOS it is WebKit, because Apple allows no other engine on the
  * platform; the behaviour is the same from the member's side.
  *

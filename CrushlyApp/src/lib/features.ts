@@ -4,7 +4,7 @@
  * Video was switched off, not removed: the players, the trimmer, the encoder,
  * the sound pages and the tables behind them all stayed, waiting behind one
  * boolean. It is switched back on now, deliberately — clips are part of what
- * Hollop offers again, which is what makes the Discover rails ("Top Crushes
+ * Holup offers again, which is what makes the Discover rails ("Top Crushes
  * This Week", trending clips) possible at all.
  *
  * The old rule was "flag, never delete", and it still holds in the other

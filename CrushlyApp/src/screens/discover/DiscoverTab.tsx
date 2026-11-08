@@ -45,7 +45,7 @@ export function DiscoverTabScreen() {
           <Txt variant="display" accessibilityRole="header" style={{ color: colors.text }}>
             Discover
           </Txt>
-          <IconButton icon="search" label="Search Hollop" onPress={() => navigation.navigate('Search')} />
+          <IconButton icon="search" label="Search Holup" onPress={() => navigation.navigate('Search')} />
         </View>
       <DiscoverPane />
     </View>

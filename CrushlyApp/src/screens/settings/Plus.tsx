@@ -34,7 +34,7 @@ export function PlusScreen({ navigation, route }: ScreenProps<'Plus'>) {
     mutationFn: () => recordPlusInterest(),
     onSuccess: (next) => {
       qc.setQueryData(keys.me, next);
-      toast({ kind: 'success', title: 'You’re on the list', message: 'We’ll let you know when Hollop Plus opens.' });
+      toast({ kind: 'success', title: 'You’re on the list', message: 'We’ll let you know when Holup Plus opens.' });
     },
     onError: (e) => toast({ kind: 'error', title: 'Something went wrong', message: (e as Error).message }),
   });
@@ -87,7 +87,7 @@ export function PlusScreen({ navigation, route }: ScreenProps<'Plus'>) {
 
       <View style={{ marginTop: space.xl }}>
         <Txt variant="label" color="textSecondary" style={{ marginBottom: space.sm }}>
-          Always free on Hollop
+          Always free on Holup
         </Txt>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
           {FREE.map((f) => (

@@ -4,11 +4,11 @@ import Svg, { Circle } from 'react-native-svg';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 
-// Official Hollop artwork supplied by the product owner. Keep these local so
+// Official Holup artwork supplied by the product owner. Keep these local so
 // the brand is visible before the network has loaded and in native builds.
 const markArtwork = require('../../assets/brand/crushly-mark.png');
 /**
- * Official Hollop mark: two overlapping conversation circles. The coloured
+ * Official Holup mark: two overlapping conversation circles. The coloured
  * image is used for the primary brand lockup; a single-colour SVG equivalent is
  * reserved for tiny interactive controls, where the surrounding UI supplies the
  * contrast colour.
@@ -50,11 +50,11 @@ export function Wordmark({ size = 28, color }: { size?: number; color?: string }
   return <Txt variant="display" accessibilityRole="header" style={{
     fontSize: size, lineHeight: size * 1.22, letterSpacing: 1.1, fontFamily: 'Manrope_800ExtraBold',
     textTransform: 'uppercase', color: color ?? colors.text,
-  }}>Hollop</Txt>;
+  }}>Holup</Txt>;
 }
 
 export function Logo({ size = 40, stacked = false, color }: { size?: number; stacked?: boolean; color?: string }) {
-  return <View accessible accessibilityLabel="Hollop" style={{ flexDirection: stacked ? 'column' : 'row', alignItems: 'center', gap: stacked ? size * 0.16 : size * 0.16 }}>
+  return <View accessible accessibilityLabel="Holup" style={{ flexDirection: stacked ? 'column' : 'row', alignItems: 'center', gap: stacked ? size * 0.16 : size * 0.16 }}>
     <CrushlyMark size={size} />
     <Wordmark size={size * 0.62} color={color} />
   </View>;

@@ -36,7 +36,7 @@ function ErrorFallback({ title, error, onRetry }: { title: string; error: unknow
       <ErrorState
         title={title}
         error={error}
-        message="This screen hit a problem it couldn’t get past. Try again — if it keeps happening, restart Hollop."
+        message="This screen hit a problem it couldn’t get past. Try again — if it keeps happening, restart Holup."
         onRetry={onRetry}
       />
     </View>
@@ -52,7 +52,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: unknown, info: React.ErrorInfo) {
     // The detail belongs in the console, not in the UI.
-    console.error('[Hollop] render failed', error, info?.componentStack);
+    console.error('[Holup] render failed', error, info?.componentStack);
   }
 
   // A new attempt key remounts the children rather than reusing the broken tree.

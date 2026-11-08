@@ -141,7 +141,7 @@ export function FeedTabs({
         <Pressable
           onPress={onSearch}
           accessibilityRole="button"
-          accessibilityLabel="Search Hollop"
+          accessibilityLabel="Search Holup"
           hitSlop={10}
           style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
         >

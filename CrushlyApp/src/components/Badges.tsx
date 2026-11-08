@@ -11,7 +11,7 @@ import type { BadgeTier } from '../api/types';
  * Three of them, and they mean three different things:
  *
  *   verified  the ordinary badge — identity confirmed, nothing bought;
- *   gold      earned. A member who gives Hollop something worth having;
+ *   gold      earned. A member who gives Holup something worth having;
  *   diamond   the company's own account. Never a person, never awarded.
  *
  * One shape, three materials. All three are the same scalloped rosette with a
@@ -31,8 +31,8 @@ const DIAMOND_DEEP = '#08333F';
 const TIER_LABEL: Record<BadgeTier, string> = {
   none: '',
   verified: 'Verified',
-  gold: 'Gold — earned on Hollop',
-  diamond: 'Hollop company account',
+  gold: 'Gold — earned on Holup',
+  diamond: 'Holup company account',
 };
 
 export function VerifiedBadge({

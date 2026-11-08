@@ -83,7 +83,7 @@ function NotConfiguredNotice() {
     >
       <Ionicons name="cloud-offline-outline" size={20} color={colors.gold} />
       <View style={{ flex: 1 }}>
-        <Txt variant="smallStrong">We can’t connect to Hollop right now</Txt>
+        <Txt variant="smallStrong">We can’t connect to Holup right now</Txt>
         <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
           Please try again in a little while.
         </Txt>

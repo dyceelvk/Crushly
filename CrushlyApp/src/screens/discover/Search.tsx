@@ -331,7 +331,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             ) : null}
             <EmptyState
               icon="search-outline"
-              title="Search Hollop"
+              title="Search Holup"
               message="Type a name, a handle, a city or an interest — or a word somebody shared in a post or a Moment. Start with @ for a person, # for a tag."
             />
           </>

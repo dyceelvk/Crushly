@@ -506,7 +506,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
       await updatePrivacy.mutateAsync({ showOnline, discoverable });
       await completeOnboarding();
       await refresh(); // flips the navigator to the main app
-      toast({ kind: 'success', title: 'You’re on Hollop', message: 'Your space is ready. Start with a feeling.' });
+      toast({ kind: 'success', title: 'You’re on Holup', message: 'Your space is ready. Start with a feeling.' });
     } catch (e) {
       setFinishing(false);
       toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });

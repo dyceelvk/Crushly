@@ -54,7 +54,7 @@ export function useCrushFlow() {
 /**
  * Discover — what people are sharing.
  *
- * Hollop is a social app, so this screen is about what people have said, not
+ * Holup is a social app, so this screen is about what people have said, not
  * rows of faces to sort through. There is no deck of profile photographs here
  * on purpose: you can still Crush somebody, but you do it from their Space,
  * because you want to, not because a grid put them in front of you.

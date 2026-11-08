@@ -81,13 +81,13 @@ export function emailSendMessage(raw: string): string {
     return `One email a minute per address — try again in ${wait[1]} seconds.`;
   }
   if (/too many|rate limit|over_email_send_rate_limit/i.test(text)) {
-    return 'Hollop has sent as many emails as it can this hour. A code from an earlier email still works — or try again in a little while.';
+    return 'Holup has sent as many emails as it can this hour. A code from an earlier email still works — or try again in a little while.';
   }
   if (/not authorized|invalid.*recipient|mailbox|address.*rejected/i.test(text)) {
     return 'That address could not receive mail. Check it for typos — or sign in if you already have a Space.';
   }
   if (/invalid.*(smtp|login|credentials)|auth/i.test(text)) {
-    return 'Hollop couldn’t send mail just now. This is on us, not on you — try again shortly.';
+    return 'Holup couldn’t send mail just now. This is on us, not on you — try again shortly.';
   }
   return 'Couldn’t send that just now — wait a minute and try again.';
 }

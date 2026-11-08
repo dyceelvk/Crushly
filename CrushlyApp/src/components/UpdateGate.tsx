@@ -104,7 +104,7 @@ function AndroidUpdateGate() {
             <>
               <Txt variant="title" color="text">Update available!</Txt>
               <Txt variant="body" color="textSecondary">
-                Hello {me?.profile?.name ?? 'there'} — Hollop has a new update{version}. Update now to enjoy the new features.
+                Hello {me?.profile?.name ?? 'there'} — Holup has a new update{version}. Update now to enjoy the new features.
               </Txt>
               <Txt variant="caption" color="textMuted">
                 {size ? `${size} · ` : ''}Android installs it over your current version. Save any unfinished work first.
@@ -121,7 +121,7 @@ function AndroidUpdateGate() {
             <>
               <Txt variant="title" color="text">Downloading the update…</Txt>
               <Txt variant="body" color="textSecondary">
-                {Math.round(progress * 100)}%{size ? ` of ${size}` : ''}. Keep Hollop open until it finishes.
+                {Math.round(progress * 100)}%{size ? ` of ${size}` : ''}. Keep Holup open until it finishes.
               </Txt>
               <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.elevated, overflow: 'hidden', marginTop: space.sm }}>
                 <View style={{ width: `${Math.max(2, Math.round(progress * 100))}%`, height: 8, backgroundColor: colors.crush }} />
@@ -133,7 +133,7 @@ function AndroidUpdateGate() {
             <>
               <Txt variant="title" color="text">Almost done</Txt>
               <Txt variant="body" color="textSecondary">
-                Android will ask whether to update Hollop. Tap Install — the download is already on this phone.
+                Android will ask whether to update Holup. Tap Install — the download is already on this phone.
               </Txt>
             </>
           ) : null}

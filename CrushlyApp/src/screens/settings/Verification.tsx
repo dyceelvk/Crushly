@@ -121,7 +121,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             You’re verified
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Your badge shows on your Space. Thanks for keeping Hollop real.
+            Your badge shows on your Space. Thanks for keeping Holup real.
           </Txt>
         </View>
       ) : rejected ? (
@@ -141,7 +141,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
             {phase === 'review'
               ? 'Your submitted checks are being reviewed. Tap “Check status” for the latest result.'
-              : 'Tap “Continue verification” to open the checks. Creating a session does not submit your verification or put it under review. Hollop will redirect you to Didit, then back here when you finish.'}
+              : 'Tap “Continue verification” to open the checks. Creating a session does not submit your verification or put it under review. Holup will redirect you to Didit, then back here when you finish.'}
           </Txt>
         </View>
       ) : (
@@ -150,7 +150,7 @@ export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) 
             Prove it’s really you
           </Txt>
           <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Verification runs through our certified identity partner. Hollop will redirect you to Didit, then bring you back here when you finish. Tapping the button only opens those checks — it doesn’t submit anything or put you in review; the result arrives when you complete them with Didit.
+            Verification runs through our certified identity partner. Holup will redirect you to Didit, then bring you back here when you finish. Tapping the button only opens those checks — it doesn’t submit anything or put you in review; the result arrives when you complete them with Didit.
           </Txt>
           <View style={{ width: w, gap: space.sm, marginTop: space.xs }}>
             {DIDIT_STEPS.map((s) => (
