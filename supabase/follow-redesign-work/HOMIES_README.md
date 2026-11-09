@@ -1,0 +1,9 @@
+# Homies experiment — never deploy this by itself
+
+`04_homies_candidate.sql` is a one-shot **disposable database experiment**, not a production migration. `04a_homies_migration_fixture.sql` is synthetic test data; never apply it to a live project. `05_homies_test.sql` and `06_homies_concurrency.py` are disposable tests.
+
+It snapshots the already-deployed grandfather bridge, preserves each remaining legacy Keep as a pending directed request (even mutual Keeps do not constitute acceptance), adds explicit recipient acceptance/decline, pending withdrawal, a seven-day rejection cooldown, request rate limiting, and owner/accepted-Homie identity-list gating. Accepted records have no removal endpoint and are cleared on block. Block, request and accept share the follow pair lock. The experiment does not create or close Whispers.
+
+**Not shippable:** it is not connected to UI, notifications, counts or new privacy semantics throughout the app. The previous `holup_existing_close` bridge and other policies still use legacy connection state. Old APIs and already-installed clients can mutate legacy relationships and close chats independently. Legacy writes, the deployed block and disconnect paths, row-level security, Realtime session revocation, messaging/media/calls, notifications and atomic migration/rollback must be audited and adapted together. The Add Up follow prototype is separately incomplete and cannot be deployed independently. Preserve current protections until the full cutover is tested end to end. None of these files go in `supabase/migrations/`.
+
+Local verification after a fresh disposable legacy suite and follow candidate: migration assertions and 25 request/block plus 25 accept/block concurrent races passed. Synthetic tests do not establish hosted Supabase behavior, native app correctness, old-client compatibility or privacy approval.
