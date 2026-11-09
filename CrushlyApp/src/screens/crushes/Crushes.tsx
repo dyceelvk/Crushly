@@ -196,6 +196,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
               </View>
             )}
             <Segmented<Tab>
+              swipeable
               value={tab}
               onChange={setTab}
               options={[

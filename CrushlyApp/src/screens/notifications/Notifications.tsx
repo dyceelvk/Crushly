@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import { Avatar } from '../../components/Photo';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
@@ -17,6 +18,13 @@ import { circleNotificationText, circleRoute } from '../../lib/circleNotificatio
 import { fromHolup, notificationCategory, type NotificationCategory } from '../../lib/notificationCategories';
 import { useProfileTap } from '../../lib/useProfileTap';
 import type { ScreenProps } from '../../navigation/types';
+
+const NOTIFICATION_CATEGORIES: { id: NotificationCategory; label: string }[] = [
+  { id: 'all', label: 'All' }, { id: 'whispers', label: 'Whispers' },
+  { id: 'posts', label: 'Post activity' }, { id: 'addUps', label: 'Add Ups' },
+  { id: 'keptClose', label: 'Homies' }, { id: 'moments', label: 'Moments' },
+  { id: 'circles', label: 'Circles' },
+];
 
 const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphMap; tone: 'crush' | 'gold' | 'success' | 'textSecondary' }> = {
   crush: { name: 'heart', tone: 'crush' },
@@ -91,14 +99,26 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
 }
 
 export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
-  const { colors } = useTheme();
+  const { colors, reduceMotion } = useTheme();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useNotifications();
   const markRead = useMarkNotificationsRead();
   const { data: settings } = useAppSettings();
   const [tab, setTab] = useState<'yours' | 'holup'>('yours');
+  const swipe = useSwipeTabs({ options: ['yours', 'holup'] as const, value: tab, onChange: setTab, width: contentWidth });
   const [category, setCategory] = useState<NotificationCategory>('all');
+  // The nested category pager owns the list; the top row owns the two main
+  // tabs. The horizontally scrollable chip rail keeps its own drag gesture.
+  const categorySwipe = useSwipeTabs({ options: NOTIFICATION_CATEGORIES.map(c => c.id), value: category, onChange: setCategory, width: contentWidth });
+  const categoryRail = useRef<ScrollView>(null);
+  const categoryPositions = useRef<Partial<Record<NotificationCategory, { x: number; width: number }>>>({});
+  const [categoryRailWidth, setCategoryRailWidth] = useState(0);
+  useEffect(() => {
+    if (tab !== 'yours') return;
+    const position = categoryPositions.current[category];
+    if (position && categoryRailWidth) categoryRail.current?.scrollTo({ x: Math.max(0, position.x + position.width / 2 - categoryRailWidth / 2), animated: !reduceMotion });
+  }, [category, categoryRailWidth, tab, reduceMotion]);
   const items = (data ?? []).filter((n) => tab === 'holup' ? fromHolup(n.kind) : !fromHolup(n.kind) && (category === 'all' || notificationCategory(n.kind) === category));
   const unreadIds = items.filter((n) => !n.read).map((n) => n.id);
   const unreadKey = unreadIds.join(',');
@@ -164,13 +184,14 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
           </Txt>
           <IconButton icon="settings-outline" variant="plain" label="Notification settings" onPress={() => navigation.navigate('NotificationSettings')} />
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl, paddingVertical: space.sm }}>
+        <View {...swipe.panHandlers} style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl, paddingVertical: space.sm }}>
           {([['yours', 'Yours'], ['holup', 'From Holup']] as const).map(([id, label]) => <Pressable key={id} onPress={() => setTab(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: tab === id }} style={{ paddingVertical: 8 }}><Txt variant="bodyStrong" color={tab === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
         </View>
-        {tab === 'yours' ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: space.sm }}>
-          {([['all','All'],['whispers','Whispers'],['posts','Post activity'],['addUps','Add Ups'],['keptClose','Kept Close'],['moments','Moments'],['circles','Circles']] as const).map(([id,label]) => <Pressable key={id} onPress={() => setCategory(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: category === id }} style={{ backgroundColor: category === id ? colors.goldSoft : colors.card, borderWidth: 1, borderColor: category === id ? colors.goldLine : colors.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }}><Txt variant="small" color={category === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
+        {tab === 'yours' ? <ScrollView ref={categoryRail} horizontal onLayout={e => setCategoryRailWidth(e.nativeEvent.layout.width)} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: space.sm }}>
+          {NOTIFICATION_CATEGORIES.map(({id, label}) => <Pressable key={id} onLayout={e => { const {x, width} = e.nativeEvent.layout; categoryPositions.current[id] = {x, width}; }} onPress={() => setCategory(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: category === id }} style={{ backgroundColor: category === id ? colors.goldSoft : colors.card, borderWidth: 1, borderColor: category === id ? colors.goldLine : colors.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }}><Txt variant="small" color={category === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
         </ScrollView> : null}
       </View>
+      <View {...(tab === 'yours' ? categorySwipe.panHandlers : swipe.panHandlers)} style={{flex: 1}}>
       {isLoading ? (
         <LoadingBlock label="Loading notifications" />
       ) : (
@@ -238,6 +259,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.gold} colors={[colors.gold]} />}
         />
       )}
+      </View>
     </View>
   );
 }

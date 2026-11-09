@@ -6,6 +6,7 @@ import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { Segmented } from '../../components/Segmented';
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import { timeAgoLong } from '../../lib/format';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { useToast } from '../../components/Toast';
@@ -35,6 +36,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const [body, setBody] = useState('');
   const [active, setActive] = useState(false);
   const [section, setSection] = useState<'dashboard' | 'controls' | 'reports' | 'accounts' | 'audit'>('dashboard');
+  const sectionSwipe = useSwipeTabs({ options: ['dashboard', 'controls', 'reports', 'accounts', 'audit'] as const, value: section, onChange: setSection, width });
   const [handled, setHandled] = useState(false);
   const [reportPage, setReportPage] = useState(0);
   const [search, setSearch] = useState('');
@@ -55,7 +57,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const announcement = useMutation({ mutationFn: () => service.adminSetAnnouncement(title, body, active), onSuccess: () => { dirty.current = false; refresh(); toast({ kind: 'success', title: 'Announcement saved' }); }, onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
   return <Screen><Header title="Holup admin" subtitle="Operations and controls" back />
     {data.isLoading ? <LoadingBlock label="Loading admin controls" /> : data.isError || !data.data ? <ErrorState error={data.error} message="Admin controls are unavailable." onRetry={() => void data.refetch()} /> : <View style={{ flexDirection: wide ? 'row' : 'column', gap: space.lg, paddingBottom: space.xl }}>
-      <View accessibilityRole="tablist" style={{ width: wide ? 180 : undefined, flexDirection: wide ? 'column' : 'row', flexWrap: 'wrap', gap: space.xs }}>
+      <View {...sectionSwipe.panHandlers} accessibilityRole="tablist" style={{ width: wide ? 180 : undefined, flexDirection: wide ? 'column' : 'row', flexWrap: 'wrap', gap: space.xs }}>
         {([['dashboard', 'Dashboard'], ['controls', 'Action board'], ['reports', 'Reports'], ['accounts', 'Accounts'], ['audit', 'Admin activity']] as const).map(([value, label]) => (
           <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: section === value }} onPress={() => setSection(value)}
             style={{ minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: section === value ? colors.primary : colors.border, backgroundColor: section === value ? colors.elevated : colors.card }}>
@@ -63,7 +65,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
           </Pressable>
         ))}
       </View>
-      <View style={{ flex: 1, minWidth: 0, gap: space.lg }}>
+      <View {...sectionSwipe.panHandlers} style={{ flex: 1, minWidth: 0, gap: space.lg }}>
       {section === 'dashboard' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Dashboard</Txt>
         <Txt variant="small" color="textSecondary">Live totals from Holup. Activity is the last 7 days; message contents are not shown.</Txt>
@@ -91,7 +93,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
       {section === 'reports' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Reports</Txt>
         <Txt variant="small" color="textSecondary">Review reports privately. Marking a report reviewed does not suspend an account or remove content.</Txt>
-        <Segmented value={handled ? 'reviewed' : 'open'} onChange={(value) => { setHandled(value === 'reviewed'); setReportPage(0); }} options={[{ value: 'open', label: 'Open' }, { value: 'reviewed', label: 'Reviewed' }]} />
+        <Segmented swipeable value={handled ? 'reviewed' : 'open'} onChange={(value) => { setHandled(value === 'reviewed'); setReportPage(0); }} options={[{ value: 'open', label: 'Open' }, { value: 'reviewed', label: 'Reviewed' }]} />
         {reports.isLoading ? <LoadingBlock label="Loading reports" /> : reports.isError ? <ErrorState error={reports.error} message="Reports are unavailable." onRetry={() => void reports.refetch()} /> : !(reports.data?.length) ? <Txt color="textSecondary">No reports in this list.</Txt> : reports.data.slice(0, 50).map((r) => <View key={r.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md, gap: space.xs }}>
           <Txt variant="bodyStrong">{r.reportedName || 'Member'} · #{r.reportedId}</Txt>
           <Txt variant="small">Reported by {r.reporterName || 'Member'} · {timeAgoLong(r.createdAt)}</Txt>

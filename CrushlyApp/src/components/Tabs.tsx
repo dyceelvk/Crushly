@@ -19,8 +19,9 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Platform, Pressable, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
+import { useSwipeTabs } from './SwipeTabs';
 import { fonts } from '../theme/tokens';
 import { DUR, EASE_OUT, duration as dur } from '../lib/motion';
 
@@ -42,6 +43,8 @@ export function Tabs<T extends string>({
   accessibilityLabel?: string;
 }) {
   const { colors, reduceMotion } = useTheme();
+  const { width } = useWindowDimensions();
+  const swipe = useSwipeTabs({ options: tabs.map(t => t.id), value: active, onChange, width });
   return (
     /* A row, not a scroll area.
        This was a horizontal ScrollView, and that one word was a trap: when the
@@ -52,7 +55,7 @@ export function Tabs<T extends string>({
        page usually wins, so the tab you could not see was also the tab you could
        not reach. Now the row fits: tabs shrink, labels stay on one line, and
        every tab in the list is on the screen and tappable at any size. */
-    <View style={{ flexDirection: 'row', gap: 20 }} accessibilityLabel={accessibilityLabel}>
+    <View {...swipe.panHandlers} style={{ flexDirection: 'row', gap: 20 }} accessibilityLabel={accessibilityLabel}>
       {tabs.map((t) => (
         <Tab
           key={t.id}

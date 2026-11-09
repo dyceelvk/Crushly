@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Pressable, View } from 'react-native';
+import { Platform, Pressable, View, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useBadges } from '../api/hooks';
 import { haptic } from '../lib/haptics';
 import { SpaceNavigation } from './SpaceNavigation';
+import { useSwipeTabs } from '../components/SwipeTabs';
 
 const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap] | 'crush'> = {
   Flows: ['home', 'home-outline'],
@@ -29,7 +30,21 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
   const insets = useSafeAreaInsets();
   const { data: badges } = useBadges(true);
 
-  if (state.routes[state.index]?.name === 'Profile') return <SpaceNavigation />;
+  const { width } = useWindowDimensions();
+  const focusedRoute = state.routes[state.index]?.name;
+  // Create is an action, not a page; swiping must never open the composer.
+  const swipe = useSwipeTabs({
+    options: ['Flows', 'Connections', 'Messages', 'Profile'] as const,
+    value: focusedRoute === 'Connections' || focusedRoute === 'Messages' || focusedRoute === 'Profile' ? focusedRoute : 'Flows',
+    width,
+    onChange: (name) => {
+      const route = state.routes.find((r) => r.name === name);
+      if (!route) return;
+      const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+      if (!event.defaultPrevented) navigation.navigate(route.name, route.params);
+    },
+  });
+  if (focusedRoute === 'Profile') return <SpaceNavigation />;
 
   // Crushes is a part of Home now, so its count rides on Home's icon rather
   // than on a tab of its own.
@@ -109,7 +124,7 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
       }}
       accessibilityRole="tablist"
     >
-      <View style={{ flexDirection: 'row', flex: 1, maxWidth: 640, alignSelf: 'center', marginHorizontal: 'auto' }}>
+      <View {...swipe.panHandlers} style={{ flexDirection: 'row', flex: 1, maxWidth: 640, alignSelf: 'center', marginHorizontal: 'auto' }}>
         {shownRoutes.slice(0, half).map(({route, index}) => tab(route, index))}
 
         {onCreate ? (

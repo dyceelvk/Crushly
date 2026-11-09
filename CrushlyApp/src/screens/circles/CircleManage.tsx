@@ -203,6 +203,7 @@ export function CircleManageScreen() {
 
             {/* ------------------------------------------------------- lists */}
             <Segmented<Tab>
+              swipeable
               options={[
                 { value: 'members', label: 'Members', count: members.length },
                 { value: 'requests', label: 'Requests', count: requests.length },

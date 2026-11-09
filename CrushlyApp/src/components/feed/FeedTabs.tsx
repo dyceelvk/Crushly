@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
+import { useSwipeTabs } from '../SwipeTabs';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CrushIcon } from '../Logo';
 import { space, stroke } from '../../theme/tokens';
@@ -61,6 +62,7 @@ export function FeedTabs({
   // comfortable sizes that is wider than the screen: "Connections" ran under the
   // magnifier. Nothing is dropped at that width, the type and the air shrink.
   const { width } = useWindowDimensions();
+  const swipe = useSwipeTabs({ options: tabs.map(t => t.key), value: active, onChange, width });
   const compact = width < 380;
   const labelSize = compact ? 14 : 15;
   const gap = compact ? 12 : 18;
@@ -89,7 +91,7 @@ export function FeedTabs({
           backgroundColor: colors.scheme === 'light' ? 'rgba(255,255,255,0.86)' : 'rgba(0,0,0,0.22)',
         }}
       />
-      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      <View {...swipe.panHandlers} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

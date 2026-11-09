@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { circleNotificationText, circleRoute, isCircleNotification } from '../lib/circleNotifications';
 import { useProfileTap } from '../lib/useProfileTap';
 import { Txt } from './Txt';
+import { useSwipeTabs } from './SwipeTabs';
 import { Avatar } from './Photo';
 import { BottomSheet } from './BottomSheet';
 import { EmptyState, ErrorState, Skeleton } from './States';
@@ -48,6 +49,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
   const { data, isLoading, isError, error, refetch, isRefetching } = useNotifications();
   const markRead = useMarkNotificationsRead();
   const [lens, setLens] = useState<Lens>('yours');
+  const swipe = useSwipeTabs({options: ['yours', 'crushly'] as const, value: lens, onChange: setLens, width: 360});
 
   const items = useMemo<AppNotification[]>(() => data ?? [], [data]);
   const yours = items.filter((n) => n.kind !== 'verified' && n.kind !== 'verification_rejected');
@@ -135,7 +137,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
       </View>
 
       {/* Two tabs, one list. */}
-      <View style={{ flexDirection: 'row', gap: space.lg, paddingHorizontal: space.md, borderBottomWidth: stroke.hairline, borderBottomColor: colors.border }}>
+      <View {...swipe.panHandlers} style={{ flexDirection: 'row', gap: space.lg, paddingHorizontal: space.md, borderBottomWidth: stroke.hairline, borderBottomColor: colors.border }}>
         {([
           ['yours', 'Yours'],
           ['crushly', 'From Holup'],
