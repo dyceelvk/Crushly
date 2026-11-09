@@ -236,3 +236,8 @@
   its implementation automatically approves/rejects identities using AI despite
   describing itself as an assist, and an evidence-backed, authorized human
   review workflow is still required. This function was not changed or deployed.
+- Latest local web export after the admin and birthday-recovery edits completed
+  without running a new test suite; it was not deployed. Android candidate
+  42605205587 is older than the latest local changes. Full admin operations,
+  preview serving, server-wide age eligibility, teen separation, secure
+  Realtime revocation and actual coordinated release remain open.
