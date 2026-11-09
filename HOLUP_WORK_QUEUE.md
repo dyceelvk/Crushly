@@ -686,3 +686,8 @@
   wait for production web promotion, and dispatch Android 1.0.89 if safe.
 - Moment isolated release CI `42647737887` passed. Android 1.0.88 is still
   building in run `42646506754`; its release must finish before main advances.
+- Cleanup heartbeat subsequently showed a successful run at 15:45:31 UTC,
+  `last_failed=0`, after the Cloudflare */15 cron had propagated; there were no
+  GitHub cleanup runs after manual dispatch `42643373100` (15:18 UTC). This is
+  consistent with a genuine timed Cloudflare invocation. It does not resolve
+  the unrelated manual-verification, legal-hold or provider-retention gaps.
