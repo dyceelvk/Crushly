@@ -8,7 +8,6 @@ import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
 import { useSwipeTabs } from '../../components/SwipeTabs';
 import { PostCard } from '../../components/feed/PostCard';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
-import { NotificationsSheet } from '../../components/NotificationsSheet';
 import { CrushesFeed } from '../crushes/CrushesFeed';
 import { ConnectionsTop, CircleHighlightsCard, type CircleFilter } from '../../components/feed/ConnectionsTop';
 import { DiscoverCard } from '../../components/circles/DiscoverCard';
@@ -73,7 +72,6 @@ export function FeedScreen() {
   const posts = shownPosts(following.posts);
   const { data: badges } = useBadges(true);
   const focus = useFeedFocus();
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const [tab, setTab] = useState<'crushes' | 'connections'>(
     route.params?.tab === 'connections' ? 'connections' : 'crushes',
@@ -280,10 +278,9 @@ export function FeedScreen() {
         top={insets.top + 4}
         unread={badges?.notifications ?? 0}
         onSearch={() => navigation.navigate('Search')}
-        onBell={() => setNotificationsOpen(true)}
+        onBell={() => navigation.navigate('Notifications')}
       />
 
-      <NotificationsSheet visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
     </View>
   );
 }

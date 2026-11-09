@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { FlatList, Pressable, RefreshControl, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -7,13 +7,14 @@ import { Avatar } from '../../components/Photo';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
-import { useMarkNotificationsRead, useNotifications } from '../../api/hooks';
+import { useAppSettings, useMarkNotificationsRead, useNotifications } from '../../api/hooks';
 import type { AppNotification } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
 import { circleNotificationText, circleRoute } from '../../lib/circleNotifications';
+import { fromHolup, notificationCategory, type NotificationCategory } from '../../lib/notificationCategories';
 import { useProfileTap } from '../../lib/useProfileTap';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -65,10 +66,8 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
       return { title: `${name} commented on your post.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'post_mention':
       return { title: `${name} mentioned you in a post.`, detail: n.body ? `“${n.body}”` : undefined };
-    /* A Whisper is answered in Whisper. It has no line here on purpose: the
-       database no longer writes these rows, and an old one is not drawn. */
     case 'message':
-      return { title: '' };
+      return { title: `${name} sent you a Whisper.`, detail: 'Open the conversation to read it.' };
     case 'moment_reply':
       return { title: `${name} replied to your Moment.`, detail: n.body || undefined };
     case 'moment_reaction': {
@@ -97,24 +96,20 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
   const { contentWidth, gutter } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useNotifications();
   const markRead = useMarkNotificationsRead();
-  /**
-   * Social activity only.
-   *
-   * The database stopped writing `message` rows (a Whisper belongs in the Whisper
-   * inbox, where it can be read and answered in one place). Rows written before
-   * that rule existed are dropped here as well, so the centre is not a museum of
-   * old conversations on any phone that installed an earlier build.
-   */
-  const items = (data ?? []).filter((n) => n.kind !== 'message');
-  const unread = items.filter((n) => !n.read).length;
-
-  // Opening the center marks everything as seen after a beat (unread styling stays for this visit).
+  const { data: settings } = useAppSettings();
+  const [tab, setTab] = useState<'yours' | 'holup'>('yours');
+  const [category, setCategory] = useState<NotificationCategory>('all');
+  const items = (data ?? []).filter((n) => tab === 'holup' ? fromHolup(n.kind) : !fromHolup(n.kind) && (category === 'all' || notificationCategory(n.kind) === category));
+  const unreadIds = items.filter((n) => !n.read).map((n) => n.id);
+  const unreadKey = unreadIds.join(',');
+  // Mark only the items actually shown, not unseen categories or the other tab.
   useEffect(() => {
-    if (!unread) return;
-    const t = setTimeout(() => markRead.mutate({}), 1500);
+    if (!unreadKey) return;
+    const ids = unreadKey.split(',').map(Number);
+    const t = setTimeout(() => markRead.mutate({ ids }), 1500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unread > 0]);
+  }, [unreadKey]);
 
   const openProfile = useProfileTap();
   /**
@@ -128,6 +123,8 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
    */
   const open = (n: AppNotification) => {
     switch (n.kind) {
+      case 'message':
+        return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
       case 'crush':
       case 'deep_crush':
         // The request itself, with Accept and Decline — not a list of people.
@@ -162,14 +159,17 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       <View style={{ paddingTop: insets.top, paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm }}>
           <IconButton icon="chevron-back" variant="plain" label="Go back" onPress={() => navigation.goBack()} />
-          {/* One place, one name. What it carries is social activity — add ups,
-              Keep Closes, Crushes, comments and mentions — and never a private
-              conversation, which lives in Whisper. */}
           <Txt variant="heading" style={{ flex: 1 }} accessibilityRole="header">
             Notifications
           </Txt>
           <IconButton icon="settings-outline" variant="plain" label="Notification settings" onPress={() => navigation.navigate('NotificationSettings')} />
         </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl, paddingVertical: space.sm }}>
+          {([['yours', 'Yours'], ['holup', 'From Holup']] as const).map(([id, label]) => <Pressable key={id} onPress={() => setTab(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: tab === id }} style={{ paddingVertical: 8 }}><Txt variant="bodyStrong" color={tab === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
+        </View>
+        {tab === 'yours' ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: space.sm }}>
+          {([['all','All'],['whispers','Whispers'],['posts','Post activity'],['addUps','Add Ups'],['keptClose','Kept Close'],['moments','Moments'],['circles','Circles']] as const).map(([id,label]) => <Pressable key={id} onPress={() => setCategory(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: category === id }} style={{ backgroundColor: category === id ? colors.goldSoft : colors.card, borderWidth: 1, borderColor: category === id ? colors.goldLine : colors.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }}><Txt variant="small" color={category === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
+        </ScrollView> : null}
       </View>
       {isLoading ? (
         <LoadingBlock label="Loading notifications" />
@@ -223,15 +223,15 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
               </Pressable>
             );
           }}
+          ListHeaderComponent={tab === 'holup' && settings?.announcement ? <View style={{ marginTop: space.md, padding: space.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, gap: 4 }}><Txt variant="label" color="gold">Current announcement</Txt><Txt variant="bodyStrong">{settings.announcement.title}</Txt><Txt variant="body">{settings.announcement.body}</Txt></View> : null}
           ListEmptyComponent={
             isError ? (
               <ErrorState error={error} message="Notifications didn’t load." onRetry={refetch} />
             ) : (
               <EmptyState
                 icon="notifications-outline"
-                title="All quiet for now"
-                message="Add ups, Keep Closes, Crushes and comments will show up here. Whispers stay in Whisper."
-                action={{ label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
+                title={tab === 'holup' ? 'No other updates from Holup' : 'All quiet for now'}
+                message={tab === 'holup' ? 'Verification updates and active announcements appear here.' : 'Activity in this category will appear here.'}
               />
             )
           }
