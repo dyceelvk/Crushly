@@ -23,11 +23,15 @@ begin
     values(cid,aid,'post','privatefixtureword',jsonb_build_object('postId',pid,'body','privatefixtureword','mediaUrl',url,'name','Secret')) returning id into msgid;
   perform set_config('request.jwt.claim.sub',au::text,true);
   set local role authenticated;
+  r:=edit_post(pid,null,'connections',null);
+  reset role;
+  assert (select meta = jsonb_build_object('postId',pid) and body='Shared a post' and media_url is null from messages where id=msgid), 'connections change retained old snapshot';
+  set local role authenticated;
   r:=edit_post(pid,null,'private',null);
   assert r->>'audience'='private', 'edit did not persist private';
   assert (can_view_media(path,url)->>'allowed')::boolean, 'owner cannot view media';
-  r:=send_message(cid,'post','',null,jsonb_build_object('postId',pid));
-  assert r->'meta' = jsonb_build_object('postId',pid) and r->>'body'='Shared a post', 'new share exposes private snapshot';
+  r:=send_message(cid,'post','','https://example.com/secret.jpg',jsonb_build_object('postId',pid));
+  assert r->'meta' = jsonb_build_object('postId',pid) and r->>'body'='Shared a post' and r->>'mediaUrl' is null, 'new share exposes private snapshot';
   reset role;
   assert (select meta = jsonb_build_object('postId',pid) and body='Shared a post' and media_url is null from messages where id=msgid), 'old snapshot was not redacted';
   select * into po from posts where id=pid;

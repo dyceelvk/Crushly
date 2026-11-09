@@ -96,12 +96,12 @@ grant execute on function public.edit_post(bigint, text, text, jsonb) to authent
 
 
 -- Previous Whisper cards contained a permanent copy of the post text and
--- media URL. Remove those snapshots when the owner makes a post private.
+-- media URL. Remove those snapshots whenever the owner changes the audience.
 -- Existing messages remain in the conversation as safe references.
 create or replace function public.redact_private_post_shares()
 returns trigger language plpgsql security definer set search_path=public as $$
 begin
-  if new.audience = 'private' and old.audience is distinct from new.audience then
+  if old.audience is distinct from new.audience then
     update public.messages
        set body = 'Shared a post', media_url = null,
            meta = jsonb_build_object('postId', new.id)
@@ -202,6 +202,7 @@ begin
         perform public.crushly_fail(404, '', 'That post can’t be shared.');
       end if;
       clean_body := 'Shared a post';
+      clean_media := null;
       clean_meta := jsonb_build_object('postId', shared_post.id);
     else
       perform public.crushly_fail(400, '', 'Unsupported message type.');
