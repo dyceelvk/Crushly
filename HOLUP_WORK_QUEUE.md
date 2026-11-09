@@ -443,3 +443,15 @@
   installed. This read-only information does not establish scheduler readiness
   and does not alter production. Provider webhook, provider retention,
   image-worker hosted deployment, safety review and cutover remain incomplete.
+
+## Production badge-tier protection
+- Production migration `20261109131025_protect_profile_badge_tier` was applied
+  through Supabase and catalog/migration history confirmed. It blocks direct
+  anonymous/authenticated badge-tier changes, preserves existing badges and
+  leaves trusted server writes possible. This closes a production gap found in
+  catalog review; it is **not** the new verification system or an award.
+- The five still-unpublished local migrations were renamed to
+  `20261109131026`–`20261109131030` and fixture references updated, so they sort
+  after the newly applied migration. Their combined release/order still needs
+  review. Manual verification, its Didit endpoints, 30-day cleanup and the new
+  app remain undeployed; old Didit auto-awards remain live.
