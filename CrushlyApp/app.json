@@ -3,7 +3,7 @@
     "name": "Holup",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.88",
+    "version": "1.0.89",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 88
+      "versionCode": 89
     },
     "web": {
       "favicon": "./assets/favicon.png",

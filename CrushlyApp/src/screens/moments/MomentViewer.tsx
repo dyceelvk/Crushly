@@ -68,7 +68,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [groups, setGroups] = useState<Group[] | null>(null);
   const signature = (list: Group[] | null) => (list ?? []).map((g) => g.moments.map((m) => m.id).join(',')).join('|');
   useEffect(() => {
-    if (!data || !targetReady) return;
+    if (!data || !targetReady || (momentId != null && isError)) return;
     let source: Group[] = mine
       ? (data.mine.moments.length ? [data.mine] : [])
       : (() => {
@@ -79,7 +79,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     if (groups !== null && groups.some((g) => g.moments.length)) return; // frozen, and holding something
     if (groups !== null && signature(source) === signature(groups)) return;
     setGroups(source);
-  }, [data, groups, mine, userId, momentId, targetReady]);
+  }, [data, groups, mine, userId, momentId, targetReady, isError]);
 
   // The last answer may predate whatever was just posted, so the viewer asks
   // again the moment it opens rather than trusting a cached feed.

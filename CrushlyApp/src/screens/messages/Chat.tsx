@@ -32,6 +32,7 @@ import { CallSheet } from '../../components/CallSheet';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import { CallManager, type CallState } from '../../lib/call';
 import { supabase, toApiError } from '../../api/client';
+import { whisperMomentTarget } from '../../api/service';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -386,6 +387,22 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const openProfile = useProfileTap();
   // A post shared into the thread is a door back to the post.
   const openPost = useCallback((id: number) => navigation.navigate('PostViewer', { postId: id }), [navigation]);
+  const openingMoment = useRef(false);
+  const openMoment = useCallback(async (messageId: number) => {
+    if (openingMoment.current) return;
+    openingMoment.current = true;
+    try {
+      const target = await whisperMomentTarget(messageId);
+      if (!navigation.isFocused()) return;
+      if (!target) {
+        toast({ kind: 'info', title: 'This Moment isn’t available', message: 'It may have expired or may no longer be shared with you.' });
+        return;
+      }
+      navigation.navigate('MomentViewer', { userId: target.userId, mine: target.mine, momentId: target.momentId });
+    } catch (e) {
+      if (navigation.isFocused()) toast({ kind: 'error', title: 'Couldn’t load Moment', message: (e as Error).message });
+    } finally { openingMoment.current = false; }
+  }, [navigation, toast]);
 
   if (convError) {
     return (
@@ -537,6 +554,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       onOpenPhoto={setViewer}
                       onOpenProfile={openProfile}
                       onOpenPost={openPost}
+                      onOpenMoment={openMoment}
                       onRetry={retry}
                       onOpenReply={jumpTo}
                     />

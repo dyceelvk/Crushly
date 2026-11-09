@@ -1,7 +1,6 @@
 import React, { memo, useEffect, useRef } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Txt } from './Txt';
@@ -15,7 +14,7 @@ import { EditedClip } from './EditedClip';
 import type { Message, ReplyQuote } from '../api/types';
 import { mediaUrl } from '../api/client';
 import { mediaSource } from '../lib/mediaHost';
-import { MOMENT_STYLES, STICKERS } from '../lib/catalog';
+import { STICKERS } from '../lib/catalog';
 import { clockTime, durationLabel } from '../lib/format';
 import { messageStatus } from '../lib/messageStatus';
 
@@ -41,6 +40,8 @@ type Props = {
   onOpenProfile: (id: number) => void;
   /** A shared post opens the post itself. */
   onOpenPost?: (id: number) => void;
+  /** Resolves the referenced Moment securely from this message. */
+  onOpenMoment?: (messageId: number) => void;
   onRetry: (m: Message) => void;
   /** Tapping the quoted original — jumps back to it in the conversation. */
   onOpenReply?: (id: number) => void;
@@ -68,7 +69,7 @@ const StatusTick = memo(function StatusTick({ status }: { status: 'sent' | 'deli
   );
 });
 
-export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onOpenPost, onRetry, onOpenReply }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, firstInGroup, lastInGroup, showTime, peerName, onLongPress, onDoubleTap, onOpenPhoto, onOpenProfile, onOpenPost, onOpenMoment, onRetry, onOpenReply }: Props) {
   const { colors } = useTheme();
   const lastTap = useRef(0);
   const bare = m.kind === 'sticker' || m.kind === 'photo' || m.kind === 'profile' || m.kind === 'post';
@@ -97,6 +98,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
 
   return (
     <View style={{ alignItems: m.mine ? 'flex-end' : 'flex-start', marginTop: firstInGroup ? 10 : 3 }}>
+      {m.kind === 'moment_reply' ? <MomentQuote m={m} onOpen={onOpenMoment} /> : null}
       <Pressable
         onPress={onPress}
         onLongPress={() => m.id > 0 && onLongPress(m)}
@@ -107,7 +109,6 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
         style={{ maxWidth: '80%', opacity: m.pending ? 0.7 : 1 }}
       >
         {m.meta?.replyTo ? <ReplyQuote quote={m.meta.replyTo as ReplyQuote} onPress={onOpenReply} /> : null}
-        {m.kind === 'moment_reply' ? <MomentQuote m={m} /> : null}
         {bare ? (
           <BareContent m={m} />
         ) : (
@@ -319,30 +320,18 @@ function ReplyQuote({ quote, onPress }: { quote: ReplyQuote; onPress?: (id: numb
   );
 }
 
-function MomentQuote({ m }: { m: Message }) {
+function MomentQuote({ m, onOpen }: { m: Message; onOpen?: (messageId: number) => void }) {
   const { colors } = useTheme();
-  const style = MOMENT_STYLES[(m.meta.momentStyle as keyof typeof MOMENT_STYLES) || 'noir'] || MOMENT_STYLES.noir;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4, alignSelf: m.mine ? 'flex-end' : 'flex-start' }}>
-      <View style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colors.goldLine }} />
-      <View style={{ width: 40, height: 54, borderRadius: 8, overflow: 'hidden' }}>
-        {m.meta.momentKind === 'photo' && m.meta.momentMedia ? (
-          <Photo uri={m.meta.momentMedia} style={{ width: 40, height: 54 }} />
-        ) : (
-          <LinearGradient colors={style.colors} style={{ flex: 1 }} />
-        )}
+    <Pressable onPress={() => onOpen?.(m.id)} disabled={m.id <= 0 || !onOpen} accessibilityRole="button" accessibilityLabel="View replied Moment"
+      accessibilityHint="Opens the original Moment if it is still available to you"
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4, padding: 10, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, maxWidth: '80%' }}>
+      <Ionicons name="aperture-outline" size={20} color={colors.gold} />
+      <View style={{ flexShrink: 1 }}>
+        <Txt variant="caption" color="textMuted">{m.mine ? 'You replied to their Moment' : 'Replied to your Moment'}</Txt>
+        <Txt variant="smallStrong" color="gold">View Moment</Txt>
       </View>
-      <View style={{ maxWidth: 180 }}>
-        <Txt variant="caption" color="textMuted">
-          {m.mine ? 'You replied to their Moment' : 'Replied to your Moment'}
-        </Txt>
-        {m.meta.momentBody ? (
-          <Txt variant="caption" color="textSecondary" numberOfLines={1}>
-            {m.meta.momentBody}
-          </Txt>
-        ) : null}
-      </View>
-    </View>
+    </Pressable>
   );
 }
 

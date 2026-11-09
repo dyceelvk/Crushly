@@ -140,6 +140,8 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'post_location.sql'):
             return 1
+        if not run_file(ROOT / 'whisper_moment_links.sql'):
+            return 1
         # Add Up is a request: it waits, it can be accepted, declined or taken
         # back, a second ask is a no-op, and a decline cools off for a week.
         # Keep Close is not part of any of it.

@@ -1433,6 +1433,11 @@ export async function reactToMoment(id: number, kind: string | null): Promise<Mo
   return rpc<Moment>('react_to_moment', { p_moment_id: id, p_kind: kind });
 }
 
+/** Resolve a specific reply through the server; never trust a cached quote. */
+export async function whisperMomentTarget(messageId: number): Promise<{ momentId: number; userId: number; mine: boolean } | null> {
+  return rpc('whisper_moment_target', { p_message_id: messageId });
+}
+
 export async function replyToMoment(id: number, body: string): Promise<{ conversationId: number }> {
   return rpc('reply_to_moment', { p_moment_id: id, p_body: str(body, 'Reply', { required: true, max: 1000 }) });
 }
