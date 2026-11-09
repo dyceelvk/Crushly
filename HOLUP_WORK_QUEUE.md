@@ -190,3 +190,7 @@
   No new test suite was run at the user's request. An untested notification
   privacy experiment is in `subscription-whisper-work/12_notification_privacy_experiment.sql`;
   its SQL and UI routing are not deployed or validated.
+- Android build-only workflow dispatched as run 42605205587 on isolated branch
+  `verify/holup-android-build-only`, commit 2b754ae (app sources ad750a7).
+  This workflow does not run tests and cannot publish; result was in progress
+  at dispatch. Never promote its artifact while required DB APIs are missing.
