@@ -898,7 +898,16 @@ def walk():
         shot('{:02d}-settings'.format(n))
         n += 1
         if not scroll_to('App version', swipes=5):
-            fail('Settings: app version is missing')
+            # The row can pass between two large swipes. Come back in smaller
+            # steps before declaring it absent; still require the actual label.
+            for _ in range(5):
+                adb('shell', 'input', 'swipe', '160', '210', '160', '365', '350')
+                time.sleep(1.5)
+                if find(nodes() or [], 'App version'):
+                    break
+            else:
+                shot('settings-version-missing')
+                fail('Settings: app version is missing')
         settings_seen = shot('{:02d}-settings-version'.format(n)) or []
         n += 1
         swipe_up()
