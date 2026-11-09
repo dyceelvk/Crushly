@@ -677,3 +677,10 @@
   in the work branch matches the remote statement, excluding trailing newline.
 - Remaining unpublished migrations were renumbered
   `20261109153926`–`928` after the live Moment migration.
+- Moment reply isolated release is preserved on GitHub branch
+  `build/holup-moment-replies` commit `9997703` (Android 1.0.89). Its SQL
+  exactly matches live `20261109153925` apart from trailing newline. Its focused
+  release CI run `42647737887` was dispatched but result unknown. Do not merge
+  or push main until Android 1.0.88 run `42646506754` has finished its bot
+  release commit; then rebase/cherry-pick the Moment release on latest main,
+  wait for production web promotion, and dispatch Android 1.0.89 if safe.
