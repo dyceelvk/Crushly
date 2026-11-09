@@ -467,3 +467,19 @@
 - A local alternative JPEG-only processor was evaluated on synthetic input:
   approximately 1.0 seconds and 233 MiB RSS in Node for a 1600px noisy image.
   That does not establish hosted performance or replace the current draft.
+
+## User-requested push/build
+- Pushed local work branch `work/holup-viewer-privacy-controls` at `c99a2f8`
+  to GitHub. This is a non-production branch; it is not a production release.
+- Started no-test/no-publish Android candidate build on branch
+  `build/holup-unreleased-candidate`, commit `4180f21`, GitHub run
+  `42623845740`. The candidate has the same app source as `c99a2f8`; the extra
+  commit changes the dispatch workflow only. Last observation: in progress at
+  Compile Android app. Outcome is unknown, and the candidate is not a published,
+  signed-and-verified update for existing installs. Check the GitHub run before
+  making any claim that it succeeded or offering it for installation.
+- Production web currently serves the badge-guard migration-only commit
+  `28e8eee`. The new verification SQL, evidence processor and retention worker,
+  Didit callback, the experimental app and unrelated outstanding work have not
+  been deployed. Production legacy Didit auto-award still operates. Do not push
+  the work branch to main or release its APK as if the dependencies were live.
