@@ -423,3 +423,7 @@
   provider deletion guarantee. No provider settings were changed.
 - Local web TypeScript compilation and an export passed for the image-work
   changes; edge syntax-only transpilation passed. No deployment performed.
+- The manual Didit webhook draft now uses the same verified workflow-ID fallback
+  as session creation; a separate webhook signing secret and provider
+  destination are still required. The Supabase connector catalog returned a
+  temporary load error on this turn; no production changes were made.

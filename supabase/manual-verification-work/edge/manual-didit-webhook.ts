@@ -21,7 +21,7 @@ Deno.serve(async req=>{
  if(req.method!=='POST') return reply(405);
  const secret=Deno.env.get('DIDIT_MANUAL_WEBHOOK_SECRET')??'';
  const url=Deno.env.get('SUPABASE_URL')??'', key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
- const expectedWorkflow=Deno.env.get('DIDIT_MANUAL_VERIFICATION_WORKFLOW_ID')??'';
+ const expectedWorkflow=Deno.env.get('DIDIT_MANUAL_VERIFICATION_WORKFLOW_ID')||Deno.env.get('DIDIT_WORKFLOW_ID')||'';
  if(!secret||!url||!key||!expectedWorkflow) return reply(503);
  let raw:string|null; try { raw=await readBody(req); } catch { return reply(400); }
  if(raw===null) return reply(413);
