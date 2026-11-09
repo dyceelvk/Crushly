@@ -10,7 +10,8 @@ import { Avatar } from '../Photo';
 import { VerifiedBadge } from '../Badges';
 import { EditedClip } from '../EditedClip';
 import { CommentsSheet } from './CommentsSheet';
-import { useOpenConversation, useReactToPost } from '../../api/hooks';
+import { ShareToWhisper } from '../ShareToWhisper';
+import { useReactToPost } from '../../api/hooks';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { timeAgo } from '../../lib/format';
@@ -31,13 +32,12 @@ import type { RootStackParamList } from '../../navigation/types';
  * screen that the video should have had.
  *
  * So a clip gets the whole card: the video is the surface, the person and their
- * words sit on it, and the only things drawn over the picture are the two a
- * thumb reaches for — Crush and comment. No cover image, no frame, and the scrim
+ * words sit on it, and the small controls drawn over the picture are the ones a
+ * thumb reaches for — Crush, comment, share, and sound. No cover image, no frame, and the scrim
  * is only under the words, low enough that the middle of the picture stays
  * clean.
  *
- * Everything a card normally does that is not Crush or comment — sharing,
- * picking, opening the profile, the full post — still exists: tapping the
+ * Other actions such as picking and the full post are available in Flow: tapping the
  * picture opens the post, where the full rail lives.
  */
 export function CrushClipCard({ post, active }: { post: Post; active: boolean }) {
@@ -45,6 +45,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [muted, setMuted] = useState(true);
   const react = useReactToPost();
   const authorName = post.author.name;
@@ -54,9 +55,9 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
   return (
     <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
       <Pressable
-        onPress={() => setMuted(v => !v)}
+        onPress={open}
         accessibilityRole="button"
-        accessibilityLabel={muted ? `Unmute ${authorName}’s clip` : `Mute ${authorName}’s clip`}
+        accessibilityLabel={`Open ${authorName}’s clip in Flow`}
         style={{ width: '100%' }}
       >
         <EditedClip
@@ -64,17 +65,25 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
              play at all. */
           uri={mediaSource(mediaUrl(post.mediaUrl))}
           live={post.edit ?? null}
-          autoPlay={active && !commentsOpen}
+          autoPlay={active && !commentsOpen && !shareOpen}
           loop
           muted={muted}
           controls={false}
           fallbackRatio={0.8}
           maxHeight={560}
           accessibilityLabel={`Clip by ${authorName}`}
+          cornerControl={
+            <Pressable
+              onPress={(event) => { event.stopPropagation(); setMuted(value => !value); }}
+              accessibilityRole="button"
+              accessibilityLabel={muted ? `Unmute ${authorName}’s clip` : `Mute ${authorName}’s clip`}
+              accessibilityState={{ selected: !muted }}
+              style={({ pressed }) => ({ position: 'absolute', right: 10, bottom: 10, width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10,10,12,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', opacity: pressed ? 0.75 : 1 })}
+            >
+              <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#FFFFFF" />
+            </Pressable>
+          }
         />
-        <View pointerEvents="none" style={{ position: 'absolute', top: 12, right: 12, borderRadius: 18, padding: 7, backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
-        </View>
       </Pressable>
 
       {/* Words and controls over the bottom of the picture, and nowhere else. */}
@@ -116,10 +125,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
             </Txt>
           ) : null}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm }}>
-            <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={`Open ${authorName}’s Flow`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Ionicons name="expand-outline" size={20} color="#FFFFFF" /><Txt variant="bodyStrong" color="#FFFFFF">Flow</Txt>
-            </Pressable>
+          <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm }}>
             <Pressable
               onPress={() => react.mutate({ postId: post.id, liked: !post.liked })}
               accessibilityRole="button"
@@ -144,11 +150,21 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
                 {post.commentCount}
               </Txt>
             </Pressable>
+            <Pressable
+              onPress={() => setShareOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Share this post"
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              hitSlop={8}
+            >
+              <Ionicons name="arrow-redo-outline" size={22} color="#FFFFFF" />
+            </Pressable>
           </View>
         </View>
       </View>
 
       <CommentsSheet post={post} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      <ShareToWhisper visible={shareOpen} post={post} onClose={() => setShareOpen(false)} />
     </View>
   );
 }

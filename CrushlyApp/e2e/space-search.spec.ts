@@ -310,17 +310,54 @@ test('Connections is one bottom button, not a swipe destination in Home', async 
   await expect(page.getByRole('tab', { name: 'Connections', exact: true })).toHaveCount(1);
 });
 
-test('Crushes video tap changes sound rather than playback; Flow stays reachable', async ({ page }) => {
-  await offline(page, [], [], false, false, [], false, true); await page.goto('/');
-  const clip = page.getByRole('button', { name: 'Unmute Ada’s clip' });
+test('Crushes clip has a sound button, sharing, and picture opens Flow', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await offline(page, [], [], false, false, [], true, true); await page.goto('/');
+  const clip = page.getByRole('button', { name: 'Open Ada’s clip in Flow' });
+  const sound = page.getByRole('button', {name:'Unmute Ada’s clip'});
   await expect(clip).toBeVisible({timeout:30000});
+  await expect(sound).toBeVisible();
   await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && v.currentTime > 0.1)), {timeout:20000}).toBe(true);
-  await clip.click();
+  await sound.click();
   await expect(page.getByRole('button', {name:'Mute Ada’s clip'})).toBeVisible();
   await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && !v.muted))).toBe(true);
   await page.getByRole('button', {name:'Mute Ada’s clip'}).click();
-  await expect(page.getByRole('button', {name:'Unmute Ada’s clip'})).toBeVisible();
-  await expect(page.getByRole('button', {name:'Open Ada’s Flow'})).toBeVisible();
+  await expect(sound).toBeVisible();
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && v.muted))).toBe(true);
+  await expect(page.getByRole('button', {name:'Open Ada’s Flow'})).toHaveCount(0);
+  const like = page.getByRole('button', {name:'Crush this post'}).first();
+  const comment = page.getByRole('button', {name:'Comments'}).first();
+  const share = page.getByRole('button', {name:'Share this post'}).first();
+  const l=await like.boundingBox(), c=await comment.boundingBox(), sh=await share.boundingBox(), vol=await sound.boundingBox(), pic=await page.locator('video').first().boundingBox();
+  expect(l && c && sh && vol && pic).toBeTruthy();
+  expect(l!.x).toBeLessThan(c!.x); expect(c!.x).toBeLessThan(sh!.x);
+  expect(vol!.x + vol!.width).toBeCloseTo(pic!.x + pic!.width - 10, 0);
+  await share.click(); await expect(page.getByText('Send this post')).toBeVisible();
+  await page.getByRole('button', {name:'Copy post link'}).click();
+  await expect(page.getByText('Link copied')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/v/11');
+  await page.getByRole('button', {name:'Close', exact:true}).last().click();
+  await expect(page.getByText('Send this post')).not.toBeVisible();
+  await clip.click({position:{x:100,y:100}});
+  await expect(page.getByText('THE FLOW')).toBeVisible();
+  const flow = page.getByRole('button', {name:'Video by Ada'});
+  await expect(flow).toBeVisible();
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && getComputedStyle(v).objectFit === 'contain')), {timeout:20000}).toBe(true);
+  await flow.click({position:{x:100,y:100}});
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.filter(v => getComputedStyle(v).objectFit === 'contain').every(v => v.paused))).toBe(true);
+});
+
+test('Crushes controls remain tappable on a narrow phone', async ({ page }) => {
+  await page.setViewportSize({width:320,height:720});
+  await offline(page, [], [], false, false, [], true, true); await page.goto('/');
+  const mute=page.getByRole('button', {name:'Unmute Ada’s clip'});
+  const share=page.getByRole('button', {name:'Share this post'}).first();
+  await expect(mute).toBeVisible({timeout:30000});
+  const mb=await mute.boundingBox(), sb=await share.boundingBox();
+  expect(mb && sb).toBeTruthy();
+  expect(sb!.x + sb!.width).toBeLessThan(mb!.x);
+  await mute.click(); await expect(page.getByRole('button',{name:'Mute Ada’s clip'})).toBeVisible();
+  await share.click(); await expect(page.getByText('Send this post')).toBeVisible();
 });
 
 test('Space relationship list is a full screen with a back button and real suggestions', async ({ page }) => {
