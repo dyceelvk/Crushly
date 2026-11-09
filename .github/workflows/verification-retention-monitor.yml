@@ -5,11 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       test_alert:
-        description: 'Send one test alert to the Holup support address instead of checking health'
+        description: 'Create and close one test issue instead of checking health'
         type: boolean
         default: false
 permissions:
   contents: read
+  issues: write
 concurrency:
   group: holup-verification-retention-monitor
   cancel-in-progress: false
@@ -22,7 +23,6 @@ jobs:
       - name: Check the cleanup pipeline and send an alert on failure
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
-          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+          GH_TOKEN: ${{ github.token }}
           TEST_ALERT: ${{ inputs.test_alert || false }}
         run: python3 .github/scripts/verification-retention-monitor.py

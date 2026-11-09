@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Independent scheduled check of the verification-image cleanup pipeline.
 
-Prints only aggregate health flags, never case IDs, paths, or image data. SMTP
-uses repository secrets and sends only operational status to the support address.
-This check cannot detect a GitHub Actions-wide outage by itself.
+Does not publish case IDs, paths, image data, or detailed health status.
+Creates a generic assigned GitHub issue on failure, with deduplication. GitHub
+notification delivery is account-dependent and is not guaranteed. This check
+cannot detect a GitHub Actions-wide outage by itself.
 """
 import os
-import smtplib
-import ssl
+import json
+import urllib.request
+import urllib.error
 import subprocess
 import sys
-from email.message import EmailMessage
 
 # Times are milliseconds, matching public.now_ms(). Leave a 45-minute grace
 # after each deadline to account for the 15-minute cleanup schedule and delays.
@@ -48,53 +49,67 @@ def health():
         return ['monitor_database_unavailable']
 
 
-def email(flags, test=False):
-    user = os.environ.get('GMAIL_SMTP_USER', '')
-    password = os.environ.get('GMAIL_SMTP_PASS', '')
-    if not user or not password:
-        raise RuntimeError('SMTP credentials are not configured')
-    msg = EmailMessage()
-    msg['Subject'] = 'Holup verification image cleanup: ' + ('test alert' if test else 'attention required')
-    msg['From'] = user
-    msg['To'] = 'rielosInc@gmail.com'
-    msg.set_content(('This is a test of the Holup verification image cleanup alert. No action is required.' if test else
-                     'The independent cleanup check needs attention. Health flags: ' + ', '.join(flags) +
-                     '. No personal data or image paths are included. Check the latest verification retention monitor and cleanup runs at https://github.com/dyceelvk/Crushly/actions.'))
+def api(method, path, payload=None):
+    token = os.environ.get('GH_TOKEN', '')
+    repo = os.environ.get('GITHUB_REPOSITORY', '')
+    if not token or repo != 'dyceelvk/Crushly':
+        raise RuntimeError('Maintenance notification unavailable')
+    req = urllib.request.Request('https://api.github.com/repos/' + repo + path,
+        method=method, headers={'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json', 'User-Agent': 'Holup-maintenance-monitor',
+        'Content-Type': 'application/json'},
+        data=None if payload is None else json.dumps(payload).encode())
     try:
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=20) as smtp:
-            smtp.ehlo()
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.ehlo()
-            smtp.login(user, password)
-            refused = smtp.send_message(msg)
-            if refused:
-                raise RuntimeError('SMTP did not accept the alert')
-    except smtplib.SMTPAuthenticationError:
-        raise RuntimeError('SMTP authentication failed') from None
-    except smtplib.SMTPResponseException as e:
-        raise RuntimeError('SMTP alert rejected (response code %s)' % e.smtp_code) from None
-    except (OSError, smtplib.SMTPException, ssl.SSLError):
-        # Avoid printing provider exceptions: they can contain sensitive data.
-        raise RuntimeError('SMTP alert could not be sent') from None
+        with urllib.request.urlopen(req, timeout=20) as res:
+            return json.load(res)
+    except (OSError, ValueError):
+        raise RuntimeError('Maintenance notification unavailable') from None
+
+
+def issue(test=False):
+    title = 'Holup maintenance notification test' if test else 'Holup maintenance check requires attention'
+    # No health flags or member data go into the public issue.
+    if not test:
+        for page in range(1, 21):
+            items = api('GET', '/issues?state=open&per_page=100&page=' + str(page))
+            if not isinstance(items, list):
+                raise RuntimeError('Maintenance notification unavailable')
+            if any(i.get('title') == title and i.get('user', {}).get('login') == 'github-actions[bot]' for i in items):
+                print('A maintenance notification is already open.')
+                return
+            if len(items) < 100:
+                break
+        else:
+            raise RuntimeError('Maintenance notification search exceeded its limit')
+    created = api('POST', '/issues', {'title': title,
+        'body': ('Notification test; no action is required.' if test else
+                 'Please review the recent maintenance checks in Actions. No member information is included.'),
+        'assignees': ['dyceelvk']})
+    number = created.get('number') if isinstance(created, dict) else None
+    if not isinstance(number, int) or number < 1:
+        raise RuntimeError('Maintenance notification unavailable')
+    if test:
+        api('PATCH', '/issues/' + str(number), {'state': 'closed'})
+        print('Test issue created and closed; notification delivery is not guaranteed.')
+    else:
+        print('A maintenance issue was created and assigned to the repository owner.')
 
 
 def main():
     if os.environ.get('TEST_ALERT') == 'true':
         try:
-            email([], test=True)
+            issue(test=True)
         except RuntimeError as e:
             print(str(e), file=sys.stderr)
             return 1
-        print('Test alert accepted by SMTP; inbox delivery must be checked separately.')
         return 0
     flags = health()
     if not flags:
-        print('Verification image cleanup health check passed.')
+        print('Maintenance check passed.')
         return 0
-    print('Verification image cleanup health check failed: ' + ', '.join(flags), file=sys.stderr)
+    print('Maintenance check failed.', file=sys.stderr)
     try:
-        email(flags)
-        print('Alert accepted by SMTP; inbox delivery is not guaranteed.')
+        issue()
     except RuntimeError as e:
         print(str(e), file=sys.stderr)
     return 1
