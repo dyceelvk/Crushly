@@ -8,10 +8,6 @@ on:
         description: 'Set up or rotate the protected worker secret'
         type: boolean
         default: false
-      storage_check:
-        description: 'Run temporary synthetic Storage check'
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -50,13 +46,3 @@ jobs:
           if not isinstance(data,dict) or data.get('failed')!=0 or not isinstance(data.get('removed'),int): raise SystemExit('Unexpected cleanup result')
           print('Cleanup batch completed; objects removed:',data['removed'])
           PY
-      - name: Verify synthetic evidence deletion
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.storage_check }}
-        env:
-          HOLUP_PROJECT_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
-        run: |
-          set -euo pipefail
-          code=$(curl --silent --show-error --max-time 90 -o /dev/null -w '%{http_code}' -X POST -H "x-cleanup-secret: $CLEANUP_SECRET" "$HOLUP_PROJECT_URL/functions/v1/manual-evidence-retention-check")
-          if [ "$code" != 200 ]; then echo "Synthetic storage check failed: HTTP $code"; exit 1; fi
-          echo 'Synthetic object uploaded and deletion confirmed'
