@@ -1,36 +1,20 @@
-name: Build Android test APK
+name: Build secure Holup Android candidate
 on:
   workflow_dispatch:
-    inputs:
-      smoke_only:
-        description: 'Build and test without publishing or announcing an APK'
-        type: boolean
-        default: false
-  push:
-    branches: [arena/**]
-    paths:
-      - 'CrushlyApp/**'
-      - '.github/workflows/build-android.yml'
 permissions:
-  contents: write
-  # `gh workflow run` at the end of this job: a push made with the bot token
-  # starts no workflows, so the Worker has to be asked to deploy explicitly.
-  actions: write
-concurrency:
-  group: android-${{ github.ref }}
-  cancel-in-progress: true
+  contents: read
 jobs:
-  apk:
+  build:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
       run:
         working-directory: CrushlyApp
     env:
+      CI: '1'
+      HOLUP_SECURE_ANDROID: '1'
       EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-      CI: '1'
-      NODE_ENV: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,309 +26,67 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: android-gradle-${{ runner.os }}-${{ hashFiles('CrushlyApp/package-lock.json') }}
-      - name: Use runner Android SDK
-        run: |
-          test -d "$ANDROID_HOME"
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
-      - name: Validate public backend configuration
-        run: node scripts/check-public-build.mjs
-      - run: npm run typecheck && npm test
+      - run: node scripts/check-public-build.mjs && npm run typecheck && npm test
       - run: npx expo prebuild --platform android --no-install
-      # Gradle auto-downloads the NDK during configuration. That download
-      # occasionally arrives corrupted ("Archive is not a ZIP archive"), which
-      # fails the whole build for no reason related to the app. Install it here
-      # first, with retries, so a bad download can't waste a 40-minute build.
-      # Best effort only: if this can't find the SDK manager it reports the
-      # layout and steps aside, because Gradle installs the NDK itself. A
-      # helper step must never be the reason a build fails.
-      - name: Pre-install the Android NDK (best effort, retries on corrupt download)
+      - name: Prepare signing key
+        env:
+          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
+          HOLUP_ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.HOLUP_ANDROID_RELEASE_KEYSTORE_B64 }}
+        shell: bash
         run: |
-          set -uo pipefail
-          ndk="ndk;27.1.12297006"
-          sdk=""
-          for cand in \
-            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
-            "${ANDROID_HOME:-}/cmdline-tools/bin/sdkmanager" \
-            "${ANDROID_HOME:-}/tools/bin/sdkmanager" \
-            "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager"; do
-            if [ -x "$cand" ]; then sdk="$cand"; break; fi
-          done
-          if [ -z "$sdk" ]; then
-            sdk=$(find /usr/local/lib/android /opt/android "${ANDROID_HOME:-}" -maxdepth 4 -name sdkmanager -type f 2>/dev/null | head -1)
-          fi
-          if [ -z "$sdk" ]; then
-            echo "::warning::sdkmanager not found (ANDROID_HOME=${ANDROID_HOME:-unset}). Gradle will install the NDK itself."
-            ls -1 "${ANDROID_HOME:-/usr/local/lib/android/sdk}" 2>/dev/null | head -20 || true
-            exit 0
-          fi
-          echo "::notice::Using sdkmanager at $sdk"
-          if "$sdk" --list_installed 2>/dev/null | grep -qF "$ndk"; then
-            echo "::notice::$ndk is already installed."
-            exit 0
-          fi
-          yes 2>/dev/null | "$sdk" --licenses >/dev/null 2>&1 || true
-          for attempt in 1 2 3; do
-            if yes 2>/dev/null | "$sdk" --install "$ndk" > "$RUNNER_TEMP/ndk-install.log" 2>&1; then
-              echo "::notice::Installed $ndk on attempt $attempt."
-              exit 0
-            fi
-            echo "::warning::NDK install attempt $attempt failed (corrupt download is the usual cause) — retrying in 20s."
-            tail -n 5 "$RUNNER_TEMP/ndk-install.log" 2>/dev/null || true
-            sleep 20
-          done
-          echo "::warning::Could not pre-install $ndk after 3 attempts — continuing; Gradle will try itself."
-          tail -n 20 "$RUNNER_TEMP/ndk-install.log" 2>/dev/null || true
-          exit 0
-      - name: Compile standalone release APK
+          set -euo pipefail
+          test -n "$HOLUP_ANDROID_RELEASE_KEY_PASSWORD" && test -n "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64"
+          umask 077
+          printf %s "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/holup-release.p12"
+          echo "HOLUP_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/holup-release.p12" >> "$GITHUB_ENV"
+      - name: Build isolated candidate
+        env:
+          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
           cd android
-          # Expo's generated debug certificate signs this internal test build,
-          # NOT a Play Store release. JS is embedded; no Expo Go/Metro required.
-          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=armeabi-v7a,arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || {
-            tail -n 200 "$RUNNER_TEMP/crushly-gradle.log"
-            python3 - <<'PYLOG'
-          import os
-          lines = open(os.environ['RUNNER_TEMP'] + '/crushly-gradle.log').read().splitlines()
-          text = '\n'.join(lines[-25:]).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print('::error::' + text)
-          PYLOG
-            exit 1
-          }
-      - name: Verify install compatibility
+          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      - name: Verify signing identity and package
+        shell: bash
         run: |
           set -euo pipefail
           apk=android/app/build/outputs/apk/release/app-release.apk
-          python3 - "$apk" <<'PYAPK'
-          import sys, zipfile
-          with zipfile.ZipFile(sys.argv[1]) as z:
-              libraries = {abi: {p.split('/')[-1] for p in z.namelist() if p.startswith('lib/' + abi + '/') and p.endswith('.so')} for abi in ('armeabi-v7a', 'arm64-v8a')}
-          for abi, files in libraries.items():
-              required = {'libreactnative.so', 'libjingle_peerconnection_so.so'}
-              missing = required - files
-              if not files.intersection({'libhermesvm.so', 'libhermes.so'}):
-                  missing.add('Hermes engine (libhermesvm.so / libhermes.so)')
-              if missing:
-                  raise SystemExit(f'{abi}: missing native libraries {sorted(missing)}')
-              print(f'::notice::APK verified: {abi} contains React Native, Hermes and WebRTC ({len(files)} native libraries).')
-          if libraries['armeabi-v7a'] != libraries['arm64-v8a']:
-              raise SystemExit('Native library sets differ between 32-bit and 64-bit ARM.')
-          PYAPK
           tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          "$tools/apksigner" verify "$apk"
-          "$tools/aapt" dump badging "$apk" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:)" | tee "$RUNNER_TEMP/crushly-apk-compatibility.txt"
-          min_sdk=$("$tools/aapt" dump badging "$apk" | sed -n "s/^sdkVersion:'\([0-9]*\)'/\1/p")
-          [ -n "$min_sdk" ] && [ "$min_sdk" -eq 28 ] || { echo "::error::APK minimum must be Android 9 (API 28)."; exit 1; }
-          summary=$(tr '\n' ' ' < "$RUNNER_TEMP/crushly-apk-compatibility.txt")
-          echo "::notice::Signed universal ARM test APK: $summary"
-      - name: Package test APK
-        run: |
-          mkdir -p apk
-          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          cp android/app/build/outputs/apk/release/app-release.apk "apk/Crushly-${version}-Android9plus.apk"
-          cp "$RUNNER_TEMP/crushly-apk-compatibility.txt" apk/COMPATIBILITY.txt
-          sha256sum "apk/Crushly-${version}-Android9plus.apk" > apk/SHA256SUMS.txt
-          echo "Standalone Android 9+ test APK for 32-bit and 64-bit ARM phones (debug signing certificate; not a store release). Keep both members in the same chat to test voice calls." > apk/README.txt
-      - name: Build Android 9 emulator release
-        run: |
-          cd android
-          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/crushly-gradle.log" 2>&1 || { tail -n 40 "$RUNNER_TEMP/crushly-gradle.log"; exit 1; }
-      # Keep the exact emulator build even if the walk fails, so a corrected
-      # test can be run against the same binary rather than rebuilding it.
-      - name: Keep emulator APK for test-only retries
-        uses: actions/upload-artifact@v4
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature.txt"
+          grep -qi 'certificate SHA-256 digest: 7ff4777b984e44d6e31e485a958086e07ed7cd621ef6a822489d0d9cbf271ac5' "$RUNNER_TEMP/signature.txt"
+          "$tools/aapt" dump badging "$apk" | grep -q "package: name='app.holup.mobile'"
+          sha256sum "$apk"
+      - uses: actions/upload-artifact@v4
         with:
-          name: Android-emulator-test-APK
+          name: Holup-secure-emulator-only
           path: CrushlyApp/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 2
-      - name: Enable emulator hardware acceleration
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/holup-release.p12"
+      - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 9 cold start, sign in and walk
-        # This is the round the app gets walked on a real Android system image.
-        # A green build used to mean only that the APK launched: the walk now
-        # signs in and photographs every surface, so a caption under the tab bar
-        # or a link landing on the wrong segment fails here instead of on a
-        # phone in someone's hand.
+      - name: Cold start on Android 9 (no sign-in or user data)
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          CRUSHLY_WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
-          CRUSHLY_WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
-          CRUSHLY_WALK_OUT: ../walk
         with:
           api-level: 28
           target: default
           arch: x86_64
           working-directory: CrushlyApp
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: python3 ../.github/scripts/android-launch-smoke.py android/app/build/outputs/apk/release/app-release.apk
-      - name: Audit known server secrets in packaged APK
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
-          DIDIT_WEBHOOK_SECRET: ${{ secrets.DIDIT_WEBHOOK_SECRET }}
-          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          python3 ../.github/scripts/audit-apk-secrets.py "apk/Crushly-${version}-Android9plus.apk" apk/SECURITY-CHECK.txt
-      - name: Publish the asset
-        if: ${{ (github.ref_name == 'main' || startsWith(github.ref_name, 'arena/')) && inputs.smoke_only != true }}
-        id: publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          tag="android-test-${version}"
-          file="Crushly-${version}-Android9plus.apk"
-          echo "::notice::Publishing ${file} to ${tag}."
-          test -f "apk/${file}" || { echo "::error::apk/${file} is missing."; exit 1; }
-          # What produced these bytes, so a later rebuild can be recognised as a
-          # rebuild of the same app rather than mistaken for a forgotten bump.
-          app_sources=$(git -C "$(git rev-parse --show-toplevel)" ls-tree -r HEAD -- "$(git rev-parse --show-prefix)" | sha256sum | cut -d' ' -f1)
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            notes="Early-access testing build, not a production launch. Direct APK: no ZIP or Expo Go required. Android 9+; 32-bit and 64-bit ARM."
-            notes="${notes}"$'\n\n'"App sources: ${app_sources}"
-            gh release create "$tag" --prerelease \
-              --title "Crushly ${version} — Android 9+ testing" \
-              --notes "$notes"
-          fi
-          # Release tags are immutable in the app: never silently point an
-          # existing version at different bytes. If an APK already exists, its
-          # GitHub-computed digest must match this build exactly; otherwise the
-          # version must be bumped before publishing.
-          expected_digest="sha256:$(sha256sum "apk/${file}" | cut -d' ' -f1)"
-          existing_digest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
-            | jq -r --arg name "$file" '.assets[] | select(.name == $name) | .digest // empty' \
-            | head -n 1)
-          if [ -n "$existing_digest" ]; then
-            # Two different things land here and they must not be confused:
-            # (a) the same sources rebuilt — APK builds are not byte-reproducible,
-            #     so ${version} was re-run for a change that never entered the app
-            #     (a workflow file, a check script). The tested artefact for this
-            #     version is already out; swapping bytes under it is forbidden, so
-            #     the rebuild is not republished and this stays green.
-            # (b) genuinely new app sources under a version that already shipped
-            #     — that is a forgotten bump, and it has to be loud.
-            if ! ../.github/scripts/app-sources-match-release.sh "$tag"; then
-              echo "::error::${tag} already contains ${file} with ${existing_digest}; this build is ${expected_digest}, and the app sources have changed since that release. Bump app.json version and versionCode instead of shipping a mismatched APK."
-              exit 1
-            fi
-            echo "::warning::${tag} already ships ${file} built from these same app sources; builds are not byte-reproducible, so this rebuild is not republished. Bump app.json version to ship a new APK."
-            echo "published=false" >> "$GITHUB_OUTPUT"
-          else
-            gh release upload "$tag" "apk/${file}" apk/SHA256SUMS.txt apk/SECURITY-CHECK.txt apk/COMPATIBILITY.txt
-            echo "published=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Mirror and verify the published APK
-        if: steps.publish.outputs.published == 'true'
-        env:
-          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
-          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
-          B2_BUCKET: ${{ secrets.B2_BUCKET }}
-        run: |
-          set -euo pipefail
-          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          python3 ../.github/scripts/mirror-android-apk.py "apk/Crushly-${version}-Android9plus.apk"
-
-      - name: Tell the media Worker which build is current
-        id: announce
-        # Only ever point phones at bytes that are actually the published asset;
-        # when this run republished nothing, release.json must keep the digest of
-        # the build that is out there.
-        if: steps.publish.outputs.published == 'true'
-        run: |
-          set -euo pipefail
-          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          tag="android-test-${version}"
-          file="Crushly-${version}-Android9plus.apk"
-          # Measured from the file that was just published, so the download
-          # page can tell people exactly what they should be checking.
-          bytes=$(wc -c < "apk/${file}")
-          sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
-          out=$(python3 ../.github/scripts/update-worker-release.py \
-            --bytes "$bytes" --sha256 "$sha")
-          printf '%s\n' "$out"
-          if printf '%s' "$out" | grep -q 'changed=true'; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit the release facts
-        if: steps.announce.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ../cloudflare/media-worker/src/release.json
-          git commit -m "Offer Android $(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])") to phones that ask"
-          # Pushing this file is what redeploys the Worker, so the build that
-          # was just published is the one /version points at. The push cannot
-          # retrigger this workflow: it only watches CrushlyApp/**.
-          git push
-
-      - name: Deploy the media Worker, because a bot's push starts nothing
-        if: steps.announce.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          version=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-          code=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['android']['versionCode'])")
-          file="Crushly-${version}-Android9plus.apk"
-          bytes=$(wc -c < "apk/${file}" | tr -d ' ')
-          sha=$(sha256sum "apk/${file}" | cut -d' ' -f1)
-          # Every push made with the bot token is invisible to `on: push`, so
-          # committing release.json announced nothing and /version kept serving
-          # the previous build until somebody deployed by hand. Ask, then check
-          # the answer — version, code, bytes and SHA must all describe the APK
-          # this job built before the release is called complete.
-          gh workflow run deploy-worker.yml --ref "${GITHUB_REF_NAME}"
-          for _ in $(seq 1 30); do
-            sleep 10
-            got=$(curl -fsS https://crushly-media.dyceelvk.workers.dev/version || true)
-            if printf '%s' "$got" | python3 -c 'import json,sys; d=json.load(sys.stdin); v,c,b,h=sys.argv[1:]; sys.exit(0 if d.get("version")==v and str(d.get("versionCode"))==c and str(d.get("bytes"))==b and d.get("sha256")==h else 1)' "$version" "$code" "$bytes" "$sha"; then
-              echo "The Worker now offers $version (versionCode $code, ${bytes} bytes, SHA-256 ${sha})."
-              exit 0
-            fi
-          done
-          echo "::error::/version did not match $version / code $code / ${bytes} bytes / SHA-256 ${sha}. The APK is not confirmed as the offered build."
-          exit 1
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Crushly-Android-test-APK
-          path: CrushlyApp/apk/
-          retention-days: 14
-      - name: Keep the walk
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-walk
-          path: walk/
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-build-log
-          path: ${{ runner.temp }}/crushly-gradle.log
-          retention-days: 3
+          script: |
+            set -euo pipefail
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            adb logcat -c
+            adb shell am start -W -n app.holup.mobile/.MainActivity
+            sleep 35
+            adb shell pidof app.holup.mobile
+            adb shell uiautomator dump /sdcard/holup-ui.xml
+            adb shell cat /sdcard/holup-ui.xml | grep -q 'package="app.holup.mobile"'
+            adb logcat -d -t 2000 > "$RUNNER_TEMP/holup-launch-log.txt"
+            if grep -q 'FATAL EXCEPTION' "$RUNNER_TEMP/holup-launch-log.txt"; then echo 'Android fatal exception found'; exit 1; fi
+            echo 'Secure candidate launched on Android 9; signed-in features were not tested.'
