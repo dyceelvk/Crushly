@@ -157,3 +157,11 @@ completed with HTTP 200 in ~0.98 seconds. This does not validate the evidence
 endpoint, malformed files, EXIF/orientation, sustained load or crash recovery.
 The upload draft now fetches a size- and digest-pinned WASM asset, failing closed
 if unavailable; no personal image is sent to the CDN. It is not deployed.
+
+The reconciled review/capture/evidence functions were installed in production by
+migration `20261109140000_manual_verification_backend_inactive`; all member/admin
+RPC grants were intentionally withheld. It does not turn on verification,
+withdraw legacy auto-awards, or make uploads available. Record this exact
+migration on main once the running Android release has finished; until then do
+not run main's database push. Further activation needs the live upload route,
+Didit cutover, consent/retention details, authorization and compatibility review.

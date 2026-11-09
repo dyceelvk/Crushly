@@ -542,3 +542,14 @@
   the build, emulator walk, and secret checks pass. Do not push additional main
   commits while that workflow may publish and push its release record. Check
   the job and actual `/version` before claiming an Android update was pumped.
+- Production database migration `20261109140000_manual_verification_backend_inactive`
+  succeeded via GitHub DB run `42629129432` from isolated branch commit
+  `a8881fa`. It installs the reconciled review/capture/evidence functions but
+  explicitly withholds all authenticated grants. Catalog checks confirm users
+  cannot apply, award badges or list images through these functions. The real
+  manual verification flow is not live; legacy Didit is untouched.
+- Important: main still lacks the `20261109140000` migration file as of this
+  entry. Do not run main's migration workflow or declare history synchronized.
+  Wait for Android release run `42628810477` to finish before adding the exact
+  recorded migration to the latest main, so its release-record bot push is not
+  disrupted. Work-branch pending migrations renumbered `20261109140001`–`005`.
