@@ -1,0 +1,54 @@
+name: Deploy verification cleanup scheduler
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare/evidence-scheduler/**'
+      - '.github/workflows/deploy-evidence-scheduler.yml'
+permissions:
+  contents: read
+concurrency:
+  group: holup-evidence-scheduler-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require configured credentials
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
+        run: |
+          set -eu
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ] || [ ${#CLEANUP_SECRET} -lt 32 ]; then
+            echo 'Required scheduler credentials are not configured'; exit 1
+          fi
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare/evidence-scheduler
+          command: deploy
+          secrets: |
+            CLEANUP_SECRET
+        env:
+          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
+      - name: Check the deployed protected scheduler
+        env:
+          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
+        run: |
+          set -euo pipefail
+          response=$(mktemp); trap 'rm -f "$response"' EXIT
+          code=$(curl --silent --show-error --max-time 110 -o "$response" -w '%{http_code}' -X POST -H "x-cleanup-secret: $CLEANUP_SECRET" https://holup-evidence-scheduler.dyceelvk.workers.dev/run)
+          if [ "$code" != 200 ]; then echo "Protected scheduler returned HTTP $code"; exit 1; fi
+          python3 - "$response" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as f: data=json.load(f)
+          if not isinstance(data,dict) or data.get('failed') != 0 or not isinstance(data.get('removed'),int):
+              raise SystemExit('Unexpected scheduler result')
+          print('Protected scheduler invocation completed.')
+          PY

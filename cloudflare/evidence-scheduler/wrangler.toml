@@ -1,0 +1,6 @@
+name = "holup-evidence-scheduler"
+main = "src/index.js"
+compatibility_date = "2026-10-09"
+
+[triggers]
+crons = ["*/15 * * * *"]

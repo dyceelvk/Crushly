@@ -1,0 +1,28 @@
+name: Monitor verification image cleanup
+on:
+  schedule:
+    - cron: '55 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: 'Create and close one test issue instead of checking health'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: holup-verification-retention-monitor
+  cancel-in-progress: false
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the cleanup pipeline and send an alert on failure
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GH_TOKEN: ${{ github.token }}
+          TEST_ALERT: ${{ inputs.test_alert || false }}
+        run: python3 .github/scripts/verification-retention-monitor.py
