@@ -684,3 +684,5 @@
   or push main until Android 1.0.88 run `42646506754` has finished its bot
   release commit; then rebase/cherry-pick the Moment release on latest main,
   wait for production web promotion, and dispatch Android 1.0.89 if safe.
+- Moment isolated release CI `42647737887` passed. Android 1.0.88 is still
+  building in run `42646506754`; its release must finish before main advances.
