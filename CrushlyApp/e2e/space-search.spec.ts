@@ -352,7 +352,11 @@ test('Moment hold preserves video, swipe up opens activity and down closes', asy
   await page.mouse.move(250, 500); await page.mouse.down(); await page.mouse.move(250, 300, {steps:8}); await page.mouse.up();
   await expect(page.getByText('Moment activity')).toBeVisible();
   await expect(page.getByRole('dialog').getByText('♥ Ada')).toBeVisible();
-  await page.getByRole('button', {name:'Close', exact:true}).last().click();
+  await page.waitForTimeout(500);
+  const grabber = page.getByLabel('Swipe down to close');
+  const box = await grabber.boundingBox(); if (!box) throw new Error('Moment activity grabber missing');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 90, {steps:8}); await page.mouse.up();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.waitForTimeout(500);
   await page.mouse.move(250, 300); await page.mouse.down(); await page.mouse.move(250, 500, {steps:8}); await page.mouse.up();

@@ -16,19 +16,23 @@ type Props = {
   footer?: React.ReactNode;
   /** Max height as a fraction of the window. */
   maxHeight?: number;
+  /** Allow the sheet header to be dragged down to dismiss it. */
+  swipeToClose?: boolean;
 };
 
 /**
  * Glassy bottom sheet with a dimmed backdrop. Keyboard-aware, scrollable,
  * closes on backdrop tap / Android back, and centers as a card on tablets.
  */
-export function BottomSheet({ visible, onClose, title, subtitle, children, footer, maxHeight = 0.88 }: Props) {
+export function BottomSheet({ visible, onClose, title, subtitle, children, footer, maxHeight = 0.88, swipeToClose = false }: Props) {
   const { colors, reduceMotion } = useTheme();
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
   const y = useRef(new Animated.Value(1)).current;
   const native = Platform.OS !== 'web';
+  const swipeStart = useRef(0);
+  const swipeDistance = useRef(0);
 
   useEffect(() => {
     if (visible) {
@@ -70,7 +74,14 @@ export function BottomSheet({ visible, onClose, title, subtitle, children, foote
                 ways out were a swipe nobody advertises and the Android back key.
                 So there is a close, in the corner it belongs in. */}
             <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 10, minHeight: 34, paddingHorizontal: space.md }}>
-              <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
+              <View
+                onStartShouldSetResponder={() => swipeToClose}
+                onMoveShouldSetResponder={() => swipeToClose}
+                onResponderTerminationRequest={() => false}
+                onResponderGrant={(event) => { swipeStart.current = event.nativeEvent.pageY; swipeDistance.current = 0; }}
+                onResponderMove={(event) => { swipeDistance.current = event.nativeEvent.pageY - swipeStart.current; }}
+                onResponderRelease={() => { if (swipeToClose && swipeDistance.current > 55) onClose(); swipeDistance.current = 0; }}
+                accessibilityLabel={swipeToClose ? "Swipe down to close" : undefined} style={{ width: 100, height: 34, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} /></View>
               <Pressable
                 onPress={onClose}
                 accessibilityRole="button"
