@@ -259,6 +259,9 @@ export function EditedClip({
     return () => sub.remove();
   }, []);
   const allowed = autoPlay && onScreen && foreground;
+  // Delayed taps/holds must not restart a clip after its page has moved away.
+  const allowedRef = useRef(allowed);
+  allowedRef.current = allowed;
 
   useEffect(() => {
     if (!player) return;
@@ -285,7 +288,7 @@ export function EditedClip({
    * would keep saying "playing" while the picture sat still.
    */
   const toggle = () => {
-    if (!player) return;
+    if (!player || !allowedRef.current) return;
     if (player.playing) {
       player.pause();
       musicPlayer?.pause();
@@ -328,7 +331,7 @@ export function EditedClip({
     if (held.current === null) return;
     const wasPlaying = held.current;
     held.current = null;
-    if (wasPlaying) {
+    if (wasPlaying && allowedRef.current) {
       takeFocus(player!);
       player?.play();
       musicPlayer?.play();

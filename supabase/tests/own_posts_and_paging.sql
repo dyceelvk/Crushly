@@ -45,9 +45,9 @@ begin
   assert (select exists (select 1 from public.post_reactions r
                           where r.post_id = mine and r.user_id = viewer_id)),
     'you should be able to Crush your own post';
-  assert (select (public.post_engagement(mine, viewer_id)->>'likeCount')::int) = 1,
+  assert (select (public.load_post(mine)->>'likeCount')::int) = 1,
     'your own Crush counts on your own post';
-  assert (select (public.post_engagement(mine, viewer_id)->>'liked')::boolean),
+  assert (select (public.load_post(mine)->>'liked')::boolean),
     'the post you Crushed must come back liked';
 
   /* And it is quiet: a notification addressed to yourself is noise, not news. */
@@ -58,7 +58,7 @@ begin
 
   /* Taking it back works like any other post. */
   perform public.react_to_post(mine, false);
-  assert (select (public.post_engagement(mine, viewer_id)->>'likeCount')::int) = 0,
+  assert (select (public.load_post(mine)->>'likeCount')::int) = 0,
     'a Crush on your own post must be reversible';
 
   -- ------------------------------------- 2. your own post in the Crushes feed

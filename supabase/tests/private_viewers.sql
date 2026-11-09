@@ -38,7 +38,8 @@ begin
   r:=moment_viewers(mid); assert (r->>'count')::int=1 and (r->'items'->0->'profile'->>'id')::bigint=vid, 'owner moment viewer list incorrect';
   perform edit_post(pid,null,'private',null);
   perform set_config('request.jwt.claim.sub',ou::text,true);
-  assert post_engagement(pid,aid)->'viewCount'='null'::jsonb, 'forged viewer parameter leaked private count';
+  denied:=false; begin perform post_engagement(pid,aid); exception when insufficient_privilege then denied:=true; end;
+  assert denied, 'internal engagement RPC accepts forged viewer';
   denied:=false; begin perform post_viewers(pid); exception when others then denied:=true; end;
   assert denied, 'private post list leaked to stranger';
   denied:=false; begin perform moment_viewers(mid); exception when others then denied:=true; end;

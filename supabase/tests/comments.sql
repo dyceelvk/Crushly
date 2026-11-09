@@ -125,7 +125,7 @@ begin
   perform public.delete_post_comment(comment_id);
   j := public.post_comments_feed(thread_post, 200);
   assert jsonb_array_length(j -> 'items') = 0, 'the thread is empty again';
-  assert (public.post_engagement(thread_post, daniel_id) ->> 'commentCount')::int = 0,
+  assert (public.load_post(thread_post) ->> 'commentCount')::int = 0,
     'the count on the post follows the thread';
 
   /* -------------------------------------------- people you cut off are unseen */

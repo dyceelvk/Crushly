@@ -7,7 +7,7 @@ const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated',
 const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
-async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false) {
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = []) {
   let banner: string | null = null;
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
@@ -38,8 +38,9 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/holup_admin_state') body = { features: { calls: false, public_post_sharing: true }, announcement: { title: '', body: '', active: false } };
     else if (path === '/rest/v1/rpc/holup_admin_set_feature') body = true;
     else if (path === '/rest/v1/rpc/public_post_preview') body = { id: 11, body: onePost.body, author: person.name };
+    else if (path === '/rest/v1/rpc/record_post_view') { viewCalls.push(Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id)); body = { recorded: true }; }
     else if (path === '/rest/v1/rpc/post_viewers') body = { items: [{ profile: person, viewedAt: Date.now() }] };
-    else if (path === '/rest/v1/rpc/load_post') { const id = Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id); body = { ...onePost, id, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: id === 12, likeCount: 0, liked: false, commentCount: 1, saved: false, viewCount: 2 }; }
+    else if (path === '/rest/v1/rpc/load_post') { const id = Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id); body = { ...onePost, id, body: ranked ? `Pager item ${id}` : onePost.body, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: id === 12, likeCount: 0, liked: false, commentCount: 1, saved: false, viewCount: 2 }; }
     else if (path === '/rest/v1/rpc/edit_post') { const args = route.request().postDataJSON() as Record<string, unknown>; commentCalls.push(args); body = { ...onePost, id: 12, audience: args.p_audience, body: args.p_body, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: true, likeCount: 0, liked: false, commentCount: 1, viewCount: 2 }; }
     else if (path === '/rest/v1/rpc/post_comment_settings') body = true;
     else if (path === '/rest/v1/rpc/post_likers') body = { items: [] };
@@ -48,7 +49,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
-    else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: [], hasMore: false };
+    else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: null, mediaKind: null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
     else if (path === '/rest/v1/rpc/heartbeat') body = true;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'access-control-allow-origin': '*', 'access-control-expose-headers': '*' } });
@@ -179,4 +180,29 @@ test('external sharing copies a real public post URL', async ({ page, context })
   await page.getByRole('button', { name: 'Copy post link' }).click();
   await expect(page.getByText('Link copied')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/v/11');
+});
+
+
+test('Flow full-screen pager moves forwards and backwards', async ({ page }) => {
+  const views: number[] = []; await offline(page, [], [], false, true, views); await page.goto('/?post=11');
+  await expect(page.getByText('Pager item 11').last()).toBeVisible({ timeout: 30000 });
+  await expect.poll(() => views.includes(11), { timeout: 10000 }).toBe(true);
+  expect(views).not.toContain(13);
+  await page.mouse.move(190, 420); await page.mouse.wheel(0, 850);
+  await expect.poll(async () => page.getByText('Pager item 12').last().evaluate(el => { const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), { timeout: 10000 }).toBe(true);
+  await page.mouse.wheel(0, 850);
+  await expect.poll(async () => page.getByText('Pager item 13').last().evaluate(el => { const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), { timeout: 10000 }).toBe(true);
+  await expect.poll(() => views.includes(13), { timeout: 10000 }).toBe(true);
+  expect(views).not.toContain(12); // owner's own post is never counted
+  await page.mouse.wheel(0, -850);
+  await expect.poll(async () => page.getByText('Pager item 12').last().evaluate(el => { const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), { timeout: 10000 }).toBe(true);
+});
+
+
+test('ordinary members do not see an admin entry', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByText('Account & security')).toBeVisible();
+  await expect(page.getByText('Holup admin', { exact: true })).toHaveCount(0);
 });

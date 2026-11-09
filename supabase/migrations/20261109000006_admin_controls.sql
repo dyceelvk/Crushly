@@ -63,7 +63,7 @@ language plpgsql security definer set search_path=public as $$
 declare old_value boolean;
 begin
   if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
-  if p_key not in ('calls','public_post_sharing') or p_enabled is null then perform public.crushly_fail(400,'bad_feature','Unknown feature.'); end if;
+  if p_key is null or p_key not in ('calls','public_post_sharing') or p_enabled is null then perform public.crushly_fail(400,'bad_feature','Unknown feature.'); end if;
   select enabled into old_value from holup_features where key=p_key for update;
   update holup_features set enabled=p_enabled,updated_at=public.now_ms() where key=p_key;
   insert into holup_admin_events(actor,kind,details) values(auth.uid(),'feature',jsonb_build_object('key',p_key,'before',old_value,'after',p_enabled));
@@ -171,6 +171,4 @@ returns jsonb language sql stable security definer set search_path=public as $$
 $$;
 revoke all on function public.public_post_preview(bigint) from public, anon, authenticated;
 grant execute on function public.public_post_preview(bigint) to anon, authenticated, service_role;
-notify pgrst, 'reload schema';
-
 notify pgrst, 'reload schema';

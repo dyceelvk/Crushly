@@ -40,7 +40,9 @@ language sql stable security definer set search_path = public as $$
     )
   );
 $$;
-
+-- Internal helper takes a viewer ID: never expose it as a client RPC.
+revoke all on function public.post_engagement(bigint,bigint) from public, anon, authenticated;
+grant execute on function public.post_engagement(bigint,bigint) to service_role;
 
 -- Viewers may read their own Moment view marker, but cannot forge views by
 -- directly inserting rows for Moments they cannot see. view_moment validates.

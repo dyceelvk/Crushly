@@ -136,7 +136,7 @@ function MainTabs() {
   return (
     <View style={{ flex: 1 }}>
       <LiveNotifications />
-      <Announcement />
+      <Announcement>
       <Tabs.Navigator
         tabBar={(props) => <TabBar {...props} onCreate={() => navigation.navigate('CreatePost')} />}
         screenOptions={{ headerShown: false, lazy: true }}
@@ -146,7 +146,7 @@ function MainTabs() {
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>
-
+      </Announcement>
     </View>
   );
 }
