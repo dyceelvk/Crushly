@@ -1,10 +1,10 @@
 {
-  "version": "1.0.86",
-  "versionCode": 86,
+  "version": "1.0.87",
+  "versionCode": 87,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.86-Android9plus.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.86/Crushly-1.0.86-Android9plus.apk",
-  "notes": "Add a separate Space banner, explore more search categories with filters, and enjoy a Holup-styled text comment sheet.",
-  "bytes": 95017212,
-  "sha256": "d1e82251a92bf2e8ab231a80a5225f9e52781427e6e3821393b7a374a35437e0"
+  "file": "Crushly-1.0.87-Android9plus.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.87/Crushly-1.0.87-Android9plus.apk",
+  "notes": "Spaces without banners now have a plain background. Bios and links are easier to use, and you can share a Space from its menu.",
+  "bytes": 95047292,
+  "sha256": "30862f3b2700ae8158275189e2666378d181fe0b42a4cfc84899471e833c5282"
 }
