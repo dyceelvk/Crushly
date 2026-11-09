@@ -330,6 +330,14 @@ def return_to_tabs(tries=4):
     """
     for _ in range(tries):
         seen = nodes() or []
+        # Discover preferences is a modal; Android's accessibility tree can
+        # still expose Home and Space behind it. Those labels do not mean the
+        # modal is gone. Use the visible close control and inspect again.
+        if find(seen, 'Close preferences'):
+            if not tap('Close preferences', tries=2):
+                fail('Discover preferences could not be closed')
+            time.sleep(0.8)
+            continue
         if find(seen, 'Home') and find(seen, 'Space'):
             return True
         leave_screen()
