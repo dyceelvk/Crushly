@@ -108,6 +108,7 @@ export function EditedClip({
   muted = false,
   onDoubleTap,
   accessibilityLabel,
+  cornerControl,
 }: {
   /**
    * The clip. A plain URL for a local file, or `{ uri, headers }` for anything
@@ -165,6 +166,8 @@ export function EditedClip({
   /** Double tap, for players that keep the "double tap to react" gesture. */
   onDoubleTap?: () => void;
   accessibilityLabel?: string;
+  /** Optional control rendered inside the frame where the corner player control sits. */
+  cornerControl?: React.ReactNode;
 }) {
   const look = live?.look ?? NEUTRAL_LOOK;
   const { reduceMotion } = useTheme();
@@ -423,8 +426,8 @@ export function EditedClip({
         box,
         style,
       ]}
-      accessible={!controls}
-      accessibilityLabel={!controls ? accessibilityLabel : undefined}
+      accessible={!controls && !cornerControl}
+      accessibilityLabel={!controls && !cornerControl ? accessibilityLabel : undefined}
     >
       <VideoEditCanvas
         backdrop={bands && Platform.OS === 'web' ? <BackdropClip source={uri} active={allowed && playing} /> : null}
@@ -438,6 +441,7 @@ export function EditedClip({
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
 
+      {cornerControl}
       {controls ? (
         <PlayPauseFlash
           playing={playing}
