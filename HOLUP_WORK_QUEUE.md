@@ -652,3 +652,16 @@
   `20261109140001`–`005` to `20261109152301`–`305`, because production history
   now ends at `20261109152300`; their combined order still requires review
   before release. No relationship/Whisper migrations were applied here.
+- User confirms the 30-day retention check is working and requests the other
+  reported fixes. This is not confirmation that manual verification itself is
+  enabled or that provider/backups are covered; those remain separate gaps.
+- Post place tagging deployed to production DB as
+  `20261109153400_post_location`, with typed place names (not coordinates),
+  post-audience checks and atomic create. Web main `338e56a`, Vercel
+  `dpl_DBucAUMQhjVQ8ZLL5WBtGuVhkTXB` is READY/PROMOTED; live JS contains the
+  composer control and location RPC. CI `42646086924` and web workflow
+  `42646087001` passed. Android 1.0.88 release run `42646506754` was dispatched;
+  its final result is not yet known. Do not claim Android is updated until the
+  run succeeds and the Worker announces 1.0.88.
+- Remaining unreleased migrations were renumbered `20261109153401`–`004`
+  after deployed location; they still need coordinated review before release.
