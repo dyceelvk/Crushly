@@ -29,7 +29,10 @@ import { downloadUpdate, installUpdate, readableSize, resolveUpdateDownload } fr
 export function UpdateGate() {
   // The check, the download and the installer are all Android-only; the web
   // build gets its download button in Settings instead.
-  if (Platform.OS !== 'android') return null;
+  // The old endpoint serves the public-debug package; it is not an update
+  // for the separately signed release identity. Fail closed until a signed
+  // release channel for app.holup.mobile exists.
+  if (Platform.OS !== 'android' || Constants.expoConfig?.android?.package === 'app.holup.mobile') return null;
   return <AndroidUpdateGate />;
 }
 
