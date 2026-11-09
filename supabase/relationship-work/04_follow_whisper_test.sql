@@ -11,6 +11,7 @@ begin
   perform public.uncrush_member(3); r:=public.crush_member(3,false,null);
   assert not (r->>'mutual')::boolean and (r->>'isNew')::boolean and r->>'request'='following';
   r:=public.crush_member(3,false,null); assert not (r->>'isNew')::boolean;
+  assert (r->'profile'->'crush'->>'sent')::boolean and not (r->'profile'->'crush'->>'mutual')::boolean, 'follow profile state is incorrect';
   denied:=false; begin perform public.open_conversation(3); exception when others then denied:=true; end;
   assert denied, 'non-approved follow started a Whisper';
   reset role;

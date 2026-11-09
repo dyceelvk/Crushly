@@ -55,7 +55,7 @@ export type Profile = {
    * earned; 'diamond' belongs to the company's own account and to nothing else.
    */
   badgeTier?: BadgeTier;
-  /** Keep Close — Holup's follow. True when they keep *you* close. */
+  /** True when this member and viewer have an approved Keep Close. */
   keepsYou?: boolean;
   distance: string | null;
   online: boolean | null;
@@ -173,6 +173,8 @@ export type KeepState = {
   keepsCount: number;
   keptByCount: number;
   self: boolean;
+  incoming: boolean;
+  outgoing: boolean;
 };
 
 export type CloseOne = {
@@ -467,7 +469,7 @@ export type Preferences = {
   verifiedOnly: boolean;
 };
 
-export type NotificationSettings = { messages: boolean; crushes: boolean; moments: boolean; recommendations: boolean };
+export type NotificationSettings = { messages: boolean; crushes: boolean; keeps: boolean; moments: boolean; recommendations: boolean };
 
 export type VerificationStatus = 'none' | 'pending' | 'verified' | 'rejected';
 
@@ -504,13 +506,13 @@ export type Me = {
 export type DiscoverPage = { items: Profile[]; nextOffset: number | null; total: number; viewerHasLocation: boolean };
 
 export type CrushesResponse = {
-  /** Requests waiting for an answer from me. */
+  /** Keep Close requests waiting for my answer. */
   incoming: Profile[];
-  /** Requests of mine waiting for an answer. */
+  /** Keep Close requests I sent. */
   outgoing: Profile[];
-  /** Connections. */
+  /** Approved Keep Close connections. */
   mutual: Profile[];
-  /** How many requests are waiting for me, for the badge. */
+  /** How many Keep Close requests are waiting for me. */
   requestCount: number;
 };
 
@@ -649,7 +651,7 @@ export type CrushResult = {
   mutual: boolean;
   isNew: boolean;
   /** What the pair is now: a request waiting, an answer, or an existing connection. */
-  request: 'pending' | 'accepted' | 'connected';
+  request: 'following' | 'pending' | 'accepted' | 'connected';
   profile: Profile | null;
 };
 

@@ -53,13 +53,13 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
   const name = n.actor?.name ?? 'Someone';
   switch (n.kind) {
     case 'crush':
-      return { title: `${name} added you up.`, detail: 'Accept or decline it in Crushes.' };
+      return { title: `${name} added you up.` };
     case 'deep_crush':
       return { title: `${name} added you up and sent a note.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'mutual':
-      return { title: `${name} accepted your Add Up request.` };
+      return { title: `${name} had a connection update.` };
     case 'keep':
-      return { title: `${name} started keeping you close.` };
+      return n.body === 'request' ? { title: `${name} asked to Keep Close.`, detail: 'Open their Space to accept or decline.' } : n.body === 'accepted' ? { title: `${name} accepted your Keep Close request.`, detail: 'You can now Whisper.' } : { title: `${name} had a Keep Close update.`, detail: 'Open their Space for the current status.' };
     case 'post_reaction':
       return { title: `${name} crushed on your post.`, detail: 'See what’s happening there.' };
     case 'post_comment':
@@ -127,8 +127,6 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
       case 'crush':
       case 'deep_crush':
-        // The request itself, with Accept and Decline — not a list of people.
-        return navigation.navigate('CrushList', { tab: 'incoming' });
       case 'mutual':
       case 'keep':
         return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Discover' });

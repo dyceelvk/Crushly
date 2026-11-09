@@ -81,9 +81,12 @@ export function MessagesScreen() {
         Whispers
       </Txt>
       <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-        Where a Crush turns into a conversation.
+        Whispers with your approved Keep Close members.
       </Txt>
 
+      <Pressable accessibilityRole="button" accessibilityLabel="Keep Close requests" onPress={() => navigation.navigate('CrushList', { tab: 'incoming' })} style={{ alignSelf: 'flex-start', paddingVertical: 8 }}>
+        <Txt variant="smallStrong" color="gold">Keep Close requests →</Txt>
+      </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: space.sm }}>
         {([
           ['whispers', 'Whispers'],
@@ -132,7 +135,7 @@ export function MessagesScreen() {
       {filteredFresh.length ? (
         <View style={{ marginTop: space.xl }}>
           <Txt variant="label" color="gold" style={{ marginBottom: space.sm }}>
-            They added back
+            Kept Close
           </Txt>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.md, paddingRight: space.md }}>
             {filteredFresh.map((p) => (
@@ -201,7 +204,7 @@ export function MessagesScreen() {
             <View style={{ marginTop: space.xl, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
               <Txt variant="subheading">Make the first move</Txt>
               <Txt variant="small" color="textSecondary" style={{ marginTop: 4 }}>
-                Tap a Mutual Crush above to say hello. A question about their Space beats “hey” every time.
+                Tap a Kept Close member above to say hello. A question about their Space beats “hey” every time.
               </Txt>
             </View>
           ) : (

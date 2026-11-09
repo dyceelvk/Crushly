@@ -780,9 +780,31 @@ export function useKeepClose() {
     mutationFn: (memberId: number) => service.keepClose(memberId),
     onSuccess: (state, memberId) => {
       qc.setQueryData(keys.keep(memberId), state);
-      void qc.invalidateQueries({ queryKey: keys.closeOnes });
+      relationshipChanged(qc, memberId);
     },
   });
+}
+
+function relationshipChanged(qc: QueryClient, memberId: number) {
+  for (const key of [keys.keep(memberId), keys.user(memberId), keys.crushes, keys.closeOnes, keys.conversations, keys.badges, keys.notifications, ['keep-requests'], ['space-relationships'], ['space-relationship-people']]) void qc.invalidateQueries({ queryKey: key });
+  postsChanged(qc);
+}
+export function useKeepRequests(viewerId: number, direction: 'incoming' | 'outgoing', enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: ['keep-requests', viewerId, direction], enabled: enabled && viewerId > 0,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => service.keepCloseRequests(direction, pageParam),
+    getNextPageParam: (last, pages) => last.hasMore ? pages.reduce((n, page) => n + page.items.length, 0) : undefined,
+    staleTime: 0,
+  });
+}
+export function useAcceptKeepClose() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: service.acceptKeepClose, onSuccess: (_state, id) => relationshipChanged(qc, id) });
+}
+export function useDeclineKeepClose() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: service.declineKeepClose, onSuccess: (_state, id) => relationshipChanged(qc, id) });
 }
 
 export function useLetGo() {
@@ -790,8 +812,7 @@ export function useLetGo() {
   return useMutation({
     mutationFn: (memberId: number) => service.letGo(memberId),
     onSuccess: (_r, memberId) => {
-      void qc.invalidateQueries({ queryKey: keys.keep(memberId) });
-      void qc.invalidateQueries({ queryKey: keys.closeOnes });
+      relationshipChanged(qc, memberId);
     },
   });
 }
@@ -1000,6 +1021,8 @@ function addUpChanged(qc: QueryClient, id: number) {
   void qc.invalidateQueries({ queryKey: keys.me });
   void qc.invalidateQueries({ queryKey: keys.badges });
   void qc.invalidateQueries({ queryKey: keys.conversations });
+  void qc.invalidateQueries({ queryKey: ['space-relationships'] });
+  void qc.invalidateQueries({ queryKey: ['space-relationship-people'] });
   postsChanged(qc);
 }
 
@@ -1032,9 +1055,7 @@ export function useUndoCrush() {
   return useMutation({
     mutationFn: (id: number) => service.uncrush(id),
     onSuccess: (_r, id) => {
-      qc.invalidateQueries({ queryKey: keys.crushes });
-      qc.invalidateQueries({ queryKey: keys.user(id) });
-      qc.invalidateQueries({ queryKey: keys.discover });
+      addUpChanged(qc, id);
     },
   });
 }
@@ -1052,7 +1073,7 @@ export function usePass() {
 function invalidateSocial(qc: QueryClient, id: number) {
   removeFromDiscover(qc, id);
   qc.removeQueries({ queryKey: keys.user(id) });
-  for (const k of [keys.crushes, keys.conversations, keys.moments, keys.notifications, keys.badges, keys.blocks]) {
+  for (const k of [keys.keep(id), keys.crushes, keys.closeOnes, keys.conversations, keys.moments, keys.notifications, keys.badges, keys.blocks, ['keep-requests'], ['space-relationships'], ['space-relationship-people']]) {
     qc.invalidateQueries({ queryKey: k });
   }
 }

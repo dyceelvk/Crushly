@@ -194,6 +194,7 @@ export async function getMe(): Promise<Me> {
     notifications: {
       messages: !!notif.messages,
       crushes: !!notif.crushes,
+      keeps: notif.keeps !== false,
       moments: !!notif.moments,
       recommendations: !!notif.recommendations,
     },
@@ -696,9 +697,20 @@ export async function keepState(memberId: number): Promise<KeepState> {
   return rpc<KeepState>('keep_state', { p_member_id: memberId });
 }
 
-/** Keep Close is one-way and silent: they are never told you let go either. */
+/** Request Keep Close. Approval is always explicit. */
 export async function keepClose(memberId: number): Promise<KeepState> {
   return rpc<KeepState>('keep_close', { p_member_id: memberId });
+}
+
+export async function keepCloseRequests(direction: 'incoming' | 'outgoing', offset: number): Promise<{ items: Profile[]; hasMore: boolean }> {
+  const page = await rpc<{ items: { profile: unknown; at: number }[]; hasMore: boolean }>('keep_close_request_list', { p_direction: direction, p_offset: offset, p_limit: 40 });
+  return { items: (page.items ?? []).map((item) => ({ ...profileShape(item.profile), at: item.at })), hasMore: !!page.hasMore };
+}
+export async function acceptKeepClose(memberId: number): Promise<KeepState> {
+  return rpc<KeepState>('accept_keep_close', { p_from_id: memberId });
+}
+export async function declineKeepClose(memberId: number): Promise<void> {
+  await rpc('decline_keep_close', { p_from_id: memberId });
 }
 
 export async function letGo(memberId: number): Promise<void> {
@@ -984,7 +996,7 @@ export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
 export async function updateNotificationSettings(patch: Partial<NotificationSettings>): Promise<Me> {
   const id = await meId();
   const next: Record<string, unknown> = {};
-  for (const key of ['messages', 'crushes', 'moments', 'recommendations']) {
+  for (const key of ['messages', 'crushes', 'keeps', 'moments', 'recommendations']) {
     if (key in patch) next[key] = !!(patch as Record<string, unknown>)[key];
   }
   if (Object.keys(next).length) {
@@ -1177,13 +1189,7 @@ export async function crush(id: number, opts: { deep?: boolean; note?: string } 
   });
 }
 
-/**
- * Add Up: ask to connect.
- *
- * The verb is old and the mechanism is new — the database turns this into a
- * request a person answers, and answers one from the other side if it is already
- * waiting. `request` says which of those happened.
- */
+/** Add Up follows immediately; it does not grant Whisper access. */
 export async function addUp(id: number, opts: { deep?: boolean; note?: string } = {}): Promise<CrushResult> {
   return crush(id, opts);
 }

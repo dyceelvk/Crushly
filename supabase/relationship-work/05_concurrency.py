@@ -68,6 +68,18 @@ t, done, result = competing(lambda c: (auth(c,7),run(c,'select keep_close(8)')))
 assert_waiting(done); first.commit(); first.close(); assert done.wait(10); t.join(); assert result and 'Space not available' in result[0], result
 verify()
 
+# Explicit approval and block, in both commit orders, must not leave a pair.
+cleanup(); setup=connect(); auth(setup,7); run(setup,'select keep_close(8)'); setup.commit(); setup.close()
+first=connect(); auth(first,8); run(first,'select accept_keep_close(7)')
+t, done, result = competing(lambda c: (auth(c,7), run(c,'insert into blocks(blocker_id,blocked_id) values(7,8)')))
+assert_waiting(done); first.commit(); first.close(); assert done.wait(10); t.join(); assert result == ['ok'], result
+verify()
+cleanup(); setup=connect(); auth(setup,7); run(setup,'select keep_close(8)'); setup.commit(); setup.close()
+first=connect(); auth(first,7); run(first,'insert into blocks(blocker_id,blocked_id) values(7,8)')
+t, done, result = competing(lambda c: (auth(c,8),run(c,'select accept_keep_close(7)')))
+assert_waiting(done); first.commit(); first.close(); assert done.wait(10); t.join(); assert result and 'Request unavailable' in result[0], result
+verify()
+
 # Removal wins against a send that started with a previously-open conversation.
 cleanup(); setup=connect(); run(setup,'insert into connections(user_a,user_b) values(7,8)'); run(setup,'insert into keeps(keeper_id,kept_id) values(7,8),(8,7)');
 conv=run(setup,'insert into conversations(user_a,user_b,closed) values(7,8,false) on conflict(user_a,user_b) do update set closed=false returning id')[0]; setup.commit(); setup.close()
@@ -75,4 +87,4 @@ first=connect(); auth(first,7); run(first,'select let_go(8)')
 t, done, result = competing(lambda c: (auth(c,8),run(c,"select send_message(%s,'text','racing',null,'{}')",(conv,))))
 assert_waiting(done); first.commit(); first.close(); assert done.wait(10); t.join(); assert result and ('Keep Close approval' in result[0] or 'connection has ended' in result[0]), result
 verify()
-print('relationship concurrency tests passed (request/block both orders; removal/send)')
+print('relationship concurrency tests passed (request/block and approval/block both orders; removal/send)')

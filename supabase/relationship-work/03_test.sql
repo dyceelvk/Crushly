@@ -19,6 +19,7 @@ begin
   assert (select count(*)=3 from crushes where status in ('pending','accepted')), 'active Add Ups were lost';
 
   perform set_config('request.jwt.claim.sub',a::text,false); set local role authenticated;
+  r:=public.crushes_feed(); assert jsonb_array_length(r->'outgoing')=1 and jsonb_array_length(r->'mutual')=1, 'hub does not show Keep Close requests and approved connections';
   r:=public.keep_state(3); assert (r->>'outgoing')::boolean and not (r->>'keeps')::boolean, 'outgoing state incorrect';
   r:=public.keep_close_request_list('outgoing',0,1); assert jsonb_array_length(r->'items')=1 and (r->'items'->0->'profile'->>'id')::bigint=3, 'outgoing request list incorrect';
   assert jsonb_array_length(public.keep_close_request_list('incoming')->'items')=0, 'someone else’s incoming requests leaked';
@@ -34,6 +35,7 @@ begin
   r:=public.accept_keep_close(1); assert (r->>'keeps')::boolean, 'explicit approval failed';
   reset role;
   assert public.is_connected_pair(1,3), 'approval failed to connect';
+  assert exists(select 1 from notifications where user_id=1 and actor_id=3 and kind='keep' and body='accepted'), 'requester not notified of acceptance';
   assert (select count(*)=2 from public.keeps where (keeper_id=1 and kept_id=3) or (keeper_id=3 and kept_id=1)), 'approval did not synchronize compatibility rows';
   perform set_config('request.jwt.claim.sub',a::text,false); set local role authenticated;
   perform public.let_go(3);

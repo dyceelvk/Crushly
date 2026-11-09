@@ -21,7 +21,7 @@ export function KeepsYouChip({ compact = false }: { compact?: boolean }) {
   return (
     <View
       accessible
-      accessibilityLabel="Keeps you close"
+      accessibilityLabel="Kept Close"
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -37,7 +37,7 @@ export function KeepsYouChip({ compact = false }: { compact?: boolean }) {
       <Ionicons name="bookmark" size={10} color={colors.gold} />
       {compact ? null : (
         <Txt variant="caption" color="gold" style={{ fontSize: 9.5, lineHeight: 12 }}>
-          Keeps you close
+          Kept Close
         </Txt>
       )}
     </View>

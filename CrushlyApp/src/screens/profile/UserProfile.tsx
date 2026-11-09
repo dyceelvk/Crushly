@@ -15,7 +15,7 @@ import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Chip, ChipGroup } from '../../components/Chip';
-import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
+import { ActionSheet, BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Tabs } from '../../components/Tabs';
 import { useMemberCircles } from '../../api/hooks';
@@ -25,10 +25,10 @@ import { Pill, VerifiedBadge } from '../../components/Badges';
 import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useAcceptAddUp, useDeclineAddUp, useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
+import { useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
 import type { AddUpListVisibility, FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
-import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
+import { useAcceptKeepClose, useDeclineKeepClose, useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { MOMENT_RING_SEEN } from '../../lib/momentRings';
 import { joinAction, policyLabel } from '../../lib/circleAccess';
@@ -197,8 +197,8 @@ export function SpaceScreen({
   })();
   const { run: crushOn, pendingId } = useCrushFlow();
   const undo = useUndoCrush();
-  const accept = useAcceptAddUp();
-  const decline = useDeclineAddUp();
+  const accept = useAcceptKeepClose();
+  const decline = useDeclineKeepClose();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
   const keep = useKeepState(id, !mine);
@@ -212,6 +212,7 @@ export function SpaceScreen({
   const [showFullBio, setShowFullBio] = useState(false);
   const [relationshipList, setRelationshipList] = useState<'addUps' | 'keptClose' | null>(null);
   const [visibilityMenu, setVisibilityMenu] = useState(false);
+  const [confirmLetGo, setConfirmLetGo] = useState(false);
   const queryClient = useQueryClient();
   /**
    * Whether the page has scrolled past the cover.
@@ -332,7 +333,7 @@ export function SpaceScreen({
 
   const message = async () => {
     if (!p.canMessage) {
-      toast({ kind: 'info', title: 'Not yet', message: p.messageBlockReason || 'Add up with them first.' });
+      toast({ kind: 'info', title: 'Not yet', message: p.messageBlockReason || 'A Keep Close request must be approved first.' });
       return;
     }
     try {
@@ -343,55 +344,24 @@ export function SpaceScreen({
     }
   };
 
-  /*
-   * One control, four states, and the state decides what it does.
-   *
-   * Add up → a request goes out. Request sent → the same control withdraws it,
-   * because a question you asked is a question you may take back. Accept →
-   * their request becomes a connection.
-   * Connected → the control hands over to Whisper.
-   */
+  // Add Up is independent from Keep Close: tapping again unfollows only.
   const onCrush = () => {
-    if (p.crush.mutual) return message();
-    if (p.crush.received) {
-      accept.mutate(p.id, {
-        onSuccess: () => toast({ kind: 'success', title: 'Request accepted' }),
-        onError: (e) => toast({ kind: 'error', title: 'Request not accepted', message: (e as Error).message }),
-      });
-      return;
-    }
     if (p.crush.sent) {
       undo.mutate(p.id, {
-        onSuccess: () => toast({ kind: 'info', title: 'Request withdrawn', message: `${p.name} won’t see it anymore.` }),
-        onError: (e) => toast({ kind: 'error', title: 'Couldn’t withdraw', message: (e as Error).message }),
+        onSuccess: () => toast({ kind: 'info', title: 'Add Up removed' }),
+        onError: (e) => toast({ kind: 'error', title: 'Couldn’t remove Add Up', message: (e as Error).message }),
       });
       return;
     }
     if (!p.acceptsCrushes) {
-      toast({ kind: 'info', title: 'Verified members only', message: `${p.name} accepts Crushes from verified members. Verify your Space in a minute.` , onPress: () => navigation.navigate('Verification') });
+      toast({ kind: 'info', title: 'Verified members only', message: `${p.name} accepts Add Ups from verified members.`, onPress: () => navigation.navigate('Verification') });
       return;
     }
-    crushOn(p);
+    void crushOn(p);
   };
-
-  /* A decline is deliberately quiet: it changes two lists and tells nobody. */
-  const onDecline = () => {
-    decline.mutate(p.id, {
-      onSuccess: () => toast({ kind: 'info', title: 'Request declined', message: `${p.name} won’t be told.` }),
-      onError: (e) => toast({ kind: 'error', title: 'Couldn’t decline', message: (e as Error).message }),
-    });
-  };
-
-  /* What the one control is, right now. Kept in one place so the bar and the
-     pill in the hero can never disagree about the same pair. */
-  const addUp: { label: string; done: boolean } = p.crush.mutual
-    ? { label: 'Connected', done: true }
-    : p.crush.received
-      ? { label: 'Accept', done: false }
-      : p.crush.sent
-        ? { label: 'Request sent', done: true }
-        : { label: 'Add up', done: false };
-  const addUpBusy = pendingId === p.id || accept.isPending || undo.isPending;
+  const addUp = { label: p.crush.sent ? 'Added up' : 'Add up', done: p.crush.sent };
+  const addUpBusy = pendingId === p.id || undo.isPending;
+  const keepBusy = keepClose.isPending || letGo.isPending || accept.isPending || decline.isPending;
 
   const lifestyle = lifestyleFacts(p);
 
@@ -503,12 +473,9 @@ export function SpaceScreen({
               {mine ? null : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
                 <Pressable
-                  onPress={p.crush.mutual ? message : onCrush}
+                  onPress={onCrush}
                   accessibilityRole="button"
-                  accessibilityLabel={
-                    p.crush.mutual ? `Whisper ${p.name}` : p.crush.received ? `Accept ${p.name}’s Add Up request`
-                      : p.crush.sent ? 'Withdraw your Add Up request' : `Add up with ${p.name}`
-                  }
+                  accessibilityLabel={p.crush.sent ? `Remove Add Up for ${p.name}` : `Add up with ${p.name}`}
                   disabled={addUpBusy}
                   hitSlop={6}
                   style={{
@@ -534,36 +501,15 @@ export function SpaceScreen({
                     <CrushIcon size={16} color="#FFFFFF" />
                   )}
                   <Txt variant="smallStrong" style={{ color: addUp.done ? colors.text : '#FFFFFF' }}>
-                    {p.crush.mutual ? 'Whisper' : addUp.label}
+                    {addUp.label}
                   </Txt>
                 </Pressable>
 
-                {/* One row, two doors, and the second one is the answer to a
-                    request when there is a request to answer. This used to be a
-                    footer pinned to the bottom of the page with the same Add up
-                    in it — the one action drawn twice, a screen apart, and the
-                    footer covered the last post as you read to the end. The
-                    header is always on screen, so the footer is gone and what
-                    was in it lives here. */}
-                {p.crush.mutual ? null : p.crush.received ? (
-                  <IconButton
-                    icon="close-outline"
-                    label={`Decline ${p.name}’s Add Up request`}
-                    size={40}
-                    variant="surface"
-                    color={colors.textMuted}
-                    onPress={onDecline}
-                  />
-                ) : (
-                  <IconButton
-                    icon="chatbubble-outline"
-                    label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs them to add back`}
-                    size={40}
-                    variant="surface"
-                    color={p.canMessage ? colors.text : colors.textMuted}
-                    onPress={message}
-                  />
-                )}
+                <IconButton
+                  icon="chatbubble-outline"
+                  label={p.canMessage ? `Whisper ${p.name}` : `Whisper ${p.name} requires approved Keep Close`}
+                  size={40} variant="surface" color={p.canMessage ? colors.text : colors.textMuted} onPress={message}
+                />
                 </View>
               )}
             </View>
@@ -590,28 +536,25 @@ export function SpaceScreen({
                     so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
-                <Pressable
+                {keep.isError ? <Pressable accessibilityRole="button" accessibilityLabel="Retry Keep Close status" onPress={() => void keep.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load Keep Close. Retry</Txt></Pressable> : keep.data?.incoming && !keep.data.keeps ? <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <Button title="Accept Keep Close" size="sm" variant="secondary" loading={accept.isPending} disabled={keepBusy} onPress={() => accept.mutate(id, { onSuccess: () => toast({ kind: 'success', title: 'Keep Close approved' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t accept', message: (e as Error).message }) })} />
+                  <Button title="Decline" size="sm" variant="ghost" loading={decline.isPending} disabled={keepBusy} onPress={() => decline.mutate(id, { onSuccess: () => toast({ kind: 'info', title: 'Request declined' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t decline', message: (e as Error).message }) })} />
+                </View> : <Pressable
                   onPress={() => {
                     haptic.tap();
-                    if (keep.data?.keeps) letGo.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not let go', message: (e as Error).message }) });
-                    else keepClose.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not kept close', message: (e as Error).message }) });
+                    if (keep.data?.keeps) setConfirmLetGo(true);
+                    else if (keep.data?.outgoing) letGo.mutate(id, { onSuccess: () => toast({ kind: 'info', title: 'Request cancelled' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t cancel', message: (e as Error).message }) });
+                    else keepClose.mutate(id, { onSuccess: () => toast({ kind: 'success', title: 'Keep Close request sent' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t send request', message: (e as Error).message }) });
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={keep.data?.keeps ? `Stop keeping ${p.name} close` : `Keep ${p.name} close`}
-                  hitSlop={8}
-                  disabled={keepClose.isPending || letGo.isPending}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 5,
-                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-                    backgroundColor: keep.data?.keeps ? colors.goldSoft : colors.card,
-                    borderWidth: 1, borderColor: keep.data?.keeps ? colors.goldLine : colors.border,
-                  }}
-                >
+                  accessibilityLabel={keep.data?.keeps ? `Stop keeping ${p.name} close` : keep.data?.outgoing ? `Cancel Keep Close request to ${p.name}` : `Request to keep ${p.name} close`}
+                  hitSlop={8} disabled={keepBusy || !keep.data}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+                    backgroundColor: keep.data?.keeps || keep.data?.outgoing ? colors.goldSoft : colors.card,
+                    borderWidth: 1, borderColor: keep.data?.keeps || keep.data?.outgoing ? colors.goldLine : colors.border, opacity: keep.data ? 1 : 0.6 }}>
                   <Ionicons name={keep.data?.keeps ? 'bookmark' : 'bookmark-outline'} size={12} color={keep.data?.keeps ? colors.gold : colors.textSecondary} />
-                  <Txt variant="caption" color={keep.data?.keeps ? 'gold' : 'textSecondary'}>
-                    {keep.data?.keeps ? 'Kept close' : 'Keep Close'}
-                  </Txt>
-                </Pressable>
+                  <Txt variant="caption" color={keep.data?.keeps || keep.data?.outgoing ? 'gold' : 'textSecondary'}>{!keep.data ? 'Loading…' : keep.data.keeps ? 'Kept Close' : keep.data.outgoing ? 'Request sent' : 'Keep Close'}</Txt>
+                </Pressable>}
                 </>
                 )}
               </View>
@@ -629,16 +572,13 @@ export function SpaceScreen({
                 <Pill tone="neutral" label={p.activity} />
               ) : null}
               {p.crush.mutual ? (
-                <Pill tone="crush" label="Both added up" icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
+                <Pill tone="crush" label="Kept Close" icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
               ) : p.crush.received ? (
                 <Pill
                   tone="crush"
                   label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'}
                   icon={<Ionicons name="heart" size={11} color={colors.crush} />}
                 />
-              ) : null}
-              {keep.data?.keepsYou ? (
-                <Pill tone="gold" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} />
               ) : null}
               {mine && meQ.data?.status === 'paused' ? <Pill tone="neutral" label="Hidden from Discover" /> : null}
             </View>
@@ -882,6 +822,7 @@ export function SpaceScreen({
         </View>
       </View>
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
+      <ConfirmSheet visible={confirmLetGo} onCancel={() => setConfirmLetGo(false)} title="End Keep Close?" message={`Your Whisper with ${p.name} will close. Your Add Up is separate and won’t be removed.`} confirmLabel="End Keep Close" destructive loading={letGo.isPending} onConfirm={() => letGo.mutate(id, { onSuccess: () => { setConfirmLetGo(false); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) })} />
       <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
         ['everyone', 'Everyone who can view your Space'], ['close', 'Approved Keep Close members'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals remain visible; individual Spaces still follow their own privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +9,7 @@ import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { Pill, VerifiedBadge } from '../../components/Badges';
 import { Button } from '../../components/Button';
+import { ConfirmSheet } from '../../components/BottomSheet';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
@@ -44,6 +45,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
   const toast = useToast();
   const list = useCloseOnes();
   const letGo = useLetGo();
+  const [selected, setSelected] = useState<{ id: number; name: string } | null>(null);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -63,7 +65,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
       >
         {embedded ? (
           <Txt variant="small" color="textSecondary" style={{ marginTop: space.md, marginBottom: space.sm }}>
-            People you’ve chosen to keep near. Only you can see this list.
+            People with an approved Keep Close relationship.
           </Txt>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -73,7 +75,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
                 Close Ones
               </Txt>
               <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-                People you’ve chosen to keep near. Only you can see this list.
+                People with an approved Keep Close relationship.
               </Txt>
             </View>
           </View>
@@ -112,7 +114,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
                       {entry.member.username ? `@${entry.member.username}` : entry.member.city || 'Member'}
                     </Txt>
                     {entry.keepsYou ? (
-                      <Pill tone="gold" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} />
+                      <Pill tone="gold" label="Kept Close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} />
                     ) : null}
                   </View>
                 </Pressable>
@@ -120,12 +122,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
                   title="Let go"
                   size="sm"
                   variant="secondary"
-                  onPress={() => {
-                    haptic.tap();
-                    letGo.mutate(entry.member.id, {
-                      onError: (e) => toast({ kind: 'error', title: 'Not let go', message: (e as Error).message }),
-                    });
-                  }}
+                  onPress={() => { haptic.tap(); setSelected({ id: entry.member.id, name: entry.member.name }); }}
                 />
               </View>
             ))
@@ -133,12 +130,13 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
             <EmptyState
               icon="bookmark-outline"
               title="Nobody here yet"
-              message="Keep someone close from their Space and they’ll show up here. It’s yours alone — they aren’t told, and nobody sees this list."
+              message="Send a Keep Close request from someone’s Space. Once approved, they’ll appear here."
               action={{ label: 'Find someone', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
             />
           )}
         </View>
       </ScrollView>
+      <ConfirmSheet visible={!!selected} onCancel={() => setSelected(null)} title="End Keep Close?" message={`Your Whisper with ${selected?.name ?? 'this member'} will close. Your Add Up is separate and won’t be removed.`} confirmLabel="End Keep Close" destructive loading={letGo.isPending} onConfirm={() => { if (selected) letGo.mutate(selected.id, { onSuccess: () => { setSelected(null); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) }); }} />
     </View>
   );
 }

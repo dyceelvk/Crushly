@@ -8,19 +8,22 @@ legacy one-way Keeps become pending requests; active Add Ups stay follows;
 explicit approval creates connections; removing Keep Close does not unfollow;
 blocking severs both; and message sends, reactions, conversation opens and
 realtime joins require approval. Old Add Up request-decision RPCs fail closed.
-Pair locks serialize the tested request/block and removal/send races. The Space
+Pair locks serialize the tested request/block and approval/block in both orders, plus removal/send races. The Space
 list helper additionally prevents a cancelled legacy Add Up from revealing a
 connections-only profile.
 
 ## Known release blockers
 
-- The production app still presents the old request/connection semantics. Build
-  and verify all new UI and notification routes; do not label a follow as a
-  request or a pending Keep as already approved. The prototype currently uses
-  legacy `keep` notifications and does not notify the requester on acceptance.
-- Update profile serialization, `crushes_feed`, badges, Discover and every
-  relationship-dependent entry point. Existing-client behavior must be gated or
-  upgraded safely. New UI must invalidate cached relationship/list state.
+- The local app now has prototype Space controls, paged Keep Close requests,
+  request/acceptance notification text and routing, and a Keep Close notification
+  switch. These changes depend on this experimental SQL and cannot be deployed
+  against the old server. Offline browser tests do not prove native behavior.
+- Profile serialization and `crushes_feed` have prototype replacements, but
+  badges, Discover, historical notification cases and all relationship-dependent
+  entry points still need a complete audit. Existing installed clients interpret
+  these events differently; design and verify an update/compatibility gate before
+  any rollout. The prototype uses the old `keep` kind with body markers for
+  requests and approvals; old clients cannot interpret those safely.
 - Audit every Whisper entry point (including existing history, sync, media,
   receipts, presence and direct RLS) for the chosen access and revocation rules.
   The included tests cover send/open/reaction/realtime, not the entire audit.

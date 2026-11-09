@@ -95,9 +95,9 @@ begin
   insert into public.keep_close_requests(requester_id,recipient_id,state,created_at,answered_at)
     values(me,p_member_id,'pending',public.now_ms(),null)
     on conflict(requester_id,recipient_id) do update set state='pending',created_at=excluded.created_at,answered_at=null;
-  -- Prototype uses existing notification kind. New distinct notification kinds
-  -- and routing must ship together with the new UI, not this partial code.
-  perform public.notify_to(p_member_id,'keep',me,null,'');
+  -- Kept as the legacy-safe kind; body distinguishes a new request. The
+  -- updated client must interpret these markers and open the relevant Space.
+  perform public.notify_to(p_member_id,'keep',me,null,'request');
   return public.keep_state(p_member_id);
 end $$;
 
@@ -117,6 +117,7 @@ begin
   perform public.connect_pair(me,p_from_id);
   insert into public.keeps(keeper_id,kept_id) values(me,p_from_id),(p_from_id,me) on conflict do nothing;
   delete from public.notifications where user_id=me and actor_id=p_from_id and kind='keep' and read_at is null;
+  perform public.notify_to(p_from_id,'keep',me,null,'accepted');
   return public.keep_state(p_from_id);
 end $$;
 
@@ -325,4 +326,160 @@ end $$;
 revoke all on function public.keep_close_request_list(text,integer,integer) from public,anon,authenticated;
 grant execute on function public.keep_close_request_list(text,integer,integer) to authenticated,service_role;
 
+
+-- Profile booleans represent active follows, independently from Keep Close.
+create or replace function public.public_profile(p_viewer bigint, p_target bigint, p_full boolean default false)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  r record;
+  v record;
+  interests jsonb;
+  intentions jsonb;
+  shared_interests jsonb;
+  km double precision;
+  my_deep boolean;
+  my_note text;
+  my_found boolean;
+  their_deep boolean;
+  their_note text;
+  their_found boolean;
+  my_status text;
+  my_responded bigint;
+  their_status text;
+  connected boolean;
+  can_see_online boolean;
+  can_see_activity boolean;
+  result jsonb;
+begin
+  select p.*, pr.show_distance, pr.show_online, pr.show_activity, pr.discoverable,
+         pr.profile_visibility, pr.who_can_message, pr.who_can_crush, pr.show_age,
+         pr.show_city, pr.incognito
+    into r
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_target;
+  if not found then
+    return null;
+  end if;
+
+  select p.lat, p.lng, p.interests, p.intentions, p.verification, pr.show_online, pr.show_activity
+    into v
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_viewer;
+
+  interests := coalesce(r.interests, '[]'::jsonb);
+  intentions := coalesce(r.intentions, '[]'::jsonb);
+  km := public.distance_km(v.lat, v.lng, r.lat, r.lng);
+  connected := public.is_connected_pair(p_viewer, p_target);
+
+  select c.deep, c.note, c.status, c.responded_at into my_deep, my_note, my_status, my_responded
+    from crushes c where c.from_id = p_viewer and c.to_id = p_target;
+  my_found := found;
+  select c.deep, c.note, c.status into their_deep, their_note, their_status
+    from crushes c where c.from_id = p_target and c.to_id = p_viewer;
+  their_found := found;
+
+  /*
+   * Two different questions, so two different answers.
+   *
+   * The dot means "they are here right now"; the label means "they were here at
+   * 14:20". Somebody may be happy to be seen online while not wanting to hand
+   * out a log of when they were last around — which is why `show_activity` is
+   * its own switch and both sides have to allow it, exactly like `show_online`.
+   */
+  can_see_online := r.show_online and coalesce(v.show_online, true);
+  can_see_activity := can_see_online and r.show_activity and coalesce(v.show_activity, true);
+
+  select coalesce(jsonb_agg(i), '[]'::jsonb) into shared_interests
+    from jsonb_array_elements_text(interests) i
+   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb)));
+
+  result := jsonb_build_object(
+    'id', r.id,
+    'name', r.name,
+    'username', nullif(r.username, ''),
+    'age', case when r.show_age then public.age_of(r.birthdate) else null end,
+    'pronouns', nullif(r.pronouns, ''),
+    'city', case when r.show_city then nullif(r.city, '') else null end,
+    'verified', r.verification = 'verified',
+    -- Which seal, if any. 'verified' is the ordinary one, 'gold' is earned,
+    -- 'diamond' belongs to the company account alone.
+    'badgeTier', case
+      when r.badge_tier = 'diamond' then 'diamond'
+      when r.badge_tier = 'gold' then 'gold'
+      when r.verification = 'verified' then 'verified'
+      else 'none'
+    end,
+    -- Keep Close, read from this viewer's side: are they keeping you close?
+    'keepsYou', connected,
+    'distance', case when r.show_distance then public.distance_label(km) else null end,
+    'online', case when can_see_online then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when can_see_activity then public.activity_label_at(r.last_active_at) else null end,
+    'bio', r.bio,
+    'intentions', intentions,
+    'relationshipIntention', nullif(r.relationship_intention, ''),
+    'interests', interests,
+    'sharedInterests', shared_interests,
+    'photos', public.photos_of(p_target),
+    /*
+     * Add Up, read from this viewer's side.
+     *
+     * `sent` and `received` mean *a request is waiting* — they are what draws
+     * "Request sent" and the Accept / Decline pair. An accepted request is a
+     * connection (`mutual`), and a declined one is neither: `sentStatus` and
+     * `receivedStatus` carry the whole truth for the screens that need to say
+     * more than a yes or a no ("You asked. They declined. You can ask again
+     * in a few days.").
+     */
+    'crush', jsonb_build_object(
+      'sent', my_found and my_status in ('pending','accepted'),
+      'sentStatus', my_status,
+      'sentDeep', coalesce(my_deep, false),
+      'received', their_found and their_status in ('pending','accepted'),
+      'receivedStatus', their_status,
+      'receivedDeep', coalesce(their_deep, false),
+      'note', case when their_found and their_status in ('pending','accepted') then their_note else null end,
+      'respondedAt', my_responded,
+      'mutual', connected
+    ),
+    'canMessage', public.messaging_block_reason(p_viewer, p_target) is null,
+    'acceptsCrushes', r.who_can_crush <> 'verified' or (v.verification = 'verified'),
+    -- The ring. True only when there is a live Moment THIS viewer may open.
+    'hasMoment', exists (
+      select 1 from moments m
+       where m.user_id = p_target
+         and m.expires_at > public.now_ms()
+         and public.can_view_moment(m, p_viewer)
+    )
+  );
+
+  if p_full then
+    result := result || jsonb_build_object(
+      'languages', coalesce(r.languages, '[]'::jsonb),
+      'lifestyle', coalesce(r.lifestyle, '{}'::jsonb),
+      'messageBlockReason', public.messaging_block_reason(p_viewer, p_target)
+    );
+  end if;
+  return result;
+end $function$;
+
+-- The relationship hub presents Keep Close requests and approved connections;
+-- directional Add Up identities live in the privacy-controlled Space lists.
+create or replace function public.crushes_feed() returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); incoming jsonb; outgoing jsonb; approved jsonb;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select coalesce(jsonb_agg((p->'profile') || jsonb_build_object('at',p->'at')),'[]'::jsonb) into incoming
+    from jsonb_array_elements(public.keep_close_request_list('incoming',0,100)->'items') p;
+  select coalesce(jsonb_agg((p->'profile') || jsonb_build_object('at',p->'at')),'[]'::jsonb) into outgoing
+    from jsonb_array_elements(public.keep_close_request_list('outgoing',0,100)->'items') p;
+  select coalesce(jsonb_agg(public.relationship_list_profile(me,case when c.user_a=me then c.user_b else c.user_a end) || jsonb_build_object('at',c.created_at) order by c.created_at desc),'[]'::jsonb)
+    into approved from public.connections c where (c.user_a=me or c.user_b=me)
+      and public.relationship_list_profile(me,case when c.user_a=me then c.user_b else c.user_a end) is not null;
+  return jsonb_build_object('incoming',incoming,'outgoing',outgoing,'mutual',approved,'requestCount',jsonb_array_length(incoming));
+end $$;
 commit;

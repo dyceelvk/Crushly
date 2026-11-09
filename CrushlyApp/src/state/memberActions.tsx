@@ -85,7 +85,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
     ? [
         ...extra,
         ...(member.connected
-          ? [{ label: 'Remove connection', icon: icon('heart-dislike-outline'), hint: 'Ends the mutual add up and closes your Whisper', onPress: () => confirmRemove(member) }]
+          ? [{ label: 'Remove connection', icon: icon('heart-dislike-outline'), hint: 'Ends Keep Close and closes your Whisper', onPress: () => confirmRemove(member) }]
           : []),
         { label: `Flag ${member.name}`, icon: icon('flag-outline', colors.danger), destructive: true, hint: 'Confidential — they won’t know', onPress: () => openReport(member) },
         { label: `Cut Off ${member.name}`, icon: icon('ban-outline', colors.danger), destructive: true, hint: 'You’ll disappear from each other', onPress: () => confirmBlock(member) },
@@ -137,7 +137,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
       <ConfirmSheet
         visible={sheet === 'remove'}
         title="Remove this connection?"
-        message={`This ends your add up with ${member?.name} and closes your Whisper for both of you. This can’t be undone.`}
+        message={`This ends Keep Close with ${member?.name} and closes your Whisper for both of you. Your Add Up remains separate.`}
         confirmLabel="Remove connection"
         destructive
         loading={remove.isPending}

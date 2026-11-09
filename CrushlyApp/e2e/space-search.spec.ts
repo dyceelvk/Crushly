@@ -333,7 +333,7 @@ test('notifications are a full screen with Holup and categorized activity', asyn
   const notes = [
     { id: 701, kind: 'message', body: '', refId: 5, createdAt: Date.now(), read: true, actor },
     { id: 702, kind: 'post_comment', body: 'Great post', refId: 11, createdAt: Date.now(), read: true, actor },
-    { id: 703, kind: 'keep', body: '', refId: null, createdAt: Date.now(), read: true, actor },
+    { id: 703, kind: 'keep', body: 'request', refId: null, createdAt: Date.now(), read: true, actor },
     { id: 704, kind: 'verified', body: '', refId: null, createdAt: Date.now(), read: true, actor: null },
   ];
   await page.route(`${API}/rest/v1/rpc/list_notifications`, async (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(notes) }));
@@ -348,7 +348,7 @@ test('notifications are a full screen with Holup and categorized activity', asyn
   await expect(page.getByText('Ada commented on your post.')).toBeVisible();
   await expect(page.getByText('Ada sent you a Whisper.')).toHaveCount(0);
   await page.getByRole('tab', { name: 'Kept Close' }).click();
-  await expect(page.getByText('Ada started keeping you close.')).toBeVisible();
+  await expect(page.getByText('Ada asked to Keep Close.')).toBeVisible();
   await page.getByRole('tab', { name: 'From Holup' }).click();
   await expect(page.getByText('Real announcement').last()).toBeVisible();
   await expect(page.getByText('Your Space is verified.')).toBeVisible();
@@ -372,4 +372,54 @@ test('Space relationship totals open real lists and owner can choose list privac
   await page.getByRole('button', { name: 'Approved Keep Close members' }).click();
   await expect.poll(() => submitted).toBe('close');
   await expect(page.getByText('Add Up list privacy updated')).toBeVisible();
+});
+
+test('Space Add Up is independent of an explicitly approved Keep Close', async ({ page }) => {
+  await offline(page, []);
+  let followed = false, approved = false, incoming = true;
+  const calls: string[] = [];
+  const reply = (value: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(value), headers: { 'access-control-allow-origin': '*' } });
+  const currentProfile = () => ({ ...person, acceptsCrushes: true, canMessage: approved, messageBlockReason: approved ? null : 'Approve Keep Close before Whispering.', crush: { sent: followed, sentStatus: followed ? 'pending' : null, received: false, mutual: approved }, moments: [] });
+  const currentKeep = () => ({ keeps: approved, keepsYou: approved, keepsCount: approved ? 1 : 0, keptByCount: approved ? 1 : 0, self: false, incoming, outgoing: false });
+  await page.route(`${API}/rest/v1/rpc/load_profile`, route => route.fulfill(reply(currentProfile())));
+  await page.route(`${API}/rest/v1/rpc/keep_state`, route => route.fulfill(reply(currentKeep())));
+  await page.route(`${API}/rest/v1/rpc/space_relationship_stats`, route => route.fulfill(reply({ addUps: followed ? 1 : 0, keptClose: approved ? 1 : 0, canViewAddUps: false, canViewKeptClose: approved, addUpVisibility: null })));
+  await page.route(`${API}/rest/v1/rpc/crush_member`, route => { calls.push('add'); followed = true; return route.fulfill(reply({ mutual: false, isNew: true, request: 'following', profile: currentProfile() })); });
+  await page.route(`${API}/rest/v1/rpc/uncrush_member`, route => { calls.push('unfollow'); followed = false; return route.fulfill(reply(true)); });
+  await page.route(`${API}/rest/v1/rpc/accept_keep_close`, route => { calls.push('accept'); approved = true; incoming = false; return route.fulfill(reply(currentKeep())); });
+  await page.goto('/?space=2');
+  await expect(page.getByRole('button', { name: 'Add up with Ada' })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Whisper Ada requires approved Keep Close' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add up with Ada' }).click();
+  await expect(page.getByRole('button', { name: 'Remove Add Up for Ada' })).toBeVisible();
+  expect(calls).toEqual(['add']);
+  await page.getByRole('button', { name: 'Accept Keep Close' }).click();
+  await expect(page.getByRole('button', { name: 'Stop keeping Ada close' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Whisper Ada', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Add Up for Ada' }).click();
+  await expect(page.getByRole('button', { name: 'Add up with Ada' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop keeping Ada close' })).toBeVisible();
+  expect(calls).toEqual(['add', 'accept', 'unfollow']);
+});
+
+test('Keep Close request hub is reachable and pages through requests', async ({ page }) => {
+  await offline(page, []);
+  const offsets: number[] = [];
+  const reply = (value: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(value), headers: { 'access-control-allow-origin': '*' } });
+  await page.route(`${API}/rest/v1/rpc/crushes_feed`, route => route.fulfill(reply({ incoming: [], outgoing: [], mutual: [], requestCount: 0 })));
+  await page.route(`${API}/rest/v1/rpc/list_conversations`, route => route.fulfill(reply({ items: [] })));
+  await page.route(`${API}/rest/v1/rpc/keep_close_request_list`, route => {
+    const body = route.request().postDataJSON() as { p_offset: number; p_direction: string };
+    offsets.push(body.p_offset);
+    const member = body.p_offset === 0 ? person : { ...person, id: 3, name: 'Tobi', username: 'tobi' };
+    return route.fulfill(reply({ items: [{ profile: member, at: Date.now() }], hasMore: body.p_offset === 0 }));
+  });
+  await page.goto('/');
+  await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Keep Close requests' }).click();
+  await expect(page.getByRole('heading', { name: 'Keep Close' })).toBeVisible();
+  await expect(page.getByText('Ada', { exact: true }).last()).toBeVisible();
+  await page.getByRole('button', { name: 'Show more' }).click();
+  await expect(page.getByText('Tobi', { exact: true }).last()).toBeVisible();
+  expect(offsets).toContain(1);
 });

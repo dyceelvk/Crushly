@@ -26,7 +26,7 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
   const tools: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
     { icon: 'ban-outline', title: 'Cut Off', body: 'Open any Space or Whisper, tap ··· and choose Cut Off. They’re never told.' },
     { icon: 'flag-outline', title: 'Flag', body: 'Same menu. Flags are confidential and reviewed by a person.' },
-    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends the mutual add up and closes your Whisper.' },
+    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends Keep Close and closes your Whisper. Add Ups are separate.' },
   ];
 
   return (
@@ -146,19 +146,12 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         ]}
         footer={p.profileVisibility === 'connections' ? 'Others see your main photo and name only until you’re connected.' : undefined}
       />
+      <View style={{ marginBottom: space.xl }}>
+        <Txt variant="label" color="textSecondary" style={{ marginBottom: space.xs, marginLeft: 4 }} accessibilityRole="header">Who can Whisper me</Txt>
+        <Txt variant="body">Only people in an approved Keep Close relationship with you.</Txt>
+      </View>
       <Choice
-        title="Who can Whisper me"
-        value={p.whoCanMessage}
-        onChange={(v) => set({ whoCanMessage: v })}
-        options={[
-          { value: 'mutual', label: 'People who added back' },
-          { value: 'crushes', label: 'My crushes' },
-          { value: 'everyone', label: 'Everyone' },
-        ]}
-        footer={{ mutual: 'Only people who added back.', crushes: 'People you’ve added up with can Whisper you first.', everyone: 'Anyone who can see your Space can start a Whisper.' }[p.whoCanMessage]}
-      />
-      <Choice
-        title="Who can Crush on me"
+        title="Who can add me up"
         value={p.whoCanCrush}
         onChange={(v) => set({ whoCanCrush: v })}
         options={[
