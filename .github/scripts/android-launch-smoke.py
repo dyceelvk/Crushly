@@ -205,6 +205,10 @@ def scroll_to(needle, swipes=4):
 
 
 def tap(needle, cls=None, tries=2, required=False):
+    # The tab bar can be painted before its accessibility tree is ready after
+    # a cold restart. Wait for the actual labeled control; never tap coordinates.
+    if needle == 'Create post':
+        tries = max(tries, 8)
     for _ in range(tries):
         seen = nodes()
         if seen:
