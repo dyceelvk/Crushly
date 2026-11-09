@@ -55,7 +55,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/comment_on_post') { commentCalls.push(route.request().postDataJSON() as Record<string, unknown>); body = { id: 46 }; }
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: feedVideo ? `${MEDIA}/m/posts/11.webm` : null, mediaKind: feedVideo ? 'video' : null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
-    else if (path === '/rest/v1/rpc/visible_moments') body = ownMoment ? [0, 1].map(i => ({ id: 77+i, userId: 1, kind: i ? 'text' : 'video', body: i ? 'Second Moment' : 'First Moment', mediaUrl: i ? null : `${MEDIA}/m/posts/11.webm`, edit: null, durationMs: 30000, style: 'noir', audience: 'everyone', createdAt: Date.now(), expiresAt: Date.now()+86400000, seen: false, myReaction: null, viewCount: 1, reactions: [{kind:'crush', userId:2, name:'Ada'}], author: {id:1, name: 'Offline test', verified: false, photo: null, mutual:false} })) : [];
+    else if (path === '/rest/v1/rpc/visible_moments') body = ownMoment ? [0, 1, 2].map(i => ({ id: 77+i, userId: 1, kind: i === 0 ? 'video' : i === 1 ? 'text' : 'photo', body: i === 0 ? 'First Moment' : i === 1 ? 'Second Moment' : 'Third Moment', mediaUrl: i === 0 ? `${MEDIA}/m/posts/11.webm` : i === 2 ? `${MEDIA}/m/posts/12.jpg` : null, edit: null, durationMs: 30000, style: 'noir', audience: 'everyone', createdAt: Date.now(), expiresAt: Date.now()+86400000, seen: false, myReaction: null, viewCount: 1, reactions: [{kind:'crush', userId:2, name:'Ada'}], author: {id:1, name: 'Offline test', verified: false, photo: null, mutual:false} })) : [];
     else if (path === '/rest/v1/rpc/moment_viewers') body = { count: 1, items: [{profile: person, viewedAt: Date.now()}] };
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [onePost] };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
@@ -388,4 +388,25 @@ test('Discover suggestion Add Up calls the real follow action and reflects its r
   await page.getByRole('button',{name:'Add Up Ada'}).click();
   await expect.poll(()=>calls.some(x=>x.followed === true)).toBe(true);
   await expect(page.getByRole('button',{name:'Added Up Ada'})).toBeVisible();
+});
+
+
+test('holding a text or photo Moment freezes its progress until released', async ({page}) => {
+  test.setTimeout(35000);
+  await offline(page, [], [], false, false, [], false, false, true); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await page.getByRole('tab', {name:'Moments', exact:true}).click();
+  await page.getByRole('button', {name:/Play Offline test’s Moment/}).first().click();
+  const player=page.getByRole('button',{name:'Moments player'});
+  await player.click({position:{x:300,y:300}});
+  await expect(page.getByText('Second Moment').last()).toBeVisible();
+  await page.mouse.move(300,350); await page.mouse.down(); await page.waitForTimeout(6500);
+  await expect(page.getByText('Second Moment').last()).toBeVisible();
+  await page.mouse.up();
+  await player.click({position:{x:300,y:300}});
+  await expect(page.getByText('Third Moment').last()).toBeVisible();
+  await page.mouse.move(300,350); await page.mouse.down(); await page.waitForTimeout(6500);
+  await expect(page.getByText('Third Moment').last()).toBeVisible();
+  await page.mouse.up();
+  await expect(page.getByText('Third Moment').last()).toBeVisible();
 });
