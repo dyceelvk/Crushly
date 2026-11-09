@@ -737,7 +737,20 @@ def walk():
     # Save a post without a network request, restart the app, and reopen it.
     tap('Create post', required=True)
     tap('Post', required=True)
-    if not type_into(0, 'Local post draft check'): fail('draft post text field missing')
+    # The editor can be visibly painted before its EditText is exposed in the
+    # Android accessibility tree. Wait for the actual field, not coordinates.
+    fields = []
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        fields = [n for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
+        if fields:
+            break
+        time.sleep(1)
+    if not fields or not type_into(0, 'Local post draft check', fields):
+        fail('draft post text field missing')
+    typed = [n['text'] for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
+    if not typed or typed[0] != 'Local post draft check':
+        fail('draft post text did not reach the editor intact')
     back()
     if not scroll_to('Save draft', swipes=6): fail('post Save draft button missing')
     tap('Save draft', required=True)
