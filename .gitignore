@@ -26,3 +26,6 @@ CrushlyApp/apk/
 
 # Local Python test environment
 .venv/
+
+# Browser test screenshots
+CrushlyApp/walk-web/

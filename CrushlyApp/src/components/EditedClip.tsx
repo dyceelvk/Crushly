@@ -461,9 +461,8 @@ export function EditedClip({
  * up to cover the stage, softened — so the space around the picture is still the
  * picture. Slow, low-detail frames; nothing is asked of it except colour.
  *
- * It is deliberately not registered with the focus system: it has no sound to
- * take, and pausing it whenever another clip claims the audio would leave the
- * stage half black again while the clip on top kept playing.
+ * It has no sound to take, so it is not registered with the focus system. It
+ * follows the foreground clip and pauses as soon as its page is inactive.
  */
 function BackdropClip({ source, active }: { source: VideoSource; active: boolean }) {
   const player = useVideoPlayer(source, (p) => {
