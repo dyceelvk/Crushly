@@ -9,7 +9,18 @@ import { sanitizeImage } from './image-sanitizer.mjs';
 let processor: Promise<void> | undefined;
 function initializeProcessor(): Promise<void> {
  if(!processor) processor=(async()=>{
-  const wasm=await Deno.readFile(new URL(import.meta.resolve('npm:@imagemagick/magick-wasm@0.0.45/magick.wasm')));
+  // Version- and digest-pinned runtime. No applicant data is sent to the CDN.
+  // A CDN outage or altered asset makes uploads fail closed. The digest must
+  // be reviewed and changed together with the pinned npm package version.
+  const expectedLength=15425791;
+  const response=await fetch('https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.45/dist/x86/magick.wasm',{signal:AbortSignal.timeout(15000)});
+  if(!response.ok || Number(response.headers.get('content-length')??0)>expectedLength || !response.body) throw Error('Processor unavailable');
+  const reader=response.body.getReader(); const parts:Uint8Array[]=[]; let total=0;
+  for(;;){const {done,value}=await reader.read();if(done)break;total+=value.length;if(total>expectedLength){await reader.cancel();throw Error('Invalid processor size');}parts.push(value);}
+  if(total!==expectedLength) throw Error('Invalid processor size');
+  const wasm=new Uint8Array(total); let offset=0; for(const part of parts){wasm.set(part,offset);offset+=part.length;}
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',wasm)),v=>v.toString(16).padStart(2,'0')).join('');
+  if(hash!=='54629cbcf06dd10db38b4d87fa6ab241b248c09c94f2d9689506e5f994ac5f0c') throw Error('Invalid processor integrity');
   await magick.initializeImageMagick(wasm);
   magick.ResourceLimits.width=1600n; magick.ResourceLimits.height=1600n;
   magick.ResourceLimits.area=67108864n; magick.ResourceLimits.listLength=4n;

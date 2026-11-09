@@ -148,3 +148,12 @@ feature as live.
 Files 01, 03, 05, 08 and 09 overlap deployed cases/files/queue/retention objects;
 **do not apply them verbatim**. Reconcile the remaining functions against the
 live schema, ensure authorization and upload safety, and coordinate cutover.
+
+### Hosted WASM feasibility
+A temporary production Edge diagnostic, since deleted, initialized the pinned
+ImageMagick runtime from a SHA-256-verified CDN asset and re-encoded only
+synthetic inputs: tiny, 1600px flat and 1600px noisy JPEG. One noisy input
+completed with HTTP 200 in ~0.98 seconds. This does not validate the evidence
+endpoint, malformed files, EXIF/orientation, sustained load or crash recovery.
+The upload draft now fetches a size- and digest-pinned WASM asset, failing closed
+if unavailable; no personal image is sent to the CDN. It is not deployed.

@@ -524,3 +524,12 @@
   access token was unauthorized. The successful setup used the existing DB
   credential and a generated dedicated scheduler secret stored encrypted in
   GitHub; only its SHA-256 digest is stored in the database.
+- Hosted processor feasibility: temporary Edge function (now deleted) fetched
+  digest-pinned `@imagemagick/magick-wasm@0.0.45` WASM from jsDelivr, verified
+  its SHA-256, initialized, and re-encoded synthetic JPEGs; HTTP 200 for a 32px
+  image, two flat-color 1600px images, and one 1600px noisy 2.3MB synthetic
+  JPEG (~0.98s end-to-end in that run). This is not a real-image, sustained
+  load, malformed-input or security review. Updated the undeployed evidence
+  draft to stream-limit and hash-verify the pinned WASM; no user image is sent
+  to the CDN. CDN outages must fail uploads closed. The actual evidence upload
+  endpoint, authorization and client are still not deployed.
