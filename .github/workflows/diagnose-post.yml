@@ -1,45 +1,37 @@
-name: Diagnose post publishing
+name: Review Didit webhook and retention configuration
 on:
   workflow_dispatch:
-    inputs:
-      scope:
-        description: Select the diagnostic
-        required: false
-        default: post
-        type: choice
-        options: [post, space]
-      orphan_path:
-        description: Optional walk-account diagnostic object to clean up
-        required: false
-        type: string
 permissions:
   contents: read
 jobs:
-  publish-diagnostic:
+  inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Make a real short video for the publish test
-        if: inputs.scope != 'space'
+      - name: Review provider settings without exposing secrets or personal data
+        env:
+          DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
+          DIDIT_WORKFLOW_ID: ${{ secrets.DIDIT_WORKFLOW_ID }}
+        shell: bash
         run: |
-          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; fi
-          ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x240:r=15 -t 1 -c:v libx264 -pix_fmt yuv420p -movflags +faststart /tmp/crushly-publish-test.mp4
-          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1 /tmp/crushly-publish-test.mp4
-      - name: Exercise upload, post, options and cleanup
-        if: inputs.scope != 'space'
-        env:
-          SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-          WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
-          WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
-          ORPHAN_PATH: ${{ inputs.orphan_path }}
-        run: python3 .github/scripts/post-publish-diagnostic.py
-      - name: Check Space banner and search with the walk account
-        if: inputs.scope == 'space'
-        env:
-          SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-          WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
-          WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
-        run: python3 .github/scripts/space-search-diagnostic.py
+          python3 - <<'PY'
+          import os, json, urllib.request, urllib.error, hashlib
+          key=os.environ.get('DIDIT_API_KEY','');wf=os.environ.get('DIDIT_WORKFLOW_ID','')
+          if not key or not wf: raise SystemExit('Didit credentials are missing')
+          print('Actions API key matches Supabase credential digest:',hashlib.sha256(key.encode()).hexdigest()=='d56a942a62eb398ea8c55717b8957b51178d0834c960c602c855b5c7afd2fd0e')
+          print('Actions workflow ID matches Supabase workflow digest:',hashlib.sha256(wf.encode()).hexdigest()=='9bcf35d5e609a323f830567a88e8eb0ea5d9f0ac2200080018df1e27e044da5d')
+          req=urllib.request.Request('https://verification.didit.me/v3/webhook/',headers={'x-api-key':key,'Accept':'application/json'})
+          try:
+              with urllib.request.urlopen(req,timeout=15) as res: cfg=json.load(res)
+          except urllib.error.HTTPError as e: print('Could not read provider webhook config: HTTP',e.code);raise SystemExit(3)
+          except Exception: raise SystemExit('Could not reach provider')
+          endpoints=cfg.get('endpoints',[])
+          if not isinstance(endpoints,list): endpoints=[]
+          enabled=[x for x in endpoints if isinstance(x,dict) and x.get('enabled') is True]
+          print('Enabled destinations:',len(enabled))
+          print('Legacy URL configured:',bool(cfg.get('webhook_url')))
+          print('Manual endpoint configured:',any('/functions/v1/manual-didit-webhook' in str(x.get('url','')) for x in enabled))
+          print('Provider data retention months:',cfg.get('data_retention_months','unknown'))
+          print('Provider face retention policy:',cfg.get('face_retention_policy','unknown'))
+          print('Provider face retention days:',cfg.get('face_retention_days','unknown'))
+          PY
