@@ -716,7 +716,7 @@ def walk():
         fail('editor advanced sheet is missing comments or remix availability')
     tap('Allow comments', required=True)
     tap('Done', required=True)
-    if not find(nodes() or [], 'Comments off'):
+    if not wait_for(['Comments off'], 15, 'editor comments choice'):
         fail('editor did not retain the comments choice')
     tap('Advanced options', required=True)
     if not wait_for(['Allow comments'], 15, 'reopened Advanced options'):
