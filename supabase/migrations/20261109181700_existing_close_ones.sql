@@ -1,3 +1,4 @@
+begin;
 -- Existing connections were explicitly confirmed as accepted Close Ones.
 -- An unapproved legacy Keep is still not an accepted friendship. This change
 -- exposes counts and identities only for existing accepted connections.
@@ -138,3 +139,5 @@ begin
   delete from public.keeps where keeper_id=me and kept_id=p_member_id;
   return true;
 end $$;
+
+commit;
