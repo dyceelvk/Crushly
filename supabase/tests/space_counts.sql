@@ -51,6 +51,8 @@ begin
   r:=space_relationship_people(owner_id,'addUps',1,1);
   assert jsonb_array_length(r->'items')=1 and not (r->>'hasMore')::boolean, 'paging ending wrong';
   perform set_add_up_list_visibility('close');
+  denied:=false; begin perform remove_connection(close_id); exception when others then denied:=true; end; assert denied, 'accepted connection removed';
+  denied:=false; begin perform let_go(close_id); exception when others then denied:=true; end; assert denied, 'accepted Keep removed';
   reset role;
 
   perform set_config('request.jwt.claim.sub',close_uuid::text,true); set local role authenticated;
@@ -84,6 +86,12 @@ begin
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
   denied:=false; begin perform space_relationship_stats(owner_id); exception when others then denied:=true; end; assert denied, 'private Space statistics leaked';
   reset role;
+  -- Blocking remains a safety exception; unblock must not silently restore friendship.
+  perform set_config('request.jwt.claim.sub',owner_uuid::text,true); set local role authenticated;
+  assert block_member(close_id), 'block should remain available';
+  assert unblock_member(close_id), 'unblock failed';
+  reset role;
+  assert not exists(select 1 from holup_existing_close_pairs where user_a=least(owner_id,close_id) and user_b=greatest(owner_id,close_id)), 'blocked pair retained grandfather approval';
   raise notice 'space relationship visibility tests passed';
 end $test$;
 rollback;

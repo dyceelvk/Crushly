@@ -13,6 +13,7 @@ revoke all on public.holup_existing_close_pairs from public,anon,authenticated;
 create table if not exists public.holup_close_conversion_markers (name text primary key);
 alter table public.holup_close_conversion_markers enable row level security;
 revoke all on public.holup_close_conversion_markers from public,anon,authenticated;
+lock table public.connections in share row exclusive mode;
 do $$ begin
   if not exists(select 1 from public.holup_close_conversion_markers where name='existing-connections-v1') then
     insert into public.holup_existing_close_pairs(user_a,user_b) select user_a,user_b from public.connections on conflict do nothing;
@@ -107,3 +108,33 @@ revoke all on function public.holup_forget_existing_close_on_disconnect() from p
 drop trigger if exists holup_forget_existing_close_on_disconnect on public.connections;
 create trigger holup_forget_existing_close_on_disconnect after delete on public.connections
 for each row execute function public.holup_forget_existing_close_on_disconnect();
+
+-- Grandfathered accepted Close Ones are permanent except when a member blocks.
+-- The existing block/report flows insert a block then call disconnect_pair.
+create or replace function public.remove_connection(p_target_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  lock table public.connections in share row exclusive mode;
+  if public.holup_existing_close(me,p_target_id) then
+    perform public.crushly_fail(409,'permanent_close','Accepted Close Ones are permanent. You can block someone if you need to.');
+  end if;
+  perform public.disconnect_pair(me,p_target_id);
+  insert into public.passes(from_id,to_id) values(me,p_target_id)
+    on conflict(from_id,to_id) do update set created_at=public.now_ms();
+  return true;
+end $$;
+
+create or replace function public.let_go(p_member_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  lock table public.connections in share row exclusive mode;
+  if public.holup_existing_close(me,p_member_id) then
+    perform public.crushly_fail(409,'permanent_close','Accepted Close Ones are permanent. You can block someone if you need to.');
+  end if;
+  delete from public.keeps where keeper_id=me and kept_id=p_member_id;
+  return true;
+end $$;

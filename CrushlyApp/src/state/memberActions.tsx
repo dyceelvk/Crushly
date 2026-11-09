@@ -84,9 +84,6 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
   const actions: SheetAction[] = member
     ? [
         ...extra,
-        ...(member.connected
-          ? [{ label: 'Remove connection', icon: icon('heart-dislike-outline'), hint: 'Ends the mutual add up and closes your Whisper', onPress: () => confirmRemove(member) }]
-          : []),
         { label: `Flag ${member.name}`, icon: icon('flag-outline', colors.danger), destructive: true, hint: 'Confidential — they won’t know', onPress: () => openReport(member) },
         { label: `Cut Off ${member.name}`, icon: icon('ban-outline', colors.danger), destructive: true, hint: 'You’ll disappear from each other', onPress: () => confirmBlock(member) },
       ]
