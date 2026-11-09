@@ -45,7 +45,13 @@ type Tab = 'posts' | 'chat' | 'people';
  * you can read it, write in it and see who else is there. If you are not, none
  * of this exists for you — not the posts, not the chat, not the photos.
  */
-export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
+export function CircleScreen(props: ScreenProps<'Circle'>) {
+  // A draft from one room must never appear in another room if navigation
+  // reuses this screen with a different Circle ID.
+  return <CircleScreenContent key={props.route.params.circleId} {...props} />;
+}
+
+function CircleScreenContent({ navigation, route }: ScreenProps<'Circle'>) {
   /* Every picture on this screen opens a Moment when there is one live, and the
      Space otherwise — the same handler every other screen uses. */
   const openProfile = useProfileTap();
@@ -56,6 +62,12 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
   const toast = useToast();
   const space_q = useCircle(circleId);
   const [tab, setTab] = useState<Tab>('chat');
+  // Keep the unfinished composer in this screen, not the mounted chat pane:
+  // switching tabs must neither discard the draft nor keep media playing.
+  const [chatBody, setChatBody] = useState('');
+  const [chatPhoto, setChatPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
+  const [chatClip, setChatClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
+  const [chatClipEdit, setChatClipEdit] = useState<VideoEdit | null>(null);
   const [menu, setMenu] = useState(false);
   const read = useReadCircle();
 
@@ -125,6 +137,7 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
         </View>
 
         <Segmented<Tab>
+          swipeable
           options={[
             { value: 'chat', label: 'Chat' },
             { value: 'posts', label: 'Posts' },
@@ -135,31 +148,18 @@ export function CircleScreen({ navigation, route }: ScreenProps<'Circle'>) {
         />
       </View>
 
-      {/* Chat is a live room, not a page — it is not swiped away from. Posts and
-          People are pages, and slide. */}
-      {tab === 'chat' ? (
-        <RoomChat circleId={circleId} members={members} bottomInset={insets.bottom} />
-      ) : (
-        <SwipeTabs options={['posts', 'people'] as const} value={tab as 'posts' | 'people'} onChange={setTab as (v: 'posts' | 'people') => void} width={Dimensions.get('window').width}>
-        <ScrollView
-          contentContainerStyle={{
-            paddingHorizontal: gutter,
-            paddingTop: space.md,
-            paddingBottom: space.xxxl,
-            width: '100%',
-            maxWidth: contentWidth,
-            alignSelf: 'center',
-          }}
-          refreshControl={
-            <RefreshControl refreshing={space_q.isRefetching} onRefresh={space_q.refetch} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />
-          }
+      <SwipeTabs options={['chat', 'posts', 'people'] as const} value={tab} onChange={setTab} width={Dimensions.get('window').width} style={{flex: 1}} fill>
+        {tab === 'chat' ? <RoomChat circleId={circleId} members={members} bottomInset={insets.bottom}
+          body={chatBody} setBody={setChatBody} photo={chatPhoto} setPhoto={setChatPhoto}
+          clip={chatClip} setClip={setChatClip} clipEdit={chatClipEdit} setClipEdit={setChatClipEdit} /> : <ScrollView
+          contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: space.md, paddingBottom: space.xxxl, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
+          refreshControl={<RefreshControl refreshing={space_q.isRefetching} onRefresh={space_q.refetch} tintColor={colors.gold} colors={[colors.gold]} progressViewOffset={insets.top} />}
           showsVerticalScrollIndicator={false}
         >
           {tab === 'posts' ? <RoomPosts circleId={circleId} /> : null}
           {tab === 'people' ? <RoomPeople circleId={circleId} members={members} isOwner={circle.myRole === 'owner'} /> : null}
-        </ScrollView>
-        </SwipeTabs>
-      )}
+        </ScrollView>}
+      </SwipeTabs>
 
       <CircleMenu
         visible={menu}
@@ -179,10 +179,15 @@ function RoomChat({
   circleId,
   members,
   bottomInset = 0,
+  body, setBody, photo, setPhoto, clip, setClip, clipEdit, setClipEdit,
 }: {
   circleId: number;
   members: { member: { id: number; name: string; photos: { url: string }[] }; role: string }[];
   bottomInset?: number;
+  body: string; setBody: React.Dispatch<React.SetStateAction<string>>;
+  photo: { uri: string; mimeType: string } | null; setPhoto: React.Dispatch<React.SetStateAction<{ uri: string; mimeType: string } | null>>;
+  clip: { uri: string; mimeType: string; durationMs: number } | null; setClip: React.Dispatch<React.SetStateAction<{ uri: string; mimeType: string; durationMs: number } | null>>;
+  clipEdit: VideoEdit | null; setClipEdit: React.Dispatch<React.SetStateAction<VideoEdit | null>>;
 }) {
   const { colors } = useTheme();
   const { contentWidth, gutter } = useLayout();
@@ -190,10 +195,6 @@ function RoomChat({
   const toast = useToast();
   const thread = useCircleMessages(circleId);
   const send = useSendCircleMessage();
-  const [body, setBody] = useState('');
-  const [photo, setPhoto] = useState<{ uri: string; mimeType: string } | null>(null);
-  const [clip, setClip] = useState<{ uri: string; mimeType: string; durationMs: number } | null>(null);
-  const [clipEdit, setClipEdit] = useState<VideoEdit | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [picking, setPicking] = useState(false);
 

@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../../components/Txt';
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import { Input } from '../../components/Input';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -36,6 +37,7 @@ export function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { contentWidth, gutter } = useLayout();
+  const swipe = useSwipeTabs({ options: ['whispers', 'close'] as const, value: segment, onChange: setSegment, width: contentWidth });
   const { data, isLoading, isError, error, refetch, isRefetching } = useConversations();
   const { data: crushes } = useCrushes();
   const open = useOpenConversation();
@@ -87,7 +89,7 @@ export function MessagesScreen() {
       <View style={{ flexDirection: 'row', gap: 8, marginTop: space.sm }}>
         {([
           ['whispers', 'Whispers'],
-          ['close', 'Close Ones'],
+          ['close', 'Homies'],
         ] as const).map(([key, label]) => {
           const on = segment === key;
           return (
@@ -168,7 +170,7 @@ export function MessagesScreen() {
 
   if (segment === 'close') {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
         <View style={{ paddingTop: insets.top, paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
           {header}
         </View>
@@ -180,7 +182,7 @@ export function MessagesScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
       <FlatList
         data={filteredConvs}
         keyExtractor={(c) => String(c.id)}

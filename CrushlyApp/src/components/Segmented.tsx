@@ -3,6 +3,7 @@ import { Animated, Pressable, View } from 'react-native';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 import { haptic } from '../lib/haptics';
+import { useSwipeTabs } from './SwipeTabs';
 
 type Option<T extends string> = { value: T; label: string; count?: number };
 
@@ -21,10 +22,12 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  swipeable = false,
 }: {
   options: Option<T>[];
   value: T;
   onChange: (v: T) => void;
+  swipeable?: boolean;
 }) {
   const { colors } = useTheme();
   const [width, setWidth] = useState(0);
@@ -32,6 +35,7 @@ export function Segmented<T extends string>({
   const inner = Math.max(0, width - 8); // the 4 px of padding on each side
   const itemWidth = options.length ? inner / options.length : 0;
   const x = useRef(new Animated.Value(0)).current;
+  const swipe = useSwipeTabs({ options: options.map(o => o.value), value, onChange, width });
 
   useEffect(() => {
     Animated.spring(x, {
@@ -45,6 +49,7 @@ export function Segmented<T extends string>({
 
   return (
     <View
+      {...(swipeable ? swipe.panHandlers : {})}
       accessibilityRole="tablist"
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       style={{ flexDirection: 'row', backgroundColor: colors.card, borderRadius: 999, padding: 4, borderWidth: 1, borderColor: colors.border }}

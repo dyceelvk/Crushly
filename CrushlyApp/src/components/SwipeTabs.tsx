@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Animated, PanResponder, View, type ViewStyle } from 'react-native';
+import { useTheme } from '../theme/ThemeProvider';
 
 /**
  * Swiping between tabs.
@@ -24,13 +25,15 @@ export function useSwipeTabs<T extends string>({
   onChange: (v: T) => void;
   width: number;
 }) {
+  const { reduceMotion } = useTheme();
   const offset = useRef(new Animated.Value(0)).current;
   const index = Math.max(0, options.indexOf(value));
   // Read inside the responder, which is created once.
-  const live = useRef({ index, width, options, onChange });
-  live.current = { index, width, options, onChange };
+  const live = useRef({ index, width, options, onChange, reduceMotion });
+  live.current = { index, width, options, onChange, reduceMotion };
 
   const settle = () => {
+    if (live.current.reduceMotion) { offset.setValue(0); return; }
     Animated.spring(offset, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 260, mass: 0.6 }).start();
   };
 
@@ -38,19 +41,19 @@ export function useSwipeTabs<T extends string>({
     PanResponder.create({
       // Never the first claim: taps and vertical scrolls belong to whatever is
       // inside the tab.
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
+      onMoveShouldSetPanResponder: (_e, g) => live.current.options.length > 1 && g.numberActiveTouches <= 1 && Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
       onPanResponderMove: (_e, g) => {
         const { index: i, options: opts, width: w } = live.current;
         let dx = g.dx;
         // A tired edge: past the first or last tab the content barely moves.
         if ((i === 0 && dx > 0) || (i === opts.length - 1 && dx < 0)) dx *= 0.25;
-        offset.setValue(dx);
+        if (!live.current.reduceMotion) offset.setValue(dx);
         void w;
       },
       onPanResponderRelease: (_e, g) => {
         const { index: i, options: opts, onChange: change, width: w } = live.current;
         const travelled = g.dx;
-        const fast = Math.abs(g.vx) > 0.45;
+        const fast = Math.abs(g.vx) > 0.45 && Math.abs(travelled) >= 35;
         const far = Math.abs(travelled) > Math.max(48, w * 0.18);
         const next = travelled < 0 ? i + 1 : i - 1;
         if ((far || fast) && next >= 0 && next < opts.length) {
@@ -76,6 +79,7 @@ export function SwipeTabs<T extends string>({
   width,
   children,
   style,
+  fill = false,
 }: {
   options: T[];
   value: T;
@@ -83,11 +87,13 @@ export function SwipeTabs<T extends string>({
   width: number;
   children: React.ReactNode;
   style?: ViewStyle;
+  /** Let a full-screen pane and its contents fill the available height. */
+  fill?: boolean;
 }) {
   const swipe = useSwipeTabs({ options, value, onChange, width });
   return (
     <View {...swipe.panHandlers} style={style}>
-      <Animated.View style={swipe.style}>{children}</Animated.View>
+      <Animated.View style={[fill ? { flex: 1 } : undefined, swipe.style]}>{children}</Animated.View>
     </View>
   );
 }

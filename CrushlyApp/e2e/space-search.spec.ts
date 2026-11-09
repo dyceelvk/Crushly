@@ -9,7 +9,7 @@ const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated',
 const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', bio: 'My site https://example.com/about', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
-async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false) {
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false, railClips = false, room = false, notificationFixtures: unknown[] = []) {
   let banner: string | null = null;
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
@@ -35,6 +35,8 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
       const params = route.request().postDataJSON() as Record<string, unknown>; calls.push(params);
       body = { members: params.p_category === 'top' || params.p_category === 'people' ? [person] : [], posts: ['top', 'photos'].includes(String(params.p_category)) ? [onePost] : [], moments: [], sounds: params.p_category === 'sounds' ? [{ id: 20, title: 'Holiday tune' }] : [], places: params.p_category === 'places' ? [{ name: 'Lagos' }] : [], hashtags: params.p_category === 'hashtags' ? [{ tag: 'holiday' }] : [] };
     }
+    else if (path === '/rest/v1/rpc/trending_clips' && railClips) body = Array.from({length: 6}, (_, i) => ({ ...onePost, id: 300 + i, body: `Rail clip ${i}`, mediaKind: 'video', likeCount: i + 1 }));
+    else if (path === '/rest/v1/rpc/list_notifications') body = notificationFixtures;
     else if (path === '/rest/v1/rpc/holup_trends') body = [{ term: '#commentfixture', postCount: 2 }];
     else if (path === '/rest/v1/rpc/holup_is_admin') body = isAdmin;
     else if (path === '/rest/v1/rpc/holup_app_settings') body = { callsEnabled: false, publicSharingEnabled: true, announcement: null };
@@ -60,7 +62,9 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private'};
     else if (path === '/rest/v1/rpc/space_relationship_people') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {items: [person], hasMore: false}; }
     else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
-    else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
+    else if (path === '/rest/v1/rpc/my_circles') body = { items: room ? [{id: 5, name: 'Offline room', about: 'Test', myRole:'owner', ownerId:1, memberCount:1, createdAt:Date.now(), muted:false, coverUrl:null, unreadCount:0, lastMessageAt:null}] : [] };
+    else if (path === '/rest/v1/rpc/circle_space' && room) body = { circle: {id:5, name:'Offline room', about:'Test', myRole:'owner', ownerId:1, memberCount:1, createdAt:Date.now(), muted:false, coverUrl:null}, members: [{ member: {...person, id:1}, role:'owner', joinedAt:Date.now() }] };
+    else if ((path === '/rest/v1/rpc/circle_feed' || path === '/rest/v1/rpc/circle_messages') && room) body = {items:[]};
     else if (path === '/rest/v1/rpc/heartbeat') body = true;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'access-control-allow-origin': '*', 'access-control-expose-headers': '*' } });
   });
@@ -401,4 +405,147 @@ test('a private relationship list shows the access notice without requesting ide
   await expect(page.getByText('Offline test has limited who can view their Add Ups.')).toBeVisible();
   expect(calls.some(x => x.p_kind === 'addUps')).toBe(false);
   await expect(page.getByRole('button', {name:'Back to Space'})).toBeVisible();
+});
+
+/** Real touch events, not click/keyboard stand-ins for a swipe. */
+async function dragTouch(page: Page, fromX: number, fromY: number, toX: number, toY: number) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', {enabled: true, maxTouchPoints: 1});
+  await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x: fromX, y: fromY}]});
+  for (let i = 1; i <= 12; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: fromX + (toX-fromX)*i/12, y: fromY + (toY-fromY)*i/12}]});
+    await page.waitForTimeout(15);
+  }
+  await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await cdp.detach();
+  await page.waitForTimeout(400);
+}
+
+test('touch swipes move Home and Whispers pages; taps and bottom navigation still work', async ({page}) => {
+  await offline(page, []); await page.goto('/');
+  await expect(page.getByRole('tab', {name:'Crushes', exact:true})).toBeVisible({timeout:30000});
+  await expect(page.getByRole('button', {name:/Comments, 1 comment/}).first()).toBeVisible();
+  await dragTouch(page, 300, 430, 70, 430);
+  await expect(page.getByText('From everyone', {exact:true})).toBeVisible();
+  await dragTouch(page, 70, 430, 300, 430);
+  await expect(page.getByRole('button', {name:/Comments, 1 comment/}).first()).toBeVisible();
+  await page.getByRole('tab', {name:'Whispers', exact:true}).click();
+  await expect(page.getByRole('tab', {name:'Whispers', exact:true}).first()).toBeVisible();
+  await dragTouch(page, 300, 430, 70, 430);
+  await expect(page.getByText('People you’ve chosen to keep near.', {exact:false})).toBeVisible();
+  await dragTouch(page, 70, 430, 300, 430);
+  await expect(page.getByPlaceholder('Search your Whispers')).toBeVisible();
+  await page.getByRole('tab', {name:'Homies', exact:true}).click();
+  await expect(page.getByText('People you’ve chosen to keep near.', {exact:false})).toBeVisible();
+  await page.getByRole('tab', {name:'Connections', exact:true}).click();
+  await dragTouch(page, 310, 805, 75, 805);
+  await expect(page.getByRole('tab', {name:'Homies', exact:true})).toBeVisible();
+  await expect(page.getByRole('button', {name:'Create post', exact:true})).toBeVisible();
+});
+
+test('touch swipes switch notification and comment tabs without closing the sheet', async ({page}) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByRole('button', {name:'Notifications', exact:true}).first().click({timeout:30000});
+  await expect(page.getByRole('tab', {name:'Yours', exact:true})).toBeVisible();
+  const yours = await page.getByRole('tab', {name:'Yours', exact:true}).boundingBox();
+  if (!yours) throw Error('Notification tabs missing');
+  await dragTouch(page, 230, yours.y + 10, 40, yours.y + 10);
+  await expect(page.getByText('No other updates from Holup')).toBeVisible();
+  await dragTouch(page, 70, 430, 300, 430);
+  await expect(page.getByText('All quiet for now')).toBeVisible();
+  await page.getByRole('button', {name:'Go back'}).click();
+  await page.getByRole('button', {name:/Comments, 1 comment/}).first().click();
+  await expect(page.getByText('Hello there')).toBeVisible();
+  await page.waitForTimeout(700); // let the sheet finish its entrance transition
+  await dragTouch(page, 300, 530, 70, 530);
+  await expect(page.getByText('No reactions on this post yet.')).toBeVisible();
+  await dragTouch(page, 70, 530, 300, 530);
+  await expect(page.getByText('Hello there')).toBeVisible();
+  await page.getByRole('button', {name:'Close', exact:true}).last().click();
+});
+
+test('search and Space navigation tabs support touch swipes without changing settings', async ({page}) => {
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  await page.getByRole('button', {name:'Search Holup'}).first().click({timeout:30000});
+  await page.getByPlaceholder('Search Holup').fill('holiday');
+  await expect(page.getByRole('tab', {name:'Top', exact:true})).toBeVisible();
+  await dragTouch(page, 300, 430, 70, 430);
+  await expect.poll(() => calls.at(-1)?.p_category).toBe('clips');
+  await page.getByRole('button', {name:'Back', exact:true}).click();
+  await page.getByText('Space', {exact:true}).last().click();
+  await expect(page.getByRole('tab', {name:'Crushes', exact:true})).toBeVisible();
+  const tab = await page.getByRole('tab', {name:'Crushes', exact:true}).boundingBox();
+  if (!tab) throw Error('Space tab missing');
+  await dragTouch(page, 300, tab.y + 20, 70, tab.y + 20);
+  await expect(page.getByText('No Moments right now')).toBeVisible();
+  await page.getByRole('tab', {name:'About', exact:true}).click();
+  await expect(page.getByText('My site', {exact:false}).first()).toBeVisible();
+});
+
+
+test('a horizontal clip rail keeps its own touch scroll instead of switching Home tabs', async ({page}) => {
+  await offline(page, [], [], false, false, [], false, false, false, false, true); await page.goto('/');
+  await page.getByRole('tab', {name:'Discovery', exact:true}).click({timeout:30000});
+  const clip = page.getByRole('button', {name:/Rail clip 0/});
+  await expect(clip).toBeVisible();
+  const rail = clip.locator('xpath=../..');
+  const box = await clip.boundingBox();
+  if (!box) throw Error('Clip rail not visible');
+  const before = await rail.evaluate(e => e.scrollLeft);
+  await dragTouch(page, Math.min(340, box.x + box.width), box.y + 60, 45, box.y + 60);
+  await expect.poll(() => rail.evaluate(e => e.scrollLeft)).toBeGreaterThan(before);
+  await expect(page.getByText('Top Crushes This Week')).toBeVisible();
+});
+
+
+test('Circle chat draft survives swiping to posts and back', async ({page}) => {
+  await offline(page, [], [], false, false, [], false, false, false, false, false, true); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await page.getByRole('tab', {name:'Circles', exact:true}).click();
+  await page.getByText('Offline room', {exact:true}).first().click();
+  const composer = page.getByPlaceholder('Write something…');
+  await expect(composer).toBeVisible();
+  await composer.fill('Unsent room draft');
+  await dragTouch(page, 300, 330, 60, 330);
+  await expect(composer).toHaveCount(0);
+  await dragTouch(page, 60, 330, 300, 330);
+  await expect(composer).toHaveValue('Unsent room draft');
+});
+
+
+test('notification categories swipe independently while the category rail still scrolls', async ({page}) => {
+  const n = (id: number, kind: string, name: string) => ({id, kind, actor:{...person, id: id + 2, name}, body:'', refId: 11, read: true, createdAt:Date.now()});
+  await offline(page, [], [], false, false, [], false, false, false, false, false, false, [n(1,'message','Whisperer'), n(2,'post_comment','Commenter'), n(3,'crush','Adder'), n(4,'keep','Homie'), n(5,'moment_reaction','Momenter'), n(6,'circle_joined','Circler')]);
+  await page.goto('/');
+  await page.getByRole('button', {name:'Notifications', exact:true}).first().click({timeout:30000});
+  await expect(page.getByText('Whisperer sent you a Whisper.')).toBeVisible();
+  await expect(page.getByText('Commenter commented on your post.')).toBeVisible();
+  await dragTouch(page, 300, 430, 70, 430);
+  await expect(page.getByText('Whisperer sent you a Whisper.')).toBeVisible();
+  await expect(page.getByText('Commenter commented on your post.')).toHaveCount(0);
+  await dragTouch(page, 300, 430, 70, 430);
+  await expect(page.getByText('Commenter commented on your post.')).toBeVisible();
+  await expect(page.getByText('Whisperer sent you a Whisper.')).toHaveCount(0);
+  await dragTouch(page, 70, 430, 300, 430);
+  await expect(page.getByText('Whisperer sent you a Whisper.')).toBeVisible();
+  // A drag on the horizontal chip rail scrolls the rail, not the notification list.
+  const chip = page.getByRole('tab', {name:'Whispers', exact:true});
+  const rail = chip.locator('xpath=../..');
+  const box = await chip.boundingBox();
+  if (!box) throw Error('Category rail missing');
+  const left = await rail.evaluate(e => e.scrollLeft);
+  await dragTouch(page, 300, box.y + box.height / 2, 55, box.y + box.height / 2);
+  await expect.poll(() => rail.evaluate(e => e.scrollLeft)).toBeGreaterThan(left);
+  await expect(page.getByText('Whisperer sent you a Whisper.')).toBeVisible();
+});
+
+test('Space navigation swipe goes to Whispers without opening Create', async ({page}) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await expect(page.getByRole('button', {name:'Whispers', exact:true})).toBeVisible();
+  const nav = await page.getByRole('button', {name:'Whispers', exact:true}).boundingBox();
+  if (!nav) throw Error('Space navigation missing');
+  await dragTouch(page, 65, nav.y + nav.height / 2, 310, nav.y + nav.height / 2);
+  await expect(page.getByPlaceholder('Search your Whispers')).toBeVisible();
+  await expect(page.getByRole('button', {name:'Create post', exact:true})).toBeVisible();
 });

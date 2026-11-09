@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../Photo';
 import { Txt } from '../Txt';
+import { useSwipeTabs } from '../SwipeTabs';
 import { LinkText } from '../LinkText';
 import { useToast } from '../Toast';
 import { Suggestions } from '../Suggestions';
@@ -78,7 +79,7 @@ export function CommentsSheet({
     field: colors.elevated, accent: colors.primary, crush: colors.crush, gold: colors.gold,
   };
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
   const keyboard = useAndroidKeyboardOverlap();
   const { data: me } = useMe();
   const toast = useToast();
@@ -93,6 +94,7 @@ export function CommentsSheet({
   const removeComment = useDeletePostComment(postId ?? 0);
 
   const [tab, setTab] = useState<Tab>('comments');
+  const tabSwipe = useSwipeTabs({ options: ['comments', 'likes'] as const, value: tab, onChange: setTab, width });
   const [sort, setSort] = useState<Sort>('newest');
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<PostComment | null>(null);
@@ -352,6 +354,7 @@ export function CommentsSheet({
         >
           {/* ------------------------------------------------------------ header */}
           <View
+            {...tabSwipe.panHandlers}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -409,7 +412,7 @@ export function CommentsSheet({
           </View>
 
           {/* -------------------------------------------------------------- body */}
-          <View style={{ flex: 1 }}>{tab === 'comments' ? commentsTab : likesTab}</View>
+          <View {...tabSwipe.panHandlers} style={{ flex: 1 }}>{tab === 'comments' ? commentsTab : likesTab}</View>
 
           {/* ---------------------------------------------------------- composer */}
           {tab === 'comments' && !canComment ? (
