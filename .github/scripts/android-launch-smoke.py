@@ -805,7 +805,11 @@ def walk():
     tap('Create post', required=True)
     tap('Moment', required=True)
     tap('Drafts on this phone', required=True)
-    if not find(nodes() or [], moment_text): fail('Moment draft is missing or changed')
+    # The draft sheet may be visibly painted while its accessibility tree is
+    # still empty. Wait for the exact saved text, never replace this with a tap
+    # or a screenshot-only success.
+    if not wait_for([moment_text], 20, 'Moment draft list'):
+        fail('Moment draft is missing or changed')
     tap('Open draft', required=True)
     if not wait_for([moment_text], 20, 'Moment draft reopen'):
         fail('Moment draft content was not restored')
