@@ -492,3 +492,10 @@
   update installation or app/backend functionality. The certificate is an
   Android debug certificate. The APK has NOT been released and must not be
   pumped while its backend dependencies and privacy protections are incomplete.
+- 30-day deletion follow-up: production still has no manual-review case/file
+  tables or evidence bucket; legacy `verification` bucket has zero objects.
+  Did not claim that existing or future images are being deleted. Hardened the
+  draft queue against stale-worker acknowledgements and queued failed/ambiguous
+  upload paths. Disposable PostgreSQL checks passed for revision matching and
+  authenticated-role denial; hosted worker, storage, crash recovery and actual
+  scheduler remain unverified/undeployed. Do not enable evidence upload yet.

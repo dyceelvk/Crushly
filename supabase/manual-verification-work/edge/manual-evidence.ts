@@ -63,7 +63,15 @@ Deno.serve(async req=>{
   catch { await service.rpc('manual_evidence_abort',{p_file:slot.id,p_actor:who.user.id}); return json({error:'Could not process this image. Choose a clear still image no larger than 1600 by 1600 pixels.'},400); }
   const {error:uploadError}=await bucket.upload(slot.path,clean,{contentType:'image/jpeg',upsert:false,cacheControl:'0'});
   const {error:finishError}=await service.rpc('manual_evidence_finish',{p_file:slot.id,p_actor:who.user.id,p_success:!uploadError});
-  if(uploadError||finishError){ await service.rpc('manual_evidence_abort',{p_file:slot.id,p_actor:who.user.id}); if(!uploadError) await bucket.remove([slot.path]); return json({error:'Image was not saved. Please try again.'},503); }
+  if(uploadError||finishError){
+   // A timeout may conceal a successful object write. Re-enqueue after the
+   // upload attempt, even if the case/row disappeared during the request.
+   const {error:queueError}=await service.rpc('manual_evidence_cleanup_enqueue',{p_path:slot.path});
+   await service.rpc('manual_evidence_abort',{p_file:slot.id,p_actor:who.user.id});
+   if(!uploadError) await bucket.remove([slot.path]);
+   if(queueError) console.error('Failed to queue incomplete verification upload for deletion');
+   return json({error:'Image was not saved. Please try again.'},503);
+  }
   return json({id:slot.id});
  }
  if(body.action==='delete') {
@@ -71,7 +79,7 @@ Deno.serve(async req=>{
   const {data:path,error}=await service.rpc('manual_evidence_hide',{p_file:body.fileId,p_actor:who.user.id});
   if(error||!path) return json({error:'Image unavailable.'},404);
   const {error:removeError}=await bucket.remove([path]);
-  if(!removeError) await service.rpc('manual_evidence_cleanup_done',{p_path:path});
+  // Leave the durable queue for the worker to acknowledge with its revision.
   // Visibility is revoked atomically even if deletion has to be retried.
   return json({hidden:true,deleted:!removeError});
  }

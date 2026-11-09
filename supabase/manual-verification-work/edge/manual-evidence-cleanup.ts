@@ -19,11 +19,12 @@ Deno.serve(async req=>{
  const {data:paths,error}=await client.rpc('manual_evidence_cleanup_batch',{p_limit:100});
  if(error||!Array.isArray(paths)) { await client.rpc('manual_evidence_cleanup_heartbeat',{p_failed:1}); return new Response('Queue unavailable',{status:503}); }
  let removed=0,failed=0;
- for(const path of paths) {
-  if(typeof path!=='string'||!path.startsWith('cases/')) { failed++; continue; }
+ for(const item of paths) {
+  if(!item||typeof item.path!=='string'||!item.path.startsWith('cases/')||typeof item.revision!=='string') { failed++; continue; }
+  const path=item.path;
   const {error:removeError}=await client.storage.from('holup-review-evidence').remove([path]);
   if(removeError) { failed++; continue; }
-  const {error:doneError}=await client.rpc('manual_evidence_cleanup_done',{p_path:path});
+  const {error:doneError}=await client.rpc('manual_evidence_cleanup_done',{p_path:path,p_revision:item.revision});
   if(doneError) failed++; else removed++;
  }
  const {error:heartbeatError}=await client.rpc('manual_evidence_cleanup_heartbeat',{p_failed:failed});

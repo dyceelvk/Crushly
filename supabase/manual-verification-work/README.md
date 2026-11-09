@@ -123,3 +123,14 @@ expired-image and heartbeat status only to authorized admins. Worker failures
 and missing heartbeats require attention. This does not install monitoring,
 provide alerts when nobody opens the dashboard, or verify Didit/backups. SQL and
 privileges received a focused disposable-database check; production is unchanged.
+
+### Deletion queue race hardening
+The draft cleanup queue carries a revision. An old cleanup acknowledgement
+cannot discard a newer request for the same object. The evidence-upload draft
+also queues the path after an unsuccessful or ambiguous upload, including when
+a case disappears during upload. Direct deletion leaves the durable queue for
+its worker. Focused checks used a disposable PostgreSQL fixture; hosted Storage,
+network timeouts, concurrent requests and edge deployment still need validation.
+A function crash before enqueue, or failure to enqueue, remains a potential
+orphan: the upload/storage reconciliation and alerting design is not complete.
+None of these changes deploys the scheduler or the manual-review feature.
