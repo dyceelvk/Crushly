@@ -167,6 +167,8 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'admin_triage.sql'):
             return 1
+        if not run_file(ROOT / 'space_counts.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

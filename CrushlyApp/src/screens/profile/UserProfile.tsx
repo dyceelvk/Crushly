@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, type AddUpListVisibility } from '../../api/service';
+import { formatCount } from '../../lib/counts';
+import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -205,6 +208,10 @@ export function SpaceScreen({
   const [photoOpen, setPhotoOpen] = useState(false);
   const [faceMenu, setFaceMenu] = useState(false);
   const [spaceMenu, setSpaceMenu] = useState(false);
+  const [relationshipList, setRelationshipList] = useState<'addUps' | 'keptClose' | null>(null);
+  const [listOpenSequence, setListOpenSequence] = useState(0);
+  const [visibilityMenu, setVisibilityMenu] = useState(false);
+  const qc = useQueryClient();
   const [showFullBio, setShowFullBio] = useState(false);
   /**
    * Whether the page has scrolled past the cover.
@@ -240,6 +247,15 @@ export function SpaceScreen({
   // so an owner's Flows and a visitor's are the same list from the same call.
   const spaceId = mine ? (meQ.data?.id ?? 0) : id;
   const posts = useSpacePosts(spaceId, spaceId > 0);
+  const relationship = useQuery({
+    queryKey: ['space-relationship-stats', meQ.data?.id, spaceId],
+    queryFn: () => spaceRelationshipStats(spaceId), enabled: !!meQ.data?.id && spaceId > 0,
+    staleTime: 0, refetchInterval: 30_000,
+  });
+  const visibilityMutation = useMutation({ mutationFn: setAddUpListVisibility,
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] }); toast({kind: 'success', title: 'Privacy updated'}); },
+    onError: (e) => toast({kind:'error', title:'Couldn’t update privacy', message:(e as Error).message}),
+  });
 
   const p: FullProfile | null = mine
     ? meQ.data
@@ -566,6 +582,10 @@ export function SpaceScreen({
             <Txt variant="small" color="textSecondary" style={{ marginTop: space.xs }}>
               {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
             </Txt>
+            {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
+              {([['addUps', 'Add Ups', relationship.data.addUps, relationship.data.canViewAddUps], ['keptClose', 'Kept Close', relationship.data.keptClose, relationship.data.canViewKeptClose]] as const).map(([kind, label, count, canView]) => canView ? <Pressable key={kind} onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList(kind); }} accessibilityRole="button" accessibilityLabel={`${count} ${label}. View people`}><Txt variant="small"><Txt variant="smallStrong">{formatCount(count)}</Txt> {label}</Txt></Pressable> : <Txt key={kind} variant="small"><Txt variant="smallStrong">{formatCount(count)}</Txt> {label}</Txt>)}
+              {mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
+            </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
             {p.bio ? <View style={{ marginTop: space.sm }}>
               <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
               {p.bio.length > 80 ? <Pressable onPress={() => setShowFullBio((open) => !open)} accessibilityRole="button" accessibilityLabel={showFullBio ? 'Show less bio' : 'Show full bio'}><Txt variant="small" color="gold">{showFullBio ? 'Show less' : 'Show more'}</Txt></Pressable> : null}
@@ -871,8 +891,30 @@ export function SpaceScreen({
         </View>
       </View>
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
+      <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
+        ['everyone', 'Everyone who can view your Space'], ['close', 'Mutual Close Ones'], ['private', 'Only you'],
+      ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals stay visible. Individual Spaces still follow their privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
+      <SpaceRelationshipList targetId={p.id} viewerId={meQ.data?.id ?? 0} kind={relationshipList} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>
   );
+}
+
+function SpaceRelationshipList({ targetId, viewerId, kind, openSequence, onClose, onOpen }: { targetId: number; viewerId: number; kind: 'addUps' | 'keptClose' | null; openSequence: number; onClose: () => void; onOpen: (id: number) => void }) {
+  const { colors } = useTheme();
+  const q = useInfiniteQuery({
+    queryKey: ['space-relationship-people', viewerId, targetId, kind, openSequence], enabled: !!kind && !!viewerId,
+    initialPageParam: 0, queryFn: ({ pageParam }) => spaceRelationshipPeople(targetId, kind!, pageParam),
+    getNextPageParam: (last, pages) => last.hasMore ? pages.reduce((n, page) => n + page.items.length, 0) : undefined,
+    staleTime: 0, gcTime: 0, refetchInterval: 15_000,
+  });
+  const people = q.data?.pages.flatMap((page) => page.items) ?? [];
+  return <BottomSheet visible={!!kind} onClose={onClose} title={kind === 'keptClose' ? 'Kept Close' : 'Add Ups'}>
+    <Txt variant="small" color="textSecondary">People whose Spaces are private or unavailable to you may not appear.</Txt>
+    {q.isLoading && kind ? <LoadingBlock label="Loading people" /> : q.isError ? <ErrorState error={q.error} message="Couldn’t load people." onRetry={() => void q.refetch()} /> : people.length === 0 ? <EmptyState title="No people to show" /> : <View style={{ gap: 8, paddingTop: space.sm }}>
+      {people.map((person) => <Pressable key={person.id} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Open ${person.name}’s Space`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Avatar uri={person.photos[0]?.url ?? null} name={person.name} size={42} /><View><Txt variant="bodyStrong">{person.name}</Txt>{person.username ? <Txt variant="small" color="textSecondary">@{person.username}</Txt> : null}</View></Pressable>)}
+      {q.hasNextPage ? <Button title="Show more" variant="ghost" loading={q.isFetchingNextPage} onPress={() => void q.fetchNextPage()} /> : null}
+    </View>}
+  </BottomSheet>;
 }
 
 /* ------------------------------------------------------- the three panels */

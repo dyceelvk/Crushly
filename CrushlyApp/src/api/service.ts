@@ -266,6 +266,19 @@ export async function completeOnboarding(): Promise<Me> {
   return getMe();
 }
 
+export type AddUpListVisibility = 'everyone' | 'close' | 'private';
+export type SpaceRelationshipStats = { addUps: number; keptClose: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
+export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
+  return rpc('space_relationship_stats', { p_target_id: id });
+}
+export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
+  const page = await rpc<{ items: Profile[]; hasMore: boolean }>('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 });
+  return { ...page, items: (page.items ?? []).map(profileShape) };
+}
+export async function setAddUpListVisibility(visibility: AddUpListVisibility): Promise<void> {
+  await rpc('set_add_up_list_visibility', { p_visibility: visibility });
+}
+
 /** Only ask for a banner on a Space, not on every app launch. */
 export async function spaceBanner(id: number): Promise<string | null> {
   const banner = await rpc<unknown>('space_banner', { p_target_id: id });

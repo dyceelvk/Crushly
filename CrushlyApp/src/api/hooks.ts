@@ -781,6 +781,8 @@ export function useKeepClose() {
     onSuccess: (state, memberId) => {
       qc.setQueryData(keys.keep(memberId), state);
       void qc.invalidateQueries({ queryKey: keys.closeOnes });
+      void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] });
+      void qc.invalidateQueries({ queryKey: ['space-relationship-people'] });
     },
   });
 }
@@ -792,6 +794,8 @@ export function useLetGo() {
     onSuccess: (_r, memberId) => {
       void qc.invalidateQueries({ queryKey: keys.keep(memberId) });
       void qc.invalidateQueries({ queryKey: keys.closeOnes });
+      void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] });
+      void qc.invalidateQueries({ queryKey: ['space-relationship-people'] });
     },
   });
 }
@@ -994,6 +998,8 @@ export function useCrush() {
  * A request answered in one place must not still be a request in another.
  */
 function addUpChanged(qc: QueryClient, id: number) {
+  void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] });
+  void qc.invalidateQueries({ queryKey: ['space-relationship-people'] });
   void qc.invalidateQueries({ queryKey: keys.crushes });
   void qc.invalidateQueries({ queryKey: keys.user(id) });
   void qc.invalidateQueries({ queryKey: keys.discover });
@@ -1032,6 +1038,8 @@ export function useUndoCrush() {
   return useMutation({
     mutationFn: (id: number) => service.uncrush(id),
     onSuccess: (_r, id) => {
+      void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] });
+      void qc.invalidateQueries({ queryKey: ['space-relationship-people'] });
       qc.invalidateQueries({ queryKey: keys.crushes });
       qc.invalidateQueries({ queryKey: keys.user(id) });
       qc.invalidateQueries({ queryKey: keys.discover });
