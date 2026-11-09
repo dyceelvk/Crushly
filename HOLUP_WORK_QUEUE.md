@@ -169,3 +169,7 @@
   does not publish the app. Android for current sources has not been built or
   walked against a properly staged backend; do not use the live backend as a
   substitute for staging a client that depends on undeployed v3 APIs.
+  Outcome: CI 42601557167 completed successfully: app, full migration/RLS
+  smoke, offline browser regressions, Worker bundle and release notes passed;
+  exact-APK re-walk was intentionally skipped (no APK was supplied). CI does
+  not run the experimental 08/10/11 scripts, which were tested locally above.
