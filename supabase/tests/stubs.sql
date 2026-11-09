@@ -29,7 +29,7 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 
 create schema if not exists storage;
-create table storage.buckets (id text primary key, name text, public boolean default false);
+create table storage.buckets (id text primary key, name text, public boolean default false, file_size_limit bigint, allowed_mime_types text[]);
 create table storage.objects (
   id uuid default gen_random_uuid(), bucket_id text, name text, owner uuid
 );
