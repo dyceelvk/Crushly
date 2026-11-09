@@ -452,6 +452,17 @@ export const adminState = () => rpc<AdminState>('holup_admin_state');
 export const adminSetFeature = (key: 'calls' | 'public_post_sharing', enabled: boolean) => rpc<boolean>('holup_admin_set_feature', { p_key: key, p_enabled: enabled });
 export const adminSetAnnouncement = (title: string, body: string, active: boolean) => rpc<boolean>('holup_admin_announcement', { p_title: title, p_body: body, p_active: active });
 
+export type AdminReport = { id: number; reporterId: number; reporterName: string | null; reportedId: number; reportedName: string | null; reason: string; details: string; context: string; handled: boolean; createdAt: number };
+export type AdminAccount = { id: number; name: string; username: string | null; status: string; onboarded: boolean; verification: string };
+export type AdminVerification = { id: number; memberId: number; memberName: string; status: string; createdAt: number; reviewedAt: number | null };
+export type AdminAuditEvent = { id: number; actor: string; kind: string; details: Record<string, unknown>; createdAt: number };
+export const adminReports = (handled = false) => rpc<AdminReport[]>('holup_admin_reports', { p_handled: handled });
+export const adminSetReportHandled = (id: number, handled: boolean) => rpc<boolean>('holup_admin_set_report_handled', { p_report_id: id, p_handled: handled });
+export const adminAccounts = (query: string) => rpc<AdminAccount[]>('holup_admin_accounts', { p_query: query });
+export const adminVerifications = () => rpc<AdminVerification[]>('holup_admin_verifications');
+export const adminAudit = () => rpc<AdminAuditEvent[]>('holup_admin_audit');
+
+
 /** Check that an external link has a public landing at the time it is made. */
 export async function publicPostPreview(postId: number): Promise<{ id: number; body: string; author: string } | null> {
   return rpc('public_post_preview', { p_post_id: postId });

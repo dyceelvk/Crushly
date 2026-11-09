@@ -173,3 +173,20 @@
   smoke, offline browser regressions, Worker bundle and release notes passed;
   exact-APK re-walk was intentionally skipped (no APK was supplied). CI does
   not run the experimental 08/10/11 scripts, which were tested locally above.
+
+## Latest requested admin operations
+- User requested full operations: reports, accounts, content, verification,
+  announcements, feature switches and audit; and asked not to spend time on
+  tests. Previous test-only Android build 42602690113 was cancelled accordingly.
+- Admin operations prototype in `supabase/admin-operations-work/` adds
+  server-authorized report list/review, minimal account search, verification
+  status and admin activity, with access/action audit; the app has matching UI.
+  It is deliberately NOT deployed. Account suspensions, content takedowns,
+  evidence-backed manual verification review, full pagination, and complete
+  administrator actions are not yet implemented. Do not represent it as a
+  complete admin console or deploy without security/compatibility verification.
+- A web export using the public production client configuration built locally;
+  it was not deployed because its new APIs and safety controls are not live.
+  No new test suite was run at the user's request. An untested notification
+  privacy experiment is in `subscription-whisper-work/12_notification_privacy_experiment.sql`;
+  its SQL and UI routing are not deployed or validated.

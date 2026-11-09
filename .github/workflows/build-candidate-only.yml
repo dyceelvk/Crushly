@@ -1,0 +1,41 @@
+name: Build Holup Android candidate (no publish)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: CrushlyApp
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      CI: '1'
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: CrushlyApp/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci --include=dev
+      - run: node scripts/check-public-build.mjs
+      - run: npx expo prebuild --platform android --no-install
+      - name: Compile Android app
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=armeabi-v7a,arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Holup-unreleased-Android-candidate
+          path: CrushlyApp/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 2

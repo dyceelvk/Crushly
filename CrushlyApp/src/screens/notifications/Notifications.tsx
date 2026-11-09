@@ -59,7 +59,7 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
     case 'mutual':
       return { title: `${name} had a connection update.` };
     case 'keep':
-      return { title: `${name} Kept you Close.`, detail: 'Open their Space.' };
+      return { title: `${name} Kept you Close.`, detail: 'See who Kept you Close.' };
     case 'post_reaction':
       return { title: `${name} crushed on your post.`, detail: 'See what’s happening there.' };
     case 'post_comment':
@@ -128,8 +128,9 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
       case 'crush':
       case 'deep_crush':
       case 'mutual':
-      case 'keep':
         return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Discover' });
+      case 'keep':
+        return navigation.navigate('CrushList', { tab: 'incoming' });
       case 'post_reaction':
       case 'post_comment':
       case 'post_mention':
