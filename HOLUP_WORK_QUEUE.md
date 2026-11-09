@@ -265,3 +265,6 @@
   verification; include applications, questions, user replies and audit in the
   admin board. This replaces the earlier suggestion that Didit be required for
   age verification. No test suites were run at user's request.
+- Teen safety reporting is additionally sketched as an isolated RPC with an
+  adult-impostor category, rate limit and optional atomic block. This is not a
+  staffed moderation queue or client UI; unreviewed and not deployed.

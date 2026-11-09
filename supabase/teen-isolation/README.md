@@ -53,3 +53,9 @@ namespace and no implicit interception of the adult app's auth links. It does
 not provision a project, implement signup/link routing, or stop a person from
 creating a second account with a false birthday. The app still has no teen entry
 point; none of this code is live.
+
+`02_safety_reporting.sql` adds a private report record (including an
+adult-impostor reason), a rate limit, and an optional atomic block. It is not a
+moderation dashboard or evidence that reports will be reviewed. There is no
+staff-facing queue/service, escalation/on-call process or client UI yet; those
+are required before opening the teen service.
