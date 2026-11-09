@@ -620,3 +620,30 @@
   not just the current application API key. No Didit sandbox or genuine
   provider outcome is established. See https://docs.didit.me/integration/sandbox-testing
   and https://docs.didit.me/auth-api/create-application.
+- Production cleanup was observed stale: GitHub's scheduled cleanup had no
+  scheduled runs since setup; manually dispatched run `42643373100` succeeded.
+  The 15-minute schedule was present but actual scheduler reliability was not
+  demonstrated. Do not claim deadline physical deletion based on it alone.
+- GitHub monitor main `4eadb34` checks cleanup heartbeat, failed items and
+  overdue work hourly. It creates one generic assigned issue without member
+  data on failure; a test issue #11 was created and closed by successful run
+  `42643538066`, and healthy-check run `42643534374` succeeded. GitHub
+  notification delivery to a human is unverified; both GitHub schedules share
+  the same platform and cannot detect an Actions-wide outage. Gmail SMTP test
+  runs `42643102407` and `42643231713` failed to send, so SMTP was removed.
+- Attempted pg_net scheduler was disabled immediately: queue had PUBLIC read
+  privileges from supabase_admin, which the migration role's REVOKE could not
+  remove. No scheduler job ran; vault credential/function were removed and
+  pg_net/pg_cron uninstalled after zero jobs and zero queue verified. Exact
+  applied SQL and replay-safe migration markers are documented in
+  `supabase/manual-verification-work/disabled-pg-net-scheduler-history.md`.
+- Independent Cloudflare `holup-evidence-scheduler` 15-minute cron deployed in
+  main `dce424e`, deploy run `42644261172` passed; deployment invoked its
+  protected `/run` and successfully reached the Supabase cleanup worker.
+  Anonymous GET returned 404, anonymous POST 401 using an ordinary user agent.
+  Actual time-triggered execution has not yet been observed. GitHub cleanup
+  remains a backup. Rotating `MANUAL_EVIDENCE_CLEANUP_SECRET` requires updating
+  the DB digest via the cleanup workflow and redeploying the Cloudflare worker.
+- The manual verification flow is still disabled for applicants; independent
+  alert delivery, legal holds, provider/backup retention and real Didit flow
+  remain unresolved. Do not solicit real IDs or claim complete retention.
