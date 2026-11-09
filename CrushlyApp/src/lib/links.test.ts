@@ -65,3 +65,11 @@ test('the pieces and the text together are the original text', () => {
   });
   assert.equal(rebuilt, text);
 });
+
+
+test('web links do not absorb surrounding sentence punctuation', () => {
+  const result = tokenize('See (https://example.com/path), then https://example.org/a!');
+  assert.deepEqual(result.matches.map((m) => m.value), ['https://example.com/path', 'https://example.org/a']);
+  assert.equal(result.parts.join('|'), 'See (|), then |!');
+  assert.equal(tokenize('https://example.com/wiki/Example_(topic)').matches[0].value, 'https://example.com/wiki/Example_(topic)');
+});

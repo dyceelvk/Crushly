@@ -4,7 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
+import { useIsFocused } from '@react-navigation/native';
 import { Txt } from '../../components/Txt';
+import { LinkText } from '../../components/LinkText';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -23,7 +25,7 @@ import { useCrushFlow } from '../discover/Discover';
 import { MomentPreview } from './Moments';
 import { palettes, fonts, space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
-import { MOMENT_REACTIONS } from '../../lib/catalog';
+import { MOMENT_REACTIONS, MOMENT_STYLES } from '../../lib/catalog';
 import { initialMomentIndex } from '../../lib/moments';
 import { timeAgo } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
@@ -42,6 +44,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   /* Every picture on this screen opens a Moment when there is one live, and the
      Space otherwise — the same handler every other screen uses. */
   const openProfile = useProfileTap();
+  const screenFocused = useIsFocused();
   const { userId, mine, momentId } = route.params;
   const searchTargetUsed = useRef(false);
   const c = palettes.dark; // the viewer is always cinematic dark
@@ -115,7 +118,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const targetIndex = !searchTargetUsed.current && gi === 0 && group ? initialMomentIndex(group.moments, momentId) : null;
   const displayIndex = targetIndex ?? mi;
   const moment = group && group.moments.length ? group.moments[Math.min(displayIndex, group.moments.length - 1)] : undefined;
-  const paused = focused || reactOpen || confirmDelete || viewersOpen || holding;
+  const paused = !screenFocused || focused || reactOpen || confirmDelete || viewersOpen || holding;
   const playbackDurationMs = moment?.kind === 'video'
     ? Math.max(100, Math.min(60_000, moment.durationMs ?? DURATION))
     : DURATION;
@@ -365,6 +368,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             key={moment.id}
             moment={moment}
             caption={false}
+            showText={false}
             style={{ flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
             textSize={26}
             autoPlay={moment.kind === 'video' && !paused}
@@ -388,6 +392,10 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           accessibilityLabel="Moments player"
           accessibilityHint="Tap the left third for the previous Moment, anywhere else for the next one. Hold to pause, release to resume."
         />
+
+        {moment.kind === 'text' ? <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, bottom: 0, left: space.xl, right: space.xl, justifyContent: 'center' }}>
+          <Txt variant="accent" color={(MOMENT_STYLES[moment.style] || MOMENT_STYLES.noir).ink} style={{ fontSize: 26, lineHeight: 35.1 }}><LinkText text={moment.body} bare /></Txt>
+        </View> : null}
 
         {/* No on-screen badge while held: the progress bar freezing at the top
             and the haptic on pause are the feedback. */}
@@ -462,7 +470,6 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
               marginHorizontal: space.md,
               marginBottom: space.sm,
             }}
-            pointerEvents="none"
           >
             <Txt
               variant="body"
@@ -475,7 +482,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
                 textShadowRadius: 8,
               }}
             >
-              {moment.body}
+              <LinkText text={moment.body} bare />
             </Txt>
           </View>
         ) : null}

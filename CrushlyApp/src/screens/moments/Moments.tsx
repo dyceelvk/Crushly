@@ -26,8 +26,8 @@ import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
 export function MomentPreview({
-  moment, style, textSize = 15, lines = 6, autoPlay = false, caption = true,
-}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; caption?: boolean }) {
+  moment, style, textSize = 15, lines = 6, autoPlay = false, caption = true, showText = true,
+}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; caption?: boolean; showText?: boolean }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
   if (moment.kind === 'video') {
     // A tile does not play. Mounting a player per tile costs a decoder each and
@@ -82,9 +82,7 @@ export function MomentPreview({
   const s = MOMENT_STYLES[moment.style] || MOMENT_STYLES.noir;
   return (
     <LinearGradient colors={s.colors} style={[{ padding: 14, justifyContent: 'center' }, style]}>
-      <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
-        <LinkText text={moment.body} bare />
-      </Txt>
+      {showText ? <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}><LinkText text={moment.body} bare /></Txt> : null}
     </LinearGradient>
   );
 }

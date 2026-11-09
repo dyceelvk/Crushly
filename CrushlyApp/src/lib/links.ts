@@ -41,10 +41,16 @@ export function tokenize(text: string): { parts: string[]; matches: Token[] } {
     re.lastIndex = 0;
     for (let m = re.exec(text); m; m = re.exec(text)) {
       const start = m.index;
-      const end = start + m[0].length;
+      let matched = m[0];
+      if (kind === 'url') {
+        // Sentence punctuation belongs to the surrounding text, not the URL.
+        matched = matched.replace(/[.,!?;:]+$/, '');
+        while (matched.endsWith(')') && (matched.match(/\)/g)?.length ?? 0) > (matched.match(/\(/g)?.length ?? 0)) matched = matched.slice(0, -1);
+      }
+      const end = start + matched.length;
       // Whatever came first owns the characters; later matchers skip overlaps.
-      if (found.some((f) => start < f.end && end > f.start)) continue;
-      found.push({ kind, text: m[0], value: m[valueGroup] ?? m[0], start, end });
+      if (!matched || found.some((f) => start < f.end && end > f.start)) continue;
+      found.push({ kind, text: matched, value: kind === 'url' ? matched : (m[valueGroup] ?? matched), start, end });
     }
   };
   take(URL_RE, 'url', 0);

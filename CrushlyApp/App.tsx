@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from './src/state/auth';
 import { ToastProvider } from './src/components/Toast';
 import { UpdateGate } from './src/components/UpdateGate';
 import { MemberActionsProvider } from './src/state/memberActions';
+import { SharedSpaceIntent } from './src/components/SharedSpaceIntent';
 import { SharedPostIntent } from './src/components/SharedPostIntent';
 import { BootCanvas } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -120,6 +121,7 @@ function Shell() {
               makes that a sentence and a "Try again" instead. */}
           <ErrorBoundary>
             <SharedPostIntent />
+            <SharedSpaceIntent />
             <RootNavigator fontsReady={fontsReady} />
           </ErrorBoundary>
         </MemberActionsProvider>

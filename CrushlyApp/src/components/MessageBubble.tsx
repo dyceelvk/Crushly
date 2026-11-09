@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Txt } from './Txt';
+import { LinkText } from './LinkText';
 import { Photo, Avatar } from './Photo';
 import { VerifiedBadge } from './Badges';
 import { CrushIcon } from './Logo';
@@ -124,7 +125,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
               borderWidth: m.mine ? 0 : 1, borderColor: colors.border,
             }}
           >
-            {m.kind === 'voice' ? <VoiceNote m={m} ink={ink} /> : <Txt variant="body" color={ink} selectable>{m.body}</Txt>}
+            {m.kind === 'voice' ? <VoiceNote m={m} ink={ink} /> : <Txt variant="body" color={ink} selectable><LinkText text={m.body} bare /></Txt>}
           </View>
         )}
         {reactionSummary.length ? (
@@ -182,7 +183,7 @@ function BareContent({ m }: { m: Message }) {
         <Photo uri={m.mediaUrl} style={{ width: 220, height: 280 }} contentPosition="center" />
         {m.body ? (
           <View style={{ padding: 10, backgroundColor: m.mine ? colors.crushDeep : colors.card }}>
-            <Txt variant="body" color={m.mine ? '#FFFFFF' : 'text'}>{m.body}</Txt>
+            <Txt variant="body" color={m.mine ? '#FFFFFF' : 'text'}><LinkText text={m.body} bare /></Txt>
           </View>
         ) : null}
       </View>

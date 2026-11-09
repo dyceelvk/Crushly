@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import { Pressable, Share, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ActionSheet, BottomSheet, ConfirmSheet, type SheetAction } from '../components/BottomSheet';
 import { Txt } from '../components/Txt';
@@ -84,14 +84,6 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
   const actions: SheetAction[] = member
     ? [
         ...extra,
-        {
-          label: 'Share Space',
-          icon: icon('share-outline'),
-          hint: 'Only their first name and age are shared',
-          onPress: () => {
-            Share.share({ message: `Meet ${member.name}${member.age ? `, ${member.age}` : ''} on Holup — a private space to connect.` }).catch(() => {});
-          },
-        },
         ...(member.connected
           ? [{ label: 'Remove connection', icon: icon('heart-dislike-outline'), hint: 'Ends the mutual add up and closes your Whisper', onPress: () => confirmRemove(member) }]
           : []),

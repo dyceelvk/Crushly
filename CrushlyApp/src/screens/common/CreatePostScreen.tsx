@@ -627,6 +627,9 @@ function ComposerLeft({
   // The caret lives here, beside the words it moves through: the input, the
   // suggestion list and the @ / # buttons are all in this column.
   const [caret, setCaret] = useState<number | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkText, setLinkText] = useState('');
+  const [linkError, setLinkError] = useState('');
   const token = activeToken(body, caret);
   const insertSigil = (sigil: '@' | '#') => {
     const sep = body && !/\s$/.test(body) ? ' ' : '';
@@ -745,6 +748,10 @@ function ComposerLeft({
             <Txt variant="caption" style={{ color: colors.text }}>#</Txt>
           </Pressable>
 
+          <Pressable onPress={() => { setLinkError(''); setLinkOpen(true); }} accessibilityRole="button" accessibilityLabel="Add link to post" style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="link-outline" size={18} color={colors.textMuted} />
+          </Pressable>
+
           {/* Public / private toggle */}
           <Pressable onPress={() => setAudience(audience === 'everyone' ? 'connections' : 'everyone')} accessibilityLabel="Public or private" hitSlop={12} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Ionicons name={audience === 'everyone' ? 'globe' : 'lock-closed'} size={18} color={colors.textMuted} />
@@ -785,7 +792,22 @@ function ComposerLeft({
       </View>
 
       <SettingsRow label="Advanced options" hint={commentsEnabled ? 'Comments on · Remix unavailable' : 'Comments off · Remix unavailable'} icon="options-outline" onPress={openAdvanced} />
-
+      <BottomSheet visible={linkOpen} onClose={() => setLinkOpen(false)} title="Add a link">
+        <View style={{ gap: space.md }}>
+          <Input label="Web address" value={linkText} onChangeText={setLinkText} autoCapitalize="none" keyboardType="url" placeholder="https://example.com" error={linkError} />
+          <Button title="Add link" onPress={() => {
+            const raw = linkText.trim();
+            const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+            try {
+              const parsed = new URL(url);
+              if (!raw || /\s/.test(raw) || !['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname.includes('.') || parsed.username || parsed.password) throw new Error('invalid');
+              const next = `${body}${body && !/\s$/.test(body) ? ' ' : ''}${url}`;
+              if (next.length > 500) { setLinkError('This link would make the post longer than 500 characters.'); return; }
+              setBody(next); setCaret(next.length); setLinkText(''); setLinkError(''); setLinkOpen(false);
+            } catch { setLinkError('Enter a valid http or https web address.'); }
+          }} />
+        </View>
+      </BottomSheet>
     </View>
   );
 }

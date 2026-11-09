@@ -1,4 +1,5 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Txt } from './Txt';
@@ -49,6 +50,7 @@ export function LinkText({
   numberOfLines,
   linkColor = 'gold',
   bare = false,
+  onBeforeOpenLink,
 }: {
   text: string;
   variant?: any;
@@ -62,6 +64,7 @@ export function LinkText({
    * dropping links into copy that is already styled — a Moment's caption, say.
    */
   bare?: boolean;
+  onBeforeOpenLink?: () => void;
 }) {
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
@@ -93,7 +96,12 @@ export function LinkText({
           <Txt
             key={`l-${i}`}
             color={linkColor}
-            onPress={() => navigation.navigate('WebPreview', { url: m.text })}
+            onPress={() => {
+              if (onBeforeOpenLink) {
+                onBeforeOpenLink();
+                setTimeout(() => navigation.navigate('WebPreview', { url: m.text }), Platform.OS === 'web' ? 0 : 250);
+              } else navigation.navigate('WebPreview', { url: m.text });
+            }}
             accessibilityRole="link"
             accessibilityLabel={`Open link to ${prettyUrl(m.text)} inside Holup`}
           >
