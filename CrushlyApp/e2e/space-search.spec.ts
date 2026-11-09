@@ -40,6 +40,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/holup_app_settings') body = { callsEnabled: false, publicSharingEnabled: true, announcement: null };
     else if (path === '/rest/v1/rpc/holup_admin_state') body = { features: { calls: false, public_post_sharing: true }, announcement: { title: '', body: '', active: false } };
     else if (path === '/rest/v1/rpc/holup_admin_set_feature') body = true;
+    else if (path === '/rest/v1/rpc/holup_admin_reports') body = [{ id: 81, reporterId: 2, reporterName: 'Reporter', reportedId: 3, reportedName: 'Reported', reason: 'other', details: 'Report details', context: 'profile', handled: false, createdAt: Date.now() }];
     else if (path === '/rest/v1/rpc/public_post_preview') body = { id: 11, body: onePost.body, author: person.name };
     else if (path === '/rest/v1/rpc/record_post_view') { viewCalls.push(Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id)); body = { recorded: true }; }
     else if (path === '/rest/v1/rpc/post_viewers') body = { items: [{ profile: person, viewedAt: Date.now() }] };
@@ -161,13 +162,16 @@ test('verified admin can access the server-backed feature controls', async ({ pa
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByText('Holup admin', { exact: true }).click();
-  await expect(page.getByText('Feature controls and announcements')).toBeVisible();
+  await expect(page.getByText('Operations and controls')).toBeVisible();
   await expect(page.getByLabel('Voice calls', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Public post links', { exact: true })).toBeVisible();
   await page.getByLabel('Title', { exact: true }).fill('Draft announcement');
   await page.getByLabel('Public post links', { exact: true }).click();
   await page.waitForTimeout(500);
   await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Draft announcement');
+  await page.getByRole('tab', { name: 'Reports', exact: true }).click();
+  await expect(page.getByText('Report details')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mark reviewed' })).toBeVisible();
 });
 
 
