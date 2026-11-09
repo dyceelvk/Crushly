@@ -789,3 +789,9 @@
   session check or real report change. It remains incomplete: no report media,
   content removal, suspension or manual verification decisions. User's item 5
   stays deferred, and no work on retention was undertaken in this batch.
+- Android 1.0.91 `42656680290` FAILED, not published: the Android walk got
+  through post draft save/reopen/delete and Moment typing, but reported that the
+  Moment draft was missing or changed when reopening its draft list. A screenshot
+  and walk artifact exist; diagnose the actual draft/list or flaky accessibility
+  before retrying and never mark the job successful artificially. Worker still
+  offers 1.0.87. No later Android release has been dispatched.
