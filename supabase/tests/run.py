@@ -144,6 +144,22 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'space_relationship_visibility.sql'):
             return 1
+        if not run_file(ROOT / 'whisper_moment_links.sql'):
+            return 1
+        # Exercise upgrade of real legacy snapshots, not just an empty migration.
+        # The same fixture also runs directly in psql with its local include.
+        migration_fixture = (ROOT / 'whisper_moment_migration.psql').read_text()
+        migration_fixture = migration_fixture.replace('\\set ON_ERROR_STOP on', '').replace(
+            '\\ir ../migrations/20261109000011_whisper_moment_links.sql',
+            (MIGRATIONS / '20261109000011_whisper_moment_links.sql').read_text(),
+        )
+        print('== whisper_moment_migration.psql')
+        try:
+            cur.execute(migration_fixture)
+        except Exception as e:
+            print(f'FAILED: {e}')
+            conn.rollback()
+            return 1
         if not run_file(ROOT / 'space_search.sql'):
             return 1
         if not run_file(ROOT / 'post_private.sql'):

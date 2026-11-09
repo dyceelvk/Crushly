@@ -1,0 +1,14 @@
+-- psql only, disposable migrated DB. Reapply migration to simulate old rows.
+\set ON_ERROR_STOP on
+begin;
+insert into public.conversations(user_a,user_b) values(1,2) on conflict(user_a,user_b) do update set closed=false;
+insert into public.messages(conversation_id,sender_id,kind,body,meta)
+select id,1,'moment_reply','reply',jsonb_build_object('momentId',999,'momentKind','photo','momentBody','legacy secret','momentMedia','private-url','momentStyle','noir','other','keep')
+from public.conversations where user_a=1 and user_b=2;
+insert into public.notifications(user_id,kind,actor_id,body) values(2,'moment_reply',1,'legacy private reply');
+\ir ../migrations/20261109000011_whisper_moment_links.sql
+do $$ begin
+  assert exists(select 1 from public.messages where kind='moment_reply' and meta->>'other'='keep' and meta->>'momentId'='999' and not (meta ?| array['momentKind','momentBody','momentMedia','momentStyle'])), 'old reply snapshot was not stripped';
+  assert not exists(select 1 from public.notifications where kind='moment_reply' and body<>''), 'legacy private notification content retained';
+end $$;
+rollback;

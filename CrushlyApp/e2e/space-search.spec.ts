@@ -423,3 +423,55 @@ test('Keep Close request hub is reachable and pages through requests', async ({ 
   await expect(page.getByText('Tobi', { exact: true }).last()).toBeVisible();
   expect(offsets).toContain(1);
 });
+
+for (const own of [false, true]) {
+  test(`Whisper opens the exact ${own ? 'owner’s' : 'sender’s'} replied Moment and rechecks unavailable targets`, async ({ page }) => {
+    await offline(page, []);
+    const peer = { id: 2, name: 'Ada', verified: false, photo: null, online: false };
+    const author = own ? { id: 1, name: 'Offline test', verified: false, photo: null, mutual: false } : { ...peer, mutual: false };
+    const moment = (id: number, text: string) => ({ id, userId: author.id, kind: 'text', body: text, mediaUrl: null, style: 'noir', audience: 'everyone', createdAt: Date.now() - 10000, expiresAt: Date.now() + 3600000, seen: false, myReaction: null, author });
+    const msg = { id: 331, conversationId: 5, senderId: own ? 2 : 1, mine: !own, kind: 'moment_reply', body: 'Lovely reply', mediaUrl: null, meta: { momentId: 999, momentBody: 'old snapshot should stay hidden' }, createdAt: Date.now(), readAt: null, reactions: [] };
+    let available = true;
+    let failFeed = false;
+    const targetCalls: number[] = [];
+    await page.route(`${API}/rest/v1/rpc/*`, async route => {
+      const name = new URL(route.request().url()).pathname.split('/').pop();
+      const args = route.request().postDataJSON() as Record<string, any>;
+      let body: unknown;
+      if (name === 'list_conversations') body = { items: [{ id: 5, peer, lastMessage: msg, unread: 0, updatedAt: Date.now() }] };
+      else if (name === 'load_conversation') body = { id: 5, closed: false, peer, canSend: true, blockReason: null };
+      else if (name === 'get_messages') body = { items: args.p_after_id ? [] : [msg], hasMore: false, lastReadMine: null };
+      else if (name === 'sync_whispers') body = [msg];
+      else if (name === 'whisper_moment_target') { targetCalls.push(Number(args.p_message_id)); body = available ? { momentId: 62, userId: author.id, mine: own } : null; }
+      else if (name === 'visible_moments') {
+        if (failFeed) return route.fulfill({ status: 403, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ message: 'Not available' }) });
+        body = [moment(61, 'First Moment, not the target'), moment(62, 'Exact replied Moment')];
+      }
+      else if (name === 'view_moment') body = true;
+      else if (name === 'mark_messages_delivered') body = { upTo: 0, count: 0 };
+      else if (name === 'peer_presence') body = { peerId: 2, online: false, activity: null, receipts: false, announce: false, closed: false };
+      else return route.fallback();
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+    });
+    await page.goto('/');
+    await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+    await page.getByRole('button', { name: /Ada\..*replied/i }).click();
+    await expect(page.getByText('old snapshot should stay hidden')).toHaveCount(0);
+    await page.getByRole('button', { name: 'View replied Moment' }).click();
+    await expect(page.getByText('Exact replied Moment', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('First Moment, not the target', { exact: true })).toHaveCount(0);
+    expect(targetCalls).toEqual([331]);
+    await page.getByRole('button', { name: 'Close Moments' }).click();
+    available = false;
+    await page.getByRole('button', { name: 'View replied Moment' }).click();
+    await expect(page.getByText('This Moment isn’t available', { exact: true })).toBeVisible();
+    await expect(page.getByText('Exact replied Moment', { exact: true })).toHaveCount(0);
+    expect(targetCalls).toEqual([331, 331]);
+    // A cached earlier feed must not turn a failed refresh into a stale Moment.
+    available = true; failFeed = true;
+    await page.getByRole('button', { name: 'View replied Moment' }).click();
+    await expect(page.getByText('Couldn’t load Moments', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Exact replied Moment', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+  });
+}
