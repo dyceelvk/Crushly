@@ -1612,6 +1612,8 @@ export const verificationUploadImage = (caseId: number, base64: string) => invok
 export const verificationReadImage = (fileId: string) => invokeFunction<{ mime: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string }>('manual-evidence', { action: 'read', fileId });
 
 export const verificationDeleteImage = (fileId: string) => invokeFunction<{ hidden: boolean; deleted: boolean }>('manual-evidence', { action: 'delete', fileId });
+export type VerificationCleanupHealth = { lastAttemptAt: number | null; lastSuccessAt: number | null; lastFailed: number; queuedObjects: number; overdueImages: number; attention: boolean };
+export const verificationCleanupHealth = () => rpc<VerificationCleanupHealth>('manual_evidence_cleanup_health');
 export type VerificationReadyCounts = { creator: number; personId: number; total: number };
 export const verificationReadyCounts = () => rpc<VerificationReadyCounts>('manual_verification_ready_counts');
 export const verificationAwardReady = () => rpc<VerificationReadyCounts>('manual_verification_award_ready');

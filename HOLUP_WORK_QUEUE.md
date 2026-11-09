@@ -427,3 +427,19 @@
   as session creation; a separate webhook signing secret and provider
   destination are still required. The Supabase connector catalog returned a
   temporary load error on this turn; no production changes were made.
+
+## Cleanup monitor and staging attempt
+- Supabase connector recovered and Holup DB, Auth, REST and Storage reported
+  healthy. Creating an isolated Supabase branch was denied with
+  `entitlement_required`: branching requires Pro or higher. No new project or
+  branch was created, and the plan was not changed. Do not retry with alternate
+  branch options or use another project to bypass this restriction.
+- Local cleanup monitor `09_cleanup_monitor_experiment.sql`, its heartbeat and
+  admin UI display only aggregate queue/overdue counts and last success, and
+  flag missing/failed/stale runs. Unauthorized access and stale/failure behavior
+  were checked in a disposable PostgreSQL database; local typecheck/web export
+  succeeded. No live worker, alerts or retention automation were deployed.
+- `pg_cron` and `pg_net` are available on Holup but not installed; Vault is
+  installed. This read-only information does not establish scheduler readiness
+  and does not alter production. Provider webhook, provider retention,
+  image-worker hosted deployment, safety review and cutover remain incomplete.

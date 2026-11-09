@@ -112,3 +112,10 @@ sufficient. The rollout must replace that route too, ensure automation cannot
 redeploy its old source, configure and validate the new Didit destination first,
 communicate the one outstanding application, preserve existing badges, and
 coordinate web/Android updates and rollback. Nothing here is deployed.
+
+## Cleanup visibility
+`09_cleanup_monitor_experiment.sql` and the admin UI draft show aggregate queue,
+expired-image and heartbeat status only to authorized admins. Worker failures
+and missing heartbeats require attention. This does not install monitoring,
+provide alerts when nobody opens the dashboard, or verify Didit/backups. SQL and
+privileges received a focused disposable-database check; production is unchanged.

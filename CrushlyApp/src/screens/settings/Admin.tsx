@@ -40,6 +40,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const reports = useQuery({ queryKey: ['admin-reports', handled, reportPage], queryFn: () => service.adminReports(handled, reportPage * 50), enabled: data.isSuccess && section === 'reports', staleTime: 30000 });
   const accounts = useQuery({ queryKey: ['admin-accounts', submittedSearch], queryFn: () => service.adminAccounts(submittedSearch), enabled: data.isSuccess && section === 'accounts' && (submittedSearch.length >= 2 || /^[0-9]+$/.test(submittedSearch)), staleTime: 30000 });
   const verifications = useQuery({ queryKey: ['manual-verification-cases', 'admin', verificationKind, verificationPage], queryFn: () => service.verificationCases(true, verificationKind === 'all' ? undefined : verificationKind, verificationPage * 50), enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
+  const cleanup = useQuery({ queryKey: ['verification-cleanup-health'], queryFn: service.verificationCleanupHealth, enabled: data.isSuccess && section === 'verification', staleTime: 0 });
   const ready = useQuery({ queryKey: ['verification-ready-counts'], queryFn: service.verificationReadyCounts, enabled: data.isSuccess && section === 'verification', staleTime: 0 });
   const awardReady = useMutation({ mutationFn: service.verificationAwardReady, onSuccess: (result) => { setConfirmBatch(false); void ready.refetch(); void verifications.refetch(); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); toast({ kind: 'success', title: 'Badges assigned', message: `${result.creator} gold · ${result.personId} diamond blue` }); }, onError: (e) => { setConfirmBatch(false); toast({ kind: 'error', title: 'Badges not assigned', message: (e as Error).message }); } });
   const audit = useQuery({ queryKey: ['admin-audit'], queryFn: service.adminAudit, enabled: data.isSuccess && section === 'audit', staleTime: 0 });
@@ -123,6 +124,11 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
           <Txt variant="bodyStrong">Ready to assign: {ready.data.total}</Txt>
           <Txt variant="small" color="textSecondary">Creator gold: {ready.data.creator} · Person ID diamond blue: {ready.data.personId}</Txt>
           {ready.data.total > 0 ? <Button title="Assign all ready badges" onPress={() => setConfirmBatch(true)} loading={awardReady.isPending} /> : null}
+        </View> : null}
+        {cleanup.isLoading ? <LoadingBlock label="Checking image cleanup" /> : cleanup.isError ? <ErrorState error={cleanup.error} message="Image cleanup status is unavailable." onRetry={() => void cleanup.refetch()} /> : cleanup.data ? <View style={{ gap: space.xs }}>
+          <Txt variant="bodyStrong">Image cleanup · {cleanup.data.attention ? 'Needs attention' : 'Running'}</Txt>
+          <Txt variant="small" color="textSecondary">Last successful run: {cleanup.data.lastSuccessAt ? timeAgoLong(cleanup.data.lastSuccessAt) : 'Not yet recorded'} · Queued objects: {cleanup.data.queuedObjects} · Overdue images: {cleanup.data.overdueImages}.</Txt>
+          <Txt variant="small" color="textSecondary">This reports Holup’s cleanup queue only; it does not confirm deletion from backups or Didit.</Txt>
         </View> : null}
         <Segmented value={verificationKind} onChange={(value) => { setVerificationKind(value); setVerificationPage(0); }} options={[{ value: 'all', label: 'All' }, { value: 'creator', label: 'Creators' }, { value: 'person_id', label: 'Person ID' }]} />
         {verifications.isLoading ? <LoadingBlock label="Loading verification requests" /> : verifications.isError ? <ErrorState error={verifications.error} message="Verification requests are unavailable." onRetry={() => void verifications.refetch()} /> : !verifications.data?.length ? <Txt color="textSecondary">No verification requests.</Txt> : verifications.data.slice(0, 50).map((v) => <View key={v.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>

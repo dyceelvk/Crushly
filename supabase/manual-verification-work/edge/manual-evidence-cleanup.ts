@@ -15,9 +15,9 @@ Deno.serve(async req=>{
  if(!url||!key) return new Response('Not configured',{status:503});
  const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  const {error:expireError}=await client.rpc('manual_evidence_expire',{p_limit:100});
- if(expireError) return new Response('Expiry unavailable',{status:503});
+ if(expireError) { await client.rpc('manual_evidence_cleanup_heartbeat',{p_failed:1}); return new Response('Expiry unavailable',{status:503}); }
  const {data:paths,error}=await client.rpc('manual_evidence_cleanup_batch',{p_limit:100});
- if(error||!Array.isArray(paths)) return new Response('Queue unavailable',{status:503});
+ if(error||!Array.isArray(paths)) { await client.rpc('manual_evidence_cleanup_heartbeat',{p_failed:1}); return new Response('Queue unavailable',{status:503}); }
  let removed=0,failed=0;
  for(const path of paths) {
   if(typeof path!=='string'||!path.startsWith('cases/')) { failed++; continue; }
@@ -26,5 +26,7 @@ Deno.serve(async req=>{
   const {error:doneError}=await client.rpc('manual_evidence_cleanup_done',{p_path:path});
   if(doneError) failed++; else removed++;
  }
+ const {error:heartbeatError}=await client.rpc('manual_evidence_cleanup_heartbeat',{p_failed:failed});
+ if(heartbeatError) return new Response('Cleanup monitoring unavailable',{status:503});
  return new Response(JSON.stringify({removed,failed}),{status:failed?503:200,headers:{'content-type':'application/json','cache-control':'no-store'}});
 });
