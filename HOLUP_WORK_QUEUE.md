@@ -225,3 +225,8 @@
 - Vercel's production deployment for main ad03f71 is READY and promoted; it
   redeploys the prior app sources with the migration-record commit, not the new
   admin or birthday-recovery client. Android offered version remains 1.0.86.
+- Local-only, previously unapplied migrations 000007–000011 have been renamed
+  20261109110818–20261109110822, after the now-applied 20261109110817. This
+  avoids needing `--include-all` solely to handle the new migration timestamp.
+  Fixture references were updated. The new combined ordering has not been
+  verified and must not be taken as approval to push it automatically.
