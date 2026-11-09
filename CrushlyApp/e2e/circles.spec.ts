@@ -209,7 +209,7 @@ test('a join request is announced by name, from the person to the room', async (
  */
 async function openDiscover(page: Page) {
   await page.goto('/');
-  const tab = page.getByText('Discover', { exact: true }).first();
+  const tab = page.getByText('Discovery', { exact: true }).first();
   await tab.waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForTimeout(1500);
   const box = await tab.boundingBox();

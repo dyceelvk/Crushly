@@ -143,6 +143,7 @@ function MainTabs() {
       >
         <Tabs.Screen name="Flows" component={FeedScreen} options={{ title: 'Home' }} />
         <Tabs.Screen name="Discover" component={DiscoverTabScreen} options={{ title: 'Discover' }} />
+        <Tabs.Screen name="Connections" component={FeedScreen} initialParams={{tab: 'connections'}} options={{ title: 'Connections' }} />
         <Tabs.Screen name="Messages" component={MessagesScreen} options={{ title: 'Whispers' }} />
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>

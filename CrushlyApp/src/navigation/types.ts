@@ -5,10 +5,11 @@ import type { VideoEdit } from '../lib/videoEdit';
 export type TabParamList = {
   /** `tab` opens Home already on that part of the strip. */
   Flows: {
-    tab?: 'crushes' | 'connections';
+    tab?: 'crushes' | 'connections' | 'discovery';
     /** Which lens of Crushes a notification means: who crushed you, or a match. */
     crushesTab?: 'incoming' | 'outgoing' | 'mutual';
   } | undefined;
+  Connections: { tab?: 'crushes' | 'connections' | 'discovery' } | undefined;
   /** Discover is a destination of its own — it is where searching happens. */
   Discover: undefined;
   /** `tab` opens Whispers already on Close Ones — see the Space's count. */

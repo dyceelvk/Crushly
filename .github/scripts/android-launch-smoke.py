@@ -297,7 +297,7 @@ def sign_in():
         return False
     # The tab bar says Home / Discover / Whispers / Space. "Connections" is a
     # segment inside the feed, not something a signed-in launch guarantees.
-    if wait_for(['Discover', 'Whispers'], 120, 'process exited while signing in'):
+    if wait_for(['Home', 'Whispers'], 120, 'process exited while signing in'):
         log('signed in as the walk account')
         return True
     shot('01-sign-in-stuck')
@@ -338,7 +338,7 @@ def return_to_tabs(tries=4):
                 fail('Discover preferences could not be closed')
             time.sleep(0.8)
             continue
-        if find(seen, 'Home') and find(seen, 'Space'):
+        if find(seen, 'Home') and (find(seen, 'Space') or (find(seen, 'Settings') and find(seen, 'Notifications'))):
             return True
         leave_screen()
     log('could not get back to the tabs; restarting the app')
@@ -389,9 +389,9 @@ def assert_strip(seen):
     for n in seen:
         for value in (n['desc'], n['text']):
             key = norm(value)
-            if key in ('flow', 'crushes', 'connections'):
+            if key in ('flow', 'crushes', 'discovery'):
                 points.setdefault(key, []).append((n['x'], n['y']))
-    missing = [k for k in ('crushes', 'connections') if k not in points]
+    missing = [k for k in ('crushes', 'discovery') if k not in points]
     if missing:
         fail('the Home strip is missing ' + ', '.join(missing))
     if 'flow' in points:
@@ -403,12 +403,12 @@ def assert_strip(seen):
     for key, pts in points.items():
         for _, y in pts:
             rows.setdefault(y // 40, set()).add(key)
-    row = next((r for r, keys in rows.items() if keys >= {'crushes', 'connections'}), None)
+    row = next((r for r, keys in rows.items() if keys >= {'crushes', 'discovery'}), None)
     if row is None:
         fail('no single row holds Crushes and Connections')
     in_row = {k: [x for x, y in v if y // 40 == row] for k, v in points.items()}
     order = sorted(in_row, key=lambda k: min(in_row[k]))
-    if order != ['crushes', 'connections']:
+    if order != ['crushes', 'discovery']:
         fail('the strip reads ' + ' → '.join(order) + ', not Crushes → Connections')
 
     # The far end of the strip: a magnifier, and a bell beside it. The brief put
@@ -436,7 +436,7 @@ def assert_strip(seen):
                     fail('the strip still carries a "{}" control; the drawer is gone'.format(word))
 
     screen = SCREEN[0] or max(n['x2'] for n in seen if n['on_screen'])
-    for key in ('crushes', 'connections'):
+    for key in ('crushes', 'discovery'):
         node = next((n for n in seen if n['on_screen']
                      for v in (n['desc'], n['text']) if norm(v) == key and n['y'] // 40 == row), None)
         if node and node['x2'] > screen:
@@ -448,9 +448,9 @@ def assert_strip(seen):
     for n in seen:
         for value in (n['desc'], n['text']):
             key = norm(value)
-            if key in ('home', 'discover', 'whispers', 'space', 'crushes'):
+            if key in ('home', 'connections', 'whispers', 'space', 'crushes'):
                 bar.setdefault(key, []).append((n['x'], n['y']))
-    bar_missing = [k for k in ('home', 'discover', 'whispers', 'space') if k not in bar]
+    bar_missing = [k for k in ('home', 'connections', 'whispers', 'space') if k not in bar]
     if bar_missing:
         fail('the bottom bar is missing ' + ', '.join(bar_missing))
     lowest = max(y for pts in bar.values() for _, y in pts)
@@ -469,7 +469,7 @@ def assert_discover(seen):
     and the magnifier has to be on the title's row rather than floating.
     """
     titles = [n for n in seen if n['on_screen'] and n['y'] < SCREEN[1] * 0.6
-              for v in (n['text'], n['desc']) if norm(v) == 'discover']
+              for v in (n['text'], n['desc']) if norm(v) == 'discovery']
     if not titles:
         fail('Discover has no title on its own page')
     title = min(titles, key=lambda n: n['y'])
@@ -543,7 +543,8 @@ def assert_appearance():
     tap('Home')
     time.sleep(1.2)
     dark_home = screen_brightness()
-    tap('Discover')
+    tap('Home')
+    tap('Discovery')
     time.sleep(1.2)
     dark_discover = screen_brightness()
     shot('04a-discover-dark')
@@ -569,7 +570,8 @@ def assert_appearance():
     time.sleep(1.5)
     shot('04c-home-light')
     light_home = screen_brightness()
-    tap('Discover')
+    tap('Home')
+    tap('Discovery')
     time.sleep(1.5)
     shot('04d-discover-light')
     light_discover = screen_brightness()
@@ -748,17 +750,16 @@ def walk():
         time.sleep(1)
     if not fields or not type_into(0, 'Local post draft check', fields):
         fail('draft post text field missing')
-    typed = [n['text'] for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
-    if not typed or typed[0] != 'Local post draft check':
+    if not wait_for(['Local post draft check'], 20, 'typed post draft'):
         fail('draft post text did not reach the editor intact')
     back()
     if not scroll_to('Save draft', swipes=6): fail('post Save draft button missing')
     tap('Save draft', required=True)
-    if not wait_for(['Discover', 'Whispers'], 30, 'left post draft save'):
+    if not wait_for(['Home', 'Whispers'], 30, 'left post draft save'):
         fail('saving post draft did not leave the editor')
     adb('shell', 'am', 'force-stop', PACKAGE)
     adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.MainActivity')
-    if not wait_for(['Discover', 'Whispers'], 90, 'restart after draft save'):
+    if not wait_for(['Home', 'Whispers'], 90, 'restart after draft save'):
         fail('app did not restart after saving draft')
     tap('Create post', required=True)
     tap('Drafts on this phone', required=True)
@@ -800,7 +801,7 @@ def walk():
     # the footer behind it. Dismiss the keyboard before actually tapping Save.
     back()
     tap('Save draft', required=True)
-    if not wait_for(['Discover', 'Whispers'], 30, 'left Moment draft save'):
+    if not wait_for(['Home', 'Whispers'], 30, 'left Moment draft save'):
         fail('saving Moment draft did not leave the editor')
     tap('Create post', required=True)
     tap('Moment', required=True)
@@ -829,7 +830,8 @@ def walk():
     # opening search, or the one screen the user twice described as "a white
     # board with a search icon" is the one screen never looked at.
     seen = None
-    if tap('Discover'):
+    tap('Home')
+    if tap('Discovery'):
         seen = shot('07-discover')
         assert_discover(seen)
         if tap('Search Holup'):
@@ -987,7 +989,8 @@ def walk():
 
     # Search with something actually typed into it: the empty state is not the
     # screen, and the results are the part people use.
-    tap('Discover', required=True)
+    tap('Home', required=True)
+    tap('Discovery', required=True)
     if tap('Search Holup', required=True):
         if not type_into(0, 'spencer'): fail('search input is missing')
         adb('shell', 'input', 'keyevent', '4')

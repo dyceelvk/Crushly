@@ -15,6 +15,12 @@ import * as service from '../../api/service';
 import type { ScreenProps } from '../../navigation/types';
 import { useAuth } from '../../state/auth';
 
+const auditLabels: Record<string, string> = {
+  announcement: 'Updated announcement', feature: 'Changed feature setting',
+  search_accounts: 'Searched accounts', view_reports: 'Opened reports',
+  report_status: 'Changed report status', view_analytics: 'Opened dashboard',
+};
+
 export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -112,9 +118,9 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
         <Txt variant="heading">Admin activity</Txt>
         <Txt variant="small" color="textSecondary">Recent recorded admin actions and access to sensitive queues.</Txt>
         {audit.isLoading ? <LoadingBlock label="Loading admin activity" /> : audit.isError ? <ErrorState error={audit.error} message="Admin activity is unavailable." onRetry={() => void audit.refetch()} /> : !audit.data?.length ? <Txt color="textSecondary">No recorded activity.</Txt> : audit.data.map((event) => <View key={event.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>
-          <Txt variant="bodyStrong">{event.kind.replace(/_/g, ' ')}</Txt>
+          <Txt variant="bodyStrong">{auditLabels[event.kind] ?? 'Other admin action'}</Txt>
           <Txt variant="small" color="textSecondary">{timeAgoLong(event.createdAt)} · {event.actor}</Txt>
-          <Txt variant="small">{JSON.stringify(event.details)}</Txt>
+          {typeof event.details.reportId === 'number' ? <Txt variant="small">Report #{event.details.reportId}</Txt> : null}
         </View>)}
       </View> : null}
       </View>

@@ -9,6 +9,7 @@ import { useSwipeTabs } from '../../components/SwipeTabs';
 import { PostCard } from '../../components/feed/PostCard';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { CrushesFeed } from '../crushes/CrushesFeed';
+import { DiscoverPane } from '../discover/Discover';
 import { ConnectionsTop, CircleHighlightsCard, type CircleFilter } from '../../components/feed/ConnectionsTop';
 import { DiscoverCard } from '../../components/circles/DiscoverCard';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
@@ -62,7 +63,7 @@ const STRIP = 46;
  */
 export function FeedScreen() {
   const navigation = useNavigation<Nav>();
-  const route = useRoute<RouteProp<TabParamList, 'Flows'>>();
+  const route = useRoute<RouteProp<TabParamList, 'Flows' | 'Connections'>>();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { contentWidth } = useLayout();
@@ -73,13 +74,13 @@ export function FeedScreen() {
   const { data: badges } = useBadges(true);
   const focus = useFeedFocus();
 
-  const [tab, setTab] = useState<'crushes' | 'connections'>(
-    route.params?.tab === 'connections' ? 'connections' : 'crushes',
+  const [tab, setTab] = useState<'crushes' | 'discovery' | 'connections'>(
+    route.params?.tab ?? (route.name === 'Connections' ? 'connections' : 'crushes'),
   );
-  const swipe = useSwipeTabs({ options: ['crushes', 'connections'] as const, value: tab, onChange: setTab, width: contentWidth });
+  const swipe = useSwipeTabs({ options: ['crushes', 'discovery', 'connections'] as const, value: tab, onChange: setTab, width: contentWidth });
   // A notification about an add up opens Crushes, a Circle opens Connections.
   useEffect(() => {
-    if (route.params?.tab === 'connections' || route.params?.tab === 'crushes') setTab(route.params.tab);
+    if (route.params?.tab === 'connections' || route.params?.tab === 'crushes' || route.params?.tab === 'discovery') setTab(route.params.tab);
   }, [route.params?.tab]);
 
   /**
@@ -134,6 +135,8 @@ export function FeedScreen() {
     <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
       {tab === 'crushes' ? (
         <CrushesFeed />
+      ) : tab === 'discovery' ? (
+        <View style={{ flex: 1, paddingTop: insets.top + STRIP + 4 }}><DiscoverPane /></View>
       ) : following.isLoading ? (
         <View style={{ flex: 1, paddingTop: insets.top + STRIP + space.md, paddingHorizontal: space.lg, gap: space.md }}>
           <Skeleton style={{ height: 300, borderRadius: 20 }} />
@@ -272,7 +275,7 @@ export function FeedScreen() {
           opens nothing is a lie with a label on it, which is why the strip has
           two now and not three. */}
       <FeedTabs
-        tabs={TABS}
+        tabs={tab === 'connections' ? [...TABS, {key:'connections',label:'Connections'}] : TABS}
         active={tab}
         onChange={(k) => setTab(k as typeof tab)}
         top={insets.top + 4}
@@ -293,5 +296,5 @@ export function FeedScreen() {
  */
 const TABS: FeedTab[] = [
   { key: 'crushes', label: 'Crushes' },
-  { key: 'connections', label: 'Connections' },
+  { key: 'discovery', label: 'Discovery' },
 ];

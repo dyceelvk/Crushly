@@ -16,7 +16,7 @@ export function SpaceNavigation() {
   const insets = useSafeAreaInsets();
   const actions: {label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void}[] = [
     { label: 'Home', icon: 'home-outline', onPress: () => navigation.navigate('Main', {screen:'Flows',params:{tab:'crushes'}}) },
-    { label: 'Connections', icon: 'people-outline', onPress: () => navigation.navigate('Main', {screen:'Flows',params:{tab:'connections'}}) },
+    { label: 'Connections', icon: 'people-outline', onPress: () => navigation.navigate('Main', {screen:'Connections',params:{tab:'connections'}}) },
     { label: 'Create post', icon: 'add-circle', onPress: () => navigation.navigate('CreatePost') },
     { label: 'Whispers', icon: 'chatbubble-ellipses-outline', onPress: () => navigation.navigate('Main', {screen:'Messages'}) },
     { label: 'Notifications', icon: 'notifications-outline', onPress: () => navigation.navigate('Notifications') },

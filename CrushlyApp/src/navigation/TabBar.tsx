@@ -15,6 +15,7 @@ import { SpaceNavigation } from './SpaceNavigation';
 const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap] | 'crush'> = {
   Flows: ['home', 'home-outline'],
   Discover: ['compass', 'compass-outline'],
+  Connections: ['people', 'people-outline'],
   Messages: ['chatbubble-ellipses', 'chatbubble-ellipses-outline'],
   Profile: ['person-circle', 'person-circle-outline'],
 };
@@ -95,7 +96,9 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
   };
 
   // The create button divides the bar in half, wherever the tab count falls.
-  const half = Math.ceil(state.routes.length / 2);
+  // Discovery lives in Home's strip; retain its hidden route for old deep links.
+  const shownRoutes = state.routes.map((route, index) => ({ route, index })).filter(({ route }) => route.name !== 'Discover');
+  const half = Math.ceil(shownRoutes.length / 2);
 
   return (
     <Container
@@ -107,7 +110,7 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
       accessibilityRole="tablist"
     >
       <View style={{ flexDirection: 'row', flex: 1, maxWidth: 640, alignSelf: 'center', marginHorizontal: 'auto' }}>
-        {state.routes.slice(0, half).map((route, i) => tab(route, i))}
+        {shownRoutes.slice(0, half).map(({route, index}) => tab(route, index))}
 
         {onCreate ? (
           <View style={{ width: 68, alignItems: 'center', justifyContent: 'center' }}>
@@ -141,7 +144,7 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
           </View>
         ) : null}
 
-        {state.routes.slice(half).map((route, i) => tab(route, i + half))}
+        {shownRoutes.slice(half).map(({route, index}) => tab(route, index))}
       </View>
     </Container>
   );
