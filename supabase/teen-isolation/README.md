@@ -46,3 +46,10 @@ run in this step. Full adversarial, concurrency and two-project end-to-end
 verification is a release prerequisite, particularly consent withdrawal,
 turning 18, forged JWTs, direct database access, cached sessions, blocks,
 media, adult/teen search and all external content/link paths.
+
+`CrushlyApp/src/teen/isolatedClient.ts` constructs an unwired teen client only
+for a different Supabase project and a publishable key, with its own session
+namespace and no implicit interception of the adult app's auth links. It does
+not provision a project, implement signup/link routing, or stop a person from
+creating a second account with a false birthday. The app still has no teen entry
+point; none of this code is live.
