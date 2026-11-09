@@ -455,3 +455,9 @@
   after the newly applied migration. Their combined release/order still needs
   review. Manual verification, its Didit endpoints, 30-day cleanup and the new
   app remain undeployed; old Didit auto-awards remain live.
+
+- Migration-only main commit `28e8eee` records the applied guard; Vercel
+  automatically started production deployment `dpl_D5LmxXwihD98Wv11xy6xPQnFkU8s`,
+  initially BUILDING. It contains no new verification UI. The experimental
+  `01` draft now relies on the already-applied guard rather than adding a
+  redundant second trigger. No other verification SQL was deployed.

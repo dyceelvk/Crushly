@@ -1,5 +1,9 @@
 # Manual verification — Holup experiment, NOT deployed
 
+Production now has the separate badge-tier self-edit guard from
+`20261109131025_protect_profile_badge_tier`; the manual verification system
+below remains undeployed.
+
 Creator verification is gold and person ID verification diamond blue. The
 existing administrator badge is retained and the admin account is exempt from
 application thresholds. A reviewer makes the final decision. Didit is for

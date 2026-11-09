@@ -130,18 +130,8 @@ create table public.manual_verification_capture_evidence (
 alter table public.manual_verification_capture_evidence enable row level security;
 revoke all on public.manual_verification_capture_evidence from public,anon,authenticated;
 
--- Block direct badge tier edits by normal clients. An existing admin badge is
--- retained: no bulk backfill or badge removals occur in this experiment.
-create or replace function public.manual_verification_badge_guard() returns trigger
-language plpgsql set search_path='' as $$
-begin
- if current_user in ('anon','authenticated') and new.badge_tier is distinct from old.badge_tier then
-  raise exception 'Badge is managed by Holup reviewers' using errcode='42501'; end if;
- return new;
-end $$;
-create trigger manual_verification_badge_guard before update of badge_tier on public.profiles
- for each row execute function public.manual_verification_badge_guard();
-revoke all on function public.manual_verification_badge_guard() from public,anon,authenticated;
+-- The live badge-tier guard is provided by migration
+-- 20261109131025_protect_profile_badge_tier. No badges are changed here.
 
 create or replace function public.manual_verification_decide(p_case bigint,p_decision text,p_reason text) returns boolean
 language plpgsql security definer set search_path='' as $$
