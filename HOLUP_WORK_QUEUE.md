@@ -461,3 +461,9 @@
   initially BUILDING. It contains no new verification UI. The experimental
   `01` draft now relies on the already-applied guard rather than adding a
   redundant second trigger. No other verification SQL was deployed.
+- Vercel deployment `dpl_D5LmxXwihD98Wv11xy6xPQnFkU8s` finished READY and
+  PROMOTED on `holupapp.vercel.app`; it is only the migration-record commit
+  `28e8eee`, not the new app or verification flow.
+- A local alternative JPEG-only processor was evaluated on synthetic input:
+  approximately 1.0 seconds and 233 MiB RSS in Node for a 1600px noisy image.
+  That does not establish hosted performance or replace the current draft.
