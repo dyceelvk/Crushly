@@ -499,3 +499,28 @@
   upload paths. Disposable PostgreSQL checks passed for revision matching and
   authenticated-role denial; hosted worker, storage, crash recovery and actual
   scheduler remain unverified/undeployed. Do not enable evidence upload yet.
+
+## Live 30-day evidence retention infrastructure
+- Supabase production migrations `20261109133904_manual_evidence_retention_foundation`
+  and `20261109134050_protect_evidence_cleanup_auth` created the private evidence
+  bucket, case/file tables, versioned deletion queue and scheduler credential
+  digest. No member/client access or evidence upload flow has been enabled.
+- Protected Edge worker `manual-evidence-cleanup` v2 and GitHub Actions scheduler
+  are live. The scheduler runs every 15 minutes (best effort). GitHub run
+  `42627677177` configured the secret digest and succeeded; run `42627803588`
+  created a synthetic Storage object, queued it, invoked the real worker, and
+  confirmed the object was gone. The temporary check Edge function was removed.
+  Heartbeat reported zero failures. This validates infrastructure only, not the
+  real manual verification flow, prior legacy images, backups, provider retention,
+  or guaranteed timing when jobs fail/backlogs grow.
+- The manual verification app, reviewer endpoints, image upload processor,
+  admin-requested Didit integration, identity capture, provider webhook and
+  earlier-deletion UI are NOT deployed. Existing legacy Didit still operates.
+  Do not solicit images or claim complete end-user 30-day deletion is live.
+- The experimental 01/03/05/08/09 SQL now overlaps live tables/functions and
+  must be reconciled with production, not executed as-is. The five unrelated
+  pending local migrations are renumbered after the two live migrations.
+- First scheduler setup run `42627496769` failed because the GitHub Supabase
+  access token was unauthorized. The successful setup used the existing DB
+  credential and a generated dedicated scheduler secret stored encrypted in
+  GitHub; only its SHA-256 digest is stored in the database.

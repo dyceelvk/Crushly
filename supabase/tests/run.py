@@ -150,8 +150,8 @@ def main() -> int:
         # The same fixture also runs directly in psql with its local include.
         migration_fixture = (ROOT / 'whisper_moment_migration.psql').read_text()
         migration_fixture = migration_fixture.replace('\\set ON_ERROR_STOP on', '').replace(
-            '\\ir ../migrations/20261109131030_whisper_moment_links.sql',
-            (MIGRATIONS / '20261109131030_whisper_moment_links.sql').read_text(),
+            '\\ir ../migrations/20261109134055_whisper_moment_links.sql',
+            (MIGRATIONS / '20261109134055_whisper_moment_links.sql').read_text(),
         )
         print('== whisper_moment_migration.psql')
         try:

@@ -134,3 +134,17 @@ network timeouts, concurrent requests and edge deployment still need validation.
 A function crash before enqueue, or failure to enqueue, remains a potential
 orphan: the upload/storage reconciliation and alerting design is not complete.
 None of these changes deploys the scheduler or the manual-review feature.
+
+## Production retention foundation now live
+Migrations `20261109133904_manual_evidence_retention_foundation` and
+`20261109134050_protect_evidence_cleanup_auth` now exist in production, along
+with the protected cleanup worker and 15-minute GitHub scheduler. A synthetic
+Storage object was physically removed through the worker in run `42627803588`.
+This does **not** enable manual review, uploads, Didit integration or account
+UI, and does not establish deletion of provider records or backups. Earlier
+requests are not yet exposed in the app. Do not represent the complete user
+feature as live.
+
+Files 01, 03, 05, 08 and 09 overlap deployed cases/files/queue/retention objects;
+**do not apply them verbatim**. Reconcile the remaining functions against the
+live schema, ensure authorization and upload safety, and coordinate cutover.
