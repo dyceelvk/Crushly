@@ -218,8 +218,9 @@ export async function updateProfile(patch: Record<string, unknown>): Promise<Me>
     const birthdate = str(patch.birthdate, 'Birthday', { required: true, max: 10 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) throw new ApiError(400, 'Please check your birthday.');
     const age = ageFromBirthdate(birthdate);
-    if (age != null && age < 18) throw new ApiError(400, 'Holup is for adults. You need to be 18 or older to join.');
-    if (age != null && age > 99) throw new ApiError(400, 'Please check your birthday.');
+    if (age == null) throw new ApiError(400, 'Please enter a valid birthday.');
+    if (age < 18) throw new ApiError(400, 'Holup is for adults. You need to be 18 or older to join.');
+    if (age > 99) throw new ApiError(400, 'Please check your birthday.');
     next.birthdate = birthdate;
   }
   if ('pronouns' in patch) next.pronouns = str(patch.pronouns, 'Pronouns', { max: 24 });

@@ -101,3 +101,40 @@
   legacy baseline, applied 01/04/08 twice, 02/05/09 and both race suites. The
   intermediate 07 ACL test ran before 08. TypeScript, 300+3+7 unit tests, mock
   web build and 30/30 browser tests passed. No production rollout.
+
+## Subsequent release work
+- Android smoke: diagnosed that `wait_for` / screenshot can dismiss the IME
+  after the Moment input was focused. The smoke script now explicitly refocuses
+  the EditText immediately before typing, then still checks the exact value and
+  draft restore. An identical earlier APK is being re-walked on a verify-only
+  CI branch; no APK is published by that verification. Result must be checked.
+- Supabase documents a management endpoint to shut down a project's Realtime
+  connections (`POST /v1/projects/{ref}/config/realtime/shutdown`). This could
+  remove cached channel grants during a carefully controlled fail-closed cutover,
+  but it disconnects the whole project's Realtime, not one pair. It is not a
+  substitute for per-block immediate revocation while joins remain enabled. No
+  shutdown has been performed; behavior, reconnection, old clients and all
+  unrelated channels require staging verification before any production use.
+- `supabase/public-video-preview/` contains a local-only prototype that actually
+  re-encodes a short MP4 and tests 21-second synthetic audio/video inputs. It is
+  not a public preview feature: ingestion, sandboxing, authorization, serving,
+  deletion, one-per-browser behavior and rollout all remain to be built/tested.
+- Preview experiment now also has a disposable SQL rendition lookup which
+  rechecks post/Space visibility, global sharing, source replacement, deletion,
+  and fails closed for unrendered edits and alternate soundtracks. Fresh normal
+  SQL suite followed by replayed experiment and targeted anonymous/privacy tests
+  passed. It returns a rendition key only, never an original URL; there is still
+  no ingestion, authenticated serving, browser limit, or production rollout.
+- An aggregate-only production check found 7 onboarded non-demo profiles, 0
+  valid under-18 birthdays, and 1 missing/invalid birthday. No identity was
+  queried. Existing adult gating is client-side, so it is not sufficient to
+  claim secure teen isolation. `adult-gate-work/` experiments with server-side
+  validation at onboarding/birthday writes and robust date handling; it passes
+  direct authenticated-write tests but does NOT gate all pre-onboarding social
+  paths or solve the existing invalid record. No age/teen change has been deployed.
+- Birthday client validation now rejects impossible calendar dates instead of
+  accepting e.g. February 31. TypeScript, 300+3+7 unit tests, mock web build
+  and 30/30 offline browser tests passed. The experimental server age guard
+  passed twice-applied, direct-write boundary tests. The exact-APK Android
+  re-walk was dispatched as CI run 42598886227 and was still running at the
+  latest check; no release has been published.

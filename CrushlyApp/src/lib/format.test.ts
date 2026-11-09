@@ -81,4 +81,10 @@ test('ageFromBirthdate', () => {
   assert.equal(ageFromBirthdate(null), null);
   assert.equal(ageFromBirthdate(undefined), null);
   assert.equal(ageFromBirthdate('nonsense'), null);
+  assert.equal(ageFromBirthdate('2023-02-29'), null);
+  assert.equal(ageFromBirthdate('2000-02-31'), null);
+  assert.equal(ageFromBirthdate('1990-13-01'), null);
+  assert.equal(ageFromBirthdate('1990-00-01'), null);
+  assert.equal(ageFromBirthdate('1990-01-01-extra'), null);
+  assert.notEqual(ageFromBirthdate('2000-02-29'), null);
 });

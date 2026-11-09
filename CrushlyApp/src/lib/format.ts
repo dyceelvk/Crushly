@@ -42,9 +42,11 @@ export const nameAge = (name: string, age: number | null) => (age ? `${name}, ${
 
 /** Whole years since `YYYY-MM-DD`, or null when there is no usable birthdate. */
 export function ageFromBirthdate(birthdate?: string | null): number | null {
-  if (!birthdate) return null;
+  if (!birthdate || !/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) return null;
   const [y, m, d] = birthdate.split('-').map(Number);
-  if (!y || !m || !d) return null;
+  if (y < 1000 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() + 1 !== m || date.getUTCDate() !== d) return null;
   const today = new Date();
   let age = today.getUTCFullYear() - y;
   const beforeBirthday = today.getUTCMonth() + 1 < m || (today.getUTCMonth() + 1 === m && today.getUTCDate() < d);

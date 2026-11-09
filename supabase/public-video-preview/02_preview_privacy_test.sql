@@ -1,0 +1,42 @@
+-- Disposable test database only; needs migrations/seed and 01_preview_privacy_experiment.sql.
+begin;
+do $test$
+declare author_id bigint; pid bigint; original_sound bigint; alternate_sound bigint; preview_key text:='public-previews/'||repeat('a',64)||'.mp4'; result text; denied boolean;
+begin
+ select id into author_id from public.profiles where onboarded=true and status='active' limit 1;
+ update public.privacy set profile_visibility='everyone',incognito=false where user_id=author_id;
+ update public.holup_features set enabled=true where key='public_post_sharing';
+ insert into public.posts(author_id,body,audience,media_url) values(author_id,'public','everyone','https://protected.invalid/original.mp4') returning id into pid;
+ select sound_id into original_sound from public.posts where id=pid;
+ insert into public.experimental_post_previews(post_id,source_media_url,object_key) values(pid,'https://protected.invalid/original.mp4',preview_key);
+ set local role anon;
+ result:=public.experimental_public_video_preview_key(pid);
+ assert result=preview_key and result not like '%original%', 'valid preview not returned or original exposed';
+ denied:=false; begin perform count(*) from public.experimental_post_previews; exception when insufficient_privilege then denied:=true; end; assert denied, 'anonymous table access';
+ reset role;
+ update public.posts set audience='connections' where id=pid;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'private post exposed'; reset role;
+ update public.posts set audience='everyone',media_url='https://protected.invalid/changed.mp4' where id=pid;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'outdated rendition exposed'; reset role;
+ update public.posts set media_url='https://protected.invalid/original.mp4' where id=pid;
+ update public.posts set edit='{}'::jsonb where id=pid;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'unrendered edit exposed'; reset role;
+ update public.posts set edit=null where id=pid;
+ insert into public.sounds(owner_id,title,media_url) values(author_id,'Alternate track','https://protected.invalid/sound.mp3') returning id into alternate_sound;
+ update public.posts set sound_id=alternate_sound where id=pid;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'unrendered alternate audio exposed'; reset role;
+ update public.posts set sound_id=original_sound where id=pid;
+ update public.privacy set incognito=true where user_id=author_id;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'incognito Space exposed'; reset role;
+ update public.privacy set incognito=false,profile_visibility='connections' where user_id=author_id;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'private Space exposed'; reset role;
+ update public.privacy set profile_visibility='everyone' where user_id=author_id;
+ update public.holup_features set enabled=false where key='public_post_sharing';
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'sharing kill-switch ignored'; reset role;
+ update public.holup_features set enabled=true where key='public_post_sharing';
+ delete from public.posts where id=pid;
+ set local role anon; assert public.experimental_public_video_preview_key(pid) is null, 'deleted post exposed'; reset role;
+ assert not exists(select 1 from public.experimental_post_previews where post_id=pid), 'preview row not deleted';
+ raise notice 'experimental preview reauthorization tests passed';
+end $test$;
+rollback;
