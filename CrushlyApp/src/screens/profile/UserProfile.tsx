@@ -29,7 +29,6 @@ import { useToast } from '../../components/Toast';
 import { useAcceptAddUp, useDeclineAddUp, useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
 import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
-import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { celebrated } from '../crushes/MutualCrush';
 import { MOMENT_RING_SEEN } from '../../lib/momentRings';
@@ -45,7 +44,6 @@ import type { Post } from '../../api/types';
 import { radius, space } from '../../theme/tokens';
 import { intentionLabel, MOMENT_STYLES } from '../../lib/catalog';
 import { timeAgo } from '../../lib/format';
-import { haptic } from '../../lib/haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ScreenProps, RootStackParamList } from '../../navigation/types';
@@ -201,9 +199,6 @@ export function SpaceScreen({
   const decline = useDeclineAddUp();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
-  const keep = useKeepState(id, !mine);
-  const keepClose = useKeepClose();
-  const letGo = useLetGo();
   const [index, setIndex] = useState(0);
   /** The full-screen picture, and the chooser that decides which door opens. */
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -603,28 +598,7 @@ export function SpaceScreen({
                     so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
-                <Pressable
-                  onPress={() => {
-                    haptic.tap();
-                    if (keep.data?.keeps) letGo.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not let go', message: (e as Error).message }) });
-                    else keepClose.mutate(id, { onError: (e) => toast({ kind: 'error', title: 'Not kept close', message: (e as Error).message }) });
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={keep.data?.keeps ? `Stop keeping ${p.name} close` : `Keep ${p.name} close`}
-                  hitSlop={8}
-                  disabled={keepClose.isPending || letGo.isPending}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 5,
-                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-                    backgroundColor: keep.data?.keeps ? colors.goldSoft : colors.card,
-                    borderWidth: 1, borderColor: keep.data?.keeps ? colors.goldLine : colors.border,
-                  }}
-                >
-                  <Ionicons name={keep.data?.keeps ? 'bookmark' : 'bookmark-outline'} size={12} color={keep.data?.keeps ? colors.gold : colors.textSecondary} />
-                  <Txt variant="caption" color={keep.data?.keeps ? 'gold' : 'textSecondary'}>
-                    {keep.data?.keeps ? 'Kept close' : 'Keep Close'}
-                  </Txt>
-                </Pressable>
+                {relationship.data?.canViewKeptClose ? <Pill tone="gold" label="Close Ones" icon={<Ionicons name="people" size={11} color={colors.gold} />} /> : <Txt variant="small" color="textSecondary">Keep Close requests are being updated.</Txt>}
                 </>
                 )}
               </View>
@@ -634,7 +608,7 @@ export function SpaceScreen({
               them directly behind the face — a rounded rectangle poking out at
               the corners of a circle, unreadable and untappable. They are on
               the page now, where they can be read and pressed. */}
-          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.mutual || p.crush.received || keep.data?.keepsYou ? (
+          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.mutual || p.crush.received ? (
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: space.sm }}>
               {p.online ? (
                 <Pill tone="neutral" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} />
@@ -649,9 +623,6 @@ export function SpaceScreen({
                   label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'}
                   icon={<Ionicons name="heart" size={11} color={colors.crush} />}
                 />
-              ) : null}
-              {keep.data?.keepsYou ? (
-                <Pill tone="gold" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} />
               ) : null}
               {mine && meQ.data?.status === 'paused' ? <Pill tone="neutral" label="Hidden from Discover" /> : null}
             </View>
