@@ -54,6 +54,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
+    else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: null, postLikes: 7, canViewAddUps: true, canViewKeptClose: false, addUpVisibility: 'private'};
     else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
     else if (path === '/rest/v1/rpc/heartbeat') body = true;
@@ -265,4 +266,16 @@ test('post composer link control inserts a web address', async ({ page }) => {
   await page.getByLabel('Web address').fill('example.com/path');
   await page.getByRole('button', { name: 'Add link', exact: true }).click();
   await expect(page.getByPlaceholder('Good energy, better days. Same me, just more focused.')).toHaveValue('https://example.com/path');
+});
+
+
+test('Space has working app navigation and real stats', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({timeout:30000});
+  await expect(page.getByText('Post likes', {exact:false})).toBeVisible();
+  for (const label of ['Home', 'Connections', 'Create post', 'Whispers', 'Notifications']) {
+    await expect(page.getByRole('button', {name: label, exact:true})).toBeVisible();
+  }
+  await page.getByRole('button', {name:'Connections', exact:true}).click();
+  await expect(page.getByRole('tab', {name:'Connections', exact:true}).first()).toBeVisible();
 });
