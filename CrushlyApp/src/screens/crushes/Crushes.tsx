@@ -75,7 +75,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
     return p.at ? `${label} · ${timeAgoLong(p.at)}` : label;
   };
   const empty = {
-    incoming: { title: 'No subscribers yet', message: 'People who Keep you Close appear here.', action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) } },
+    incoming: { title: 'Nobody has Kept you Close yet', message: 'People who Keep you Close appear here.', action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) } },
     outgoing: { title: 'Nobody Kept Close yet', message: 'Choose Keep Close on someone’s Space.', action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) } },
     mutual: { title: 'No mutual Keep Close yet', message: 'People who Keep each other Close appear here.', action: { label: 'Discover people', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) } },
   }[tab];

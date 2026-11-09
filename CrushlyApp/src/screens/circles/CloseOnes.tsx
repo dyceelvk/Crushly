@@ -23,8 +23,9 @@ import type { RootStackParamList } from '../../navigation/types';
 /**
  * Close Ones — the people you have chosen to keep near.
  *
- * The list is yours alone: nobody else can see who is on it, and letting
- * somebody go is silent. Keeping someone close asks nothing of them.
+ * These are the people you Keep Close. You are Close Ones when they Keep you
+ * Close too. The owner and their mutual Close Ones may see incoming identities,
+ * subject to profile and block privacy.
  */
 /**
  * The list itself, without a screen around it.

@@ -405,6 +405,193 @@ begin
   return true;
 end $$;
 
+-- Active follow status must not be mistaken for a pending approval.
+create or replace function public.public_profile(p_viewer bigint, p_target bigint, p_full boolean default false)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  r record;
+  v record;
+  interests jsonb;
+  intentions jsonb;
+  shared_interests jsonb;
+  km double precision;
+  my_deep boolean;
+  my_note text;
+  my_found boolean;
+  their_deep boolean;
+  their_note text;
+  their_found boolean;
+  my_status text;
+  my_responded bigint;
+  their_status text;
+  connected boolean;
+  can_see_online boolean;
+  can_see_activity boolean;
+  result jsonb;
+begin
+  select p.*, pr.show_distance, pr.show_online, pr.show_activity, pr.discoverable,
+         pr.profile_visibility, pr.who_can_message, pr.who_can_crush, pr.show_age,
+         pr.show_city, pr.incognito
+    into r
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_target;
+  if not found then
+    return null;
+  end if;
+
+  select p.lat, p.lng, p.interests, p.intentions, p.verification, pr.show_online, pr.show_activity
+    into v
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_viewer;
+
+  interests := coalesce(r.interests, '[]'::jsonb);
+  intentions := coalesce(r.intentions, '[]'::jsonb);
+  km := public.distance_km(v.lat, v.lng, r.lat, r.lng);
+  connected := public.is_connected_pair(p_viewer, p_target);
+
+  select c.deep, c.note, c.status, c.responded_at into my_deep, my_note, my_status, my_responded
+    from crushes c where c.from_id = p_viewer and c.to_id = p_target;
+  my_found := found;
+  select c.deep, c.note, c.status into their_deep, their_note, their_status
+    from crushes c where c.from_id = p_target and c.to_id = p_viewer;
+  their_found := found;
+
+  /*
+   * Two different questions, so two different answers.
+   *
+   * The dot means "they are here right now"; the label means "they were here at
+   * 14:20". Somebody may be happy to be seen online while not wanting to hand
+   * out a log of when they were last around — which is why `show_activity` is
+   * its own switch and both sides have to allow it, exactly like `show_online`.
+   */
+  can_see_online := r.show_online and coalesce(v.show_online, true);
+  can_see_activity := can_see_online and r.show_activity and coalesce(v.show_activity, true);
+
+  select coalesce(jsonb_agg(i), '[]'::jsonb) into shared_interests
+    from jsonb_array_elements_text(interests) i
+   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb)));
+
+  result := jsonb_build_object(
+    'id', r.id,
+    'name', r.name,
+    'username', nullif(r.username, ''),
+    'age', case when r.show_age then public.age_of(r.birthdate) else null end,
+    'pronouns', nullif(r.pronouns, ''),
+    'city', case when r.show_city then nullif(r.city, '') else null end,
+    'verified', r.verification = 'verified',
+    -- Which seal, if any. 'verified' is the ordinary one, 'gold' is earned,
+    -- 'diamond' belongs to the company account alone.
+    'badgeTier', case
+      when r.badge_tier = 'diamond' then 'diamond'
+      when r.badge_tier = 'gold' then 'gold'
+      when r.verification = 'verified' then 'verified'
+      else 'none'
+    end,
+    -- Keep Close, read from this viewer's side: are they keeping you close?
+    'keepsYou', exists (select 1 from keeps k where k.keeper_id = p_target and k.kept_id = p_viewer),
+    'distance', case when r.show_distance then public.distance_label(km) else null end,
+    'online', case when can_see_online then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when can_see_activity then public.activity_label_at(r.last_active_at) else null end,
+    'bio', r.bio,
+    'intentions', intentions,
+    'relationshipIntention', nullif(r.relationship_intention, ''),
+    'interests', interests,
+    'sharedInterests', shared_interests,
+    'photos', public.photos_of(p_target),
+    -- Add Up booleans mean an active one-way follow, independent of Keep Close.
+    'crush', jsonb_build_object(
+      'sent', my_found and my_status in ('pending', 'accepted'),
+      'sentStatus', my_status,
+      'sentDeep', coalesce(my_deep, false),
+      'received', their_found and their_status in ('pending', 'accepted'),
+      'receivedStatus', their_status,
+      'receivedDeep', coalesce(their_deep, false),
+      'note', case when their_found and their_status in ('pending', 'accepted') then their_note else null end,
+      'respondedAt', my_responded,
+      'mutual', connected
+    ),
+    'canMessage', public.messaging_block_reason(p_viewer, p_target) is null,
+    'acceptsCrushes', r.who_can_crush <> 'verified' or (v.verification = 'verified'),
+    -- The ring. True only when there is a live Moment THIS viewer may open.
+    'hasMoment', exists (
+      select 1 from moments m
+       where m.user_id = p_target
+         and m.expires_at > public.now_ms()
+         and public.can_view_moment(m, p_viewer)
+    )
+  );
+
+  if p_full then
+    result := result || jsonb_build_object(
+      'languages', coalesce(r.languages, '[]'::jsonb),
+      'lifestyle', coalesce(r.lifestyle, '{}'::jsonb),
+      'messageBlockReason', public.messaging_block_reason(p_viewer, p_target)
+    );
+  end if;
+  return result;
+end $function$;
+
+-- The owner-selected Close audience for Add Up identities consists of people
+-- who Keep the owner Close, regardless of whether the owner Keeps them back.
+create or replace function public.space_relationship_stats(p_target_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); visibility text; close_stats jsonb;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  close_stats:=public.v3_keep_stats(p_target_id); -- also verifies Space and block visibility
+  select add_up_list_visibility into visibility from public.privacy where user_id=p_target_id;
+  return jsonb_build_object(
+    'addUps',(select count(*) from public.crushes c join public.profiles p on p.id=c.from_id
+      where c.to_id=p_target_id and c.status in ('pending','accepted') and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.from_id,p_target_id)),
+    'keptClose',close_stats->'keptClose',
+    'canViewAddUps',me=p_target_id or visibility='everyone' or (visibility='close' and (close_stats->>'canViewKeptClose')::boolean),
+    'canViewKeptClose',close_stats->'canViewKeptClose',
+    'addUpVisibility',case when me=p_target_id then visibility else null end
+  );
+end $$;
+
+create or replace function public.space_relationship_people(p_target_id bigint,p_kind text,p_offset integer default 0,p_limit integer default 40)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+  if p_kind is null or p_kind not in ('addUps','keptClose') then perform public.crushly_fail(400,'','Unknown list.'); end if;
+  stats:=public.space_relationship_stats(p_target_id);
+  if p_kind='keptClose' then return public.v3_kept_close_people(p_target_id,p_offset,p_limit); end if;
+  if not (stats->>'canViewAddUps')::boolean then perform public.crushly_fail(403,'','This list is private.'); end if;
+  with readable as (
+    select c.from_id as person,c.created_at as at,public.relationship_list_profile(me,c.from_id) as member
+    from public.crushes c join public.profiles p on p.id=c.from_id
+    where c.to_id=p_target_id and c.status in ('pending','accepted') and p.onboarded and p.status='active'
+      and not public.is_blocked_pair(p_target_id,c.from_id) and not public.is_blocked_pair(me,c.from_id)
+  ), page as (select * from readable where member is not null order by at desc,person desc offset off limit lim+1)
+  select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc)
+    from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+    'hasMore',(select count(*)>lim from page)) into result;
+  return result;
+end $$;
+
+-- Owner's outgoing subscriptions, with the same profile/block visibility as
+-- the subscription hub. Never return a hidden Space via public_profile alone.
+create or replace function public.close_ones(p_limit integer default 50,p_after bigint default null)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); result jsonb; lim integer:=least(greatest(coalesce(p_limit,50),1),100);
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ with readable as (
+   select k.kept_id,k.created_at,public.relationship_list_profile(me,k.kept_id) as member,
+     exists(select 1 from public.keeps k2 where k2.keeper_id=k.kept_id and k2.kept_id=me) as mutual
+   from public.keeps k where k.keeper_id=me and not public.is_blocked_pair(me,k.kept_id)
+     and (p_after is null or (k.created_at,k.kept_id)<(select k2.created_at,k2.kept_id from public.keeps k2 where k2.keeper_id=me and k2.kept_id=p_after))
+ ), page as (select * from readable where member is not null order by created_at desc,kept_id desc limit lim)
+ select jsonb_build_object('items',coalesce(jsonb_agg(jsonb_build_object('member',member,'keepsYou',mutual,'keptAt',created_at) order by created_at desc,kept_id desc),'[]'::jsonb)) into result from page;
+ return result;
+end $$;
+
 -- Paged subscription hub for the signed-in member only.
 create or replace function public.v3_keep_people(p_direction text,p_offset integer default 0,p_limit integer default 40) returns jsonb
 language plpgsql stable security definer set search_path=public as $$

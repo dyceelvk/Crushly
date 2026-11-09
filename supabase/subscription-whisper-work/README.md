@@ -106,3 +106,24 @@ and active call termination remain unsolved, and 04 deliberately disallows
 new joins. Retry/abuse controls, authoritative notification delivery, rollback,
 representative production data, Android smoke and device checks are incomplete.
 The source version is not a release migration and must not be shipped alone.
+
+## Latest correction: friends-style Close Ones (supersedes subscriber ACL above)
+
+Keep actions are immediate in each direction; **only reciprocal Keeps create
+Close Ones**. All Close/Connections audiences, including Add Up identities and
+the Kept Close identity list, are limited to the owner and mutual Close Ones.
+The Kept Close count/list still represents incoming Keeps, including one-sided
+ones. Whispers remain independent. `08_mutual_close_experiment.sql` changes the
+central legacy connection predicate, the identity-list gate and the old
+profile visibility exception; `09_mutual_close_test.sql` exercises selected
+Space/post/Moment/list/accepted-Whisper cases. `07_space_subscriber_privacy_test`
+describes the now-superseded intermediate ACL: only run it before 08.
+
+This remains unsafe to deploy: all 69+ legacy call sites need review, old clients
+and destructive direct relationship RPCs need compatibility/update gating,
+private-Space reciprocal adding needs a safe flow, stale Realtime joins require
+forced revocation, and tests with the real service and Android are outstanding.
+
+The 08 experiment also wraps legacy directional Keep/let-go in the pair-locked
+methods, and fails obsolete approval/cancellation/destructive removal RPCs closed
+with an update-required error. It does not provide a full client update gate.

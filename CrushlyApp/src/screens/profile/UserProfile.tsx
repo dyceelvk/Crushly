@@ -558,21 +558,18 @@ export function SpaceScreen({
               them directly behind the face — a rounded rectangle poking out at
               the corners of a circle, unreadable and untappable. They are on
               the page now, where they can be read and pressed. */}
-          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.mutual || p.crush.received || keep.data?.keepsYou ? (
+          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.received || keep.data?.keepsYou ? (
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: space.sm }}>
               {p.online ? (
                 <Pill tone="neutral" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} />
               ) : p.activity ? (
                 <Pill tone="neutral" label={p.activity} />
               ) : null}
-              {p.crush.mutual ? (
-                <Pill tone="crush" label="Kept Close" icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
-              ) : p.crush.received ? (
-                <Pill
-                  tone="crush"
-                  label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'}
-                  icon={<Ionicons name="heart" size={11} color={colors.crush} />}
-                />
+              {keep.data?.keepsYou ? (
+                <Pill tone="crush" label={keep.data.keeps ? 'Mutual Keep Close' : 'Keeps you Close'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
+              ) : null}
+              {p.crush.received ? (
+                <Pill tone="crush" label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} />
               ) : null}
               {mine && meQ.data?.status === 'paused' ? <Pill tone="neutral" label="Hidden from Discover" /> : null}
             </View>
@@ -818,7 +815,7 @@ export function SpaceScreen({
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
       <ConfirmSheet visible={confirmLetGo} onCancel={() => setConfirmLetGo(false)} title="Stop Keeping Close?" message={`Your Whisper with ${p.name} and your Add Up stay as they are.`} confirmLabel="Stop Keeping Close" destructive loading={letGo.isPending} onConfirm={() => letGo.mutate(id, { onSuccess: () => { setConfirmLetGo(false); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) })} />
       <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
-        ['everyone', 'Everyone who can view your Space'], ['close', 'Approved Keep Close members'], ['private', 'Only you'],
+        ['everyone', 'Everyone who can view your Space'], ['close', 'Mutual Close Ones'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals remain visible; individual Spaces still follow their own privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
       <SpaceRelationshipList targetId={p.id} viewerId={meQ.data?.id ?? 0} kind={relationshipList} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>

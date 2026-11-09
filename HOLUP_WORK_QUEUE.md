@@ -69,3 +69,35 @@
   open-setting changes, and the Moment-reply behavior with mocked APIs. SQL also
   covers incoming/outgoing/mutual hub paging, hidden profiles and blocks. This
   is not proof of real-service integration or release readiness.
+
+## Latest correction: reciprocal Close Ones, independent Whispers
+- The user clarified that Keep Close is a friends-style circle, not a subscription
+  audience: each person adds immediately, no approval; they become Close Ones
+  only if both add each other. “Connections”/“Close” privacy, including the
+  Add Up identity-list Close setting, means mutual Close Ones only. The owner and
+  mutual Close Ones can see the Kept Close identity list; it still counts/lists
+  people who added the owner, not only mutual friends. Whispers stay independent.
+- `08_mutual_close_experiment.sql` is an isolated follow-on to 01 + 04. It changes
+  the shared connections helper to reciprocal Keeps, changes the Kept Close list
+  permission to owner/mutual, and removes a historical Add Up exception that
+  exposed Close-only Spaces. 04 now uses the shared list permission for both
+  Space lists and filters Close Ones by profile/block privacy. 07 documents/tests
+  the now-superseded intermediate subscriber ACL and runs **before** 08 only;
+  09 tests the latest policy. Older descriptions in this file/README about
+  subscriber access are superseded by this section.
+- Fresh disposable SQL baseline + 01, 04, 08 applied twice; selected 02, 05, 07
+  and 09 tests plus real-API races passed. 09 covers one-sided denial, incoming
+  counts, mutual post/Moment/list access, no Add Up privacy bypass and preserved
+  accepted Whispers when a mutual Keep ends. These are narrow local tests, not
+  an exhaustive audit. Private Spaces may need a safe way for two people to add
+  each other without exposing full content; legacy clients and destructive old
+  RPCs need an update gate; realtime revocation, teen isolation, video previews,
+  real-service tests, Android release and rollout/rollback remain blockers.
+- Follow-on local guards: old directional Keep/let-go RPCs delegate to the
+  pair-locked v3 methods; obsolete approval/cancellation and destructive
+  remove-connection RPCs fail with an update-required error rather than changing
+  someone else's Add Up or closing an accepted Whisper. This is not a substitute
+  for an installed-client update gate. A fresh disposable rerun passed the full
+  legacy baseline, applied 01/04/08 twice, 02/05/09 and both race suites. The
+  intermediate 07 ACL test ran before 08. TypeScript, 300+3+7 unit tests, mock
+  web build and 30/30 browser tests passed. No production rollout.

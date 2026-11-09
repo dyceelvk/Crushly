@@ -269,9 +269,7 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export async function spaceRelationshipStats(id: number): Promise<import('./types').SpaceRelationshipStats> {
-  const stats = await rpc<import('./types').SpaceRelationshipStats>('space_relationship_stats', { p_target_id: id });
-  const close = await rpc<{ keptClose: number; canViewKeptClose: boolean }>('v3_keep_stats', { p_owner: id });
-  return { ...stats, keptClose: close.keptClose, canViewKeptClose: close.canViewKeptClose };
+  return rpc('space_relationship_stats', { p_target_id: id });
 }
 export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
   return kind === 'keptClose'

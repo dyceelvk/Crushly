@@ -372,7 +372,7 @@ test('Space relationship totals open real lists and owner can choose list privac
   await page.getByRole('button', { name: 'Close', exact: true }).last().click();
   await page.getByRole('button', { name: 'More Space options' }).click();
   await page.getByRole('button', { name: 'Who can see my Add Ups' }).click();
-  await page.getByRole('button', { name: 'Approved Keep Close members' }).click();
+  await page.getByRole('button', { name: 'Mutual Close Ones' }).click();
   await expect.poll(() => submitted).toBe('close');
   await expect(page.getByText('Add Up list privacy updated')).toBeVisible();
 });
@@ -604,4 +604,18 @@ test('replying to a Whisper request updates the conversation to accepted', async
   await page.getByRole('button', { name: 'Send Whisper' }).click();
   await expect.poll(() => sent).toBe('Reply accepts');
   await expect(page.getByText('Whisper request', { exact: true })).toHaveCount(0);
+});
+
+test('Space labels mutual Keep Close from subscriptions, not legacy connection flags', async ({ page }) => {
+  await offline(page, []);
+  let keeping = false;
+  const reply = (value: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(value), headers: { 'access-control-allow-origin': '*' } });
+  await page.route(`${API}/rest/v1/rpc/load_profile`, route => route.fulfill(reply({ ...person, crush: { sent: false, received: false, mutual: true }, moments: [] })));
+  await page.route(`${API}/rest/v1/rpc/v3_keep_stats`, route => route.fulfill(reply({ keeps: keeping, keepsYou: true, keeping: 0, keptClose: keeping ? 1 : 0, canViewKeptClose: keeping })));
+  await page.route(`${API}/rest/v1/rpc/v3_keep_subscribe`, route => { keeping = true; return route.fulfill(reply(true)); });
+  await page.goto('/?space=2');
+  await expect(page.getByText('Keeps you Close', { exact: true })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText('Mutual Keep Close', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Keep Ada close' }).click();
+  await expect(page.getByText('Mutual Keep Close', { exact: true })).toBeVisible();
 });
