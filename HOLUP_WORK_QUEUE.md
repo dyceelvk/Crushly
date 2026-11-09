@@ -691,3 +691,14 @@
   GitHub cleanup runs after manual dispatch `42643373100` (15:18 UTC). This is
   consistent with a genuine timed Cloudflare invocation. It does not resolve
   the unrelated manual-verification, legal-hold or provider-retention gaps.
+- Android 1.0.88 run `42646506754` FAILED before publication: Android 9 walk
+  stayed in Discover preferences because the transparent modal exposed Home and
+  Space in the accessibility tree underneath. The screenshot showed the actual
+  `Close preferences` control; the walk was not falsely marked successful. Main
+  `d22d646` now includes the selective Moment client plus production migration
+  and fixes the walk to close this modal before continuing. Prior isolated CI
+  `42647737887` passed. Android 1.0.89 (which includes location and Moment
+  links) was dispatched as `42650994778`; current Worker still offers 1.0.87.
+  Main CI `42650984180` and web workflow `42650984373` are in progress; do not
+  claim the Moment UI or APK live without verifying their outcomes. Do not push
+  main while Android build is running because its bot push has no rebase.
