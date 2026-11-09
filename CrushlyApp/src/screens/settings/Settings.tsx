@@ -41,6 +41,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const [busy, setBusy] = useState(false);
   const version = Constants.expoConfig?.version ?? '1.0.0';
   const versionCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
+  const secureAndroid = Platform.OS === 'android' && Constants.expoConfig?.android?.package === 'app.holup.mobile';
   // Asked against our own Worker, never against GitHub: a member should never
   // be handed a link into the machinery.
   const update = useAppUpdate(versionCode);
@@ -126,6 +127,8 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
             onPress={() => { void openUpdate(); }}
             last
           />
+        ) : secureAndroid ? (
+          <ListRow title="Secure updates are being prepared" subtitle="The old test-app download is not compatible with this version." icon="shield-checkmark-outline" last />
         ) : Platform.OS === 'android' && updateStatus === 'available' ? (
           <ListRow
             title="Update Holup"
