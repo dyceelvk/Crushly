@@ -775,3 +775,17 @@
   partial release does not include verification approval, report media,
   content removal or account suspension, and must not be described as complete.
   Pending delete and Space migration versions now `20261109163132`/`163133`.
+- Android 1.0.90 `42654095754` FAILED and was not published: post draft save,
+  restart/reopen/delete passed, but Moment draft text was not entered because a
+  UI tree/screenshot operation dismissed keyboard focus. Main `d52b889` now
+  refocuses the actual Moment EditText and verifies the exact typed content;
+  no failure was bypassed. Android 1.0.91 run `42656680290` is in progress;
+  Worker has not been confirmed to offer it. Do not push main while it runs.
+- Partial admin triage is live on web: production Supabase migration
+  `20261109163131_admin_report_triage`, main `d52b889`, Vercel
+  `dpl_9uVCMx4EtjQ4pKK54nuMqW77CD6t` READY/PROMOTED; main CI `42656665952`
+  and web `42656666214` passed. Live bundle references server-gated report
+  listing/review status, account search and audit. There has been no real admin
+  session check or real report change. It remains incomplete: no report media,
+  content removal, suspension or manual verification decisions. User's item 5
+  stays deferred, and no work on retention was undertaken in this batch.
