@@ -647,3 +647,8 @@
 - The manual verification flow is still disabled for applicants; independent
   alert delivery, legal holds, provider/backup retention and real Didit flow
   remain unresolved. Do not solicit real IDs or claim complete retention.
+- Main `dce424e` CI run `42644261238` and deploy-web run `42644261651`
+  both passed. Pending, unreleased work-branch migrations were renamed from
+  `20261109140001`–`005` to `20261109152301`–`305`, because production history
+  now ends at `20261109152300`; their combined order still requires review
+  before release. No relationship/Whisper migrations were applied here.
