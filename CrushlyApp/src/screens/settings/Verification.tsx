@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Image, Linking, Platform, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Screen, Header } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
@@ -30,15 +32,25 @@ export function VerificationThread({ caseId, onBack, admin = false }: { caseId: 
   const captureAction = useMutation({ mutationFn: (action: 'start' | 'refresh') => service.verificationCaptureAction(caseId, action), onSuccess: async (result, action) => { await capture.refetch(); if (action === 'start' && result.url) { try { const u = new URL(result.url); if (u.protocol !== 'https:' || u.hostname !== 'verify.didit.me') throw new Error('Unexpected capture address.'); if (u.username || u.password) throw new Error('Unexpected capture address.'); if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.assign(u.href); else await Linking.openURL(u.href); } catch { toast({ kind: 'error', title: 'Could not open secure capture', message: 'Please try again.' }); } } else if (action === 'refresh') { toast({ kind: 'info', title: 'Capture status updated' }); } }, onError: e => toast({ kind: 'error', title: 'Capture unavailable', message: (e as Error).message }) });
   const files = useQuery({ queryKey: ['manual-verification-files', caseId], queryFn: () => service.verificationFiles(caseId), enabled: !!thread.data, staleTime: 0 });
   const upload = useMutation({ mutationFn: async () => {
-    const chosen = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.8, allowsEditing: false });
+    const chosen = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: false, quality: 1, allowsEditing: false });
     if (chosen.canceled) return false;
     const asset = chosen.assets[0];
-    if (!asset?.base64) throw new Error('Could not read this image. Choose a JPEG, PNG or WebP image.');
-    if (asset.base64.length > 6990512) throw new Error('Choose an image under 5 MB.');
-    await service.verificationUploadImage(caseId, asset.base64); return true;
+    if (!asset?.uri || !asset.width || !asset.height) throw new Error('Could not read this image. Choose a JPEG, PNG or WebP image.');
+    // Downscale on-device so the server can decode within a strict pixel limit.
+    const resize = asset.width >= asset.height ? { width: Math.min(1600, asset.width) } : { height: Math.min(1600, asset.height) };
+    const processed = await manipulateAsync(asset.uri, [{ resize }], { format: SaveFormat.JPEG, compress: 0.92, base64: true });
+    try {
+      if (!processed.base64 || processed.base64.length > 6990512) throw new Error('Could not prepare this image under 5 MB.');
+      await service.verificationUploadImage(caseId, processed.base64); return true;
+    } finally {
+      // Remove only the temporary transformed copy, never the user's original.
+      if (Platform.OS !== 'web' && processed.uri !== asset.uri) {
+        await FileSystem.deleteAsync(processed.uri, { idempotent: true }).catch(() => undefined);
+      }
+    }
   }, onSuccess: ok => { if (ok) { void files.refetch(); toast({ kind: 'success', title: 'Image added' }); } }, onError: e => toast({ kind: 'error', title: 'Image not added', message: (e as Error).message }) });
-  const readImage = useMutation({ mutationFn: async (id: string) => { const result = await service.verificationReadImage(id); return { id, uri: `data:${result.mime};base64,${result.base64}` }; }, onSuccess: setImage, onError: e => toast({ kind: 'error', title: 'Image unavailable', message: (e as Error).message }) });
-  const deleteImage = useMutation({ mutationFn: (id: string) => service.verificationDeleteImage(id), onSuccess: (result, id) => { if (image?.id === id) setImage(null); void files.refetch(); toast({ kind: result.deleted ? 'success' : 'info', title: result.deleted ? 'Image removed' : 'Image hidden; deletion will be retried' }); }, onError: e => toast({ kind: 'error', title: 'Image not removed', message: (e as Error).message }) });
+  const readImage = useMutation({ gcTime: 0, mutationFn: async (id: string) => { const result = await service.verificationReadImage(id); return { id, uri: `data:${result.mime};base64,${result.base64}` }; }, onSuccess: setImage, onError: e => toast({ kind: 'error', title: 'Image unavailable', message: (e as Error).message }) });
+  const deleteImage = useMutation({ mutationFn: (id: string) => service.verificationDeleteImage(id), onSuccess: (result, id) => { if (image?.id === id) { setImage(null); readImage.reset(); } void files.refetch(); toast({ kind: result.deleted ? 'success' : 'info', title: result.deleted ? 'Image removed' : 'Image hidden; deletion will be retried' }); }, onError: e => toast({ kind: 'error', title: 'Image not removed', message: (e as Error).message }) });
   const send = useMutation({ mutationFn: () => service.verificationSend(caseId, message.trim()), onSuccess: () => { setMessage(''); void qc.invalidateQueries({ queryKey: ['manual-verification-thread', caseId] }); }, onError: (e) => toast({ kind: 'error', title: 'Message not sent', message: (e as Error).message }) });
   return <Screen keyboard><Header title="Verification review" back onBack={onBack} />
     {thread.isLoading ? <LoadingBlock label="Loading review" /> : thread.isError || !thread.data ? <ErrorState error={thread.error} message="Review is unavailable." onRetry={() => void thread.refetch()} /> : <View style={{ gap: space.md }}>
@@ -52,7 +64,7 @@ export function VerificationThread({ caseId, onBack, admin = false }: { caseId: 
         <Txt variant="bodyStrong">Review images</Txt>
         <Txt variant="small" color="textSecondary">Share only what the reviewer asks for. Images are intended for this application and authorized reviewers; never upload passwords or sign-in codes. JPEG, PNG or WebP up to 5 MB; maximum six images.</Txt>
         {files.isLoading ? <LoadingBlock label="Loading images" /> : files.isError ? <ErrorState error={files.error} message="Images are unavailable." onRetry={() => void files.refetch()} /> : !files.data?.length ? <Txt variant="small" color="textSecondary">No images added.</Txt> : files.data.map((file, i) => <Button key={file.id} title={`Open review image ${i + 1}`} size="sm" variant="secondary" loading={readImage.isPending && readImage.variables === file.id} onPress={() => readImage.mutate(file.id)} />)}
-        {image ? <><Image source={{ uri: image.uri }} resizeMode="contain" style={{ width: '100%', height: 360 }} /><Button title="Close image" size="sm" variant="secondary" onPress={() => setImage(null)} />{!admin ? <Button title="Remove this image" size="sm" variant="danger" loading={deleteImage.isPending} onPress={() => deleteImage.mutate(image.id)} /> : null}</> : null}
+        {image ? <><Image source={{ uri: image.uri }} resizeMode="contain" style={{ width: '100%', height: 360 }} /><Button title="Close image" size="sm" variant="secondary" onPress={() => { setImage(null); readImage.reset(); }} />{!admin ? <Button title="Remove this image" size="sm" variant="danger" loading={deleteImage.isPending} onPress={() => deleteImage.mutate(image.id)} /> : null}</> : null}
         {!admin && thread.data.status === 'open' && (files.data?.length ?? 0) < 6 ? <Button title="Add requested image" variant="secondary" loading={upload.isPending} onPress={() => upload.mutate()} /> : null}
       </View>
       {thread.data.status === 'open' ? <View style={{ gap: space.sm }}>

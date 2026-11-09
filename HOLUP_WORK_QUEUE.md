@@ -397,3 +397,29 @@
   production needs a separately provisioned secret, reachable private worker,
   operational failure alerts, backlog monitoring, and validation of deletion
   and backup/provider retention before activating it.
+- Private evidence now has a *local draft* resource-limited ImageMagick WASM
+  decode/re-encode path, strips metadata, corrects EXIF orientation, rejects
+  animation/oversized images, and attempts cleanup of the phone's temporary
+  transformed image. Only synthetic Node-based fixtures were used; JPEG, PNG,
+  WebP, orientation and EXIF stripping succeeded there; oversized and animated
+  samples were rejected. A 1600px random JPEG used about 180 MiB in local Node,
+  not representative of hosted edge. No malware-scan claim. WASM static bundle,
+  hosted limits, malformed inputs, visual legibility, app caching and deletion
+  remain release blockers; the function is not deployed.
+- Cutover review found a separate legacy AI route that directly updates profile
+  verification using service-role access; disabling only `apply_didit_status`
+  would be insufficient. Local fail-closed replacements for that route, old
+  session/status routes and the legacy webhook now exist under
+  `supabase/manual-verification-work/edge/legacy-retirement/`. They must be
+  coordinated with the new callback, active pending applicant, legacy installed
+  clients and automatic deploy workflows; no production route was replaced.
+- Read-only Didit configuration review run 42620848329 established that the
+  GitHub API key and workflow fingerprints match Supabase secret fingerprints;
+  therefore the previously inspected published KYC workflow is the one currently
+  configured there. The Didit configuration reports zero enabled webhook
+  destinations and no legacy webhook URL, so automatic callbacks are not set up.
+  Provider data-retention months returned null; face retention reported
+  `delete_with_session` with no fixed day value. This is not proof of a 30-day
+  provider deletion guarantee. No provider settings were changed.
+- Local web TypeScript compilation and an export passed for the image-work
+  changes; edge syntax-only transpilation passed. No deployment performed.

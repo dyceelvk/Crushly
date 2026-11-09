@@ -2,6 +2,22 @@
 // No public/signed URLs and no file bytes, tokens or IDs logged. Deployment
 // still requires malware/abuse controls, retention cleanup and access review.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import * as magick from 'npm:@imagemagick/magick-wasm@0.0.45';
+import { sanitizeImage } from './image-sanitizer.mjs';
+// Lazy: if WASM initialization fails, uploads fail closed while already-saved
+// files can still be read/deleted. Module loading and hosted limits need review.
+let processor: Promise<void> | undefined;
+function initializeProcessor(): Promise<void> {
+ if(!processor) processor=(async()=>{
+  const wasm=await Deno.readFile(new URL(import.meta.resolve('npm:@imagemagick/magick-wasm@0.0.45/magick.wasm')));
+  await magick.initializeImageMagick(wasm);
+  magick.ResourceLimits.width=1600n; magick.ResourceLimits.height=1600n;
+  magick.ResourceLimits.area=67108864n; magick.ResourceLimits.listLength=4n;
+  magick.ResourceLimits.memory=134217728n; magick.ResourceLimits.maxMemoryRequest=100663296n;
+  magick.ResourceLimits.disk=0n; magick.ResourceLimits.maxProfileSize=1048576n;
+ })().catch(e=>{processor=undefined;throw e;});
+ return processor;
+}
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 function json(data:unknown,status=200) { return new Response(JSON.stringify(data),{status,headers:{...cors,'Content-Type':'application/json'}}); }
 const maxBytes=5*1024*1024, maxBody=7*1024*1024;
@@ -29,15 +45,23 @@ Deno.serve(async req=>{
  const {data:who,error:authError}=await user.auth.getUser(); if(authError||!who.user) return json({error:'Sign in required.'},401);
  let body:{action?:unknown;caseId?:unknown;fileId?:unknown;base64?:unknown};
  try { body=await readBounded(req); } catch { return json({error:'Invalid request or file too large.'},400); }
+ if(!body || typeof body!=='object' || Array.isArray(body)) return json({error:'Invalid request.'},400);
  const service=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  const bucket=service.storage.from('holup-review-evidence');
  if(body.action==='upload') {
   if(!Number.isSafeInteger(body.caseId)||Number(body.caseId)<=0||typeof body.base64!=='string'||body.base64.length>Math.ceil(maxBytes/3)*4+4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.base64)) return json({error:'Choose a JPEG, PNG or WebP image up to 5 MB.'},400);
   let bytes:Uint8Array; try { const raw=atob(body.base64); bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); } catch {return json({error:'Invalid image.'},400);}
   const mime=imageType(bytes); if(!mime || !bytes.length || bytes.length>maxBytes) return json({error:'Choose a JPEG, PNG or WebP image up to 5 MB.'},400);
-  const {data:slot,error:reserveError}=await service.rpc('manual_evidence_reserve',{p_case:body.caseId,p_actor:who.user.id,p_mime:mime});
+  // Reserve first: this proves ownership and applies per-case limits before the
+  // more expensive decoding step. Only sanitized JPEG bytes may be stored.
+  const {data:slot,error:reserveError}=await service.rpc('manual_evidence_reserve',{p_case:body.caseId,p_actor:who.user.id,p_mime:'image/jpeg'});
   if(reserveError||!slot) return json({error:'Could not add the image to this application.'},403);
-  const {error:uploadError}=await bucket.upload(slot.path,bytes,{contentType:mime,upsert:false,cacheControl:'0'});
+  try { await initializeProcessor(); }
+  catch { await service.rpc('manual_evidence_abort',{p_file:slot.id,p_actor:who.user.id}); return json({error:'Image processing is temporarily unavailable.'},503); }
+  let clean:Uint8Array;
+  try { clean=sanitizeImage(bytes,magick).bytes; }
+  catch { await service.rpc('manual_evidence_abort',{p_file:slot.id,p_actor:who.user.id}); return json({error:'Could not process this image. Choose a clear still image no larger than 1600 by 1600 pixels.'},400); }
+  const {error:uploadError}=await bucket.upload(slot.path,clean,{contentType:'image/jpeg',upsert:false,cacheControl:'0'});
   const {error:finishError}=await service.rpc('manual_evidence_finish',{p_file:slot.id,p_actor:who.user.id,p_success:!uploadError});
   if(uploadError||finishError){ await service.rpc('manual_evidence_abort',{p_file:slot.id,p_actor:who.user.id}); if(!uploadError) await bucket.remove([slot.path]); return json({error:'Image was not saved. Please try again.'},503); }
   return json({id:slot.id});

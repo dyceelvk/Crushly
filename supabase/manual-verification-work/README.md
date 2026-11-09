@@ -23,9 +23,11 @@ hold only one category.
   remain evidence only: they never assign badges without an admin action.
 - `03_private_evidence_experiment.sql` and `edge/manual-evidence.ts` prototype
   image attachments in a new private bucket with server-mediated, authorized
-  reads, admin-read audit, 5 MB limits and JPEG/PNG/WebP signature checks.
-  Images are not posted in the public media bucket. The app can upload images
-  and display them in the case. This code is NOT sufficient to claim security.
+  reads, admin-read audit and 5 MB limits. A new draft caps dimensions, rejects
+  animation, decodes JPEG/PNG/WebP and re-encodes metadata-stripped JPEG using
+  a resource-limited WASM processor. Images are not posted in the public media
+  bucket. Real hosted runtime, malformed inputs, secure deletion and app cache
+  remain unverified; this is NOT sufficient to claim security.
 - `05_evidence_deletion_experiment.sql` and cleanup edge prototype make deleted
   evidence inaccessible first and queue actual object deletion durably, even
   when an account/case is removed. A protected scheduler must actually run the
@@ -53,9 +55,10 @@ application time. The current proposal excludes Circle posts but includes other
 private posts; confirm this interpretation and review fraud/moderation rules.
 
 ## Required before launch
-- Private uploads contain sensitive personal data. File signature checks do not
-  sanitize images or detect malware. Add safe image decoding/re-encoding or
-  scanning, review every storage policy (including broad legacy policies),
+- Private uploads contain sensitive personal data. The new decode/re-encode
+  prototype is not malware scanning and must be reviewed for malformed inputs,
+  memory/CPU limits, orientation, legibility, and hosted WASM bundling. Review
+  every storage policy (including broad legacy policies),
   enforce request/rate limits and check case isolation and signed-token/session
   behavior. Data URLs live in client memory and may be cached by image layers;
   verify native/web handling and secure removal. No guarantee is made yet.
@@ -66,7 +69,9 @@ private posts; confirm this interpretation and review fraud/moderation rules.
 - Configure a dedicated production Didit workflow with ID, liveness and face
   match, live environment, and secure access to provider evidence for reviewers.
   The proposed poll and signed session webhook check the documented result
-  shape but have not been exercised against a real session; event ordering,
+  shape but have not been exercised against a real session. A read-only
+  provider check found no webhook destination or legacy webhook URL enabled;
+  one must be configured at cutover. Event ordering,
   retries, destination configuration and race conditions must be reviewed. The
   V2 signature authenticates the body, not the separate X-Timestamp header;
   check the signed timestamp and replay/idempotency behavior too. Provider
@@ -78,10 +83,9 @@ private posts; confirm this interpretation and review fraud/moderation rules.
   older clients and ensure no alternative SQL or edge path can award badges.
 - Add notifications, withdrawal/appeals, application pagination, anti-fraud
   controls, role/admin authentication hardening and a complete moderation plan.
-- SQL and edge prototypes have not been executed or security-reviewed. The user
-  requested no tests, but sensitive-data release still requires necessary
-  security and integration validation. No Supabase or production changes were
-  made for this work. Do not merge these SQL experiments as migrations yet.
+- Focused SQL authorization and retention checks ran on a disposable database;
+  no complete security review or production integration validation was done.
+  No production changes were made. Do not merge experiments as migrations yet.
 
 - `08_retention_experiment.sql` drafts the chosen 30-day post-review image
   expiry, denies reads at the deadline and queues deletion; a deployed, monitored
@@ -90,3 +94,21 @@ private posts; confirm this interpretation and review fraud/moderation rules.
 
 - Creator monetization and admin payouts are deferred: there is no payment,
   earnings calculation, payout dashboard or Paystack integration in this work.
+
+## WASM packaging (unresolved)
+The sanitizer prototype imports a pinned `@imagemagick/magick-wasm@0.0.45`
+with a ~15 MB WASM binary. Supabase documents static bundling through
+`static_files`; API deployments cannot include static files. Before release,
+stage the exact reviewed binary and helper next to the function, configure the
+CLI/Docker static bundle, verify bundle size and hosted CPU/RAM behavior and
+then validate fail-closed upload/cleanup. Do not bundle or deploy the prototype
+through the API as though its WASM asset were automatically available.
+
+## Legacy endpoint cutover
+`edge/legacy-retirement/member-route.ts` and `didit-webhook.ts` are local
+fail-closed replacement drafts. The AI `verify-identity` route has a direct
+service-role profile write, so retiring the legacy SQL callbacks alone is not
+sufficient. The rollout must replace that route too, ensure automation cannot
+redeploy its old source, configure and validate the new Didit destination first,
+communicate the one outstanding application, preserve existing badges, and
+coordinate web/Android updates and rollback. Nothing here is deployed.
