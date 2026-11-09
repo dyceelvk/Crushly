@@ -59,3 +59,7 @@ adult-impostor reason), a rate limit, and an optional atomic block. It is not a
 moderation dashboard or evidence that reports will be reviewed. There is no
 staff-facing queue/service, escalation/on-call process or client UI yet; those
 are required before opening the teen service.
+
+`CrushlyApp/src/teen/service.ts` is an unwired typed facade for those teen-only
+RPCs. It creates its own isolated client rather than accepting the adult
+client. It has no navigation, login/deep-link flow, consent UI or teen content.
