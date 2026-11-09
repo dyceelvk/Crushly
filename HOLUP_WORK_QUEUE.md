@@ -294,3 +294,7 @@
   after npm ci; outcome must be checked. No changes have shipped. Current counts
   exclude Circle posts and other reaction kinds; media classification by file
   extension needs production review, especially videos and public URLs.
+- `npm ci` and the local web export completed successfully for the prototype;
+  this was a build, not a test or deployment. Source work was committed as
+  `a2eee15`. An earlier build attempt failed because dependencies were missing,
+  and was retried only after installing them. Production remains unchanged.
