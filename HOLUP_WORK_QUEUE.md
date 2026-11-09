@@ -580,3 +580,22 @@
   The callback, workflow configuration, response shapes, retries and provider
   retention are not validated; webhook is not configured. Existing legacy
   Didit auto-award remains active, and manual verification is not yet live.
+
+## Scoped Space/web and Android release completed
+- Vercel `dpl_AhaNdqQdf2q9fr4dKsyyZF3otmqJ`, commit `732d095`, was READY and
+  PROMOTED on `holupapp.vercel.app`. Its live JS contains the Space menu and
+  post-link controls. Only scoped Space/banner, sharing, visible bio and link
+  improvements are included; remaining experimental changes are not live.
+- Android release run `42628810477` completed SUCCESS, including Android 9
+  emulator walk. The release bot committed `3db4d50`, and the live Worker
+  `/version` and `/download-info` both report 1.0.87/87, 95,047,292 bytes,
+  SHA-256 `30862f3b2700ae8158275189e2666378d181fe0b42a4cfc84899471e833c5282`.
+  This is the scoped Space/link app, not the earlier unreleased full candidate.
+- Main commit `232272e` records live migration `20261109140000`, the two locked
+  evidence/Didit Edge imports, and fixes the DB test stubs/one-shot replay
+  handling. Local full disposable DB CI passed; GitHub CI run `42633311055`
+  and deploy-web run `42633311151` were in progress at last check. Earlier CI
+  run `42628797263` failed on incomplete storage stubs; it is superseded only
+  if the new run succeeds. Vercel may deploy the record-only main commit next.
+- Manual verification UI, applicant RPC grants, Didit provider callback and
+  legacy auto-award retirement remain incomplete. No claim of full completion.
