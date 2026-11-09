@@ -26,14 +26,14 @@ import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
 export function MomentPreview({
-  moment, style, textSize = 15, lines = 6, autoPlay = false, caption = true, showText = true,
-}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; caption?: boolean; showText?: boolean }) {
+  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true,
+}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; keepPlayerMounted?: boolean; caption?: boolean; showText?: boolean }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
   if (moment.kind === 'video') {
     // A tile does not play. Mounting a player per tile costs a decoder each and
     // depends on the browser painting a first frame for a video nobody started —
     // so the picture is drawn as a card and the badge in the corner says "clip".
-    if (!autoPlay) {
+    if (!autoPlay && !keepPlayerMounted) {
       return (
         <LinearGradient colors={['#1A1A22', '#08080A']} style={[{ padding: 12, justifyContent: 'center' }, style]}>
           {caption && moment.body ? (
@@ -53,7 +53,7 @@ export function MomentPreview({
           live={moment.edit}
           style={{ width: '100%', height: '100%' }}
           autoPlay={autoPlay}
-          loop={autoPlay}
+          loop
         />
         {caption && moment.body ? (
           <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(0,0,0,0.55)' }}>

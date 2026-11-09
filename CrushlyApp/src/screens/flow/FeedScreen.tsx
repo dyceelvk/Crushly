@@ -74,14 +74,19 @@ export function FeedScreen() {
   const { data: badges } = useBadges(true);
   const focus = useFeedFocus();
 
-  const [tab, setTab] = useState<'crushes' | 'discovery' | 'connections'>(
-    route.params?.tab ?? (route.name === 'Connections' ? 'connections' : 'crushes'),
+  // Connections has its own bottom navigation destination, not a third Home
+  // swipe page. Keeping separate state prevents the two instances drifting.
+  const isConnections = route.name === 'Connections';
+  const [homeTab, setHomeTab] = useState<'crushes' | 'discovery'>(
+    route.params?.tab === 'discovery' ? 'discovery' : 'crushes',
   );
-  const swipe = useSwipeTabs({ options: ['crushes', 'discovery', 'connections'] as const, value: tab, onChange: setTab, width: contentWidth });
-  // A notification about an add up opens Crushes, a Circle opens Connections.
+  const tab = isConnections ? 'connections' : homeTab;
+  const swipe = useSwipeTabs({ options: ['crushes', 'discovery'] as const, value: homeTab, onChange: setHomeTab, width: contentWidth });
   useEffect(() => {
-    if (route.params?.tab === 'connections' || route.params?.tab === 'crushes' || route.params?.tab === 'discovery') setTab(route.params.tab);
-  }, [route.params?.tab]);
+    if (isConnections) return;
+    if (route.params?.tab === 'connections') navigation.navigate('Main', { screen: 'Connections' });
+    else if (route.params?.tab === 'crushes' || route.params?.tab === 'discovery') setHomeTab(route.params.tab);
+  }, [route.params?.tab, isConnections, navigation]);
 
   /**
    * Which room Connections is showing: All, or one of your Circles.
@@ -132,7 +137,7 @@ export function FeedScreen() {
   })();
 
   return (
-    <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View {...(isConnections ? {} : swipe.panHandlers)} style={{ flex: 1, backgroundColor: colors.bg }}>
       {tab === 'crushes' ? (
         <CrushesFeed />
       ) : tab === 'discovery' ? (
@@ -275,9 +280,9 @@ export function FeedScreen() {
           opens nothing is a lie with a label on it, which is why the strip has
           two now and not three. */}
       <FeedTabs
-        tabs={tab === 'connections' ? [...TABS, {key:'connections',label:'Connections'}] : TABS}
+        tabs={isConnections ? CONNECTIONS_TAB : TABS}
         active={tab}
-        onChange={(k) => setTab(k as typeof tab)}
+        onChange={(k) => { if (!isConnections && (k === 'crushes' || k === 'discovery')) setHomeTab(k); }}
         top={insets.top + 4}
         unread={badges?.notifications ?? 0}
         onSearch={() => navigation.navigate('Search')}
@@ -298,3 +303,5 @@ const TABS: FeedTab[] = [
   { key: 'crushes', label: 'Crushes' },
   { key: 'discovery', label: 'Discovery' },
 ];
+
+const CONNECTIONS_TAB: FeedTab[] = [{ key: 'connections', label: 'Connections' }];

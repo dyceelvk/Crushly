@@ -9,6 +9,8 @@ import { useToast } from './Toast';
 import { profileIdByUsername } from '../api/service';
 import { useProfileTap } from '../lib/useProfileTap';
 import { tokenize } from '../lib/links';
+import { sharedPostId } from '../lib/postShare';
+import { sharedSpaceId } from '../lib/spaceShare';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -97,10 +99,15 @@ export function LinkText({
             key={`l-${i}`}
             color={linkColor}
             onPress={() => {
-              if (onBeforeOpenLink) {
-                onBeforeOpenLink();
-                setTimeout(() => navigation.navigate('WebPreview', { url: m.text }), Platform.OS === 'web' ? 0 : 250);
-              } else navigation.navigate('WebPreview', { url: m.text });
+              const open = () => {
+                const postId = sharedPostId(m.text);
+                const spaceId = sharedSpaceId(m.text);
+                if (postId) navigation.navigate('PostViewer', { postId });
+                else if (spaceId) navigation.navigate('UserProfile', { id: spaceId });
+                else navigation.navigate('WebPreview', { url: m.text });
+              };
+              if (onBeforeOpenLink) { onBeforeOpenLink(); setTimeout(open, Platform.OS === 'web' ? 0 : 250); }
+              else open();
             }}
             accessibilityRole="link"
             accessibilityLabel={`Open link to ${prettyUrl(m.text)} inside Holup`}
@@ -116,7 +123,7 @@ export function LinkText({
     }
 
     if (m.kind === 'mention') {
-      nodes.push(<Mention key={`m-${i}`} handle={m.value} color={linkColor} />);
+      nodes.push(<Mention key={`m-${i}`} handle={m.value} color={linkColor} onBeforeOpen={onBeforeOpenLink} />);
       return;
     }
 
@@ -152,10 +159,8 @@ export function LinkText({
  * is already readable without one. If nobody answers to it, the sentence says
  * so instead of opening an empty screen.
  */
-function Mention({ handle, color }: { handle: string; color: any }) {
-  const navigation = useNavigation<Nav>();
-  /* A @handle is a picture you cannot see: it follows the same rule as every
-     avatar — the Moment first when there is something live. */
+function Mention({ handle, color, onBeforeOpen }: { handle: string; color: any; onBeforeOpen?: () => void }) {
+  /* Tagged names open the Space, even when a Moment is live. */
   const openProfile = useProfileTap();
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
@@ -169,7 +174,8 @@ function Mention({ handle, color }: { handle: string; color: any }) {
         toast({ kind: 'info', title: `No one here is @${handle}`, message: 'They may have changed their handle.' });
         return;
       }
-      openProfile(id);
+      if (onBeforeOpen) { onBeforeOpen(); setTimeout(() => openProfile(id), Platform.OS === 'web' ? 0 : 250); }
+      else openProfile(id);
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t open that Space', message: (e as Error).message });
     } finally {

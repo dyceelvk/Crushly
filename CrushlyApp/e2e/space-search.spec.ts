@@ -9,7 +9,7 @@ const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated',
 const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', bio: 'My site https://example.com/about', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
-async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false) {
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false) {
   let banner: string | null = null;
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
@@ -52,9 +52,12 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/post_comments_feed') body = { items: [{ id: 45, body: 'Hello there', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }, { id: 47, body: 'See https://example.com/comment.', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }] };
     else if (path === '/rest/v1/rpc/comment_on_post') { commentCalls.push(route.request().postDataJSON() as Record<string, unknown>); body = { id: 46 }; }
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
-    else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
+    else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: feedVideo ? `${MEDIA}/m/posts/11.webm` : null, mediaKind: feedVideo ? 'video' : null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
+    else if (path === '/rest/v1/rpc/visible_moments') body = ownMoment ? [0, 1].map(i => ({ id: 77+i, userId: 1, kind: i ? 'text' : 'video', body: i ? 'Second Moment' : 'First Moment', mediaUrl: i ? null : `${MEDIA}/m/posts/11.webm`, edit: null, durationMs: 30000, style: 'noir', audience: 'everyone', createdAt: Date.now(), expiresAt: Date.now()+86400000, seen: false, myReaction: null, viewCount: 1, reactions: [{kind:'crush', userId:2, name:'Ada'}], author: {id:1, name: 'Offline test', verified: false, photo: null, mutual:false} })) : [];
+    else if (path === '/rest/v1/rpc/moment_viewers') body = { count: 1, items: [{profile: person, viewedAt: Date.now()}] };
+    else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [onePost] };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
-    else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: 2, postLikes: 7, canViewAddUps: true, canViewKeptClose: true, addUpVisibility: 'private'};
+    else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private'};
     else if (path === '/rest/v1/rpc/space_relationship_people') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {items: [person], hasMore: false}; }
     else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
@@ -281,10 +284,80 @@ test('Space has working app navigation and real stats', async ({ page }) => {
   await expect(page.getByRole('tab', {name:'Connections', exact:true}).first()).toBeVisible();
 });
 
-test('owner can open the approved Close Ones list', async ({ page }) => {
+test('owner can open the approved Homies list', async ({ page }) => {
   const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
   await page.getByText('Space', { exact: true }).last().click({timeout:30000});
-  await page.getByRole('button', { name: '2 Kept Close. View people' }).click();
+  await page.getByRole('button', { name: '2 Homies. View people' }).click();
   await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
   expect(calls.some(x => x.p_kind === 'keptClose')).toBe(true);
+});
+
+test('Connections is one bottom button, not a swipe destination in Home', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Crushes', exact: true })).toBeVisible({timeout:30000});
+  await page.getByRole('tab', { name: 'Connections', exact: true }).last().click();
+  await expect(page.getByRole('tab', { name: 'Connections', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Discovery', exact: true })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Home', exact: true }).last().click();
+  await expect(page.getByRole('tab', { name: 'Discovery', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Connections', exact: true })).toHaveCount(1);
+});
+
+test('Crushes video tap changes sound rather than playback; Flow stays reachable', async ({ page }) => {
+  await offline(page, [], [], false, false, [], false, true); await page.goto('/');
+  const clip = page.getByRole('button', { name: 'Unmute Ada’s clip' });
+  await expect(clip).toBeVisible({timeout:30000});
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && v.currentTime > 0.1)), {timeout:20000}).toBe(true);
+  await clip.click();
+  await expect(page.getByRole('button', {name:'Mute Ada’s clip'})).toBeVisible();
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && !v.muted))).toBe(true);
+  await page.getByRole('button', {name:'Mute Ada’s clip'}).click();
+  await expect(page.getByRole('button', {name:'Unmute Ada’s clip'})).toBeVisible();
+  await expect(page.getByRole('button', {name:'Open Ada’s Flow'})).toBeVisible();
+});
+
+test('Space relationship list is a full screen with a back button and real suggestions', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await page.getByRole('button', {name:'3 Add Ups. View people'}).click();
+  await expect(page.getByRole('button', {name:'Back to Space'})).toBeVisible();
+  await expect(page.getByText('Discover', {exact:true}).last()).toBeVisible();
+  await expect(page.getByRole('button', {name:'Discover Ada’s Space'})).toBeVisible();
+  await page.getByRole('button', {name:'Back to Space'}).click();
+  await expect(page.getByRole('button', {name:'3 Add Ups. View people'})).toBeVisible();
+});
+
+test('Moment hold preserves video, swipe up opens activity and down closes', async ({ page }) => {
+  await offline(page, [], [], false, false, [], false, false, true); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await page.getByRole('tab', {name:'Moments', exact:true}).click();
+  await page.getByRole('button', {name:/Play Offline test’s Moment/}).first().click();
+  const player = page.getByRole('button', {name:'Moments player'});
+  await expect(player).toBeVisible();
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => !v.paused && v.currentTime > 0.2)), {timeout:20000}).toBe(true);
+  await page.mouse.move(300, 350); await page.mouse.down(); await page.waitForTimeout(600);
+  await expect.poll(async () => page.locator('video').evaluateAll(vs => vs.some(v => v.paused && v.currentTime > 0.1))).toBe(true);
+  const t = await page.locator('video').first().evaluate((v: HTMLVideoElement) => v.currentTime);
+  await page.mouse.up();
+  await expect.poll(async () => page.locator('video').evaluateAll((vs, time) => vs.some(v => !v.paused && v.currentTime > time), t)).toBe(true);
+  await player.click({position: {x: 300, y: 300}});
+  await expect(page.getByText('Second Moment').last()).toBeVisible();
+  await page.mouse.move(250, 500); await page.mouse.down(); await page.mouse.move(250, 300, {steps:8}); await page.mouse.up();
+  await expect(page.getByText('Moment activity')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('♥ Ada')).toBeVisible();
+  await page.getByRole('button', {name:'Close', exact:true}).last().click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.waitForTimeout(500);
+  await page.mouse.move(250, 300); await page.mouse.down(); await page.mouse.move(250, 500, {steps:8}); await page.mouse.up();
+  await expect(player).not.toBeVisible();
+});
+
+test('a private relationship list shows the access notice without requesting identities', async ({ page }) => {
+  const calls: Record<string, unknown>[] = [];
+  await offline(page, calls, [], false, false, [], false, false, false, true); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await page.getByRole('button', {name:'3 Add Ups. View people'}).click();
+  await expect(page.getByText('Offline test has limited who can view their Add Ups.')).toBeVisible();
+  expect(calls.some(x => x.p_kind === 'addUps')).toBe(false);
+  await expect(page.getByRole('button', {name:'Back to Space'})).toBeVisible();
 });

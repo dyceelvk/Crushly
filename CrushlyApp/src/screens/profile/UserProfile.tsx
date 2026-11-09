@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, type AddUpListVisibility } from '../../api/service';
+import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, publicFlow, type AddUpListVisibility } from '../../api/service';
 import { formatCount } from '../../lib/counts';
 import { SpaceNavigation } from '../../navigation/SpaceNavigation';
 import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -580,8 +580,8 @@ export function SpaceScreen({
               {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
             </Txt>
             {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
-              {relationship.data.canViewAddUps ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong">{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable> : <Txt variant="small"><Txt variant="bodyStrong">{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt>}
-              {relationship.data.canViewKeptClose ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.keptClose} Kept Close. View people`}><Txt variant="small"><Txt variant="bodyStrong">{formatCount(relationship.data.keptClose)}</Txt> Kept Close</Txt></Pressable> : <Txt variant="small"><Txt variant="bodyStrong">{formatCount(relationship.data.keptClose)}</Txt> Kept Close</Txt>}
+              <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable>
+              <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.keptClose} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.keptClose)}</Txt> Homies</Txt></Pressable>
               {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
               {mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
             </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
@@ -868,29 +868,48 @@ export function SpaceScreen({
       </View>
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
       <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
-        ['everyone', 'Everyone who can view your Space'], ['close', 'Close Ones'], ['private', 'Only you'],
+        ['everyone', 'Everyone who can view your Space'], ['close', 'Homies'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals stay visible. Individual Spaces still follow their privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
-      <SpaceRelationshipList targetId={p.id} viewerId={meQ.data?.id ?? 0} kind={relationshipList} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} />
+      <SpaceRelationshipList targetId={p.id} name={p.name} viewerId={meQ.data?.id ?? 0} kind={relationshipList} canView={relationshipList === 'addUps' ? !!relationship.data?.canViewAddUps : !!relationship.data?.canViewKeptClose} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} onOpenPost={(postId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('PostViewer', { postId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>
   );
 }
 
-function SpaceRelationshipList({ targetId, viewerId, kind, openSequence, onClose, onOpen }: { targetId: number; viewerId: number; kind: 'addUps' | 'keptClose' | null; openSequence: number; onClose: () => void; onOpen: (id: number) => void }) {
+function SpaceRelationshipList({ targetId, name, viewerId, kind, canView, openSequence, onClose, onOpen, onOpenPost }: { targetId: number; name: string; viewerId: number; kind: 'addUps' | 'keptClose' | null; canView: boolean; openSequence: number; onClose: () => void; onOpen: (id: number) => void; onOpenPost: (id: number) => void }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const q = useInfiniteQuery({
-    queryKey: ['space-relationship-people', viewerId, targetId, kind, openSequence], enabled: !!kind && !!viewerId,
+    queryKey: ['space-relationship-people', viewerId, targetId, kind, openSequence], enabled: !!kind && !!viewerId && canView,
     initialPageParam: 0, queryFn: ({ pageParam }) => spaceRelationshipPeople(targetId, kind!, pageParam),
     getNextPageParam: (last, pages) => last.hasMore ? pages.reduce((n, page) => n + page.items.length, 0) : undefined,
     staleTime: 0, gcTime: 0, refetchInterval: 15_000,
   });
+  const suggestions = useQuery({ queryKey: ['space-relationship-discover', viewerId], queryFn: publicFlow, enabled: !!kind && !!viewerId, staleTime: 30_000 });
   const people = q.data?.pages.flatMap((page) => page.items) ?? [];
-  return <BottomSheet visible={!!kind} onClose={onClose} title={kind === 'keptClose' ? 'Kept Close' : 'Add Ups'}>
-    <Txt variant="small" color="textSecondary">People whose Spaces are private or unavailable to you may not appear.</Txt>
-    {q.isLoading && kind ? <LoadingBlock label="Loading people" /> : q.isError ? <ErrorState error={q.error} message="Couldn’t load people." onRetry={() => void q.refetch()} /> : people.length === 0 ? <EmptyState title="No people to show" /> : <View style={{ gap: 8, paddingTop: space.sm }}>
-      {people.map((person) => <Pressable key={person.id} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Open ${person.name}’s Space`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Avatar uri={person.photos[0]?.url ?? null} name={person.name} size={42} /><View><Txt variant="bodyStrong">{person.name}</Txt>{person.username ? <Txt variant="small" color="textSecondary">@{person.username}</Txt> : null}</View></Pressable>)}
-      {q.hasNextPage ? <Button title="Show more" variant="ghost" loading={q.isFetchingNextPage} onPress={() => void q.fetchNextPage()} /> : null}
-    </View>}
-  </BottomSheet>;
+  const publicPosts = shownPosts(suggestions.data ?? []);
+  const authors = Array.from(new Map(publicPosts.filter(post => post.author.id !== viewerId).map(post => [post.author.id, post.author])).values()).slice(0, 6);
+  const videos = publicPosts.filter(post => post.mediaKind === 'video' && post.mediaUrl).slice(0, 6);
+  return <Modal visible={!!kind} animationType="fade" onRequestClose={onClose}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: space.md, paddingVertical: space.sm, borderBottomWidth: 1, borderColor: colors.border }}>
+        <IconButton icon="chevron-back" label="Back to Space" onPress={onClose} /><Txt variant="subheading">{kind === 'keptClose' ? 'Homies' : 'Add Ups'}</Txt>
+      </View>
+      <ScrollView contentContainerStyle={{ padding: space.md, paddingBottom: Math.max(insets.bottom, space.xl), gap: space.sm }}>
+        {!canView ? <Txt color="textSecondary">{name} has limited who can view {kind === 'keptClose' ? 'their Homies' : 'their Add Ups'}.</Txt> : <>
+          <Txt variant="small" color="textSecondary">People whose Spaces are private or unavailable to you may not appear.</Txt>
+          {q.isLoading && kind ? <LoadingBlock label="Loading people" /> : q.isError ? <ErrorState error={q.error} message="Couldn’t load people." onRetry={() => void q.refetch()} /> : people.length === 0 ? <EmptyState title="No people to show" /> : <View style={{ gap: 8, paddingTop: space.sm }}>
+            {people.map((person) => <Pressable key={person.id} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Open ${person.name}’s Space`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Avatar uri={person.photos[0]?.url ?? null} name={person.name} size={42} /><View><Txt variant="bodyStrong">{person.name}</Txt>{person.username ? <Txt variant="small" color="textSecondary">@{person.username}</Txt> : null}</View></Pressable>)}
+            {q.hasNextPage ? <Button title="Show more" variant="ghost" loading={q.isFetchingNextPage} onPress={() => void q.fetchNextPage()} /> : null}
+          </View>}
+        </>}
+        <Txt variant="subheading" style={{marginTop: space.xl}}>Discover</Txt>
+        {suggestions.isError ? <Button title="Retry Discover" variant="ghost" onPress={() => void suggestions.refetch()} /> : suggestions.isLoading ? <LoadingBlock label="Loading Discover" /> : authors.length || videos.length ? <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: space.sm}}>
+          {authors.map(person => <Pressable key={`person-${person.id}`} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Discover ${person.name}’s Space`} style={{width: '47%', minHeight: 100, backgroundColor: colors.card, padding: space.md, borderRadius: 14, gap: 8}}><Avatar uri={person.photos?.[0]?.url ?? null} name={person.name} size={42} /><Txt variant="bodyStrong" numberOfLines={1}>{person.name}</Txt><Txt variant="small" color="textSecondary">View Space</Txt></Pressable>)}
+          {videos.map(post => <Pressable key={`video-${post.id}`} onPress={() => onOpenPost(post.id)} accessibilityRole="button" accessibilityLabel={`Watch ${post.author.name}’s Flow`} style={{width: '47%', backgroundColor: colors.card, borderRadius: 14, overflow: 'hidden'}}><ClipThumb uri={mediaUrl(post.mediaUrl) ?? ""} style={{width: '100%', height: 130}} /><View style={{padding: space.sm}}><Txt variant="bodyStrong" numberOfLines={1}>{post.author.name}</Txt><Txt variant="small" color="textSecondary">Watch Flow</Txt></View></Pressable>)}
+        </View> : <Txt color="textSecondary">Nothing to discover right now.</Txt>}
+      </ScrollView>
+    </View>
+  </Modal>;
 }
 
 /* ------------------------------------------------------- the three panels */

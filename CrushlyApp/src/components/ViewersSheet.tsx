@@ -12,9 +12,10 @@ import { useProfileTap } from '../lib/useProfileTap';
 import { formatCount } from '../lib/counts';
 import { useTheme } from '../theme/ThemeProvider';
 import { space } from '../theme/tokens';
+import { MOMENT_REACTIONS } from '../lib/catalog';
 
 /** The list endpoint is owner-authorized server-side; callers cannot opt in. */
-export function ViewersSheet({ kind, id, visible, onClose }: { kind: 'post' | 'moment'; id: number; visible: boolean; onClose: () => void }) {
+export function ViewersSheet({ kind, id, visible, onClose, reactions = [] }: { kind: 'post' | 'moment'; id: number; visible: boolean; onClose: () => void; reactions?: {kind: string; userId: number; name: string}[] }) {
   const { colors } = useTheme();
   const openProfile = useProfileTap();
   const query = useInfiniteQuery({
@@ -27,7 +28,8 @@ export function ViewersSheet({ kind, id, visible, onClose }: { kind: 'post' | 'm
   });
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Views" subtitle="Only you can see who viewed this.">
+    <BottomSheet visible={visible} onClose={onClose} title={kind === 'moment' ? 'Moment activity' : 'Views'} subtitle="Only you can see who viewed this.">
+      {kind === 'moment' ? <><Txt variant="bodyStrong">{typeof query.data?.pages[0]?.count === 'number' ? `${query.data.pages[0].count} views` : 'Views'}</Txt><Txt variant="bodyStrong" style={{ marginTop: space.md }}>Reactions</Txt>{reactions.length ? reactions.map((r, i) => <Txt key={`${r.userId}-${i}`}>{r.kind === 'crush' ? '♥' : MOMENT_REACTIONS.find(x => x.key === r.kind)?.emoji ?? r.kind} {r.name}</Txt>) : <Txt color="textSecondary">No reactions yet.</Txt>}<Txt variant="bodyStrong" style={{ marginTop: space.md }}>Viewers</Txt></> : null}
       {query.isLoading ? <ActivityIndicator color={colors.primary} /> : query.isError ? (
         <View style={{ gap: space.sm }}><Txt color="textSecondary">Couldn’t load viewers.</Txt><Button title="Try again" onPress={() => void query.refetch()} /></View>
       ) : items.length === 0 ? <Txt color="textSecondary">No views yet.</Txt> : (

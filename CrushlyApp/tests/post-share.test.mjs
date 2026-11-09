@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validId, renderShare } from '../api/post-share.mjs';
+import { validId, renderShare, renderUnavailableShare } from '../api/post-share.mjs';
 test('rejects malformed and unsafe post ids', () => {
   for (const id of ['', '0', '-1', '1x', '1/2', '9007199254740993']) assert.equal(validId(id), false);
   assert.equal(validId('123'), true);
@@ -36,4 +36,19 @@ test('landing rechecks visibility every time and never caches restricted posts',
     if (oldBase === undefined) delete process.env.EXPO_PUBLIC_SUPABASE_URL; else process.env.EXPO_PUBLIC_SUPABASE_URL = oldBase;
     if (oldKey === undefined) delete process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY; else process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = oldKey;
   }
+});
+
+test('browser handoff only uses a validated storage key, without leaking it to the server', () => {
+  const post = {id: 123, author: 'Ada', body: 'Hello'};
+  const html = renderShare(post, 'sb-project-ref-auth-token');
+  assert.match(html, /localStorage.getItem\("sb-project-ref-auth-token"\)/);
+  assert.match(html, /location.replace\('\/\?post=123'\)/);
+  assert.doesNotMatch(renderShare(post, '</script><script>bad'), /localStorage/);
+});
+test('unavailable targets have a generic non-leaking sign-in handoff', () => {
+  const html = renderUnavailableShare('123', 'sb-project-ref-auth-token');
+  assert.match(html, /location.replace\('\/\?post=123'\)/);
+  assert.match(html, /name="robots" content="noindex"/);
+  assert.doesNotMatch(html, /og:description|og:image/);
+  assert.doesNotMatch(renderUnavailableShare('1\"<script>', 'sb-project-auth-token'), /<script>/);
 });

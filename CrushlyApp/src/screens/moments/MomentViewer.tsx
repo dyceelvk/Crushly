@@ -104,6 +104,8 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const pausedRef = useRef(false);
   const heldRef = useRef(false);
   const zoneRef = useRef<'prev' | 'next'>('next');
+  const touchStart = useRef({ x: 0, y: 0 });
+  const swipeY = useRef(0);
   const [zoneWidth, setZoneWidth] = useState(0);
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -171,6 +173,8 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   // us claim the touch, refuse to hand it back mid-hold, and only release when
   // the finger actually lifts.
   const beginHold = useCallback((e: GestureResponderEvent) => {
+    touchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+    swipeY.current = 0;
     const rawX = e.nativeEvent.locationX;
     const x = typeof rawX === 'number' ? rawX : -1; // no coordinate → treat as "next"
     // Left third rewinds, the rest advances — the split the old Pressables used.
@@ -192,16 +196,33 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     }
   }, []);
 
+  // A vertical swipe takes precedence over a hold or tap. Only the owner's
+  // upward swipe reveals private activity; downward dismisses the viewer.
+  const moveTouch = useCallback((e: GestureResponderEvent) => {
+    const dx = e.nativeEvent.pageX - touchStart.current.x;
+    const dy = e.nativeEvent.pageY - touchStart.current.y;
+    if (Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+      swipeY.current = dy;
+      clearHoldTimer();
+      pausedRef.current = true;
+      setHolding(true);
+    }
+  }, [clearHoldTimer]);
+
   /** Finger up (navigate = a plain tap) or the system took the touch away. */
   const endHold = useCallback((navigate: boolean) => {
     clearHoldTimer();
     const wasHeld = heldRef.current;
     heldRef.current = false;
-    pausedRef.current = false;
+    pausedRef.current = !screenFocused || focused || reactOpen || confirmDelete || viewersOpen;
     setHolding(false);
-    // A hold resumes and never also navigates on the same touch.
-    if (navigate && !wasHeld) (zoneRef.current === 'prev' ? prev : next)();
-  }, [clearHoldTimer, prev, next]);
+    const dy = swipeY.current;
+    swipeY.current = 0;
+    if (!navigate) return;
+    if (dy >= 70) close();
+    else if (dy <= -70 && mine) { pausedRef.current = true; setViewersOpen(true); }
+    else if (Math.abs(dy) < 20 && !wasHeld) (zoneRef.current === 'prev' ? prev : next)();
+  }, [clearHoldTimer, prev, next, close, mine, screenFocused, focused, reactOpen, confirmDelete, viewersOpen]);
 
   // Clear a pending hold timer if the screen unmounts mid-touch.
   useEffect(() => clearHoldTimer, [clearHoldTimer]);
@@ -371,6 +392,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             showText={false}
             style={{ flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
             textSize={26}
+            keepPlayerMounted={moment.kind === 'video'}
             autoPlay={moment.kind === 'video' && !paused}
           />
         </View>
@@ -385,12 +407,13 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           onMoveShouldSetResponder={() => true}
           onResponderTerminationRequest={() => false}
           onResponderGrant={(e) => beginHold(e)}
+          onResponderMove={moveTouch}
           onResponderRelease={() => endHold(true)}
           onResponderTerminate={() => endHold(false)}
           accessible
           accessibilityRole="button"
           accessibilityLabel="Moments player"
-          accessibilityHint="Tap the left third for the previous Moment, anywhere else for the next one. Hold to pause, release to resume."
+          accessibilityHint="Tap left for the previous Moment or right for the next. Hold to pause. Swipe down to close; on your own Moment swipe up for activity."
         />
 
         {moment.kind === 'text' ? <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, bottom: 0, left: space.xl, right: space.xl, justifyContent: 'center' }}>
@@ -557,7 +580,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         </View>
       </View>
 
-      {mine ? <ViewersSheet kind="moment" id={moment.id} visible={viewersOpen} onClose={() => setViewersOpen(false)} /> : null}
+      {mine ? <ViewersSheet kind="moment" id={moment.id} visible={viewersOpen} onClose={() => setViewersOpen(false)} reactions={moment.reactions ?? []} /> : null}
       <ConfirmSheet
         visible={confirmDelete}
         title="Delete this Moment?"

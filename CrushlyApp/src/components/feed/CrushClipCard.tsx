@@ -44,6 +44,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [muted, setMuted] = useState(true);
   const react = useReactToPost();
   const authorName = post.author.name;
 
@@ -52,9 +53,9 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
   return (
     <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
       <Pressable
-        onPress={open}
+        onPress={() => setMuted(v => !v)}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${authorName}’s clip`}
+        accessibilityLabel={muted ? `Unmute ${authorName}’s clip` : `Mute ${authorName}’s clip`}
         style={{ width: '100%' }}
       >
         <EditedClip
@@ -62,14 +63,17 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
              play at all. */
           uri={mediaSource(mediaUrl(post.mediaUrl))}
           live={post.edit ?? null}
-          autoPlay={active}
-          loop={active}
-          muted
-          controls="corner"
+          autoPlay={active && !commentsOpen}
+          loop
+          muted={muted}
+          controls={false}
           fallbackRatio={0.8}
           maxHeight={560}
           accessibilityLabel={`Clip by ${authorName}`}
         />
+        <View pointerEvents="none" style={{ position: 'absolute', top: 12, right: 12, borderRadius: 18, padding: 7, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+        </View>
       </Pressable>
 
       {/* Words and controls over the bottom of the picture, and nowhere else. */}
@@ -111,6 +115,9 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
           ) : null}
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm }}>
+            <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={`Open ${authorName}’s Flow`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Ionicons name="expand-outline" size={20} color="#FFFFFF" /><Txt variant="bodyStrong" color="#FFFFFF">Flow</Txt>
+            </Pressable>
             <Pressable
               onPress={() => react.mutate({ postId: post.id, liked: !post.liked })}
               accessibilityRole="button"

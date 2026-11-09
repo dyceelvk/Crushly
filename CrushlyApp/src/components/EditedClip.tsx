@@ -272,6 +272,7 @@ export function EditedClip({
       player.play();
       setPlaying(true);
       if (look.music && !muted) musicPlayer?.play();
+      else musicPlayer?.pause();
     } else {
       releaseFocus(player);
       player.pause();
