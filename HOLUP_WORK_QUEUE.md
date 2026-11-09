@@ -607,3 +607,16 @@
   can see the original path/query. Deployment `dpl_4FKwhsiBUE5NWZq3oXMQoQiPv3Xb`
   was BUILDING at last check; verify the real callback returns 200 after it is
   promoted. This does not validate a provider session or release manual review.
+- Web deployment `dpl_4FKwhsiBUE5NWZq3oXMQoQiPv3Xb` is READY/PROMOTED;
+  canonical `/?didit=done` and `/verification?didit=done` both returned HTTP
+  200 and HTML after deployment. This verifies routing, not a real Didit return
+  or restored-session navigation. `/v/62` and direct post-share API both now
+  return the application-level 404 `This post is not available`; do not claim
+  that a currently available share was retested. The diagnostic remote branch
+  `build/holup-evidence-diagnostic` was deleted; diagnostic function had already
+  been removed.
+- Didit sandbox is a separate application and sandbox-mode key; the live key
+  cannot simulate sessions. Management app creation needs an owner/admin JWT,
+  not just the current application API key. No Didit sandbox or genuine
+  provider outcome is established. See https://docs.didit.me/integration/sandbox-testing
+  and https://docs.didit.me/auth-api/create-application.
