@@ -598,7 +598,7 @@ export function SpaceScreen({
                     so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
-                {relationship.data?.canViewKeptClose ? <Pill tone="gold" label="Close Ones" icon={<Ionicons name="people" size={11} color={colors.gold} />} /> : <Txt variant="small" color="textSecondary">Keep Close requests are being updated.</Txt>}
+                {relationship.data?.canViewKeptClose ? <Pill tone="gold" label="Homies" icon={<Ionicons name="people" size={11} color={colors.gold} />} /> : <Txt variant="small" color="textSecondary">Homie requests are being updated.</Txt>}
                 </>
                 )}
               </View>
