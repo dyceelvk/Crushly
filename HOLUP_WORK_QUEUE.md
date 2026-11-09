@@ -747,3 +747,17 @@
   more main pushes while Android's bot metadata push is pending. After release,
   reconcile this work branch to the latest main, retaining private work and
   avoiding the already-applied notification migration duplicate.
+- Full-screen notifications and requested search icon correction are now live on
+  web at main `70a8e40`: Vercel `dpl_FTLwSLgMti3RgxhFp8ZV4gYGSB7u` is
+  READY/PROMOTED; web `42654079847` and CI `42654079902` passed. Live bundle
+  contains category labels, content-free Whisper text and Moment target RPC.
+- A deliberately limited admin triage candidate is on branch
+  `build/holup-admin-operations` commit `e99f44c`: reports with reviewed/open
+  status, account search and audit; it does not expose unfinished verification,
+  suspension or content-removal controls. SQL restricts all operations using
+  server-side `holup_is_admin`, audits sensitive reads/changes, and scopes UI
+  query caches by signed-in member. Candidate CI dispatched; result unknown.
+  Review role authorization and CI before deploying, and acknowledge it does
+  not complete the broader admin dashboard. The migration filename is a
+  placeholder until actual Supabase apply; preserve exact statement and
+  reconcile production migration history after apply. Do not develop item 5.
