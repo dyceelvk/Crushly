@@ -180,3 +180,8 @@ account, case and temporary Edge function were removed; the bucket and queue
 were empty afterwards. This does not validate real applicant inputs, hostile
 images, service outages, long-running load or the Didit integration. Manual
 verification remains disabled for users.
+
+`manual-didit` v1 is deployed behind gateway JWT verification, pinned to commit
+`5e3051829fe8e475d9f99ec94b0029563fd0b521`. The case and capture RPC grants
+remain withheld. No provider session or callback has been validated and the
+legacy endpoints have not been retired; the manual flow is not live.

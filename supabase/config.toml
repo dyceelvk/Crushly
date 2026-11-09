@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.manual-evidence]
 verify_jwt = true
+
+[functions.manual-didit]
+verify_jwt = true

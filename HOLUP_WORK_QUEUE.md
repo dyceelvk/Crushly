@@ -573,3 +573,10 @@
   synthetic cases 0, bucket objects 0, deletion queue 0, last_failed 0. The
   temporary diagnostic Edge function was deleted. This is one synthetic
   end-to-end path, not provider, malformed-image, rate/load or privacy audit.
+- Production Edge `manual-didit` v1 now exists, JWT-gated and pinned to source
+  `5e3051829fe8e475d9f99ec94b0029563fd0b521`. The capture backend requires an
+  existing open case and admin-requested capture; user-facing case/capture RPC
+  grants remain withheld. No real provider session was created or validated.
+  The callback, workflow configuration, response shapes, retries and provider
+  retention are not validated; webhook is not configured. Existing legacy
+  Didit auto-award remains active, and manual verification is not yet live.
