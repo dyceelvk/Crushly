@@ -19,7 +19,9 @@ begin
  select count(*) into before_conversations from conversations where user_a=least(a,b) and user_b=greatest(a,b);
  -- Follows default to immediate, and create neither a friendship nor Whisper.
  perform set_config('request.jwt.claim.sub',au::text,true); set local role authenticated;
+ assert holup_follow_status(b)->>'status' is null;
  r:=holup_follow(b); assert r->>'status'='active' and (r->>'changed')::boolean;
+ assert holup_follow_status(b)->>'status'='active';
  r:=holup_follow(b); assert r->>'status'='active' and not (r->>'changed')::boolean;
  assert (holup_follow_stats(a)->>'addedUp')::int=1;
  assert jsonb_array_length(holup_follow_people(a,'addedUp')->'items')=1;
@@ -56,11 +58,13 @@ begin
  update privacy set profile_visibility='connections' where user_id=b;
  perform set_config('request.jwt.claim.sub',cu::text,true); set local role authenticated;
  assert jsonb_array_length(holup_follow_people(a,'addedUp')->'items')=0, 'private identity leaked';
+ denied:=false; begin perform holup_follow_status(b); exception when others then denied:=true; end; assert denied, 'private Space status leaked';
  reset role;
  -- No raw reads/writes and no anonymous execution.
  assert not has_table_privilege('authenticated','public.holup_follows','select');
  assert not has_table_privilege('authenticated','public.holup_follows','insert');
  assert not has_function_privilege('anon','public.holup_follow(bigint)','execute');
+ assert not has_function_privilege('anon','public.holup_follow_status(bigint)','execute');
  raise notice 'isolated follow tests passed';
 end $test$;
 rollback;
