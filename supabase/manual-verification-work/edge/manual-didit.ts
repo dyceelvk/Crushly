@@ -17,9 +17,9 @@ Deno.serve(async req => {
  const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
  const apiKey = Deno.env.get('DIDIT_API_KEY') ?? '';
- const workflow = Deno.env.get('DIDIT_MANUAL_VERIFICATION_WORKFLOW_ID') ?? '';
+ const workflow = Deno.env.get('DIDIT_MANUAL_VERIFICATION_WORKFLOW_ID') || Deno.env.get('DIDIT_WORKFLOW_ID') || '';
  const appUrl = Deno.env.get('APP_URL') ?? '';
- if (!origin || !anon || !serviceKey || !apiKey || !workflow || !/^https:\/\/[a-z0-9.-]+$/i.test(appUrl)) return json({ error: 'Secure capture is not configured.' },503);
+ if (!origin || !anon || !serviceKey || !apiKey || !workflow || !/^https:[/][/][a-z0-9.-]+$/i.test(appUrl)) return json({ error: 'Secure capture is not configured.' },503);
  const userClient = createClient(origin,anon,{ global:{headers:{Authorization:authHeader}} });
  const {data: who,error: authError}=await userClient.auth.getUser();
  if (authError || !who.user) return json({error:'Sign in required.'},401);

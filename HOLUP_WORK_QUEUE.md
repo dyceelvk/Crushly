@@ -339,3 +339,51 @@
   security/integration tests, and no test suite was run. SQL, edge functions,
   provider results, storage and the batch operation remain unverified and
   undeployed. Production still uses the old flow; do not say otherwise.
+
+## Production verification review in progress
+- User now authorizes review and production release. No production app, schema or
+  functions have been changed in this review yet. Active production still uses
+  the old flow. Do not ship unreviewed privacy-sensitive documents or the whole
+  unrelated branch.
+- Read-only production catalog review: Holup has 7 active onboarded profiles,
+  1 pending Didit request (Not Started), and 1 existing verified profile.
+  Storage policies currently scope authenticated access to `media` or the old
+  `verification` bucket; no broad policy for a new evidence bucket was found.
+- Read-only GitHub Actions run 42617815324 inspected the GitHub-configured Didit workflow
+  via the configured secrets without exposing them: published KYC, not archived,
+  OCR + liveness + face match enabled. Production Supabase secret values were
+  redacted, so whether it uses exactly the same workflow is not confirmed. No
+  Didit configuration was changed. The
+  dedicated manual-workflow env var is not configured in Supabase; local edge
+  code now falls back to the existing configured workflow. Provider session and
+  webhook behavior remain unverified.
+- PostgreSQL 17 disposable DB `holup_review`, local process
+  `isolated-holup-database-d7f66492`: stubs + production-equivalent migration
+  versions through admin controls and applied adult guard, then experimental
+  verification SQL 01–07 compiled. A targeted rollback-only disposable SQL
+  review checked unauthorized access, forged approval, two-category prevention,
+  batch mapping/idempotency and auditing and passed. This is not full security,
+  storage, concurrency, provider integration or production validation.
+- Review corrected count semantics: post reactions must use the same current
+  count the app labels Crushes, rather than only `kind='crush'`. Change is local.
+  Raw identity uploads still lack image sanitization/scanning, enforceable
+  retention with monitored cleanup and tested lifecycle. The separate manual
+  Didit webhook destination/secret has not been configured; old live endpoints
+  can still auto-award. Production migration sequencing, installed clients,
+  Android update and rollout/rollback remain open.
+- The user selected **30 days after review completion** for Holup-hosted
+  verification images. `08_retention_experiment.sql` now denies image reads at
+  the cutoff and queues expired images; an isolated rollback-only check passed.
+  Physical deletion still requires a deployed and monitored scheduler; no
+  guarantee for backups, Didit-held evidence, stalled uploads or open cases.
+- A local progress bug was found and fixed: a double-escaped SQL regex failed
+  to recognize video filenames. Local rollback-only review now covers video and
+  reaction counts. Classification remains extension-based and imperfect.
+- During local edge review an invalid double-escaped URL regex was found and
+  fixed. Web export and TypeScript compilation completed, but edge provider
+  runtime and actual Didit sessions remain unverified.
+- Didit webhook review also needs replay protection tied to authenticated body
+  timestamps: the provider signs the body but the `X-Timestamp` header alone is
+  not part of the V2 HMAC. Retained event IDs and session binding help, but
+  signed timestamp/retry behavior and old-client/legacy endpoint cutover need a
+  reviewed design and real provider validation before deployment.

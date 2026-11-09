@@ -1,0 +1,40 @@
+-- Isolated database only. Rolls back all synthetic data. No real users.
+begin;
+do $review$
+declare admin_auth uuid:=gen_random_uuid(); a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid();
+ aid bigint; bid bigint; case_a bigint; case_b bigint; result jsonb; denied boolean; cap jsonb; session_a text:=gen_random_uuid()::text; session_b text:=gen_random_uuid()::text;
+begin
+ insert into auth.users(id,email,email_confirmed_at) values(admin_auth,'review-admin@example.invalid',now()),(a,'review-a@example.invalid',now()),(b,'review-b@example.invalid',now()),(outsider,'review-x@example.invalid',now());
+ insert into public.holup_admins(auth_user_id) values(admin_auth);
+ select id into aid from public.profiles where auth_user_id=a; select id into bid from public.profiles where auth_user_id=b;
+ insert into public.manual_verification_cases(member_id,kind,criteria_snapshot) values(aid,'creator','{}') returning id into case_a;
+ insert into public.manual_verification_cases(member_id,kind,criteria_snapshot) values(bid,'person_id','{}') returning id into case_b;
+ denied:=false; begin insert into public.manual_verification_cases(member_id,kind,criteria_snapshot) values(aid,'person_id','{}'); exception when unique_violation then denied:=true; end;
+ assert denied,'two open categories allowed';
+ perform set_config('request.jwt.claim.sub',outsider::text,true); set local role authenticated;
+ denied:=false; begin perform public.manual_verification_thread(case_a); exception when others then denied:=true; end; assert denied,'outsider could see thread';
+ denied:=false; begin perform public.manual_capture_request(case_a); exception when others then denied:=true; end; assert denied,'outsider could request capture';
+ denied:=false; begin perform public.manual_verification_award_ready(); exception when others then denied:=true; end; assert denied,'outsider could award badges';
+ denied:=false; begin perform public.manual_capture_result(case_a,session_a,'w','approved',public.now_ms()); exception when insufficient_privilege then denied:=true; end; assert denied,'outsider could mark provider success';
+ denied:=false; begin update public.profiles set badge_tier='gold' where auth_user_id=outsider; exception when insufficient_privilege then denied:=true; end; assert denied,'member could change badge';
+ reset role; perform set_config('request.jwt.claim.sub',admin_auth::text,true); set local role authenticated;
+ perform public.manual_capture_request(case_a); perform public.manual_capture_request(case_b);
+ denied:=false; begin perform public.manual_verification_decide(case_a,'approve','Approving without evidence'); exception when others then denied:=true; end; assert denied,'creator could be awarded before capture';
+ result:=public.manual_verification_ready_counts(); assert (result->>'total')::int=0,'not-ready cases counted';
+ reset role; set local role service_role;
+ cap:=public.manual_capture_claim(case_a,a); perform public.manual_capture_record(case_a,a,(cap->>'lease')::uuid,session_a,'https://verify.didit.me/session/fake','workflow');
+ cap:=public.manual_capture_claim(case_b,b); perform public.manual_capture_record(case_b,b,(cap->>'lease')::uuid,session_b,'https://verify.didit.me/session/fake','workflow');
+ denied:=false; begin perform public.manual_capture_result(case_a,session_b,'workflow','approved',public.now_ms()); exception when others then denied:=true; end; assert denied,'wrong session could approve';
+ perform public.manual_capture_result(case_a,session_a,'workflow','approved',public.now_ms());
+ perform public.manual_capture_result(case_b,session_b,'workflow','approved',public.now_ms());
+ reset role; perform set_config('request.jwt.claim.sub',admin_auth::text,true); set local role authenticated;
+ result:=public.manual_verification_ready_counts(); assert (result->>'creator')::int=1 and (result->>'personId')::int=1,'wrong ready counts';
+ result:=public.manual_verification_award_ready(); assert (result->>'creator')::int=1 and (result->>'personId')::int=1,'wrong batch output';
+ result:=public.manual_verification_award_ready(); assert (result->>'total')::int=0,'batch not idempotent';
+ reset role;
+ assert (select badge_tier='gold' from public.profiles where id=aid),'creator missing gold';
+ assert (select badge_tier='diamond' from public.profiles where id=bid),'person ID missing diamond';
+ assert (select count(*)=2 from public.holup_admin_events where kind='verification_decision'),'decisions not audited';
+ raise notice 'Isolated verification authorization and batch review passed';
+end $review$;
+rollback;

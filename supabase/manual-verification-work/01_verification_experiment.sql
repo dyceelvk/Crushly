@@ -32,7 +32,7 @@ revoke all on public.manual_verification_cases,public.manual_verification_messag
 revoke all on sequence public.manual_verification_cases_id_seq,public.manual_verification_messages_id_seq from public,anon,authenticated;
 
 -- Aggregate numbers are visible only to the member or a server-authorized admin.
--- Only count currently held crush reactions, not other reaction kinds. Count
+-- Count current post reactions the same way the app displays its Crushes. Count
 -- current posts: deleted posts no longer count. Four consecutive rolling,
 -- nonoverlapping seven-day periods, from now going backwards (not total/4).
 create or replace function public.manual_verification_progress(p_kind text,p_member bigint default null)
@@ -49,9 +49,9 @@ begin
   where c.to_id=who and c.status in ('pending','accepted') and p.onboarded and p.status='active' and not public.is_blocked_pair(c.from_id,who);
  select count(*) filter(where media_url is not null),count(*) filter(where media_url is null and btrim(body)<>'') into media,texts
   from public.posts where author_id=who and circle_id is null;
- select count(*),count(*) filter(where po.media_url ~* '\.(mp4|webm|mov|m4v)(\?|$)') into likes,video_likes
+ select count(*),count(*) filter(where po.media_url ~* '[.](mp4|webm|mov|m4v)([?]|$)') into likes,video_likes
   from public.posts po join public.post_reactions r on r.post_id=po.id
-  where po.author_id=who and po.circle_id is null and r.kind='crush' and r.user_id<>who;
+  where po.author_id=who and po.circle_id is null;
  select array_agg((select count(*) from public.posts p where p.author_id=who and p.circle_id is null
    and p.created_at<=public.now_ms()-i*604800000::bigint and p.created_at>public.now_ms()-(i+1)*604800000::bigint) order by i)
  into weeks from generate_series(0,3) i;

@@ -44,8 +44,8 @@ hold only one category.
 
 ## Counts (proposed; require review before release)
 Current, non-Circle posts; media means any current post with a media URL; text
-means no media and nonempty body. Crushes are current `kind='crush'` reactions,
-not other reactions. Video uses filename extension, which may misclassify imports
+means no media and nonempty body. Crushes count current post reactions in the
+same way the app displays the post's Crushes count. Video uses filename extension, which may misclassify imports
 and unusual URLs. Add Ups count active, onboarded, unblocked incoming accounts
 in pending/accepted state. Creator weekly activity requires 3 posts in each of
 four rolling non-overlapping 7-day periods. The case records eligibility at
@@ -67,7 +67,10 @@ private posts; confirm this interpretation and review fraud/moderation rules.
   match, live environment, and secure access to provider evidence for reviewers.
   The proposed poll and signed session webhook check the documented result
   shape but have not been exercised against a real session; event ordering,
-  retries, destination configuration and race conditions must be reviewed. Provider costs/configuration may apply.
+  retries, destination configuration and race conditions must be reviewed. The
+  V2 signature authenticates the body, not the separate X-Timestamp header;
+  check the signed timestamp and replay/idempotency behavior too. Provider
+  costs/configuration may apply.
   The creation lease can leave a provider-side orphan if a network request fails
   after provider creation; decide idempotency/reconciliation and billing limits.
 - Retire existing auto-verification endpoints and settle or communicate what
@@ -79,6 +82,11 @@ private posts; confirm this interpretation and review fraud/moderation rules.
   requested no tests, but sensitive-data release still requires necessary
   security and integration validation. No Supabase or production changes were
   made for this work. Do not merge these SQL experiments as migrations yet.
+
+- `08_retention_experiment.sql` drafts the chosen 30-day post-review image
+  expiry, denies reads at the deadline and queues deletion; a deployed, monitored
+  scheduler and backup/provider retention policy are still needed. Abandoned
+  reservations are queued after 24 hours. Open-case expiry needs a policy.
 
 - Creator monetization and admin payouts are deferred: there is no payment,
   earnings calculation, payout dashboard or Paystack integration in this work.
