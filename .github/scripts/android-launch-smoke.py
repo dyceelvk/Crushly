@@ -769,11 +769,16 @@ def walk():
     if not wait_for(['Your Moment'], 15, 'Moment input visible above keyboard'):
         fail('Moment input was hidden by the keyboard')
     shot('06b-moment-keyboard')
-    # The tap above already focused the input. uiautomator can temporarily
-    # return the keyboard window instead of the focused EditText, so type into
-    # the focused field and verify the actual app text immediately afterwards.
-    adb('shell', 'input', 'text', 'Local%smoment%sdraft%scheck')
-    time.sleep(1.0)
+    # wait_for() and shot() inspect the UI via nodes(), which can dismiss the
+    # keyboard when uiautomator reports the IME window. Refocus the actual
+    # EditText *after* those inspections; type_into taps it and types before any
+    # further dump. Never infer success from the tap: verify the exact content.
+    seen = nodes() or []
+    field = find(seen, 'Your Moment', cls='EditText')
+    if not field:
+        fail('Moment editor EditText was not available for typing')
+    if not type_into(0, 'Local moment draft check', fields=[field]):
+        fail('Moment editor could not be focused')
     typed = [n['text'] for n in (nodes() or []) if 'EditText' in n['class'] and n['on_screen']]
     if not typed or typed[0] != 'Local moment draft check': fail('Moment text did not reach the editor intact')
     moment_text = typed[0]
