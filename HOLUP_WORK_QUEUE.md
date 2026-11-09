@@ -272,7 +272,7 @@
 ## Manual verification — current user priority
 - User asked to pause Supabase changes and build admin-controlled verification.
   No Supabase project, Didit function, live database, production web or Android
-  was changed for this task. Riel Vault was not changed. Teen work is paused.
+  was changed for this task. Teen work is paused.
 - Decisions: 10k incoming Add Ups, 1k image/video posts, 100 text posts, 500k
   Crushes/likes on posts, plus 3 posts in each of the last four 7-day periods
   for creator (gold); 5k Add Ups, 1k photo/video posts, 50 text posts and 50k
@@ -298,3 +298,19 @@
   this was a build, not a test or deployment. Source work was committed as
   `a2eee15`. An earlier build attempt failed because dependencies were missing,
   and was retried only after installing them. Production remains unchanged.
+- Continued local verification work: built experimental admin-requested,
+  case-bound Didit session creation and server-fetched result verification;
+  person badge still requires an explicit admin decision. Added prototype image
+  upload/view to a separate private bucket via authenticated edge functions,
+  owner removal and a durable cleanup queue. Added local-only legacy-auto-badge
+  retirement SQL and removed unused old client entry points. None deployed.
+  See `supabase/manual-verification-work/README.md` for substantial blockers:
+  image sanitization/scanning, privacy/retention, scheduled cleanup, Didit
+  workflow/configuration, real provider validation, old-client migration and
+  security review. A web build started; its result must be checked.
+- Latest local web export succeeded after the new verification UI and private
+  attachment/capture controls were added; it is a build only and was not
+  deployed. A subsequent small local change allows rechecking approved capture
+  state; SQL/edge changes remain unexecuted. No test suite was run. The current
+  live verification remains the old automatic flow until a safe coordinated
+  release is possible. `git grep` found no named integration with other apps.

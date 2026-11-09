@@ -1,0 +1,28 @@
+// EXPERIMENT ONLY. Run on a scheduler with MANUAL_EVIDENCE_CLEANUP_SECRET;
+// not publicly invoked and never expose this secret to clients. Checks the
+// durable queue. An item is removed only after the private object is removed.
+import { createClient } from 'npm:@supabase/supabase-js@2';
+function same(a:string,b:string):boolean {
+ const aa=new TextEncoder().encode(a), bb=new TextEncoder().encode(b);
+ if(aa.length!==bb.length) return false;
+ let diff=0; for(let i=0;i<aa.length;i++) diff|=aa[i]^bb[i]; return diff===0;
+}
+Deno.serve(async req=>{
+ if(req.method!=='POST') return new Response('Method not allowed',{status:405});
+ const secret=Deno.env.get('MANUAL_EVIDENCE_CLEANUP_SECRET')??'';
+ if(secret.length<32||!same(req.headers.get('x-cleanup-secret')??'',secret)) return new Response('Unauthorized',{status:401});
+ const url=Deno.env.get('SUPABASE_URL')??'',key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
+ if(!url||!key) return new Response('Not configured',{status:503});
+ const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+ const {data:paths,error}=await client.rpc('manual_evidence_cleanup_batch',{p_limit:100});
+ if(error||!Array.isArray(paths)) return new Response('Queue unavailable',{status:503});
+ let removed=0,failed=0;
+ for(const path of paths) {
+  if(typeof path!=='string'||!path.startsWith('cases/')) { failed++; continue; }
+  const {error:removeError}=await client.storage.from('holup-review-evidence').remove([path]);
+  if(removeError) { failed++; continue; }
+  const {error:doneError}=await client.rpc('manual_evidence_cleanup_done',{p_path:path});
+  if(doneError) failed++; else removed++;
+ }
+ return new Response(JSON.stringify({removed,failed}),{status:failed?503:200,headers:{'content-type':'application/json','cache-control':'no-store'}});
+});

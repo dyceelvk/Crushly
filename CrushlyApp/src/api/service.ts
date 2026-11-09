@@ -1038,13 +1038,6 @@ export async function recordPlusInterest(): Promise<Me> {
   return getMe();
 }
 
-/**
- * Verification runs through Didit (hosted ID + liveness + face-match flow).
- * The member app only starts a session and checks the result; the decision
- * arrives via the didit-webhook edge function (or a poll through didit-status).
- * The AI reviewer is an admin-only assist and is never called from here.
- */
-
 /** Invoke an edge function, surfacing the function's own JSON error message. */
 async function invokeFunction<T>(name: string, body: Record<string, unknown> = {}): Promise<T> {
   const res = await supabase.functions.invoke(name, { body });
@@ -1067,24 +1060,6 @@ async function invokeFunction<T>(name: string, body: Record<string, unknown> = {
     throw new ApiError(status, message || (res.error as Error).message);
   }
   return res.data as T;
-}
-
-export async function startDiditVerification(newSession = false): Promise<{ url: string; sessionId: string }> {
-  const d = await invokeFunction<{ url?: string; session_id?: string; error?: string }>('didit-session', { newSession });
-  if (!d?.url) throw new ApiError(502, d?.error || 'Couldn’t start verification — try again.');
-  return { url: d.url, sessionId: String(d.session_id ?? '') };
-}
-
-export type DiditStatusResponse = {
-  status: 'none' | 'pending' | 'verified' | 'rejected';
-  diditStatus: string | null;
-  sessionId: string | null;
-};
-
-export async function getDiditStatus(): Promise<DiditStatusResponse> {
-  const d = await invokeFunction<Partial<DiditStatusResponse> & { error?: string }>('didit-status');
-  if (!d?.status) throw new ApiError(502, d?.error || 'Couldn’t check the status — try again.');
-  return { status: d.status, diditStatus: d.diditStatus ?? null, sessionId: d.sessionId ?? null };
 }
 
 export async function updateAccount(body: {
@@ -1627,3 +1602,13 @@ export const verificationCases = (admin = false) => rpc<ManualVerificationCase[]
 export const verificationThread = (id: number) => rpc<ManualVerificationThread>('manual_verification_thread', { p_case: id });
 export const verificationSend = (id: number, text: string) => rpc<boolean>('manual_verification_send', { p_case: id, p_body: text });
 export const verificationDecide = (id: number, decision: 'approve' | 'reject', reason: string) => rpc<boolean>('manual_verification_decide', { p_case: id, p_decision: decision, p_reason: reason });
+export type VerificationCaptureState = 'not_requested' | 'requested' | 'creating' | 'created' | 'approved' | 'declined' | 'review' | 'expired';
+export const verificationCaptureState = (id: number) => rpc<VerificationCaptureState>('manual_capture_state', { p_case: id });
+export const verificationRequestCapture = (id: number) => rpc<boolean>('manual_capture_request', { p_case: id });
+export const verificationCaptureAction = (id: number, action: 'start' | 'refresh') => invokeFunction<{ state: VerificationCaptureState; url?: string }>('manual-didit', { caseId: id, action });
+export type VerificationFile = { id: string; createdAt: number };
+export const verificationFiles = (caseId: number) => rpc<VerificationFile[]>('manual_evidence_list', { p_case: caseId });
+export const verificationUploadImage = (caseId: number, base64: string) => invokeFunction<{ id: string }>('manual-evidence', { action: 'upload', caseId, base64 });
+export const verificationReadImage = (fileId: string) => invokeFunction<{ mime: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string }>('manual-evidence', { action: 'read', fileId });
+
+export const verificationDeleteImage = (fileId: string) => invokeFunction<{ hidden: boolean; deleted: boolean }>('manual-evidence', { action: 'delete', fileId });
