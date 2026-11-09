@@ -166,6 +166,20 @@ begin
  'hasMore',(select count(*)>lim from page)) into result;
  return result;
 end $$;
+-- Cheap status-only lookup for buttons in feeds; it cannot grant access to a
+-- private Space and never reveals a relationship between two other members.
+create or replace function public.holup_follow_status(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me or public.relationship_list_profile(me,p_target) is null then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ return jsonb_build_object('status',(select status from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending')));
+end $$;
+revoke all on function public.holup_follow_status(bigint) from public,anon,authenticated;
+grant execute on function public.holup_follow_status(bigint) to authenticated,service_role;
+
 -- Only the recipient may enumerate approval requests. Individual profiles still
 -- pass the same relationship-list privacy gate; a hidden identity is not sent.
 create or replace function public.holup_pending_follow_requests(p_offset integer default 0,p_limit integer default 40) returns jsonb

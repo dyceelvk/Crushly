@@ -1,3 +1,4 @@
+import { FollowButton } from '../FollowButton';
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -107,6 +108,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
             </View>
           </Pressable>
 
+          {!post.mine && post.audience === 'everyone' ? <View style={{alignSelf:'flex-start',marginTop:6}}><FollowButton id={post.author.id} name={post.author.name} compact /></View> : null}
           <PostViews post={post} light />
           {post.body ? (
             <Txt variant="body" numberOfLines={2} color="#FFFFFF" style={{ marginTop: 6 }}>

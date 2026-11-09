@@ -60,6 +60,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [onePost] };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
     else if (path === '/rest/v1/rpc/holup_follow_stats') body = {addUps: 3, addedUp: 4, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewAddedUp: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private', outgoingVisibility, approvalRequired, myStatus: followed ? 'active' : null};
+    else if (path === '/rest/v1/rpc/holup_follow_status') body = {status: followed ? 'active' : null};
     else if (path === '/rest/v1/rpc/holup_follow') { followed = true; calls.push({followed: true}); body = {status:'active',changed:true}; }
     else if (path === '/rest/v1/rpc/holup_unfollow') { followed = false; body = true; }
     else if (path === '/rest/v1/rpc/holup_set_follow_settings') { const args = route.request().postDataJSON(); calls.push(args); if (args.p_outgoing_visibility != null) outgoingVisibility=args.p_outgoing_visibility; if (args.p_approval != null) approvalRequired=args.p_approval; body=true; }

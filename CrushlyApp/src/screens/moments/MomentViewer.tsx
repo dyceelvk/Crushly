@@ -11,7 +11,7 @@ import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
-import { CrushButton } from '../../components/CrushButton';
+import { FollowButton } from '../../components/FollowButton';
 import { ConfirmSheet } from '../../components/BottomSheet';
 import { ViewersSheet } from '../../components/ViewersSheet';
 import { EmptyState } from '../../components/States';
@@ -21,7 +21,6 @@ import { useLayout } from '../../components/Layout';
 import { keys, useMomentReaction, useMoments } from '../../api/hooks';
 import { deleteMoment, replyToMoment, viewMoment } from '../../api/service';
 import type { Moment, MomentAuthor } from '../../api/types';
-import { useCrushFlow } from '../discover/Discover';
 import { MomentPreview } from './Moments';
 import { palettes, fonts, space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -56,7 +55,6 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const { data, isFetching, isError, refetch } = useMoments();
   const [targetReady, setTargetReady] = useState(momentId == null);
   const reactM = useMomentReaction();
-  const { run: crushOn } = useCrushFlow();
 
   // Freeze the sequence when the viewer opens so it doesn't reshuffle as Moments get marked seen.
   //
@@ -569,9 +567,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
                       color={myReaction ? c.gold : '#fff'}
                       onPress={() => setReactOpen((v) => !v)}
                     />
-                    {!group.user.mutual ? (
-                      <CrushButton shape="round" size={48} name={group.user.name} onPress={() => crushOn({ id: group.user.id, name: group.user.name, photos: group.user.photo ? [{ id: 0, url: group.user.photo }] : [] })} />
-                    ) : null}
+                    <FollowButton id={group.user.id} name={group.user.name} compact />
                   </>
                 )}
               </View>

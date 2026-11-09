@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { followMember, spaceRelationshipStats, unfollowMember } from '../api/service';
+import { followMember, followStatus, unfollowMember } from '../api/service';
 import { useMe } from '../api/hooks';
 import { useTheme } from '../theme/ThemeProvider';
 import { CrushIcon } from './Logo';
@@ -15,11 +15,12 @@ export function FollowButton({ id, name, compact = false }: {id: number; name: s
   const qc = useQueryClient();
   const { colors } = useTheme();
   const toast = useToast();
-  const stats = useQuery({queryKey: ['space-relationship-stats', me.data?.id, id], queryFn: () => spaceRelationshipStats(id), enabled: !!me.data?.id && me.data.id !== id, staleTime: 0});
-  const status = stats.data?.myStatus ?? null;
+  const stats = useQuery({queryKey: ['holup-follow-status', me.data?.id, id], queryFn: () => followStatus(id), enabled: !!me.data?.id && me.data.id !== id, staleTime: 20_000});
+  const status = stats.data?.status ?? null;
   const change = useMutation({
     mutationFn: async () => status ? (await unfollowMember(id), null) : await followMember(id),
     onSuccess: (result) => {
+      void qc.invalidateQueries({queryKey: ['holup-follow-status']});
       void qc.invalidateQueries({queryKey: ['space-relationship-stats']});
       void qc.invalidateQueries({queryKey: ['space-relationship-people']});
       toast({kind: 'success', title: result?.status === 'pending' ? 'Add Up request sent' : result?.status === 'active' ? `Added up ${name}` : 'Add Up removed'});

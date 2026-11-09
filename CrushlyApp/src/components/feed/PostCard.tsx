@@ -1,3 +1,4 @@
+import { FollowButton } from '../FollowButton';
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -163,10 +164,10 @@ export function PostCard({
               <Txt variant="caption" color="textMuted" numberOfLines={1}>
                 {[p.author.username ? `@${p.author.username}` : null, p.location ? `📍 ${p.location}` : null, timeAgo(p.createdAt)].filter(Boolean).join(' · ')}
               </Txt>
-              {p.author.keepsYou ? <KeepsYouChip /> : null}
             </View>
           </View>
         </Pressable>
+        {!p.mine && p.audience === 'everyone' ? <FollowButton id={p.author.id} name={p.author.name} compact /> : null}
         <Pill label={p.audience === 'everyone' ? 'Public' : p.audience === 'private' ? 'Only you' : p.audience === 'circle' ? 'Circle' : 'Connections'} tone={p.audience === 'everyone' ? 'open' : 'quiet'} />
         {p.mine ? (
           <IconButton

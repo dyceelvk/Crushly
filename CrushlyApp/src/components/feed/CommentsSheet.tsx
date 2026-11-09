@@ -1,3 +1,4 @@
+import { FollowButton } from '../FollowButton';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -217,6 +218,7 @@ export function CommentsSheet({
             >
               {comment.mine ? 'You' : comment.author.name}
             </Txt>
+            {!comment.mine && !comment.hidden && post?.audience === 'everyone' ? <FollowButton id={comment.author.id} name={comment.author.name} compact /> : null}
             {label ? (
               <>
                 <Txt style={{ fontSize: 12, color: NOIR.muted }}>·</Txt>

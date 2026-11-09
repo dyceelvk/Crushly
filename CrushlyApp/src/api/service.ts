@@ -277,6 +277,7 @@ export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'adde
     : await rpc<{ items: Profile[]; hasMore: boolean }>('holup_follow_people', { p_target: id, p_kind: kind, p_offset: offset, p_limit: 40 });
   return { ...page, items: (page.items ?? []).map(profileShape) };
 }
+export async function followStatus(id: number): Promise<{status: 'active' | 'pending' | null}> { return rpc('holup_follow_status', { p_target: id }); }
 export async function followMember(id: number): Promise<{ status: 'active' | 'pending'; changed: boolean }> {
   return rpc('holup_follow', { p_target: id });
 }
