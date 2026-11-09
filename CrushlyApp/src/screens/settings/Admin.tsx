@@ -34,9 +34,14 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const [reviewedPost, setReviewedPost] = useState<{ reportId: number; post: service.AdminReportedPost } | null>(null);
   const [removalReason, setRemovalReason] = useState('');
   const [confirmRemoval, setConfirmRemoval] = useState(false);
+  const [confirmBatch, setConfirmBatch] = useState(false);
+  const [verificationKind, setVerificationKind] = useState<'all' | service.ManualVerificationKind>('all');
+  const [verificationPage, setVerificationPage] = useState(0);
   const reports = useQuery({ queryKey: ['admin-reports', handled, reportPage], queryFn: () => service.adminReports(handled, reportPage * 50), enabled: data.isSuccess && section === 'reports', staleTime: 30000 });
   const accounts = useQuery({ queryKey: ['admin-accounts', submittedSearch], queryFn: () => service.adminAccounts(submittedSearch), enabled: data.isSuccess && section === 'accounts' && (submittedSearch.length >= 2 || /^[0-9]+$/.test(submittedSearch)), staleTime: 30000 });
-  const verifications = useQuery({ queryKey: ['manual-verification-cases', 'admin'], queryFn: () => service.verificationCases(true), enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
+  const verifications = useQuery({ queryKey: ['manual-verification-cases', 'admin', verificationKind, verificationPage], queryFn: () => service.verificationCases(true, verificationKind === 'all' ? undefined : verificationKind, verificationPage * 50), enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
+  const ready = useQuery({ queryKey: ['verification-ready-counts'], queryFn: service.verificationReadyCounts, enabled: data.isSuccess && section === 'verification', staleTime: 0 });
+  const awardReady = useMutation({ mutationFn: service.verificationAwardReady, onSuccess: (result) => { setConfirmBatch(false); void ready.refetch(); void verifications.refetch(); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); toast({ kind: 'success', title: 'Badges assigned', message: `${result.creator} gold · ${result.personId} diamond blue` }); }, onError: (e) => { setConfirmBatch(false); toast({ kind: 'error', title: 'Badges not assigned', message: (e as Error).message }); } });
   const audit = useQuery({ queryKey: ['admin-audit'], queryFn: service.adminAudit, enabled: data.isSuccess && section === 'audit', staleTime: 0 });
   const inspectPost = useMutation({ mutationFn: (id: number) => service.adminReportedPost(id),
     onSuccess: (post, reportId) => { setReviewedPost({ reportId, post }); setRemovalReason(''); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); },
@@ -54,7 +59,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['admin-state'] }); void qc.invalidateQueries({ queryKey: ['app-settings'] }); };
   const feature = useMutation({ mutationFn: ({ key, enabled }: { key: 'calls' | 'public_post_sharing'; enabled: boolean }) => service.adminSetFeature(key, enabled), onSuccess: refresh, onError: (e) => toast({ kind: 'error', title: 'Not changed', message: (e as Error).message }) });
   const announcement = useMutation({ mutationFn: () => service.adminSetAnnouncement(title, body, active), onSuccess: () => { dirty.current = false; refresh(); toast({ kind: 'success', title: 'Announcement saved' }); }, onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
-  if (reviewCase !== null) return <VerificationThread caseId={reviewCase} admin onBack={() => { setReviewCase(null); void verifications.refetch(); }} />;
+  if (reviewCase !== null) return <VerificationThread caseId={reviewCase} admin onBack={() => { setReviewCase(null); void verifications.refetch(); void ready.refetch(); }} />;
   return <Screen><Header title="Holup admin" subtitle="Operations and controls" back />
     {data.isLoading ? <LoadingBlock label="Loading admin controls" /> : data.isError || !data.data ? <ErrorState error={data.error} message="Admin controls are unavailable." onRetry={() => void data.refetch()} /> : <View style={{ gap: space.lg, paddingBottom: space.xl }}>
       <View accessibilityRole="tablist" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
@@ -113,11 +118,21 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
       </View> : null}
       {section === 'verification' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Verification</Txt>
-        <Txt variant="small" color="textSecondary">Review applications, ask questions, and decide on creator badges. Person ID approval requires a trusted Didit capture integration.</Txt>
-        {verifications.isLoading ? <LoadingBlock label="Loading verification requests" /> : verifications.isError ? <ErrorState error={verifications.error} message="Verification requests are unavailable." onRetry={() => void verifications.refetch()} /> : !verifications.data?.length ? <Txt color="textSecondary">No verification requests.</Txt> : verifications.data.map((v) => <View key={v.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>
+        <Txt variant="small" color="textSecondary">Review applications and request Didit checks. After checks pass, assign badges individually or assign every ready application by its category.</Txt>
+        {ready.isLoading ? <LoadingBlock label="Loading ready applications" /> : ready.isError ? <ErrorState error={ready.error} message="Ready counts are unavailable." onRetry={() => void ready.refetch()} /> : ready.data ? <View style={{ gap: space.sm }}>
+          <Txt variant="bodyStrong">Ready to assign: {ready.data.total}</Txt>
+          <Txt variant="small" color="textSecondary">Creator gold: {ready.data.creator} · Person ID diamond blue: {ready.data.personId}</Txt>
+          {ready.data.total > 0 ? <Button title="Assign all ready badges" onPress={() => setConfirmBatch(true)} loading={awardReady.isPending} /> : null}
+        </View> : null}
+        <Segmented value={verificationKind} onChange={(value) => { setVerificationKind(value); setVerificationPage(0); }} options={[{ value: 'all', label: 'All' }, { value: 'creator', label: 'Creators' }, { value: 'person_id', label: 'Person ID' }]} />
+        {verifications.isLoading ? <LoadingBlock label="Loading verification requests" /> : verifications.isError ? <ErrorState error={verifications.error} message="Verification requests are unavailable." onRetry={() => void verifications.refetch()} /> : !verifications.data?.length ? <Txt color="textSecondary">No verification requests.</Txt> : verifications.data.slice(0, 50).map((v) => <View key={v.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>
           <Txt variant="bodyStrong">{v.memberName} · #{v.memberId}</Txt>
           <Txt variant="small" color="textSecondary">{v.kind === 'creator' ? 'Creator · Gold' : 'Person ID · Diamond blue'} · {v.status} · {timeAgoLong(v.createdAt)}</Txt><Button title="Open review" size="sm" variant="secondary" onPress={() => setReviewCase(v.id)} />
         </View>)}
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          {verificationPage > 0 ? <Button title="Previous" size="sm" variant="secondary" full={false} onPress={() => setVerificationPage(verificationPage - 1)} /> : null}
+          {(verifications.data?.length ?? 0) > 50 ? <Button title="Next" size="sm" variant="secondary" full={false} onPress={() => setVerificationPage(verificationPage + 1)} /> : null}
+        </View>
       </View> : null}
       {section === 'audit' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Admin activity</Txt>
@@ -129,6 +144,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
         </View>)}
       </View> : null}
     </View>}
+    <ConfirmSheet visible={confirmBatch} title="Assign all ready badges?" message={`This assigns a gold creator badge or diamond-blue person ID badge to every currently ready application, including any not visible in this list. The server rechecks Didit approval and category before assigning. Counts may change before confirmation.`} confirmLabel="Assign all ready" loading={awardReady.isPending} onCancel={() => setConfirmBatch(false)} onConfirm={() => awardReady.mutate()} />
     <ConfirmSheet visible={confirmRemoval} title="Remove this reported post?" message="The post will be deleted from Holup and cannot be restored here. Previously downloaded copies cannot be recalled. Your reason will be recorded in the admin audit." confirmLabel="Remove post" destructive loading={removePost.isPending}
       onCancel={() => setConfirmRemoval(false)} onConfirm={() => {
         setConfirmRemoval(false);

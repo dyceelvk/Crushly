@@ -17,7 +17,7 @@ Deno.serve(async req => {
  const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
  const apiKey = Deno.env.get('DIDIT_API_KEY') ?? '';
- const workflow = Deno.env.get('DIDIT_PERSON_ID_WORKFLOW_ID') ?? '';
+ const workflow = Deno.env.get('DIDIT_MANUAL_VERIFICATION_WORKFLOW_ID') ?? '';
  const appUrl = Deno.env.get('APP_URL') ?? '';
  if (!origin || !anon || !serviceKey || !apiKey || !workflow || !/^https:\/\/[a-z0-9.-]+$/i.test(appUrl)) return json({ error: 'Secure capture is not configured.' },503);
  const userClient = createClient(origin,anon,{ global:{headers:{Authorization:authHeader}} });
@@ -50,6 +50,9 @@ Deno.serve(async req => {
  const {data:cap,error:lookupError}=await admin.rpc('manual_capture_lookup',{p_case:caseId,p_actor:who.user.id});
  if (lookupError || !cap) return json({error:'Application unavailable.'},404);
  if (!cap.session || !cap.workflow) return json({state:cap.state});
+ // Use request-start time so an event that arrives while this fetch is in
+ // flight cannot be overwritten by an older provider response.
+ const observedAt=Date.now();
  let result: Record<string,unknown>;
  try {
   const res=await fetch(`${DIDIT_BASE}/v3/session/${encodeURIComponent(cap.session)}/decision/`,{headers:{'x-api-key':apiKey,accept:'application/json'},signal:AbortSignal.timeout(10000)});
@@ -64,7 +67,9 @@ Deno.serve(async req => {
   : result.status==='Declined' ? 'declined'
   : result.status==='Expired' || result.status==='Abandoned' ? 'expired'
   : result.status==='In Review' || result.status==='Approved' ? 'review' : 'created';
- const {error}=await admin.rpc('manual_capture_result',{p_case:caseId,p_session:cap.session,p_workflow:cap.workflow,p_state:state});
+ const {error}=await admin.rpc('manual_capture_result',{p_case:caseId,p_session:cap.session,p_workflow:cap.workflow,p_state:state,p_observed_at:observedAt});
  if (error) return json({error:'Could not securely record the capture result.'},503);
- return json({state});
+ const {data:current,error:currentError}=await admin.rpc('manual_capture_lookup',{p_case:caseId,p_actor:who.user.id});
+ if (currentError || !current) return json({error:'Could not load the capture result.'},503);
+ return json({state:current.state});
 });

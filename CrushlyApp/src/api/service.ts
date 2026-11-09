@@ -1598,7 +1598,7 @@ export type ManualVerificationCase = { id: number; memberId: number; memberName:
 export type ManualVerificationThread = { id: number; kind: ManualVerificationKind; status: ManualVerificationCase['status']; memberId: number; criteria: ManualVerificationProgress; messages: { id: number; role: 'member' | 'admin'; body: string; createdAt: number }[] };
 export const verificationProgress = (kind: ManualVerificationKind, memberId?: number) => rpc<ManualVerificationProgress>('manual_verification_progress', { p_kind: kind, ...(memberId ? { p_member: memberId } : {}) });
 export const verificationApply = (kind: ManualVerificationKind) => rpc<{ id: number }>('manual_verification_apply', { p_kind: kind });
-export const verificationCases = (admin = false) => rpc<ManualVerificationCase[]>('manual_verification_cases_list', { p_admin: admin });
+export const verificationCases = (admin = false, kind?: ManualVerificationKind, offset = 0) => rpc<ManualVerificationCase[]>('manual_verification_cases_list', { p_admin: admin, p_kind: kind ?? null, p_offset: offset });
 export const verificationThread = (id: number) => rpc<ManualVerificationThread>('manual_verification_thread', { p_case: id });
 export const verificationSend = (id: number, text: string) => rpc<boolean>('manual_verification_send', { p_case: id, p_body: text });
 export const verificationDecide = (id: number, decision: 'approve' | 'reject', reason: string) => rpc<boolean>('manual_verification_decide', { p_case: id, p_decision: decision, p_reason: reason });
@@ -1612,3 +1612,6 @@ export const verificationUploadImage = (caseId: number, base64: string) => invok
 export const verificationReadImage = (fileId: string) => invokeFunction<{ mime: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string }>('manual-evidence', { action: 'read', fileId });
 
 export const verificationDeleteImage = (fileId: string) => invokeFunction<{ hidden: boolean; deleted: boolean }>('manual-evidence', { action: 'delete', fileId });
+export type VerificationReadyCounts = { creator: number; personId: number; total: number };
+export const verificationReadyCounts = () => rpc<VerificationReadyCounts>('manual_verification_ready_counts');
+export const verificationAwardReady = () => rpc<VerificationReadyCounts>('manual_verification_award_ready');

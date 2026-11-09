@@ -314,3 +314,28 @@
   state; SQL/edge changes remain unexecuted. No test suite was run. The current
   live verification remains the old automatic flow until a safe coordinated
   release is possible. `git grep` found no named integration with other apps.
+
+## Updated verification flow (latest user direction)
+- User explicitly changed prior scope: Didit ID capture, liveness and face match
+  are mandatory for BOTH creator and person ID verification. The admin reviews
+  an application and requests Didit, which shows the applicant's capture button;
+  after Didit approves, the admin assigns the proper badge. A single admin action
+  should assign ALL ready approved applicants across both categories, creator
+  gold and person ID diamond blue. One account cannot have two categories.
+- Implemented locally only: shared capture request and individual approval for
+  both categories, one-active-or-approved-case/member DB constraint, legacy badge
+  preservation, counts and confirmed admin bulk assignment with case-specific
+  audited results (`06_batch_award_experiment.sql`). Added signed Didit session
+  webhook prototype (`07_capture_webhook_experiment.sql`, `edge/manual-didit-webhook.ts`)
+  so approvals can arrive automatically; a server-fetched poll is a fallback.
+  Event ordering and provider binding are fail-closed prototypes, not yet verified.
+- Payment/Paystack integration and creator payouts explicitly deferred by user;
+  do not implement or imply those work. Existing local SQL, edge functions and UI
+  are experimental, undeployed, and must undergo privacy/security and integration
+  review before handling actual identity documents. No production changes made.
+- The verification admin list now has server-side category filters and pages;
+  bulk assignment considers all ready cases, not only the visible page. Local
+  web export and TypeScript compilation completed successfully. These are not
+  security/integration tests, and no test suite was run. SQL, edge functions,
+  provider results, storage and the batch operation remain unverified and
+  undeployed. Production still uses the old flow; do not say otherwise.

@@ -14,7 +14,9 @@ create table public.manual_verification_cases (
  reviewer uuid references auth.users(id),
  decision_reason text
 );
-create unique index manual_verification_one_open on public.manual_verification_cases(member_id,kind) where status='open';
+-- One active or approved category per account. Rejected/withdrawn cases do not
+-- prevent a later application. Existing legacy badges are not bulk changed.
+create unique index manual_verification_one_category on public.manual_verification_cases(member_id) where status in ('open','approved');
 create table public.manual_verification_messages (
  id bigint generated always as identity primary key,
  case_id bigint not null references public.manual_verification_cases(id) on delete cascade,
@@ -61,26 +63,33 @@ end $$;
 
 create or replace function public.manual_verification_apply(p_kind text) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare me bigint:=public.me_id(); progress jsonb; new_id bigint; existing bigint;
+declare me bigint:=public.me_id(); progress jsonb; new_id bigint; existing public.manual_verification_cases; current_tier text;
 begin
  if me is null then perform public.crushly_fail(401,'unauthorized','Sign in.'); end if;
- perform pg_advisory_xact_lock(hashtextextended('verification:'||me::text||':'||coalesce(p_kind,''),0));
+ perform pg_advisory_xact_lock(hashtextextended('verification:'||me::text,0));
  progress:=public.manual_verification_progress(p_kind);
  if not coalesce((progress->>'eligible')::boolean,false) then perform public.crushly_fail(403,'not_eligible','Meet the requirements before applying.'); end if;
- select id into existing from public.manual_verification_cases where member_id=me and kind=p_kind and status='open';
- if existing is not null then return jsonb_build_object('id',existing); end if;
+ select * into existing from public.manual_verification_cases where member_id=me and status in ('open','approved') limit 1;
+ if existing.id is not null then
+  if existing.kind=p_kind and existing.status='open' then return jsonb_build_object('id',existing.id); end if;
+  perform public.crushly_fail(409,'one_category','An account can have only one verification category.');
+ end if;
+ select badge_tier into current_tier from public.profiles where id=me for update;
+ if current_tier in ('gold','diamond') then perform public.crushly_fail(409,'one_category','This account already has a verification badge.'); end if;
  insert into public.manual_verification_cases(member_id,kind,criteria_snapshot) values(me,p_kind,progress) returning id into new_id;
  return jsonb_build_object('id',new_id);
 end $$;
-create or replace function public.manual_verification_cases_list(p_admin boolean default false) returns jsonb
+create or replace function public.manual_verification_cases_list(p_admin boolean default false,p_kind text default null,p_offset integer default 0) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare me bigint:=public.me_id(); out_json jsonb;
 begin
  if me is null or (p_admin and not public.holup_is_admin()) then perform public.crushly_fail(403,'forbidden','Not available.'); end if;
+ if p_kind is not null and p_kind not in ('creator','person_id') then perform public.crushly_fail(400,'','Choose a verification type.'); end if;
  if p_admin then insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_manual_verification_queue','{}'::jsonb); end if;
  select coalesce(jsonb_agg(jsonb_build_object('id',q.id,'memberId',q.member_id,'memberName',q.name,'kind',q.kind,'status',q.status,'createdAt',q.created_at) order by q.id desc),'[]'::jsonb) into out_json
  from (select c.*,p.name from public.manual_verification_cases c join public.profiles p on p.id=c.member_id
- where (p_admin and public.holup_is_admin()) or (not p_admin and c.member_id=me) order by c.id desc limit 100) q;
+ where ((p_admin and public.holup_is_admin()) or (not p_admin and c.member_id=me)) and (p_kind is null or c.kind=p_kind)
+ order by c.id desc offset greatest(coalesce(p_offset,0),0) limit 51) q;
  return out_json;
 end $$;
 create or replace function public.manual_verification_thread(p_case bigint) returns jsonb
@@ -143,10 +152,12 @@ begin
   perform public.crushly_fail(400,'','Choose a decision and provide a reason of 10 to 500 characters.'); end if;
  select * into c from public.manual_verification_cases where id=p_case for update;
  if not found or c.status<>'open' then perform public.crushly_fail(404,'','Open application unavailable.'); end if;
- if p_decision='approve' and c.kind='person_id' and not exists(select 1 from public.manual_verification_capture_evidence e where e.case_id=c.id and e.approved) then
-  perform public.crushly_fail(409,'capture_required','Approved Didit live capture is required before person ID approval.'); end if;
+ if p_decision='approve' and not exists(select 1 from public.manual_verification_capture_evidence e join public.manual_verification_captures d on d.case_id=e.case_id and d.state='approved' and d.provider_session_id=e.provider_session_id where e.case_id=c.id and e.approved) then
+  perform public.crushly_fail(409,'capture_required','Approved Didit live capture is required before a badge can be assigned.'); end if;
  tier:=case when c.kind='creator' then 'gold' else 'diamond' end;
  if p_decision='approve' then
+  perform 1 from public.profiles where id=c.member_id and badge_tier not in ('gold','diamond') for update;
+  if not found then perform public.crushly_fail(409,'one_category','This account already has a verification badge.'); end if;
   update public.profiles set verification='verified',badge_tier=tier where id=c.member_id;
  end if;
  insert into public.manual_verification_messages(case_id,sender_auth,sender_role,body) values(c.id,auth.uid(),'admin',case when p_decision='approve' then 'Application approved. ' else 'Application not approved. ' end || reason);
@@ -157,6 +168,6 @@ begin
 end $$;
 revoke all on function public.manual_verification_decide(bigint,text,text) from public,anon,authenticated;
 grant execute on function public.manual_verification_decide(bigint,text,text) to authenticated;
-revoke all on function public.manual_verification_progress(text,bigint),public.manual_verification_apply(text),public.manual_verification_cases_list(boolean),public.manual_verification_thread(bigint),public.manual_verification_send(bigint,text) from public,anon,authenticated;
-grant execute on function public.manual_verification_progress(text,bigint),public.manual_verification_apply(text),public.manual_verification_cases_list(boolean),public.manual_verification_thread(bigint),public.manual_verification_send(bigint,text) to authenticated;
+revoke all on function public.manual_verification_progress(text,bigint),public.manual_verification_apply(text),public.manual_verification_cases_list(boolean,text,integer),public.manual_verification_thread(bigint),public.manual_verification_send(bigint,text) from public,anon,authenticated;
+grant execute on function public.manual_verification_progress(text,bigint),public.manual_verification_apply(text),public.manual_verification_cases_list(boolean,text,integer),public.manual_verification_thread(bigint),public.manual_verification_send(bigint,text) to authenticated;
 commit;
