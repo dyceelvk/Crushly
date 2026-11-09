@@ -33,9 +33,9 @@ def health():
     if not db:
         return ['monitor_database_unavailable']
     try:
-        p = subprocess.run(['psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', QUERY],
+        p = subprocess.run(['psql', db, '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-c', QUERY],
                            capture_output=True, text=True, timeout=35,
-                           env={**os.environ, 'PGDATABASE': db, 'PGCONNECT_TIMEOUT': '10'})
+                           env={**os.environ, 'PGCONNECT_TIMEOUT': '10'})
         if p.returncode != 0:
             return ['monitor_database_unavailable']
         # A missing singleton is itself an error, not a healthy blank line.
@@ -69,6 +69,10 @@ def email(flags, test=False):
             refused = smtp.send_message(msg)
             if refused:
                 raise RuntimeError('SMTP did not accept the alert')
+    except smtplib.SMTPAuthenticationError:
+        raise RuntimeError('SMTP authentication failed') from None
+    except smtplib.SMTPResponseException as e:
+        raise RuntimeError('SMTP alert rejected (response code %s)' % e.smtp_code) from None
     except (OSError, smtplib.SMTPException, ssl.SSLError):
         # Avoid printing provider exceptions: they can contain sensitive data.
         raise RuntimeError('SMTP alert could not be sent') from None
