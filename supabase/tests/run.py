@@ -138,6 +138,10 @@ def main() -> int:
         # channel is only joinable by the two members of an open thread.
         if not run_file(ROOT / 'whisper_live.sql'):
             return 1
+        if not run_file(ROOT / 'post_location.sql'):
+            return 1
+        if not run_file(ROOT / 'whisper_delete.sql'):
+            return 1
         if not run_file(ROOT / 'space_search.sql'):
             return 1
         if not run_file(ROOT / 'post_private.sql'):

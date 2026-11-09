@@ -259,3 +259,98 @@ test('post composer link control inserts a web address', async ({ page }) => {
   await page.getByRole('button', { name: 'Add link', exact: true }).click();
   await expect(page.getByPlaceholder('Good energy, better days. Same me, just more focused.')).toHaveValue('https://example.com/path');
 });
+
+test('manual post location is saved next to link control and sent with post', async ({ page }) => {
+  await offline(page, []);
+  let submitted: Record<string, unknown> | null = null;
+  await page.route(`${API}/rest/v1/rpc/create_post_with_location`, async (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ...onePost, id: 92, location: submitted.p_location }) });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Create post' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: /Post\. Words, photos and clips/ }).click();
+  const location = page.getByRole('button', { name: 'Add post location' });
+  const link = page.getByRole('button', { name: 'Add link to post' });
+  await expect(location).toBeVisible(); await expect(link).toBeVisible();
+  const a = await location.boundingBox(); const b = await link.boundingBox();
+  expect(a && b && b.x > a.x && Math.abs(b.y-a.y) < 5).toBeTruthy();
+  await location.click(); await page.getByLabel('Place name').fill('Port Harcourt');
+  await page.getByRole('button', { name: 'Save location' }).click();
+  await expect(page.getByText('Port Harcourt', { exact: true })).toBeVisible();
+  await page.getByPlaceholder('Good energy, better days. Same me, just more focused.').fill('Hello');
+  await page.getByRole('button', { name: 'Publish your post' }).click();
+  await expect.poll(() => submitted?.p_location).toBe('Port Harcourt');
+});
+
+test('Whisper links open inside the app and both deletion choices call the server', async ({ page }) => {
+  await offline(page, []);
+  const peer = { id: 2, name: 'Ada', verified: false, photo: null, online: false };
+  let messages = [
+    { id: 301, conversationId: 5, senderId: 1, mine: true, kind: 'text', body: 'Mine https://example.com/whisper', mediaUrl: null, meta: {}, createdAt: Date.now(), readAt: null, reactions: [] },
+    { id: 302, conversationId: 5, senderId: 2, mine: false, kind: 'text', body: 'Their message', mediaUrl: null, meta: {}, createdAt: Date.now(), readAt: null, reactions: [] },
+  ];
+  const deleted: Record<string, unknown>[] = [];
+  await page.route(`${API}/rest/v1/rpc/*`, async (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').pop();
+    const args = route.request().postDataJSON() as Record<string, any>;
+    let body: unknown;
+    if (name === 'list_conversations') body = { items: [{ id: 5, peer, lastMessage: messages[messages.length-1] ?? null, unread: 0, updatedAt: Date.now() }] };
+    else if (name === 'load_conversation') body = { id: 5, closed: false, peer, canSend: true, blockReason: null };
+    else if (name === 'get_messages') body = { items: args.p_after_id ? messages.filter(m => m.id > args.p_after_id) : messages, hasMore: false, lastReadMine: null };
+    else if (name === 'sync_whispers') body = messages.filter(m => args.p_ids.includes(m.id));
+    else if (name === 'delete_whisper') { deleted.push(args); messages = messages.filter(m => m.id !== args.p_message_id); body = true; }
+    else if (name === 'mark_messages_delivered') body = { upTo: 0, count: 0 };
+    else if (name === 'peer_presence') body = { peerId: 2, online: false, activity: null, receipts: false, announce: false, closed: false };
+    else return route.fallback();
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+  });
+  await page.goto('/');
+  await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: /Ada\. Their message/ }).click();
+  await page.getByRole('link', { name: /Open link to example.com\/whisper inside Holup/ }).click();
+  await expect(page.getByText('Inside Holup', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close preview' }).click();
+  const mine = page.getByRole('button', { name: /You: Mine/ });
+  await mine.hover(); await page.mouse.down(); await page.waitForTimeout(500); await page.mouse.up();
+  await page.getByRole('button', { name: 'Delete Whisper for everyone' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect.poll(() => deleted.length).toBe(1);
+  expect(deleted[0]).toMatchObject({ p_message_id: 301, p_everyone: true });
+  await expect(mine).toHaveCount(0);
+  const theirs = page.getByRole('button', { name: /Ada: Their message/ });
+  await theirs.hover(); await page.mouse.down(); await page.waitForTimeout(500); await page.mouse.up();
+  await expect(page.getByRole('button', { name: 'Delete Whisper for everyone' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Delete Whisper for me' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect.poll(() => deleted.length).toBe(2);
+  expect(deleted[1]).toMatchObject({ p_message_id: 302, p_everyone: false });
+});
+
+test('notifications are a full screen with Holup and categorized activity', async ({ page }) => {
+  await offline(page, []);
+  const actor = { id: 2, name: 'Ada', verified: false, photo: null };
+  const notes = [
+    { id: 701, kind: 'message', body: '', refId: 5, createdAt: Date.now(), read: true, actor },
+    { id: 702, kind: 'post_comment', body: 'Great post', refId: 11, createdAt: Date.now(), read: true, actor },
+    { id: 703, kind: 'keep', body: '', refId: null, createdAt: Date.now(), read: true, actor },
+    { id: 704, kind: 'verified', body: '', refId: null, createdAt: Date.now(), read: true, actor: null },
+  ];
+  await page.route(`${API}/rest/v1/rpc/list_notifications`, async (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(notes) }));
+  await page.route(`${API}/rest/v1/rpc/holup_app_settings`, async (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ callsEnabled:false, publicSharingEnabled:true, announcement:{title:'Real announcement',body:'A message from Holup.'} }) }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click({ timeout: 30000 });
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Whispers', exact: true }).click();
+  await expect(page.getByText('Ada sent you a Whisper.')).toBeVisible();
+  await expect(page.getByText('Ada commented on your post.')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Post activity' }).click();
+  await expect(page.getByText('Ada commented on your post.')).toBeVisible();
+  await expect(page.getByText('Ada sent you a Whisper.')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Kept Close' }).click();
+  await expect(page.getByText('Ada started keeping you close.')).toBeVisible();
+  await page.getByRole('tab', { name: 'From Holup' }).click();
+  await expect(page.getByText('Real announcement').last()).toBeVisible();
+  await expect(page.getByText('Your Space is verified.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notification settings' })).toBeVisible();
+});

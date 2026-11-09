@@ -30,6 +30,7 @@ export type WhisperLiveStatus = 'connecting' | 'live' | 'offline';
 export type WhisperLiveEvents = {
   /** Something new happened in the thread; the caller refetches from its last id. */
   onNewMessage: () => void;
+  onMessageChanged: () => void;
   /** Their device has my messages up to this id. */
   onDelivered: (upTo: number) => void;
   /** They have read up to this id — only ever sent when receipts are allowed. */
@@ -47,6 +48,7 @@ export type WhisperLiveEvents = {
 export type WhisperLive = {
   /** Tell the other phone something arrived. Cheap, content-free. */
   announce: (messageId: number) => void;
+  changed: () => void;
   delivered: (upTo: number) => void;
   read: (upTo: number) => void;
   typing: (on: boolean) => void;
@@ -109,6 +111,7 @@ export function openWhisperLive({ conversationId, myId, announcePresence, events
         const id = Number((payload as { id?: number })?.id ?? 0);
         if (id > 0) events.onNewMessage();
       });
+      channel.on('broadcast', { event: 'changed' }, () => events.onMessageChanged());
       channel.on('broadcast', { event: 'delivered' }, ({ payload }) => {
         const upTo = Number((payload as { upTo?: number })?.upTo ?? 0);
         if (upTo > 0) events.onDelivered(upTo);
@@ -161,6 +164,7 @@ export function openWhisperLive({ conversationId, myId, announcePresence, events
 
       live = {
         announce: (messageId: number) => fire('message', { id: messageId }),
+        changed: () => fire('changed', {}),
         delivered: (upTo: number) => fire('delivered', { upTo }),
         read: (upTo: number) => fire('read', { upTo }),
         typing: (on: boolean) => {
@@ -201,6 +205,7 @@ export function openWhisperLive({ conversationId, myId, announcePresence, events
 
   return {
     announce: (id) => live?.announce(id),
+    changed: () => live?.changed(),
     delivered: (upTo) => live?.delivered(upTo),
     read: (upTo) => live?.read(upTo),
     typing: (on) => live?.typing(on),

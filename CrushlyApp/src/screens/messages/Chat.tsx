@@ -11,7 +11,7 @@ import { TypingDots } from '../../components/TypingDots';
 import { RecordingWave } from '../../components/RecordingWave';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
-import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
+import { ActionSheet, BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
@@ -138,6 +138,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [tray, setTray] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
+  const [deleteFor, setDeleteFor] = useState<{ message: Message; everyone: boolean } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -745,6 +747,18 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             <Txt variant="bodyStrong">Copy text</Txt>
           </Pressable>
         ) : null}
+        {actionFor ? <Pressable
+          onPress={() => { const message = actionFor; setActionFor(null); setTimeout(() => setDeleteFor({ message, everyone: false }), Platform.OS === 'web' ? 0 : 250); }}
+          accessibilityRole="button" accessibilityLabel="Delete Whisper for me"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+          <Ionicons name="trash-outline" size={20} color={colors.danger} /><Txt variant="bodyStrong" color="danger">Delete for me</Txt>
+        </Pressable> : null}
+        {actionFor?.mine ? <Pressable
+          onPress={() => { const message = actionFor; setActionFor(null); setTimeout(() => setDeleteFor({ message, everyone: true }), Platform.OS === 'web' ? 0 : 250); }}
+          accessibilityRole="button" accessibilityLabel="Delete Whisper for everyone"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+          <Ionicons name="trash-outline" size={20} color={colors.danger} /><Txt variant="bodyStrong" color="danger">Delete for everyone</Txt>
+        </Pressable> : null}
         {actionFor && !actionFor.mine ? (
           <Pressable
             onPress={() => { setActionFor(null); if (peer) openActions({ id: peer.id, name: peer.name, connected: true, context: `message:${actionFor.id}`, onGone: () => navigation.goBack() }); }}
@@ -758,6 +772,16 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           </Pressable>
         ) : null}
       </BottomSheet>
+
+      <ConfirmSheet visible={!!deleteFor} title={deleteFor?.everyone ? 'Delete for everyone?' : 'Delete for you?'}
+        message={deleteFor?.everyone ? 'This removes the Whisper from the conversation. Someone may already have saved it or seen a notification.' : 'This hides the Whisper from your account. The other person can still see it.'}
+        confirmLabel="Delete" destructive loading={deleting} onCancel={() => { if (!deleting) setDeleteFor(null); }} onConfirm={async () => {
+          if (!deleteFor || deleting) return;
+          setDeleting(true);
+          try { await chat.deleteMessage(deleteFor.message.id, deleteFor.everyone); setDeleteFor(null); toast({ kind: 'success', title: 'Whisper deleted' }); }
+          catch (e) { toast({ kind: 'error', title: 'Whisper not deleted', message: (e as Error).message }); }
+          finally { setDeleting(false); }
+        }} />
 
       {/* Share a profile */}
       <ActionSheet

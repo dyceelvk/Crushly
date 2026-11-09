@@ -36,7 +36,6 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
   UserProfile: { id: number };
   Chat: { conversationId: number };
-  MutualCrush: { userId: number; name: string; photo?: string | null };
   Search: { q?: string } | undefined;
   Filters: undefined;
   Notifications: undefined;

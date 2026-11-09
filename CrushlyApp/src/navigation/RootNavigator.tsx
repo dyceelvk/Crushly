@@ -6,10 +6,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { isVerificationReturn } from '../lib/verification';
-import { pendingMatch, shouldOpenMoment } from '../lib/matchMoment';
 import { useAuth } from '../state/auth';
 import { useTheme } from '../theme/ThemeProvider';
-import { useBadges, useMarkNotificationsRead, useNotifications } from '../api/hooks';
+import { useBadges } from '../api/hooks';
 import { useToast } from '../components/Toast';
 import { TabBar } from './TabBar';
 import { AdminScreen } from '../screens/settings/Admin';
@@ -30,7 +29,6 @@ import { FeedScreen } from '../screens/flow/FeedScreen';
 import { FiltersScreen } from '../screens/discover/Filters';
 import { DiscoverTabScreen } from '../screens/discover/DiscoverTab';
 import { CrushesScreen } from '../screens/crushes/Crushes';
-import { MutualCrushScreen, celebrated } from '../screens/crushes/MutualCrush';
 import { MessagesScreen } from '../screens/messages/Messages';
 import { ChatScreen } from '../screens/messages/Chat';
 import { MomentsScreen } from '../screens/moments/Moments';
@@ -63,45 +61,12 @@ const landingLocation = browserLocation(Platform.OS, typeof window === 'undefine
 const verificationLanding = !!landingLocation &&
   (landingLocation.pathname === '/verification' || isVerificationReturn(landingLocation.search ?? ''));
 
-/**
- * Surfaces new notifications as a quiet toast while the app is open
- * (polling-based) — with one exception, which is the whole point of the screen
- * it opens.
- *
- * A match is not a notification. It is the moment two people find out at once,
- * and until now only ever reached the person who happened to complete it: the
- * other half got a toast, or found out days later from a row in a list. So a
- * Mutual Crush opens the Mutual Crush screen, whoever felt it second — and if it
- * arrived while the app was closed, it opens the first time the app is back.
- */
+/** A quiet toast for new activity; the bell opens the full notifications page. */
 function LiveNotifications() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { data } = useBadges(true);
-  const notifications = useNotifications();
-  const markRead = useMarkNotificationsRead();
   const toast = useToast();
   const lastId = useRef<number | null>(null);
-  const openedOnLaunch = useRef(false);
-
-  // A match that landed while the app was closed is still waiting when it opens.
-  // One look at the list, one prompt, and then it is marked read so it cannot
-  // greet you twice — the same rule the notification centre follows.
-  useEffect(() => {
-    if (openedOnLaunch.current || !notifications.data) return;
-    openedOnLaunch.current = true;
-    const waiting = pendingMatch(notifications.data, Date.now(), (id) => celebrated.has(id));
-    if (!waiting?.actor) return;
-    const actor = waiting.actor;
-    // A beat, so it lands after the app has drawn its first screen rather than
-    // on top of it.
-    const t = setTimeout(() => {
-      celebrated.add(actor.id);
-      markRead.mutate({ ids: [waiting.id] });
-      navigation.navigate('MutualCrush', { userId: actor.id, name: actor.name, photo: actor.photo });
-    }, 1200);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifications.data]);
 
   useEffect(() => {
     const n = data?.latestNotification;
@@ -113,13 +78,6 @@ function LiveNotifications() {
     if (n.id === lastId.current) return;
     lastId.current = n.id;
     if (n.kind === 'message') return; // messages surface as the tab badge
-    // The moment itself, for whichever half of the pair did not press the button.
-    const actorId = n.actor_id;
-    if (actorId && shouldOpenMoment(n.kind, actorId, (id) => celebrated.has(id))) {
-      celebrated.add(actorId);
-      navigation.navigate('MutualCrush', { userId: actorId, name: n.actor_name ?? 'Your match', photo: null });
-      return;
-    }
     const t = notificationText({ kind: n.kind, body: n.body, actor: n.actor_name ? { name: n.actor_name } : null });
     toast({
       kind: n.kind === 'crush' || n.kind === 'deep_crush' || n.kind === 'mutual' ? 'crush' : 'info',
@@ -225,7 +183,6 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
             <Stack.Screen name="Plus" component={PlusScreen} />
           </Stack.Group>
           <Stack.Group screenOptions={{ presentation: 'transparentModal', animation: reduceMotion ? 'none' : 'fade', contentStyle: { backgroundColor: 'transparent' } }}>
-            <Stack.Screen name="MutualCrush" component={MutualCrushScreen} />
             <Stack.Screen name="MomentViewer" component={MomentViewerScreen} options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
           </Stack.Group>
         </>

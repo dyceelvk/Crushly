@@ -1266,6 +1266,21 @@ export function useChat(conversationId: number) {
     }
   }, [absorb, applyReadState, conversationId]);
 
+  // Reconcile older rows and reply snapshots as well as the incremental cursor.
+  const syncLoaded = useCallback(async () => {
+    const ids = messagesRef.current.filter((m) => m.id > 0).map((m) => m.id);
+    try {
+      for (let at = 0; at < ids.length; at += 500) {
+        const batch = ids.slice(at, at + 500);
+        const current = await service.syncWhispers(conversationId, batch);
+        const requested = new Set(batch);
+        const byId = new Map(current.map((m) => [m.id, m]));
+        setMessages((previous) => previous.flatMap((m) => !requested.has(m.id) ? [m] : byId.has(m.id) ? [byId.get(m.id)!] : []));
+      }
+      void qc.invalidateQueries({ queryKey: keys.conversations });
+    } catch { /* retry on the next change or safety poll */ }
+  }, [conversationId, qc]);
+
   /* ------------------------------------------------------------- presence */
 
   useEffect(() => {
@@ -1289,6 +1304,7 @@ export function useChat(conversationId: number) {
       announcePresence: presenceRef.current?.announce ?? false,
       events: {
         onNewMessage: () => void catchUp(),
+        onMessageChanged: () => void syncLoaded(),
         onDelivered: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'deliveredAt')),
         onRead: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'readAt')),
         onTyping: (at) => setPeerTypingAt(at),
@@ -1298,7 +1314,7 @@ export function useChat(conversationId: number) {
           setLive(s);
           // A channel that has just come back may have missed things. Catching
           // up on arrival is the difference between "live" and "caught up".
-          if (s === 'live') void catchUp();
+          if (s === 'live') { void catchUp(); void syncLoaded(); }
         },
       },
     });
@@ -1308,7 +1324,7 @@ export function useChat(conversationId: number) {
       liveRef.current = null;
       setPeerHere(false);
     };
-  }, [catchUp, conversationId, me?.id]);
+  }, [catchUp, conversationId, me?.id, syncLoaded]);
 
   /* ---------------------------------------------------------- safety poll */
 
@@ -1319,13 +1335,14 @@ export function useChat(conversationId: number) {
       if (cancelled) return;
       if (AppState.currentState !== 'active') return;
       void catchUp();
+      void syncLoaded();
     };
     const timer = setInterval(tick, SAFETY_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [catchUp, error, loading]);
+  }, [catchUp, error, loading, syncLoaded]);
 
   /*
    * Backgrounding the app is a statement about presence: you are not here. So
@@ -1337,10 +1354,10 @@ export function useChat(conversationId: number) {
       const active = state === 'active';
       liveRef.current?.setPresence(active && (presenceRef.current?.announce ?? false));
       if (!active) liveRef.current?.typing(false);
-      if (active) void catchUp();
+      if (active) { void catchUp(); void syncLoaded(); }
     });
     return () => sub.remove();
-  }, [catchUp]);
+  }, [catchUp, syncLoaded]);
 
   /* Typing and recording expire on their own: a dropped socket must not leave
      somebody "typing" for the rest of the evening. */
@@ -1430,6 +1447,15 @@ export function useChat(conversationId: number) {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
   }, []);
 
+  const deleteMessage = useCallback(async (messageId: number, everyone: boolean) => {
+    await service.deleteWhisper(messageId, everyone);
+    setMessages((previous) => previous.filter((m) => m.id !== messageId));
+    if (everyone) liveRef.current?.changed();
+    await syncLoaded();
+    void qc.invalidateQueries({ queryKey: keys.conversations });
+    void qc.invalidateQueries({ queryKey: keys.badges });
+  }, [qc, syncLoaded]);
+
   /** Call on every keystroke; the channel throttles itself. */
   const typing = useCallback((on: boolean) => liveRef.current?.typing(on), []);
 
@@ -1447,6 +1473,7 @@ export function useChat(conversationId: number) {
     send,
     discard,
     react,
+    deleteMessage,
     typing,
     recording,
     /* Live state, named for what it is. */

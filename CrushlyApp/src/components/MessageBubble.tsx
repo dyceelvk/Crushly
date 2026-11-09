@@ -103,7 +103,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
         delayLongPress={320}
         accessibilityRole="button"
         accessibilityLabel={a11y}
-        accessibilityHint={m.id > 0 ? 'Double tap and hold for reactions' : undefined}
+        accessibilityHint={m.id > 0 ? 'Double tap and hold for message actions' : undefined}
         style={{ maxWidth: '80%', opacity: m.pending ? 0.7 : 1 }}
       >
         {m.meta?.replyTo ? <ReplyQuote quote={m.meta.replyTo as ReplyQuote} onPress={onOpenReply} /> : null}

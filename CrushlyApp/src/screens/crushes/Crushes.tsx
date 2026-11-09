@@ -16,7 +16,6 @@ import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { useAcceptAddUp, useCancelAddUp, useCrushes, useDeclineAddUp, useMarkNotificationsRead, useOpenConversation, usePass } from '../../api/hooks';
 import type { Profile } from '../../api/types';
-import { celebrated } from './MutualCrush';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
@@ -105,12 +104,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
                 loading={accept.isPending && accept.variables === p.id}
                 onPress={() =>
                   accept.mutate(p.id, {
-                    onSuccess: (r) => {
-                      if (r.connected) {
-                        celebrated.add(p.id);
-                        navigation.navigate('MutualCrush', { userId: p.id, name: p.name, photo: p.photos[0]?.url });
-                      }
-                    },
+                    onSuccess: () => toast({ kind: 'success', title: 'Request accepted' }),
                     onError: (e) => toast({ kind: 'error', title: 'Request not accepted', message: (e as Error).message }),
                   })
                 }

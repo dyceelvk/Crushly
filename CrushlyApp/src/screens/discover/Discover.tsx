@@ -17,36 +17,24 @@ import type { Profile } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
-import { celebrated } from '../crushes/MutualCrush';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export function useCrushFlow() {
-  const navigation = useNavigation<Nav>();
   const crush = useCrush();
   const toast = useToast();
   const run = useCallback(
     async (p: Pick<Profile, 'id' | 'name' | 'photos'>, opts: { deep?: boolean; note?: string } = {}) => {
       try {
         const res = await crush.mutateAsync({ id: p.id, ...opts });
-        if (res.mutual && res.isNew) {
-          celebrated.add(p.id);
-          navigation.navigate('MutualCrush', { userId: p.id, name: p.name, photo: p.photos[0]?.url });
-        } else {
-          toast({
-            kind: 'crush',
-            title: opts.deep ? `Big Up sent to ${p.name}` : `You added up with ${p.name}`,
-            message: opts.deep ? 'You’ll stand out at the top of their add ups.' : 'If they add back, you’ll be the first to know.',
-            avatar: p.photos[0]?.url ?? null,
-          });
-        }
+        toast({ kind: 'crush', title: opts.deep ? `Big Up sent to ${p.name}` : `You added up with ${p.name}`, avatar: p.photos[0]?.url ?? null });
         return res;
       } catch (e) {
         toast({ kind: 'error', title: 'Add up not sent', message: (e as Error).message });
         return null;
       }
     },
-    [crush, navigation, toast],
+    [crush, toast],
   );
   return { run, pendingId: crush.isPending ? crush.variables?.id : undefined };
 }

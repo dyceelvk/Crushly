@@ -2,8 +2,7 @@
 --
 -- Four things this pins, each of them a fault somebody could see on a phone:
 --
---   1. A Whisper does not appear in the centre. The inbox is where a message is
---      read and answered; a second copy here is an unstoppable notification.
+--   1. A Whisper appears as a content-free, actionable conversation notification.
 --   2. Keeping somebody close is announced — once, not on every re-follow — and
 --      can be switched off without silencing anything else.
 --   3. `@handle` in a post reaches the person named, with the post id on the row
@@ -38,7 +37,7 @@ begin
   -- mention below names a real person by the means a person would use.
   update public.profiles set username = 'marcus_test' where id = actor_pid;
 
-  -- ------------------------------------------------- 1. a message is not news
+  -- ------------------------------------------------- 1. a message is its own category
 
   delete from public.notifications where user_id = author_pid;
 
@@ -58,9 +57,10 @@ begin
   reset role;
 
   select count(*) into n from public.notifications where user_id = author_pid and kind = 'message';
-  if n <> 0 then
-    raise exception 'a Whisper put % rows into the Notification centre', n;
+  if n <> 1 then
+    raise exception 'a Whisper should create one notification, got %', n;
   end if;
+  assert (select body='' and ref_id=conv from public.notifications where user_id=author_pid and kind='message' limit 1), 'message notification has no private text and opens the thread';
 
   -- ------------------------------------------------------ 2. keeping close
 
@@ -179,7 +179,7 @@ begin
     raise exception 'crushing your own post notified % people', n;
   end if;
 
-  raise notice 'Notifications: no Whispers, follows announced once and switchable, mentions land on the post, Crush still notifies.';
+  raise notice 'Notifications: Whispers are content-free, follows announced once and switchable, mentions land on the post, Crush still notifies.';
 end $$;
 
 update public.profiles set username = 'daniel_test' where name = 'Daniel' and username = '';

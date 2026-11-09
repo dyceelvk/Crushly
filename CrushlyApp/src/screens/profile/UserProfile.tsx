@@ -27,7 +27,6 @@ import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
-import { celebrated } from '../crushes/MutualCrush';
 import { MOMENT_RING_SEEN } from '../../lib/momentRings';
 import { joinAction, policyLabel } from '../../lib/circleAccess';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -55,7 +54,9 @@ import type { Me } from '../../api/types';
  * thing that differs.
  */
 export function UserProfileScreen({ route, navigation }: ScreenProps<'UserProfile'>) {
-  return <SpaceScreen memberId={route.params.id} onBack={() => navigation.goBack()} />;
+  const { data: me, isLoading } = useMe();
+  if (isLoading) return <LoadingBlock />;
+  return <SpaceScreen memberId={route.params.id} mine={me?.id === route.params.id} onBack={() => navigation.goBack()} />;
 }
 
 
@@ -338,17 +339,14 @@ export function SpaceScreen({
    *
    * Add up → a request goes out. Request sent → the same control withdraws it,
    * because a question you asked is a question you may take back. Accept →
-   * their request becomes a connection, which is worth the celebration screen.
+   * their request becomes a connection.
    * Connected → the control hands over to Whisper.
    */
   const onCrush = () => {
     if (p.crush.mutual) return message();
     if (p.crush.received) {
       accept.mutate(p.id, {
-        onSuccess: (r) => {
-          if (r.connected) celebrated.add(p.id);
-          navigation.navigate('MutualCrush', { userId: p.id, name: p.name, photo: p.photos[0]?.url });
-        },
+        onSuccess: () => toast({ kind: 'success', title: 'Request accepted' }),
         onError: (e) => toast({ kind: 'error', title: 'Request not accepted', message: (e as Error).message }),
       });
       return;
