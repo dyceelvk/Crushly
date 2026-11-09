@@ -159,7 +159,6 @@ jobs:
       # Keep the exact emulator build even if the walk fails, so a corrected
       # test can be run against the same binary rather than rebuilding it.
       - name: Keep emulator APK for test-only retries
-        if: ${{ github.ref_name != 'main' && !startsWith(github.ref_name, 'arena/') }}
         uses: actions/upload-artifact@v4
         with:
           name: Android-emulator-test-APK
