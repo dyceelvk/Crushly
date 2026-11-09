@@ -259,10 +259,12 @@ begin
   perform public.apply_didit_status('ses_current', 'Not Started', null, 'evt_late');
   assert (select didit_status from public.verification_requests where didit_session_id = 'ses_current') = 'In Review',
     'late Not Started cannot undo submitted checks';
-  perform public.apply_didit_status('ses_current', 'Approved', '{"id_verifications": []}', 'evt_approved');
+  perform public.apply_didit_status('ses_current', 'APPROVED', '{"id_verifications": []}', 'evt_approved');
   perform public.apply_didit_status('ses_current', 'Approved', null, 'evt_approved');
   perform public.apply_didit_status('ses_current', 'In Progress', null, 'evt_late_progress');
-  assert (select verification from public.profiles where id = me) = 'verified', 'late progress cannot revoke a badge';
+  assert (select verification from public.profiles where id = me) = 'pending', 'provider approval cannot award a badge';
+  assert (select status from public.verification_requests where didit_session_id = 'ses_current') = 'pending', 'provider approval must await admin';
+  assert (select didit_status from public.verification_requests where didit_session_id = 'ses_current') = 'Approved', 'late progress cannot overwrite terminal provider status';
   assert (select count(*) from public.didit_events where event_id = 'evt_approved') = 1, 'webhooks dedupe';
   begin
     perform public.apply_didit_status('missing_session', 'In Review', null, 'evt_retry');
