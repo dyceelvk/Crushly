@@ -20,6 +20,7 @@ import { notificationText } from '../screens/notifications/Notifications';
 import { BootCanvas } from '../screens/auth/Splash';
 import { FollowScreen } from '../screens/auth/Follow';
 import { WelcomeScreen } from '../screens/auth/Welcome';
+import { BirthdayRecoveryScreen } from '../screens/auth/BirthdayRecovery';
 import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } from '../screens/auth/AuthForms';
 import {
   OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
@@ -138,6 +139,8 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
         <Stack.Group screenOptions={{ animation: reduceMotion ? 'none' : 'fade' }}>
           <Stack.Screen name="SetPassword" component={SetPasswordScreen} />
         </Stack.Group>
+      ) : status === 'birthdayRequired' ? (
+        <Stack.Group><Stack.Screen name="BirthdayRecovery" component={BirthdayRecoveryScreen} /></Stack.Group>
       ) : status === 'onboarding' ? (
         <Stack.Group>
           <Stack.Screen name="OnboardingIntentions" component={OnboardingIntentionsScreen} />

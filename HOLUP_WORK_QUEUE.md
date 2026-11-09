@@ -214,3 +214,11 @@
   confirmation, report/author matching and audit) and paged report browsing are
   prototyped locally. Media evidence, account suspensions, verification review,
   server authorization review and production deployment remain incomplete.
+- Birthday recovery client flow was added locally for existing onboarded
+  profiles with a missing, invalid or non-adult birthday. The member can enter
+  a date, sign out or contact support rather than being silently locked out.
+  This self-report UX is not identity verification, API authorization or teen
+  mode; it is not built into a released app.
+- Main commit ad03f71 records the already-applied production migration so the
+  live schema does not have an untracked migration. It contains no app changes;
+  commit uses [skip ci] in line with the user's request not to run tests.

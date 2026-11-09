@@ -28,6 +28,7 @@ export type RootStackParamList = {
   SignUp: { email?: string } | undefined;
   ForgotPassword: undefined;
   SetPassword: undefined;
+  BirthdayRecovery: undefined;
   OnboardingIntentions: undefined;
   OnboardingBasics: undefined;
   OnboardingPhotos: undefined;
