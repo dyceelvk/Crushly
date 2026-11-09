@@ -702,3 +702,9 @@
   Main CI `42650984180` and web workflow `42650984373` are in progress; do not
   claim the Moment UI or APK live without verifying their outcomes. Do not push
   main while Android build is running because its bot push has no rebase.
+- Web Moment replies now live: Vercel production deployment
+  `dpl_HLbpcjCKEG7C51dnQh9ABBwSfV8R` is READY/PROMOTED at main `d22d646`;
+  web workflow `42650984373` and CI `42650984180` passed, and the canonical
+  site's JavaScript contains `whisper_moment_target`. Still no real-device
+  end-to-end user session was run. Android 1.0.89 run `42650994778` remains in
+  progress; don't describe it as released until Worker `/version` matches.
