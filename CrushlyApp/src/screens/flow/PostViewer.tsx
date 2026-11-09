@@ -464,7 +464,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Txt variant="caption" color="textMuted" numberOfLines={1}>
-                {[post.author.username ? `@${post.author.username}` : null, timeAgo(post.createdAt)]
+                {[post.author.username ? `@${post.author.username}` : null, post.location ? `📍 ${post.location}` : null, timeAgo(post.createdAt)]
                   .filter(Boolean)
                   .join(' · ')}
               </Txt>

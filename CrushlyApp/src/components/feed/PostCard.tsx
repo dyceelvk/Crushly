@@ -161,7 +161,7 @@ export function PostCard({
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Txt variant="caption" color="textMuted" numberOfLines={1}>
-                {[p.author.username ? `@${p.author.username}` : null, timeAgo(p.createdAt)].filter(Boolean).join(' · ')}
+                {[p.author.username ? `@${p.author.username}` : null, p.location ? `📍 ${p.location}` : null, timeAgo(p.createdAt)].filter(Boolean).join(' · ')}
               </Txt>
               {p.author.keepsYou ? <KeepsYouChip /> : null}
             </View>

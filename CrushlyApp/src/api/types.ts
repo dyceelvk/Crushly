@@ -86,6 +86,8 @@ export const REACTION_KINDS: ReactionKind[] = ['crush', 'fire', 'laugh', 'wow', 
 export type Post = {
   id: number;
   body: string;
+  /** Place name supplied by the author, not GPS coordinates. */
+  location?: string | null;
   mediaUrl: string | null;
   /** Whether the media is a photo or a clip. Null when the post has no media. */
   mediaKind: 'photo' | 'video' | null;

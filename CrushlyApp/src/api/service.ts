@@ -496,6 +496,7 @@ export async function createPost(input: {
   videoMime?: string | null;
   edit?: LiveEdit | null;
   commentsEnabled?: boolean;
+  location?: string | null;
   /** When set, the post belongs to that Circle and its audience is the Circle. */
   circleId?: number | null;
 }): Promise<Post> {
@@ -527,8 +528,8 @@ export async function createPost(input: {
   // Legacy callers retain the old RPC; the composer uses an atomic RPC when it
   // offers the choice, so comments are never enabled for a newly closed post.
   if (input.commentsEnabled !== undefined) {
-    return rpc<Post>('create_post_with_options', {
-      ...args, p_edit: input.edit ?? null, p_comments_enabled: input.commentsEnabled,
+    return rpc<Post>('create_post_with_location', {
+      ...args, p_edit: input.edit ?? null, p_comments_enabled: input.commentsEnabled, p_location: input.location?.trim() || null,
     });
   }
   return rpc<Post>('create_post', {

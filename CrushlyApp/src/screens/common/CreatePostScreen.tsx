@@ -111,6 +111,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   );
 
   const [body, setBody] = useState('');
+  const [location, setLocation] = useState('');
   const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
   const [commentsEnabled, setCommentsEnabled] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -149,11 +150,11 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const ready = body.trim().length > 0 || media.length > 0;
 
   useEffect(() => navigation.addListener('beforeRemove', (event) => {
-    if (allowLeaving.current || (!ready && !sound)) return;
+    if (allowLeaving.current || (!ready && !sound && !location)) return;
     event.preventDefault();
     pendingLeave.current = event.data.action;
     setLeaveOpen(true);
-  }), [navigation, ready, sound]);
+  }), [navigation, ready, sound, location]);
 
   const leave = () => {
     allowLeaving.current = true;
@@ -173,7 +174,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       if (musicUri && /^(file|content):\/\//i.test(musicUri)) files.music = musicUri;
       await saveLocalDraft(me.id, {
         kind: 'post', body,
-        data: { audience, commentsEnabled, sound, media: item ? { ...item, uri: undefined } : null },
+        data: { audience, commentsEnabled, sound, location, media: item ? { ...item, uri: undefined } : null },
         files,
       }, draftId);
       toast({ kind: 'success', title: 'Draft saved on this phone' });
@@ -183,8 +184,8 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
     } finally { setSavingDraft(false); }
   };
   const openDraft = (draft: LocalDraft) => {
-    const d = draft.data as { audience?: 'everyone' | 'connections'; commentsEnabled?: boolean; sound?: {id: number; label: string} | null; media?: Omit<MediaItem, 'uri'> | null };
-    setBody(draft.body); setAudience(d.audience ?? 'everyone'); setCommentsEnabled(d.commentsEnabled ?? true); setSound(d.sound ?? null);
+    const d = draft.data as { location?: string; audience?: 'everyone' | 'connections'; commentsEnabled?: boolean; sound?: {id: number; label: string} | null; media?: Omit<MediaItem, 'uri'> | null };
+    setBody(draft.body); setLocation(d.location ?? ''); setAudience(d.audience ?? 'everyone'); setCommentsEnabled(d.commentsEnabled ?? true); setSound(d.sound ?? null);
     const edit = d.media?.edit && draft.files.music && d.media.edit.music
       ? { ...d.media.edit, music: { ...d.media.edit.music, uri: draft.files.music } } : d.media?.edit;
     setMedia(d.media && draft.files.media ? [{ ...d.media, edit, uri: draft.files.media }] : []);
@@ -192,7 +193,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   };
   const draftsUi = <>
     <LocalDraftsSheet visible={draftsOpen} owner={me?.id ?? 0} kind="post" onClose={() => setDraftsOpen(false)} onOpen={openDraft} />
-    <LeaveDraftSheet visible={leaveOpen} canSave={localDraftsAvailable && !!me?.id && ready} saving={savingDraft} onSave={() => void saveDraft()} onDiscard={leave} onClose={() => { pendingLeave.current = null; setLeaveOpen(false); }} />
+    <LeaveDraftSheet visible={leaveOpen} canSave={localDraftsAvailable && !!me?.id && (ready || !!location || !!sound)} saving={savingDraft} onSave={() => void saveDraft()} onDiscard={leave} onClose={() => { pendingLeave.current = null; setLeaveOpen(false); }} />
   </>;
 
   const pickMedia = async () => {
@@ -290,6 +291,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         body: body.trim(),
         audience,
         commentsEnabled,
+        location,
         photoUri: first?.type === 'photo' ? first.uri : undefined,
         photoMime: first?.type === 'photo' ? first.mimeType : undefined,
         videoUri,
@@ -465,6 +467,8 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
             <ComposerLeft
               body={body}
               setBody={setBody}
+              location={location}
+              setLocation={setLocation}
               audience={audience}
               setAudience={setAudience}
               commentsEnabled={commentsEnabled}
@@ -487,6 +491,8 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
             <ComposerLeft
               body={body}
               setBody={setBody}
+              location={location}
+              setLocation={setLocation}
               audience={audience}
               setAudience={setAudience}
               commentsEnabled={commentsEnabled}
@@ -536,7 +542,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           </View>
         ) : (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 10, paddingHorizontal: gutter }}>
-            {localDraftsAvailable && me?.id ? <Button title="Save draft" size="sm" variant="outline" full={false} onPress={() => void saveDraft()} disabled={!ready || savingDraft} loading={savingDraft} /> : null}
+            {localDraftsAvailable && me?.id ? <Button title="Save draft" size="sm" variant="outline" full={false} onPress={() => void saveDraft()} disabled={(!ready && !location && !sound) || savingDraft} loading={savingDraft} /> : null}
             <Button title="Reset" size="sm" variant="ghost" full={false} onPress={() => setConfirmReset(true)} accessibilityLabel="Reset post" />
             <Button
               title="Post"
@@ -573,7 +579,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       <ConfirmSheet visible={confirmReset} title="Reset this post?" message="This clears the words, media and post settings."
         confirmLabel="Reset post" destructive onCancel={() => setConfirmReset(false)} onConfirm={() => {
           setBody(''); setMedia([]); setPendingMedia(null); setAudience('everyone');
-          setCommentsEnabled(true); setSound(null); setDraftId(null); setConfirmReset(false);
+          setCommentsEnabled(true); setLocation(''); setSound(null); setDraftId(null); setConfirmReset(false);
         }} />
 
       {draftsUi}
@@ -602,6 +608,8 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
 function ComposerLeft({
   body,
   setBody,
+  location,
+  setLocation,
   audience,
   setAudience,
   commentsEnabled,
@@ -614,6 +622,8 @@ function ComposerLeft({
 }: {
   body: string;
   setBody: React.Dispatch<React.SetStateAction<string>>;
+  location: string;
+  setLocation: (v: string) => void;
   audience: 'everyone' | 'connections';
   setAudience: (v: 'everyone' | 'connections') => void;
   commentsEnabled: boolean;
@@ -627,6 +637,8 @@ function ComposerLeft({
   // The caret lives here, beside the words it moves through: the input, the
   // suggestion list and the @ / # buttons are all in this column.
   const [caret, setCaret] = useState<number | null>(null);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [locationInput, setLocationInput] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [linkError, setLinkError] = useState('');
@@ -748,6 +760,9 @@ function ComposerLeft({
             <Txt variant="caption" style={{ color: colors.text }}>#</Txt>
           </Pressable>
 
+          <Pressable onPress={() => { setLocationInput(location); setLocationOpen(true); }} accessibilityRole="button" accessibilityLabel={location ? 'Edit post location' : 'Add post location'} style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
+            <Ionicons name="location-outline" size={18} color={location ? colors.gold : colors.textMuted} />
+          </Pressable>
           <Pressable onPress={() => { setLinkError(''); setLinkOpen(true); }} accessibilityRole="button" accessibilityLabel="Add link to post" style={{ padding: 8, backgroundColor: colors.elevated, borderRadius: radius.sm }}>
             <Ionicons name="link-outline" size={18} color={colors.textMuted} />
           </Pressable>
@@ -759,6 +774,14 @@ function ComposerLeft({
         </View>
       </View>
 
+
+      {location ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Ionicons name="location-outline" size={16} color={colors.gold} /><Txt variant="small">{location}</Txt><Pressable onPress={() => setLocation('')} accessibilityRole="button" accessibilityLabel="Remove post location"><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable></View> : null}
+      <BottomSheet visible={locationOpen} onClose={() => setLocationOpen(false)} title="Add a location">
+        <View style={{ gap: space.md }}>
+          <Input label="Place name" value={locationInput} onChangeText={setLocationInput} maxLength={80} placeholder="e.g. Port Harcourt" hint="Enter a place name. It will be visible to everyone who can see this post; your device coordinates are not used." />
+          <Button title="Save location" disabled={!locationInput.trim()} onPress={() => { setLocation(locationInput.trim().replace(/[\u0000-\u001f\u007f]/g, '')); setLocationOpen(false); }} />
+        </View>
+      </BottomSheet>
 
       {/* Audience */}
       <View style={{ gap: space.sm }}>
