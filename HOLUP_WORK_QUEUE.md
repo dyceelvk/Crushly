@@ -533,3 +533,12 @@
   draft to stream-limit and hash-verify the pinned WASM; no user image is sent
   to the CDN. CDN outages must fail uploads closed. The actual evidence upload
   endpoint, authorization and client are still not deployed.
+- Production main `732d095` contains the scoped Space/layout, in-app link and
+  share-menu fixes (no new verification UI). Local typecheck/web build passed.
+  Vercel production deployment `dpl_AhaNdqQdf2q9fr4dKsyyZF3otmqJ` was BUILDING
+  at last check; verify its final status before saying the changes are live.
+  Android production build `42628810477` for 1.0.87 was dispatched on that
+  commit; it was in progress. Its release workflow only publishes/announces if
+  the build, emulator walk, and secret checks pass. Do not push additional main
+  commits while that workflow may publish and push its release record. Check
+  the job and actual `/version` before claiming an Android update was pumped.

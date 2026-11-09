@@ -15,10 +15,9 @@ function initializeProcessor(): Promise<void> {
   const expectedLength=15425791;
   const response=await fetch('https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.45/dist/x86/magick.wasm',{signal:AbortSignal.timeout(15000)});
   if(!response.ok || Number(response.headers.get('content-length')??0)>expectedLength || !response.body) throw Error('Processor unavailable');
-  const reader=response.body.getReader(); const parts:Uint8Array[]=[]; let total=0;
-  for(;;){const {done,value}=await reader.read();if(done)break;total+=value.length;if(total>expectedLength){await reader.cancel();throw Error('Invalid processor size');}parts.push(value);}
+  const reader=response.body.getReader(); const wasm=new Uint8Array(expectedLength); let total=0;
+  for(;;){const {done,value}=await reader.read();if(done)break;if(total+value.length>expectedLength){await reader.cancel();throw Error('Invalid processor size');}wasm.set(value,total);total+=value.length;}
   if(total!==expectedLength) throw Error('Invalid processor size');
-  const wasm=new Uint8Array(total); let offset=0; for(const part of parts){wasm.set(part,offset);offset+=part.length;}
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',wasm)),v=>v.toString(16).padStart(2,'0')).join('');
   if(hash!=='54629cbcf06dd10db38b4d87fa6ab241b248c09c94f2d9689506e5f994ac5f0c') throw Error('Invalid processor integrity');
   await magick.initializeImageMagick(wasm);
