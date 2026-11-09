@@ -226,7 +226,7 @@ One-time setup:
 1. **Create a Didit account**: https://business.didit.me (sandbox starts on signup;
    flip the environment toggle to go live). 500 sessions/month are free.
 2. **Create a workflow** in the console (or `POST /v3/workflows/`) with the features
-   you want — recommended for an 18+ app: `OCR` (ID document), `LIVENESS`,
+   you want — recommended for a 16+ app: `OCR` (ID document), `LIVENESS`,
    `FACE_MATCH`, `IP_ANALYSIS`, plus `AGE_ESTIMATION` and `AML_SCREENING`. Copy the
    **workflow ID**.
 3. **API & Webhooks** in the console sidebar: copy the **API Key**, add the webhook

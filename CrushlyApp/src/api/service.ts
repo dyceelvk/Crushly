@@ -7,6 +7,7 @@ import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApi
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
+import { clampMemberAge, isMemberAgeEligible, MINIMUM_MEMBER_AGE } from '../lib/minimumAge';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import { profileShape } from '../lib/profileShape';
 import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
@@ -218,7 +219,7 @@ export async function updateProfile(patch: Record<string, unknown>): Promise<Me>
     const birthdate = str(patch.birthdate, 'Birthday', { required: true, max: 10 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) throw new ApiError(400, 'Please check your birthday.');
     const age = ageFromBirthdate(birthdate);
-    if (age != null && age < 18) throw new ApiError(400, 'Holup is for adults. You need to be 18 or older to join.');
+    if (age != null && !isMemberAgeEligible(age)) throw new ApiError(400, `Holup is for people aged ${MINIMUM_MEMBER_AGE} and over.`);
     if (age != null && age > 99) throw new ApiError(400, 'Please check your birthday.');
     next.birthdate = birthdate;
   }
@@ -373,8 +374,8 @@ export async function reorderPhotos(ids: number[]): Promise<Me> {
 
 export async function updatePreferences(prefs: Preferences): Promise<Me> {
   const id = await meId();
-  const ageMin = Math.min(99, Math.max(18, Math.round(prefs.ageMin)));
-  const ageMax = Math.min(99, Math.max(18, Math.round(prefs.ageMax)));
+  const ageMin = clampMemberAge(prefs.ageMin);
+  const ageMax = clampMemberAge(prefs.ageMax);
   if (ageMin > ageMax) throw new ApiError(400, 'Your age range is upside down.');
   unwrap(
     await supabase

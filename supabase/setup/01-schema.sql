@@ -79,7 +79,7 @@ create index if not exists photos_user_position_idx on public.photos (user_id, p
 
 create table if not exists public.preferences (
   user_id        bigint primary key references public.profiles(id) on delete cascade,
-  age_min        integer not null default 18,
+  age_min        integer not null default 16,
   age_max        integer not null default 45,
   max_distance   integer not null default 50,                  -- km; 0 = anywhere
   intentions     jsonb not null default '[]',

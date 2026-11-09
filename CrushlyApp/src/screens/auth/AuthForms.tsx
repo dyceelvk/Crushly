@@ -324,8 +324,8 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
   const handed = route?.params?.email?.trim().toLowerCase() ?? '';
   const [email, setEmail] = useState(handed);
   const [password, setPassword] = useState('');
-  const [adult, setAdult] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string; adult?: string; form?: string }>({});
+  const [ageEligible, setAgeEligible] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string; ageEligible?: string; form?: string }>({});
   const [loading, setLoading] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(handed || null);
   const [code, setCode] = useState('');
@@ -356,7 +356,7 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
     const next: typeof errors = {};
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) next.email = 'Enter a valid email address.';
     if (password.length < 8) next.password = 'Use at least 8 characters.';
-    if (!adult) next.adult = 'Please confirm you’re 18 or older.';
+    if (!ageEligible) next.ageEligible = 'Please confirm you’re 16 or older.';
     setErrors(next);
     if (Object.keys(next).length) return;
     setLoading(true);
@@ -570,27 +570,27 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
         />
       </View>
       <Pressable
-        onPress={() => setAdult((a) => !a)}
+        onPress={() => setAgeEligible((a) => !a)}
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: adult }}
-        accessibilityLabel="I’m 18 or older and agree to the Terms and Community Guidelines"
+        accessibilityState={{ checked: ageEligible }}
+        accessibilityLabel="I’m 16 or older and agree to the Terms and Community Guidelines"
         style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: rhythm.group, paddingVertical: 4 }}
       >
         <View
           style={{
-            width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: adult ? colors.gold : colors.borderStrong,
-            backgroundColor: adult ? colors.gold : 'transparent', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+            width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: ageEligible ? colors.gold : colors.borderStrong,
+            backgroundColor: ageEligible ? colors.gold : 'transparent', alignItems: 'center', justifyContent: 'center', marginTop: 1,
           }}
         >
-          {adult ? <Ionicons name="checkmark" size={16} color={colors.onGold} /> : null}
+          {ageEligible ? <Ionicons name="checkmark" size={16} color={colors.onGold} /> : null}
         </View>
         <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
-          I’m 18 or older and I agree to the Terms and Community Guidelines.
+          I’m 16 or older and I agree to the Terms and Community Guidelines.
         </Txt>
       </Pressable>
-      {errors.adult ? (
+      {errors.ageEligible ? (
         <Txt variant="small" color="danger" style={{ marginTop: 6 }}>
-          {errors.adult}
+          {errors.ageEligible}
         </Txt>
       ) : null}
     </AuthScaffold>

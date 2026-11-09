@@ -12,6 +12,22 @@ test('escapes user content and includes copyable canonical and OG tags', () => {
   assert.ok(html.includes('https://holupapp.vercel.app/v/123'));
   assert.ok(html.includes('property="og:description"'));
   assert.ok(html.includes('name="twitter:card"'));
+  // A messenger renders a card, not a page: every field one needs is present.
+  assert.ok(html.includes('property="og:site_name" content="Holup"'));
+  assert.ok(html.includes('property="og:image:width" content="1200"'));
+  assert.ok(html.includes('property="og:image:height" content="630"'));
+  assert.ok(html.includes('property="og:image:alt"'));
+  assert.ok(html.includes('name="twitter:image:alt"'));
+  // Reachable by link, not listed by a search engine. `follow` keeps the
+  // links on the page crawlable; messengers ignore this tag, so cards still
+  // unfurl. A private post never becomes indexable by being requested.
+  assert.ok(html.includes('<meta name="robots" content="noindex, follow">'));
+  assert.ok(html.includes('og:image" content="https://holupapp.vercel.app/brand/share-card.png"'));
+  assert.ok(html.includes(`<link rel="canonical" href="https://holupapp.vercel.app/v/123">`));
+  // Both installs can open the post: the secure scheme first, the older one
+  // still offered rather than silently dropped.
+  assert.ok(html.includes('href="holup://v/123"'));
+  assert.ok(html.includes('href="crushly://v/123"'));
 });
 
 test('landing rechecks visibility every time and never caches restricted posts', async () => {
@@ -49,6 +65,8 @@ test('unavailable targets have a generic non-leaking sign-in handoff', () => {
   const html = renderUnavailableShare('123', 'sb-project-ref-auth-token');
   assert.match(html, /location.replace\('\/\?post=123'\)/);
   assert.match(html, /name="robots" content="noindex"/);
+  assert.match(html, /href="holup:\/\/v\/123"/);
+  assert.match(html, /href="crushly:\/\/v\/123"/);
   assert.doesNotMatch(html, /og:description|og:image/);
   assert.doesNotMatch(renderUnavailableShare('1\"<script>', 'sb-project-auth-token'), /<script>/);
 });

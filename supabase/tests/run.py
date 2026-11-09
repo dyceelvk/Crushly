@@ -32,29 +32,37 @@ ONE_SHOT_MIGRATIONS = {
     '20261109140000_manual_verification_backend_inactive.sql',
 }
 SEED = ROOT.parent / 'seed.sql'
-STUBS = not bool(__import__('os').environ.get('TEST_DATABASE_URL'))
+# Two ways to run: `pgserver` conjures a throwaway Postgres (default), or
+# TEST_DATABASE_URL points at one we were given. A plain Postgres is not a
+# Supabase project, so it still needs stubs.sql — TEST_USE_STUBS=1 says exactly
+# that. Without it, pointing at a URL means "the real platform schemas are
+# already there", which is what `supabase start` gives you.
+DB_URL = __import__('os').environ.get('TEST_DATABASE_URL')
+STUBS = (not DB_URL) or __import__('os').environ.get('TEST_USE_STUBS') == '1'
 
 # `pgserver` is only needed to conjure a throwaway Postgres. When
 # TEST_DATABASE_URL points at a server we were given, the import is dead weight
 # — and on a machine where pgserver has no wheel (no wheel for this Python, or
 # an offline box) it turns a working test run into an ImportError. Import it
 # where it is used, not at the top.
-if STUBS:
+pgserver = None
+if STUBS and not DB_URL:
     import pgserver
-else:
-    pgserver = None
 
 
 def main() -> int:
-    if STUBS:
+    data_dir = None
+    if DB_URL:
+        uri = DB_URL
+    else:
         data_dir = tempfile.mkdtemp(prefix='crushly-pg-')
         db = pgserver.get_server(data_dir)
         uri = db.get_uri()
-    else:
-        data_dir = None
-        uri = __import__('os').environ['TEST_DATABASE_URL']
 
-    conn = psycopg2.connect(uri)
+    # Migrations contain em dashes and curly quotes. A database whose locale
+    # defaults to SQL_ASCII would reject them, so ask for UTF-8 explicitly
+    # rather than depending on the host's environment.
+    conn = psycopg2.connect(uri, client_encoding='UTF8')
     conn.autocommit = True
     cur = conn.cursor()
 
@@ -168,6 +176,9 @@ def main() -> int:
         if not run_file(ROOT / 'admin_triage.sql'):
             return 1
         if not run_file(ROOT / 'space_counts.sql'):
+            return 1
+        # Holup is 16+: the floor is in the database, so it is tested there.
+        if not run_file(ROOT / 'minimum_age.sql'):
             return 1
         print('ALL TESTS PASSED')
         return 0

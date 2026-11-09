@@ -6,7 +6,7 @@ import { useTheme } from '../theme/ThemeProvider';
 
 // Official Holup artwork supplied by the product owner. Keep these local so
 // the brand is visible before the network has loaded and in native builds.
-const markArtwork = require('../../assets/brand/crushly-mark.png');
+const markArtwork = require('../../assets/brand/holup-mark.png');
 /**
  * Official Holup mark: two overlapping conversation circles. The coloured
  * image is used for the primary brand lockup; a single-colour SVG equivalent is

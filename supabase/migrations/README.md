@@ -1,5 +1,17 @@
 # Migrations
 
+## 2026-11-07 — minimum age moves from 18+ to 16+
+
+`20261109225634_minimum_age_16.sql` was applied to production and recorded as
+`20261109225634` / `minimum_age_16`, so this file carries the version production
+actually stores and `supabase db push` stays idempotent. It is the only
+migration that changes the access floor: it leaves the
+`experimental_check_adult_profile` function and `experimental_adult_profile_gate`
+trigger in place, refuses anyone younger than 16 with `403 minimum_age`, moves
+`preferences.age_min` to a default of 16, and adds
+`preferences_age_range_check` (16..99, `age_min <= age_max`). `supabase/tests/minimum_age.sql`
+is the matching backend test and is wired into `supabase/tests/run.py`.
+
 `supabase/migrations/` now contains **43 files whose versions and names match
 the 43 rows recorded in `supabase_migrations.schema_migrations` on production**
 (project `yzcssyebozfkmojqqdhc`). That means `supabase db push` sees production

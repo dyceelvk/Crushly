@@ -8,7 +8,10 @@ export function sharedPostId(url: string | null | undefined): number | null {
   try {
     const u = new URL(url);
     let raw: string | null = null;
-    if (u.protocol === 'crushly:' && u.hostname === 'v') raw = u.pathname.slice(1);
+    // Two schemes exist: `holup` is the secure build, `crushly` the older one.
+    // Both are ours, so both resolve to the same post id and nothing else is
+    // accepted as a Holup link.
+    if ((u.protocol === 'holup:' || u.protocol === 'crushly:') && u.hostname === 'v') raw = u.pathname.slice(1);
     else if (u.protocol === 'https:' && ['holupapp.vercel.app', 'mecrushly.vercel.app'].includes(u.hostname)) raw = /^\/v\/([0-9]+)\/?$/.exec(u.pathname)?.[1] ?? u.searchParams.get('post');
     else if (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname)) raw = u.searchParams.get('post');
     if (!raw || !/^[1-9][0-9]{0,14}$/.test(raw)) return null;

@@ -3,7 +3,9 @@ import concurrent.futures
 import threading
 import psycopg2
 
-DSN = 'dbname=holup_disposable host=/var/run/postgresql'
+# A disposable database, never production. Override the location when the
+# throwaway server is not the default local socket.
+DSN = __import__('os').environ.get('HOLUP_TEST_DSN', 'dbname=holup_disposable host=/var/run/postgresql')
 conn=psycopg2.connect(DSN); conn.autocommit=True
 with conn.cursor() as c:
     c.execute("select p.id,u.id from profiles p join auth.users u on u.id=p.auth_user_id where u.email in ('marcus@crushly.app','daniel@crushly.app') order by u.email")

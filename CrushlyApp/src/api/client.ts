@@ -15,6 +15,7 @@ import type { MediaKind } from '../lib/mediaHost';
 import { storage } from '../lib/storage';
 import { isMissingFunctionResponse } from '../lib/errors';
 import { fetchWithDeadline } from '../lib/requestClock';
+import { relationshipContractHeaders } from '../lib/relationshipContract';
 
 /**
  * Supabase client and shared transport helpers.
@@ -69,7 +70,13 @@ export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABAS
   /* One deadline for every request the app makes: RPCs and auth get 15 seconds,
      uploads get five minutes. Wired here rather than in each service function so
      nothing can be added later that quietly forgets it. */
-  global: { fetch: fetchWithDeadline((input, init) => fetch(input as RequestInfo, init)) },
+  // A public compatibility marker, not an authorization credential. The coordinated
+  // relationship cutover uses it to reject old-client relationship mutations
+  // instead of allowing them to silently create, reopen, or close new state.
+  global: {
+    headers: relationshipContractHeaders(),
+    fetch: fetchWithDeadline((input, init) => fetch(input as RequestInfo, init)),
+  },
 });
 
 export class ApiError extends Error {

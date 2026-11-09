@@ -4,6 +4,9 @@ import { postShareUrl, sharedPostId } from './postShare';
 test('post links are canonical and parse on web and Android', () => {
   assert.equal(postShareUrl(23), 'https://holupapp.vercel.app/v/23');
   assert.equal(sharedPostId('crushly://v/23'), 23);
+  assert.equal(sharedPostId('holup://v/23'), 23);
+  // A foreign scheme that happens to look like ours is still a foreign link.
+  assert.equal(sharedPostId('holupx://v/23'), null);
   assert.equal(sharedPostId('https://holupapp.vercel.app/?post=23'), 23);
   assert.equal(sharedPostId('https://mecrushly.vercel.app/v/23'), 23);
 });

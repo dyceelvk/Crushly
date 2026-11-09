@@ -64,7 +64,7 @@ const jsonLd = {
       '@type': 'Organization',
       name: 'Holup',
       url: SITE,
-      logo: `${SITE}/brand/crushly-mark.png`,
+      logo: `${SITE}/brand/holup-mark.png`,
       description: DESCRIPTION,
     },
     { '@type': 'WebSite', name: 'Holup', url: SITE },

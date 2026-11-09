@@ -11,11 +11,12 @@ import { useToast } from '../../components/Toast';
 import { useMe, useUpdatePreferences } from '../../api/hooks';
 import type { Intention } from '../../api/types';
 import { FILTER_INTENTIONS, FILTER_INTERESTS, distanceLabel } from '../../lib/catalog';
+import { MINIMUM_MEMBER_AGE } from '../../lib/minimumAge';
 import { space } from '../../theme/tokens';
 import type { ScreenProps } from '../../navigation/types';
 
 const DISTANCES = [2, 5, 10, 25, 50, 100, 200, 0];
-const DEFAULTS = { ageMin: 18, ageMax: 45, maxDistance: 50, intentions: [] as Intention[], interests: [] as string[], verifiedOnly: false };
+const DEFAULTS = { ageMin: MINIMUM_MEMBER_AGE, ageMax: 45, maxDistance: 50, intentions: [] as Intention[], interests: [] as string[], verifiedOnly: false };
 
 export function FiltersScreen({ navigation }: ScreenProps<'Filters'>) {
   const { data: me } = useMe();
@@ -77,7 +78,7 @@ export function FiltersScreen({ navigation }: ScreenProps<'Filters'>) {
             {ages[0]}–{ages[1] >= 99 ? '99+' : ages[1]}
           </Txt>
         </View>
-        <RangeSlider min={18} max={99} low={ages[0]} high={ages[1]} onChange={(l, h) => setAges([l, h])} label="Age range" />
+        <RangeSlider min={MINIMUM_MEMBER_AGE} max={99} low={ages[0]} high={ages[1]} onChange={(l, h) => setAges([l, h])} label="Age range" />
       </View>
 
       <View style={{ gap: 6, marginTop: space.lg }}>

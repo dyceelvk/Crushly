@@ -23,6 +23,7 @@ import { haptic } from '../../lib/haptics';
 import { HIT, alpha, radius, rhythm, space, stroke } from '../../theme/tokens';
 import { FILTER_INTENTIONS, INTENTIONS, INTERESTS, LANGUAGES, PRONOUNS, RELATIONSHIP_INTENTIONS, distanceLabel } from '../../lib/catalog';
 import { getApproximateLocation } from '../../lib/media';
+import { MINIMUM_MEMBER_AGE } from '../../lib/minimumAge';
 import type { Intention, Me } from '../../api/types';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -484,7 +485,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
   const { data: me } = useMe();
   const toast = useToast();
   const prefs = me?.preferences;
-  const [ages, setAges] = useState<[number, number]>([prefs?.ageMin ?? 18, prefs?.ageMax ?? 45]);
+  const [ages, setAges] = useState<[number, number]>([prefs?.ageMin ?? MINIMUM_MEMBER_AGE, prefs?.ageMax ?? 45]);
   const [distance, setDistance] = useState(prefs?.maxDistance ?? 50);
   const [intentions, setIntentions] = useState<Intention[]>(prefs?.intentions ?? []);
   const [interests, setInterests] = useState<string[]>(prefs?.interests ?? []);
@@ -496,7 +497,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
   const { refresh } = useAuth();
 
   useEffect(() => {
-    if (me?.profile.age && !prefs) setAges([Math.max(18, me.profile.age - 6), Math.min(99, me.profile.age + 10)]);
+    if (me?.profile.age && !prefs) setAges([Math.max(MINIMUM_MEMBER_AGE, me.profile.age - 6), Math.min(99, me.profile.age + 10)]);
   }, [me, prefs]);
 
   const finish = async () => {
@@ -530,7 +531,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
             {ages[0]}–{ages[1] >= 99 ? '99+' : ages[1]}
           </Txt>
         </View>
-        <RangeSlider min={18} max={99} low={ages[0]} high={ages[1]} onChange={(l, h) => setAges([l, h])} label="Age range" />
+        <RangeSlider min={MINIMUM_MEMBER_AGE} max={99} low={ages[0]} high={ages[1]} onChange={(l, h) => setAges([l, h])} label="Age range" />
       </View>
       <View style={{ gap: rhythm.tight, marginTop: rhythm.group }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
