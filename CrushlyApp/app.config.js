@@ -6,6 +6,8 @@ module.exports = () => {
   return {
     ...base,
     scheme: 'holup',
+    // Secure packages must never query the legacy debug-signature channel.
+    extra: { ...base.extra, androidUpdateChannel: 'secure' },
     android: {
       ...base.android,
       package: 'app.holup.mobile',

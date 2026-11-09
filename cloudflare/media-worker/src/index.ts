@@ -553,6 +553,14 @@ export default {
       return applyLifecycle(env, origin);
     }
 
+    // Never offer the exposed legacy debug-signed APK to secure installations.
+    // This channel must remain unavailable until a verified secure release and
+    // an upgrade-tested secure-to-secure resolver are provisioned.
+    if (url.pathname === '/secure/version') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
+      return fail(503, 'Secure Android updates are not available yet.', origin);
+    }
+
     // What version the app should be running. Public, and deliberately silent
     // about where the build comes from.
     if (url.pathname === '/version') {

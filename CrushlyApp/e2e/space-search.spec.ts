@@ -12,6 +12,7 @@ const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.tes
 async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false, railClips = false, room = false, notificationFixtures: unknown[] = []) {
   let banner: string | null = null;
   let followed = false;
+  let homiePending = false;
   let outgoingVisibility = 'private'; let approvalRequired = false;
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
@@ -61,6 +62,14 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/moment_viewers') body = { count: 1, items: [{profile: person, viewedAt: Date.now()}] };
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [onePost] };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
+    else if (path === '/rest/v1/rpc/load_profile') body = person;
+    else if (path === '/rest/v1/rpc/holup_homie_stats') body = {count:2, canView:!denyLists};
+    else if (path === '/rest/v1/rpc/holup_homie_status') body = {homies:false,incomingPending:false,outgoingPending:homiePending};
+    else if (path === '/rest/v1/rpc/holup_request_homie') { homiePending=true; calls.push({homie:'request'}); body={status:'pending',changed:true}; }
+    else if (path === '/rest/v1/rpc/holup_withdraw_homie') { homiePending=false; calls.push({homie:'withdraw'}); body=true; }
+    else if (path === '/rest/v1/rpc/holup_homie_requests_inbox') body = {items:[person],hasMore:false};
+    else if (path === '/rest/v1/rpc/holup_respond_homie') { calls.push({homie:'respond',...route.request().postDataJSON()}); body={status:'accepted'}; }
+    else if (path === '/rest/v1/rpc/holup_homie_people') { calls.push({p_kind:'keptClose'}); body={items:[person],hasMore:false}; }
     else if (path === '/rest/v1/rpc/holup_follow_stats') body = {addUps: 3, addedUp: 4, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewAddedUp: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private', outgoingVisibility, approvalRequired, myStatus: followed ? 'active' : null};
     else if (path === '/rest/v1/rpc/holup_follow_status') body = {status: followed ? 'active' : null};
     else if (path === '/rest/v1/rpc/holup_follow') { followed = true; calls.push({followed: true}); body = {status:'active',changed:true}; }
@@ -481,11 +490,11 @@ test('touch swipes move Home and Whispers pages; taps and bottom navigation stil
   await page.getByRole('tab', {name:'Whispers', exact:true}).click();
   await expect(page.getByRole('tab', {name:'Whispers', exact:true}).first()).toBeVisible();
   await dragTouch(page, 300, 430, 70, 430);
-  await expect(page.getByText('People you’ve chosen to keep near.', {exact:false})).toBeVisible();
+  await expect(page.getByText('Homies are accepted friendships.', {exact:false})).toBeVisible();
   await dragTouch(page, 70, 430, 300, 430);
   await expect(page.getByPlaceholder('Search your Whispers')).toBeVisible();
   await page.getByRole('tab', {name:'Homies', exact:true}).click();
-  await expect(page.getByText('People you’ve chosen to keep near.', {exact:false})).toBeVisible();
+  await expect(page.getByText('Homies are accepted friendships.', {exact:false})).toBeVisible();
   await page.getByRole('tab', {name:'Connections', exact:true}).click();
   await dragTouch(page, 310, 805, 75, 805);
   await expect(page.getByRole('tab', {name:'Homies', exact:true})).toBeVisible();
@@ -617,4 +626,35 @@ test('scrolling and swiping on a privacy selector never changes the setting', as
   await dragTouch(page, 300, box.y + box.height / 2, 65, box.y + box.height / 2);
   await page.waitForTimeout(400);
   expect(privacyWrites).toEqual([]);
+});
+
+
+test('Homie requests are explicit and pending requests can be withdrawn', async ({page}) => {
+ const calls: Record<string, unknown>[]=[]; await offline(page,calls); await page.goto('/');
+ await page.getByText('Space',{exact:true}).last().click({timeout:30000});
+ await page.getByRole('button',{name:'View Homie requests'}).click();
+ await expect(page.getByText('Homie requests',{exact:true}).last()).toBeVisible();
+ await page.getByRole('button',{name:'Accept',exact:true}).click();
+ await expect.poll(()=>calls.some(c=>c.homie==='respond' && c.p_accept===true)).toBe(true);
+ await page.getByRole('button',{name:'Back to Space'}).last().click();
+ await page.getByRole('button',{name:'2 Homies. View people'}).click();
+ await page.getByRole('button',{name:'Open Ada’s Space'}).click();
+ const add=page.getByRole('button',{name:'Add a Homie: Ada'});
+ await expect(add).toBeVisible(); await add.click();
+ await expect(page.getByRole('button',{name:'Withdraw Homie request to Ada'})).toBeVisible();
+ await page.getByRole('button',{name:'Withdraw Homie request to Ada'}).click();
+ await expect(add).toBeVisible();
+ expect(calls.some(c=>c.homie==='request')).toBe(true);
+ expect(calls.some(c=>c.homie==='withdraw')).toBe(true);
+});
+
+test('Homies tab shows accepted people and requests without a remove button', async ({page}) => {
+ const calls: Record<string, unknown>[]=[]; await offline(page,calls); await page.goto('/');
+ await page.getByRole('tab',{name:'Whispers',exact:true}).click({timeout:30000});
+ await page.getByRole('tab',{name:'Homies',exact:true}).click();
+ await expect(page.getByText('Your Homies',{exact:true})).toBeVisible();
+ await expect(page.getByText('Requests',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Let go'})).toHaveCount(0);
+ await page.getByRole('button',{name:'Decline',exact:true}).click();
+ await expect.poll(()=>calls.some(c=>c.homie==='respond' && c.p_accept===false)).toBe(true);
 });

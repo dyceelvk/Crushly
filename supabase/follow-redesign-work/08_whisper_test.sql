@@ -36,6 +36,20 @@ begin
  assert (select state='accepted' from holup_whisper_permissions where conversation_id=cv);
  perform set_config('request.jwt.claim.sub',au::text,true);
  insert into messages(conversation_id,sender_id,kind,body) values(cv,a,'text','third after acceptance');
+ -- Opening an empty composer is not acceptance. If the other person sends
+ -- first, that participant is the requester; only the recipient can accept.
+ delete from conversations where user_a=least(b,c) and user_b=greatest(b,c);
+ perform set_config('request.jwt.claim.sub',bu::text,true); set local role authenticated;
+ r:=holup_begin_whisper_request(c); cv2:=(r->>'id')::bigint;
+ reset role;
+ perform set_config('request.jwt.claim.sub',cu::text,true);
+ insert into messages(conversation_id,sender_id,kind,body) values(cv2,c,'text','first sender switched');
+ assert (select state='pending' and requester_id=c and recipient_id=b and request_messages=1 from holup_whisper_permissions where conversation_id=cv2);
+ perform set_config('request.jwt.claim.sub',bu::text,true); set local role authenticated;
+ perform holup_accept_whisper(cv2);
+ reset role;
+ assert (select state='accepted' from holup_whisper_permissions where conversation_id=cv2);
+ delete from conversations where id=cv2;
  -- Starting while open produces an accepted conversation that survives toggle off.
  perform set_config('request.jwt.claim.sub',cu::text,true); set local role authenticated;
  perform holup_set_whisper_open(true);

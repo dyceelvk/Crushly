@@ -1,0 +1,5 @@
+# Secure Android update separation — candidate only
+
+This branch isolates update checks: secure or unidentified Android packages request `/secure/version`; only the known legacy package `app.crushly` uses `/version`, while web retains its legacy download behavior. The Worker returns 503 on `/secure/version` until a secure release exists, so a secure candidate cannot be pointed to the legacy debug-signed build. Unit tests cover the channel and fail-closed Worker endpoint. Not deployed.
+
+This is not an updater launch: a signed secure release/mirror, authenticated release process, complete secure metadata, streamed SHA-256 validation, secure-to-secure Android upgrade tests, distribution and transparent first-install migration are still needed. Android installer certificate matching is necessary and remains the final platform enforcement; a public legacy debug signature is not trustworthy. Do not claim debug-signed installs update in place with the secure key. A new install may lose on-device drafts; do not remove the old app or its private data without an explicit reviewed migration/export path and user warning.

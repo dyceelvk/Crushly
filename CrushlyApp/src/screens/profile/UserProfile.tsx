@@ -9,6 +9,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { CrushIcon } from '../../components/Logo';
 import { FollowButton } from '../../components/FollowButton';
+import { HomieButton } from '../../components/HomieButton';
+import { homieStats, homieRequests, respondHomie } from '../../api/service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
@@ -205,6 +207,7 @@ export function SpaceScreen({
   const [outgoingMenu, setOutgoingMenu] = useState(false);
   const [approvalMenu, setApprovalMenu] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
+  const [homieRequestsOpen, setHomieRequestsOpen] = useState(false);
   const qc = useQueryClient();
   const [showFullBio, setShowFullBio] = useState(false);
   /**
@@ -245,6 +248,10 @@ export function SpaceScreen({
     queryKey: ['space-relationship-stats', meQ.data?.id, spaceId],
     queryFn: () => spaceRelationshipStats(spaceId), enabled: !!meQ.data?.id && spaceId > 0,
     staleTime: 0, refetchInterval: 30_000,
+  });
+  const homies = useQuery({
+    queryKey: ['holup-homie-stats', meQ.data?.id, spaceId], queryFn: () => homieStats(spaceId),
+    enabled: !!meQ.data?.id && spaceId > 0, staleTime: 0, refetchInterval: 30_000,
   });
   const visibilityMutation = useMutation({ mutationFn: setAddUpListVisibility,
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] }); toast({kind: 'success', title: 'Privacy updated'}); },
@@ -472,12 +479,13 @@ export function SpaceScreen({
             {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
               <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable>
               <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addedUp)}</Txt> Added Up</Txt></Pressable>
-              <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.keptClose} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.keptClose)}</Txt> Homies</Txt></Pressable>
+              {homies.data ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${homies.data.count} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(homies.data.count)}</Txt> Homies</Txt></Pressable> : homies.isError ? <Pressable accessibilityRole="button" onPress={() => void homies.refetch()}><Txt variant="small" color="textSecondary">Retry Homies</Txt></Pressable> : null}
               {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
               {mine ? <>
                 <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Added Up list privacy" onPress={() => setOutgoingMenu(true)}><Txt variant="small" color="gold">Added Up privacy</Txt></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Add Up approval setting" onPress={() => setApprovalMenu(true)}><Txt variant="small" color="gold">Approval</Txt></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="View Homie requests" onPress={() => setHomieRequestsOpen(true)}><Txt variant="small" color="gold">Homie requests</Txt></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="View Add Up requests" onPress={() => setRequestsOpen(true)}><Txt variant="small" color="gold">Requests</Txt></Pressable>
               </> : null}
             </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
@@ -494,7 +502,7 @@ export function SpaceScreen({
                     so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
-                {relationship.data?.canViewKeptClose ? <Pill tone="gold" label="Homies" icon={<Ionicons name="people" size={11} color={colors.gold} />} /> : <Txt variant="small" color="textSecondary">Homie requests are being updated.</Txt>}
+                <HomieButton id={p.id} name={p.name} />
                 </>
                 )}
               </View>
@@ -768,8 +776,9 @@ export function SpaceScreen({
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals stay visible. Individual Spaces still follow their privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
       <ActionSheet visible={outgoingMenu} onClose={() => setOutgoingMenu(false)} title="Who can see people you added up?" actions={([['everyone','Everyone who can view your Space'],['close','Homies'],['private','Only you']] as [AddUpListVisibility,string][]).map(([value,label]) => ({ label: `${relationship.data?.outgoingVisibility === value ? '✓ ' : ''}${label}`, onPress: () => followSettingsMutation.mutate({approval: null, visibility:value}) }))} />
       <ActionSheet visible={approvalMenu} onClose={() => setApprovalMenu(false)} title="Who can Add Up your Space?" actions={([ [false,'Allow Add Ups immediately'], [true,'Require my approval first'] ] as [boolean,string][]).map(([value,label]) => ({label:`${relationship.data?.approvalRequired === value ? '✓ ' : ''}${label}`, onPress: () => followSettingsMutation.mutate({approval:value, visibility:null})}))} />
+      {mine ? <HomieRequests visible={homieRequestsOpen} onClose={() => setHomieRequestsOpen(false)} viewerId={meQ.data?.id ?? 0} /> : null}
       {mine ? <FollowRequests visible={requestsOpen} onClose={() => setRequestsOpen(false)} viewerId={meQ.data?.id ?? 0} /> : null}
-      <SpaceRelationshipList targetId={p.id} name={p.name} viewerId={meQ.data?.id ?? 0} kind={relationshipList} canView={relationshipList === 'addUps' ? !!relationship.data?.canViewAddUps : relationshipList === 'addedUp' ? !!relationship.data?.canViewAddedUp : !!relationship.data?.canViewKeptClose} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} onOpenPost={(postId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('PostViewer', { postId }), Platform.OS === 'web' ? 0 : 250); }} />
+      <SpaceRelationshipList targetId={p.id} name={p.name} viewerId={meQ.data?.id ?? 0} kind={relationshipList} canView={relationshipList === 'addUps' ? !!relationship.data?.canViewAddUps : relationshipList === 'addedUp' ? !!relationship.data?.canViewAddedUp : !!homies.data?.canView} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} onOpenPost={(postId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('PostViewer', { postId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>
   );
 }
@@ -812,6 +821,16 @@ function SpaceRelationshipList({ targetId, name, viewerId, kind, canView, openSe
       </ScrollView>
     </View>
   </Modal>;
+}
+
+function HomieRequests({visible,onClose,viewerId}: {visible:boolean;onClose:()=>void;viewerId:number}) {
+  const {colors}=useTheme(); const insets=useSafeAreaInsets(); const qc=useQueryClient(); const toast=useToast();
+  const q=useInfiniteQuery({queryKey:['holup-homie-requests',viewerId],initialPageParam:0,queryFn:({pageParam})=>homieRequests(pageParam),enabled:visible && !!viewerId,getNextPageParam:(last,pages)=>last.hasMore ? pages.reduce((n,p)=>n+p.items.length,0):undefined,staleTime:0});
+  const response=useMutation({mutationFn:({id,accept}:{id:number;accept:boolean})=>respondHomie(id,accept),onSuccess:()=>{for(const key of ['holup-homie-requests','holup-homie-status','holup-homie-stats','space-relationship-people']) void qc.invalidateQueries({queryKey:[key]});},onError:e=>toast({kind:'error',title:'Couldn’t answer request',message:(e as Error).message})});
+  const items=q.data?.pages.flatMap(p=>p.items) ?? [];
+  return <Modal visible={visible} animationType="fade" onRequestClose={onClose}><View style={{flex:1,backgroundColor:colors.bg,paddingTop:insets.top}}><View style={{flexDirection:'row',alignItems:'center',gap:12,padding:space.md}}><IconButton icon="chevron-back" label="Back to Space" onPress={onClose}/><Txt variant="subheading">Homie requests</Txt></View><ScrollView contentContainerStyle={{padding:space.md,gap:space.md}}>
+    {q.isLoading ? <LoadingBlock label="Loading requests"/> : q.isError ? <ErrorState error={q.error} message="Couldn’t load requests." onRetry={()=>void q.refetch()}/> : !items.length ? <Txt color="textSecondary">No requests right now.</Txt> : items.map(p=><View key={p.id} style={{flexDirection:'row',alignItems:'center',gap:8}}><Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={40}/><Txt variant="bodyStrong" style={{flex:1}}>{p.name}</Txt><Button title="Accept" size="sm" disabled={response.isPending} onPress={()=>response.mutate({id:p.id,accept:true})}/><Button title="Decline" variant="ghost" size="sm" disabled={response.isPending} onPress={()=>response.mutate({id:p.id,accept:false})}/></View>)}
+    {q.hasNextPage ? <Button title="Show more" loading={q.isFetchingNextPage} onPress={()=>void q.fetchNextPage()}/> : null}</ScrollView></View></Modal>;
 }
 
 function FollowRequests({visible, onClose, viewerId}: {visible:boolean; onClose:()=>void; viewerId:number}) {

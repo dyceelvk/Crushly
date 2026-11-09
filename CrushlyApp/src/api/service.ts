@@ -1,4 +1,6 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { updateVersionPath } from '../lib/updateChannel';
 import { browserLocation } from '../lib/browser';
 import { profileCompletion } from '../lib/completion';
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
@@ -272,10 +274,24 @@ export async function spaceRelationshipStats(id: number): Promise<SpaceRelations
   return rpc('holup_follow_stats', { p_target: id });
 }
 export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'addedUp' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
-  const page = kind === 'keptClose'
-    ? await rpc<{ items: Profile[]; hasMore: boolean }>('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 })
-    : await rpc<{ items: Profile[]; hasMore: boolean }>('holup_follow_people', { p_target: id, p_kind: kind, p_offset: offset, p_limit: 40 });
+  if (kind === 'keptClose') return homiePeople(id, offset);
+  const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_follow_people', { p_target: id, p_kind: kind, p_offset: offset, p_limit: 40 });
   return { ...page, items: (page.items ?? []).map(profileShape) };
+}
+// Candidate-only APIs: these require the unreleased consent-based Homies backend.
+export type HomieStatus = { homies: boolean; incomingPending: boolean; outgoingPending: boolean };
+export const homieStatus = (id: number) => rpc<HomieStatus>('holup_homie_status', {p_target: id});
+export const requestHomie = (id: number) => rpc<{status: 'accepted'|'pending'; changed: boolean}>('holup_request_homie', {p_target: id});
+export const withdrawHomie = (id: number) => rpc<boolean>('holup_withdraw_homie', {p_target: id});
+export const respondHomie = (id: number, accept: boolean) => rpc<{status: 'accepted'|'declined'}>('holup_respond_homie', {p_sender: id, p_accept: accept});
+export const homieStats = (id: number) => rpc<{count: number; canView: boolean}>('holup_homie_stats', {p_target: id});
+export async function homiePeople(id: number, offset = 0): Promise<{items: Profile[]; hasMore: boolean}> {
+ const page = await rpc<{items: Profile[];hasMore:boolean}>('holup_homie_people',{p_target:id,p_offset:offset,p_limit:40});
+ return {...page,items:(page.items ?? []).map(profileShape)};
+}
+export async function homieRequests(offset = 0): Promise<{items: Profile[]; hasMore: boolean}> {
+ const page = await rpc<{items: Profile[];hasMore:boolean}>('holup_homie_requests_inbox',{p_offset:offset,p_limit:40});
+ return {...page,items:(page.items ?? []).map(profileShape)};
 }
 export async function followStatus(id: number): Promise<{status: 'active' | 'pending' | null}> { return rpc('holup_follow_status', { p_target: id }); }
 export async function followMember(id: number): Promise<{ status: 'active' | 'pending'; changed: boolean }> {
@@ -1601,7 +1617,8 @@ export async function publicFlow(): Promise<Post[]> {
  * anybody — the app simply carries on at the version it has.
  */
 export async function appUpdate(): Promise<AppUpdate> {
-  const res = await fetch(`${MEDIA_BASE_URL}/version`, { headers: { Accept: 'application/json' } });
+  const channel = Constants.expoConfig?.extra?.androidUpdateChannel;
+  const res = await fetch(`${MEDIA_BASE_URL}${updateVersionPath(Platform.OS, channel, Constants.expoConfig?.android?.package)}`, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new ApiError(res.status, 'Couldn’t check for an update.');
   return (await res.json()) as AppUpdate;
 }
