@@ -761,3 +761,17 @@
   not complete the broader admin dashboard. The migration filename is a
   placeholder until actual Supabase apply; preserve exact statement and
   reconcile production migration history after apply. Do not develop item 5.
+- The limited admin candidate's first CI `42654736238` failed only because an
+  old browser assertion expected the former subtitle. The assertion was updated
+  and a report panel check added; complete CI `42655222760` passed on `22c9de1`.
+  Supabase `20261109163131_admin_report_triage` is live; SQL hash excluding the
+  final newline `a6d24fc62029edc1162afcd146db1da6073a8b4db33d230587d427fd4b5a5587`
+  matches candidate branch `f6d4072`. Anonymous execute is denied; authenticated
+  calls are checked against server-side `holup_is_admin`; isolated tests cover
+  non-admin denial and admin triage/audit. No real report was read or changed.
+  Client is not live; after Android 1.0.90 finishes, merge/cherry-pick candidate
+  onto latest main, reconcile migration, new Android version/notes, deploy web,
+  then dispatch Android. Do not push main while `42654095754` is running. This
+  partial release does not include verification approval, report media,
+  content removal or account suspension, and must not be described as complete.
+  Pending delete and Space migration versions now `20261109163132`/`163133`.
