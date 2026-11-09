@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
+import { ApiError } from './client';
 import type { SendDraft } from './service';
 import { liveMomentUserIds } from '../lib/profileTap';
 import { openWhisperLive, type WhisperLive, type WhisperLiveStatus } from '../lib/whisperLive';
@@ -1189,6 +1190,8 @@ export function useChat(conversationId: number) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [channelVersion, setChannelVersion] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [presence, setPresence] = useState<PeerPresence | null>(null);
@@ -1201,7 +1204,29 @@ export function useChat(conversationId: number) {
   const liveRef = useRef<WhisperLive | null>(null);
   const presenceRef = useRef<PeerPresence | null>(null);
   const messagesRef = useRef<Message[]>([]);
+  // A denial invalidates every older in-flight response, not just visible rows.
+  const accessEpoch = useRef(0);
+  const accessRevoked = useRef(false);
+  const needsReconnect = useRef(false);
   messagesRef.current = messages;
+  const revokeAccess = useCallback((e: unknown, epoch: number) => {
+    if (epoch !== accessEpoch.current || !(e instanceof ApiError) || e.status !== 404) return false;
+    accessEpoch.current += 1;
+    accessRevoked.current = true;
+    needsReconnect.current = true;
+    lastIdRef.current = 0;
+    lastReadRef.current = null;
+    messagesRef.current = [];
+    presenceRef.current = null;
+    liveRef.current?.close();
+    liveRef.current = null;
+    setMessages([]); setHasMore(false); setPresence(null); setUnavailable(true);
+    setPeerHere(false); setPeerTypingAt(0); setPeerRecordingAt(0); setLive('offline');
+    setError('This Whisper is no longer available.');
+    void qc.invalidateQueries({ queryKey: keys.conversations });
+    void qc.invalidateQueries({ queryKey: keys.badges });
+    return true;
+  }, [qc]);
 
   /* ------------------------------------------------------------ receipts */
 
@@ -1256,21 +1281,30 @@ export function useChat(conversationId: number) {
   }, [markDelivered, markRead]);
 
   const load = useCallback(async () => {
+    const epoch = ++accessEpoch.current;
+    if (liveRef.current) {
+      liveRef.current.close(); liveRef.current = null;
+      needsReconnect.current = true; setLive('offline');
+    }
     setLoading(true);
     setError(null);
     try {
       const res = await service.getMessages(conversationId, { limit: 40 });
+      if (epoch !== accessEpoch.current) return;
+      accessRevoked.current = false;
+      setUnavailable(false);
+      if (needsReconnect.current) { needsReconnect.current = false; setChannelVersion((v) => v + 1); }
       setMessages(res.items);
       setHasMore(res.hasMore);
       lastIdRef.current = res.items.length ? res.items[res.items.length - 1].id : 0;
       void markDelivered(lastIdRef.current);
       markRead();
     } catch (e) {
-      setError((e as Error).message);
+      if (epoch === accessEpoch.current && !revokeAccess(e, epoch)) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (epoch === accessEpoch.current || accessRevoked.current) setLoading(false);
     }
-  }, [conversationId, markDelivered, markRead]);
+  }, [conversationId, markDelivered, markRead, revokeAccess]);
 
   useEffect(() => {
     load();
@@ -1278,47 +1312,55 @@ export function useChat(conversationId: number) {
 
   /** One incremental fetch. Used by the channel, the poll and the reconnect. */
   const catchUp = useCallback(async () => {
+    if (accessRevoked.current) return;
+    const epoch = accessEpoch.current;
     try {
       const res = await service.getMessages(conversationId, { after: lastIdRef.current });
+      if (epoch !== accessEpoch.current) return;
       absorb(res.items);
       if (res.lastReadMine !== lastReadRef.current) applyReadState(res.lastReadMine);
-    } catch {
-      /* transient; the next nudge retries */
+    } catch (e) {
+      revokeAccess(e, epoch); // network errors leave the thread in place for retry
     }
-  }, [absorb, applyReadState, conversationId]);
+  }, [absorb, applyReadState, conversationId, revokeAccess]);
 
   // Reconcile older rows and reply snapshots as well as the incremental cursor.
   const syncLoaded = useCallback(async () => {
+    if (accessRevoked.current) return;
+    const epoch = accessEpoch.current;
     const ids = messagesRef.current.filter((m) => m.id > 0).map((m) => m.id);
     try {
       for (let at = 0; at < ids.length; at += 500) {
         const batch = ids.slice(at, at + 500);
         const current = await service.syncWhispers(conversationId, batch);
+        if (epoch !== accessEpoch.current) return;
         const requested = new Set(batch);
         const byId = new Map(current.map((m) => [m.id, m]));
         setMessages((previous) => previous.flatMap((m) => !requested.has(m.id) ? [m] : byId.has(m.id) ? [byId.get(m.id)!] : []));
       }
       void qc.invalidateQueries({ queryKey: keys.conversations });
-    } catch { /* retry on the next change or safety poll */ }
-  }, [conversationId, qc]);
+    } catch (e) { revokeAccess(e, epoch); }
+  }, [conversationId, qc, revokeAccess]);
 
   /* ------------------------------------------------------------- presence */
 
   useEffect(() => {
     let cancelled = false;
+    const epoch = accessEpoch.current;
     service.peerPresence(conversationId).then((p) => {
-      if (cancelled) return;
+      if (cancelled || epoch !== accessEpoch.current || accessRevoked.current) return;
       presenceRef.current = p;
       setPresence(p);
       liveRef.current?.setPresence(p.announce);
-    }).catch(() => {});
+    }).catch((e) => { if (!cancelled) revokeAccess(e, epoch); });
     return () => { cancelled = true; };
-  }, [conversationId]);
+  }, [conversationId, revokeAccess, channelVersion]);
 
   /* --------------------------------------------------------------- channel */
 
   useEffect(() => {
-    if (!Number.isFinite(conversationId) || conversationId <= 0) return;
+    if (!Number.isFinite(conversationId) || conversationId <= 0 || accessRevoked.current) return;
+    const epoch = accessEpoch.current;
     const chat = openWhisperLive({
       conversationId,
       myId: me?.id ?? null,
@@ -1326,12 +1368,13 @@ export function useChat(conversationId: number) {
       events: {
         onNewMessage: () => void catchUp(),
         onMessageChanged: () => void syncLoaded(),
-        onDelivered: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'deliveredAt')),
-        onRead: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'readAt')),
-        onTyping: (at) => setPeerTypingAt(at),
-        onRecording: (at) => setPeerRecordingAt(at),
-        onPeerHere: (here) => setPeerHere(here),
+        onDelivered: (upTo) => { if (epoch === accessEpoch.current) setMessages((prev) => applyUpTo(prev, upTo, 'deliveredAt')); },
+        onRead: (upTo) => { if (epoch === accessEpoch.current) setMessages((prev) => applyUpTo(prev, upTo, 'readAt')); },
+        onTyping: (at) => { if (epoch === accessEpoch.current) setPeerTypingAt(at); },
+        onRecording: (at) => { if (epoch === accessEpoch.current) setPeerRecordingAt(at); },
+        onPeerHere: (here) => { if (epoch === accessEpoch.current) setPeerHere(here); },
         onStatus: (s) => {
+          if (epoch !== accessEpoch.current) return;
           setLive(s);
           // A channel that has just come back may have missed things. Catching
           // up on arrival is the difference between "live" and "caught up".
@@ -1345,7 +1388,7 @@ export function useChat(conversationId: number) {
       liveRef.current = null;
       setPeerHere(false);
     };
-  }, [catchUp, conversationId, me?.id, syncLoaded]);
+  }, [catchUp, conversationId, me?.id, syncLoaded, channelVersion]);
 
   /* ---------------------------------------------------------- safety poll */
 
@@ -1397,21 +1440,27 @@ export function useChat(conversationId: number) {
 
   const loadOlder = useCallback(async () => {
     if (!hasMore || loadingMore || !messages.length) return;
+    const epoch = accessEpoch.current;
     setLoadingMore(true);
     try {
       const firstId = messages.find((m) => m.id > 0)?.id;
       const res = await service.getMessages(conversationId, { before: firstId, limit: 40 });
+      if (epoch !== accessEpoch.current) return;
       setMessages((prev) => [...res.items, ...prev]);
       setHasMore(res.hasMore);
+    } catch (e) {
+      if (!revokeAccess(e, epoch)) throw e;
     } finally {
       setLoadingMore(false);
     }
-  }, [conversationId, hasMore, loadingMore, messages]);
+  }, [conversationId, hasMore, loadingMore, messages, revokeAccess]);
 
   type Draft = service.SendDraft;
 
   const send = useCallback(
     async (draft: Draft, retryLocalId?: string) => {
+      if (accessRevoked.current) return { ok: false as const, error: 'This Whisper is no longer available.' };
+      const epoch = accessEpoch.current;
       const localId = retryLocalId || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const optimistic: Message = {
         id: -Date.now(),
@@ -1441,6 +1490,7 @@ export function useChat(conversationId: number) {
       setMessages((prev) => (retryLocalId ? prev.map((m) => (m.localId === localId ? optimistic : m)) : [...prev, optimistic]));
       try {
         const saved = await service.sendMessage(conversationId, draft);
+        if (epoch !== accessEpoch.current) return { ok: false as const, error: 'This Whisper is no longer available.' };
         lastIdRef.current = Math.max(lastIdRef.current, saved.id);
         setMessages((prev) => {
           const without = prev.filter((m) => m.id !== saved.id);
@@ -1454,6 +1504,7 @@ export function useChat(conversationId: number) {
         qc.invalidateQueries({ queryKey: keys.conversations });
         return { ok: true as const };
       } catch (e) {
+        if (epoch !== accessEpoch.current) return { ok: false as const, error: 'This Whisper is no longer available.' };
         setMessages((prev) => prev.map((m) => (m.localId === localId ? { ...m, pending: false, failed: true, meta: { ...m.meta, draft } } : m)));
         return { ok: false as const, error: (e as Error).message };
       }
@@ -1487,6 +1538,7 @@ export function useChat(conversationId: number) {
     messages,
     loading,
     error,
+    unavailable,
     reload: load,
     hasMore,
     loadOlder,

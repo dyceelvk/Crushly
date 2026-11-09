@@ -232,8 +232,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   }, [conversationId]);
 
   useEffect(() => {
-    if (conv && (!conv.canSend || conv.closed)) void callRef.current?.hangup().catch(() => {});
-  }, [conv?.canSend, conv?.closed]);
+    if (chat.unavailable || (conv && (!conv.canSend || conv.closed))) void callRef.current?.hangup().catch(() => {});
+  }, [chat.unavailable, conv?.canSend, conv?.closed]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
@@ -243,7 +243,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   }, []);
 
   const peer = conv?.peer;
-  const canSend = conv ? conv.canSend && !conv.closed : false;
+  const canSend = conv ? conv.canSend && !conv.closed && !chat.unavailable : false;
 
   // Re-check permissions periodically (e.g. the other person blocks or unmatches).
   useEffect(() => {
@@ -473,7 +473,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <ErrorState
             title="We lost the thread"
             error={chat.error}
-            message="These Whispers didn’t load. Your conversation is still here."
+            message="These Whispers didn’t load. Please try again."
             onRetry={chat.reload}
           />
         ) : (
@@ -493,7 +493,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: space.xxl }}>
                   <Avatar uri={peer.photo} name={peer.name} size={96} ring="crush" />
                   <Txt variant="heading" align="center" style={{ marginTop: space.md }}>
-                    You and {peer.name} have a Mutual Crush
+                    You and {peer.name} Keep Close
                   </Txt>
                   <Txt variant="body" color="textSecondary" align="center" style={{ marginTop: 6, maxWidth: 320 }}>
                     Start with something real. Tap an idea to make it yours.
@@ -572,7 +572,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           <View style={{ padding: space.md, paddingBottom: Math.max(insets.bottom, space.md), borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
-              {conv.closed ? 'This connection has ended. You can’t send new Whispers.' : conv.blockReason || 'You can’t send a Whisper here right now.'}
+              {chat.unavailable ? 'This Whisper is no longer available.' : conv.closed ? 'This connection has ended. You can’t send new Whispers.' : conv.blockReason || 'You can’t send a Whisper here right now.'}
             </Txt>
           </View>
         ) : (

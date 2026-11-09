@@ -24,18 +24,20 @@ connections-only profile.
   these events differently; design and verify an update/compatibility gate before
   any rollout. The prototype uses the old `keep` kind with body markers for
   requests and approvals; old clients cannot interpret those safely.
-- `06_whisper_access.sql` is an **experimental, not yet approved product policy**:
+- `06_whisper_access.sql` implements the user-confirmed policy in an experiment:
   after ending or blocking a pair, history/media are kept but not readable until
   fresh approval and reopening. Its SQL gates history, sync, Moment links, direct
   row reads, reactions, presence, media, badges, receipt writes and new call
   rooms. Sender-side delete remains possible after ending, but the UI does not
   yet provide a separated-thread deletion flow; block currently denies deletion.
-  This policy needs user confirmation and a complete privacy/UX audit.
+  This needs a complete privacy/UX audit.
 - A dangerous realtime gap remains: Supabase Realtime can cache channel
   authorization for an existing subscription, and clients can send arbitrary
   broadcast payloads, not merely the signals used by our client. A changed SQL
   `can_join_whisper` test does **not** prove immediate revocation of an already
-  joined channel. Design/test a server-enforced revocation or disable the unsafe
+  joined channel. Supabase documents the cached permissions explicitly at
+  https://supabase.com/docs/guides/realtime/authorization. Design/test a
+  server-enforced revocation or disable the unsafe
   transport with a compatible client; also prove active calls are terminated.
   The calls feature remains disabled in production. Do not ship on SQL tests alone.
 - Direct `messages.read_at` and `delivered_at` were exposed by raw table SELECT
@@ -44,8 +46,10 @@ connections-only profile.
   a verified installed-client gate. Verify real PostgREST privileges and behavior.
 - Historical notification routing, client-side caches after revocation, genuine
   storage/Worker access, all background/push paths, and realtime behavior need
-  integrated tests with real Supabase. Already downloaded or in-flight bytes
-  cannot be recalled.
+  integrated tests with real Supabase. The local app now clears visible chat
+  history after an authoritative denial, suppresses stale in-flight responses
+  and reconnects after a successful retry; this is not an immediate server-side
+  socket revocation. Already downloaded or in-flight bytes cannot be recalled.
 - Prove data conversion and atomic rollout against a representative copy, assess
   lock duration and rollback, and add migration tests to the canonical suite.
   This prototype intentionally keeps old migrations/tests unchanged.

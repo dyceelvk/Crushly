@@ -475,3 +475,43 @@ for (const own of [false, true]) {
     await page.getByRole('button', { name: 'Close', exact: true }).last().click();
   });
 }
+
+test('revoked Whisper clears cached history and ignores an older in-flight fetch', async ({ page }) => {
+  await offline(page, []);
+  const peer = { id: 2, name: 'Ada', verified: false, photo: null, online: false };
+  const msg = { id: 301, conversationId: 5, senderId: 2, mine: false, kind: 'text', body: 'Private history', mediaUrl: null, meta: {}, createdAt: Date.now(), readAt: null, reactions: [] };
+  const late = { ...msg, id: 302, body: 'Outdated response' };
+  let revoked = false, delayedFinished = false;
+  await page.route(`${API}/rest/v1/rpc/*`, async (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').pop();
+    const args = route.request().postDataJSON() as Record<string, any>;
+    let body: unknown;
+    if (name === 'list_conversations') body = { items: [{ id: 5, peer, lastMessage: msg, unread: 0, updatedAt: Date.now() }] };
+    else if (name === 'load_conversation') body = { id: 5, closed: false, peer, canSend: true, blockReason: null };
+    else if (name === 'get_messages') {
+      if (revoked && args.p_after_id) { await new Promise(resolve => setTimeout(resolve, 1500)); delayedFinished = true; body = { items: [late], hasMore: false, lastReadMine: null }; }
+      else body = { items: args.p_after_id ? [] : [msg], hasMore: false, lastReadMine: null };
+    } else if (name === 'sync_whispers' && revoked) {
+      return route.fulfill({ status: 400, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ code: 'P0001', message: '__CRUSHLY__404____Conversation not found.' }) });
+    } else if (name === 'sync_whispers') body = [msg];
+    else if (name === 'mark_messages_delivered') body = { upTo: 0, count: 0 };
+    else if (name === 'peer_presence') body = { peerId: 2, online: false, activity: null, receipts: false, announce: false, closed: false };
+    else return route.fallback();
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+  });
+  await page.goto('/');
+  await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: /Ada\. Private history/ }).click();
+  await expect(page.getByRole('button', { name: /Ada: Private history/ })).toBeVisible();
+  revoked = true;
+  // The real safety poll runs every 20 seconds; sync refuses while an older
+  // incremental result is still in flight.
+  await expect(page.getByText('This Whisper is no longer available.').first()).toBeVisible({ timeout: 30000 });
+  await expect.poll(() => delayedFinished, { timeout: 10000 }).toBe(true);
+  await expect(page.getByRole('button', { name: /Ada: Private history/ })).toHaveCount(0);
+  await expect(page.getByText('Outdated response', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Whisper', { exact: true })).toHaveCount(0);
+  revoked = false;
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('button', { name: /Ada: Private history/ })).toBeVisible();
+});
