@@ -733,3 +733,17 @@
   production and main must acquire the exact file before another database push.
 - Pending Whisper deletion and Space relationship migrations renumbered
   `20261109161553` and `20261109161554`; both remain unsafe to bulk deploy.
+- Android 1.0.89 run `42650994778` FAILED, not published: the post composer was
+  visibly drawn but its EditText was missing from a single accessibility-tree
+  dump. Screenshot was inspected; it was not a verified successful draft test.
+  Main `70a8e40` now contains the scoped full-screen notifications release,
+  matching live `20261109161552` migration, requested Moment/hashtag search
+  glyphs (60ms and reduced motion preserved), and a narrow Android walk change:
+  wait for the actual EditText, then verify the exact typed text. 1.0.90 build
+  run `42654095754`, main CI `42654079902` and web workflow `42654079847`
+  are running. Offered Android remains 1.0.87 until proven otherwise. Candidate
+  CI `42653168841` passed (before the walk/version-only changes).
+- No work was done on the deferred retention item in this batch. Do not issue
+  more main pushes while Android's bot metadata push is pending. After release,
+  reconcile this work branch to the latest main, retaining private work and
+  avoiding the already-applied notification migration duplicate.
