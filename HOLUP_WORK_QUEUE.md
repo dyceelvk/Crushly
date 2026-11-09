@@ -230,3 +230,9 @@
   avoids needing `--include-all` solely to handle the new migration timestamp.
   Fixture references were updated. The new combined ordering has not been
   verified and must not be taken as approval to push it automatically.
+- Additional pre-existing admin issue: `supabase/functions/verify-identity`
+  references undefined `user.id` despite authorizing only a service-role key.
+  It may fail when invoked. Do not simply remove that guard and enable it:
+  its implementation automatically approves/rejects identities using AI despite
+  describing itself as an assist, and an evidence-backed, authorized human
+  review workflow is still required. This function was not changed or deployed.
