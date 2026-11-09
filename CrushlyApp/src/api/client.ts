@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { offlineSwipeFetch } from './offlineSwipeFixture';
 import { Platform } from 'react-native';
 import { cleanEnvValue, looksLikeSecretKey, normalizeProjectUrl } from '../lib/env';
 import {
@@ -69,7 +70,7 @@ export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABAS
   /* One deadline for every request the app makes: RPCs and auth get 15 seconds,
      uploads get five minutes. Wired here rather than in each service function so
      nothing can be added later that quietly forgets it. */
-  global: { fetch: fetchWithDeadline((input, init) => fetch(input as RequestInfo, init)) },
+  global: { fetch: offlineSwipeFetch },
 });
 
 export class ApiError extends Error {

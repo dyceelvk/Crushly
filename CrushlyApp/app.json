@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Holup",
+    "name": "Holup Swipe Fixture",
     "slug": "crushly",
-    "scheme": "crushly",
+    "scheme": "holup-swipe-fixture",
     "version": "1.0.94",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "Holup — follow the feelings. A social space for real connection.",
+    "description": "Holup \u2014 follow the feelings. A social space for real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
@@ -21,7 +21,7 @@
       }
     },
     "android": {
-      "package": "app.crushly",
+      "package": "app.holup.swipetest",
       "adaptiveIcon": {
         "backgroundColor": "#2A0F2B",
         "foregroundImage": "./assets/android-icon-foreground.png",

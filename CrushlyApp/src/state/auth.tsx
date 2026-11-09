@@ -33,6 +33,12 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+// Synthetic identity, only in this non-shippable emulator fixture branch.
+const fixtureMe = { id: 1, email:'offline@example.test', status:'active', createdAt:Date.now(), onboarded:true,
+ profile:{ name:'Offline test', username:'offline', birthdate:'1995-01-01', age:30, pronouns:'', bio:'', city:'', hasLocation:false, intentions:[], interests:[], languages:[], relationshipIntention:'', lifestyle:{}, photos:[] },
+ verification:{status:'none',pose:null}, completion:{percent:100,missing:[]}, preferences:{ageMin:18,ageMax:99,intentions:[],interests:[]},
+ privacy:{profileVisibility:'everyone',discoverable:true,showDistance:false,showOnline:false,showActivity:false,readReceipts:false,whoCanMessage:'everyone',whoCanCrush:'everyone',showAge:true,showCity:false,incognito:false},
+ notifications:{messages:true,crushes:true,moments:true,recommendations:true}, plus:{active:false,interested:false,deepCrushesLeft:0,deepCrushesPerDay:0} } as unknown as Me;
 
 /**
  * Session state is Supabase Auth's (persisted in the OS keychain on device,
@@ -40,10 +46,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
-  const [signedIn, setSignedIn] = useState(false);
+  const [signedIn, setSignedIn] = useState(true);
   const [mustSetPassword, setMustSetPassword] = useState(false);
-  const [restoring, setRestoring] = useState(true);
-  const [me, setMeState] = useState<Me | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [me, setMeState] = useState<Me | null>(fixtureMe);
 
   // Keep local `me` in sync with the query cache, so any mutation that updates ['me'] re-routes correctly.
   useEffect(() => {
