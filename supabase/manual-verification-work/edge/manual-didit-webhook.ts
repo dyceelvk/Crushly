@@ -4,16 +4,35 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { verifyDiditWebhook } from '../../functions/_shared/didit.ts';
 function reply(status:number) { return new Response(status===200?'ok':'unavailable',{status,headers:{'cache-control':'no-store'}}); }
+const limit=2*1024*1024;
+async function readBody(req:Request):Promise<string|null> {
+ const size=Number(req.headers.get('content-length')??0);
+ if(!Number.isFinite(size)||size<0||size>limit||!req.body) return null;
+ const reader=req.body.getReader(); const parts:Uint8Array[]=[]; let total=0;
+ while(true) {
+  const {done,value}=await reader.read(); if(done) break;
+  total+=value.length; if(total>limit){await reader.cancel();return null;} parts.push(value);
+ }
+ const bytes=new Uint8Array(total); let offset=0;
+ for(const part of parts){bytes.set(part,offset);offset+=part.length;}
+ try { return new TextDecoder('utf-8',{fatal:true}).decode(bytes); } catch { return null; }
+}
 Deno.serve(async req=>{
  if(req.method!=='POST') return reply(405);
  const secret=Deno.env.get('DIDIT_MANUAL_WEBHOOK_SECRET')??'';
  const url=Deno.env.get('SUPABASE_URL')??'', key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
  const expectedWorkflow=Deno.env.get('DIDIT_MANUAL_VERIFICATION_WORKFLOW_ID')??'';
  if(!secret||!url||!key||!expectedWorkflow) return reply(503);
- if(Number(req.headers.get('content-length')??0)>2*1024*1024) return reply(413);
- const raw=await req.text(); if(raw.length>2*1024*1024) return reply(413);
+ let raw:string|null; try { raw=await readBody(req); } catch { return reply(400); }
+ if(raw===null) return reply(413);
  if(!await verifyDiditWebhook(raw,req.headers.get('x-signature-v2'),req.headers.get('x-timestamp'),secret)) return reply(401);
  let p:Record<string,unknown>; try {p=JSON.parse(raw);} catch{return reply(400);}
+ if(!p||typeof p!=='object'||Array.isArray(p)) return reply(400);
+ // X-Timestamp is outside the V2 signature. Require the signed delivery time
+ // itself to be fresh, too, so an old payload cannot be replayed by replacing
+ // only the unsigned header. A stale delivery may be reconciled by polling.
+ const now=Math.floor(Date.now()/1000);
+ if(typeof p.timestamp!=='number'||!Number.isSafeInteger(p.timestamp)||Math.abs(now-p.timestamp)>300) return reply(401);
  // Ignore unrelated destination events without making them retry.
  if(p.webhook_type!=='status.updated'||p.environment!=='live'||p.workflow_id!==expectedWorkflow) return reply(200);
  if(!['Not Started','In Progress','In Review','Approved','Declined','Expired','Abandoned'].includes(String(p.status))) return reply(200);

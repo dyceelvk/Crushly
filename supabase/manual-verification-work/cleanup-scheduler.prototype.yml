@@ -1,0 +1,43 @@
+# PROTOTYPE ONLY: this file is deliberately outside .github/workflows and does
+# not run. Deploy only after the private worker, separate scheduler secret and
+# failure monitoring are provisioned, and the deletion lifecycle is validated.
+name: Remove expired Holup verification images
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: holup-verification-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Process one protected cleanup batch
+        env:
+          HOLUP_PROJECT_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$HOLUP_PROJECT_URL" in
+            https://yzcssyebozfkmojqqdhc.supabase.co) ;;
+            *) echo 'Unexpected project URL; cleanup stopped.'; exit 1 ;;
+          esac
+          if [ ${#CLEANUP_SECRET} -lt 32 ]; then echo 'Cleanup credential is not configured.'; exit 1; fi
+          response=$(mktemp)
+          trap 'rm -f "$response"' EXIT
+          code=$(curl --silent --show-error --max-time 90 -o "$response" -w '%{http_code}' \
+            -X POST -H "x-cleanup-secret: $CLEANUP_SECRET" \
+            "$HOLUP_PROJECT_URL/functions/v1/manual-evidence-cleanup")
+          if [ "$code" != 200 ]; then echo "Cleanup failed: HTTP $code"; exit 1; fi
+          python3 - "$response" <<'PY'
+          import json,sys
+          with open(sys.argv[1]) as f: data=json.load(f)
+          if not isinstance(data,dict) or data.get('failed')!=0 or not isinstance(data.get('removed'),int):
+              raise SystemExit('Cleanup returned an unexpected or failed result')
+          print('Cleanup batch completed; objects removed:',data['removed'])
+          PY

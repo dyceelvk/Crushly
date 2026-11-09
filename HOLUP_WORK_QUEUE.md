@@ -387,3 +387,13 @@
   not part of the V2 HMAC. Retained event IDs and session binding help, but
   signed timestamp/retry behavior and old-client/legacy endpoint cutover need a
   reviewed design and real provider validation before deployment.
+
+- Follow-up: the local webhook now bounds the streamed request body and checks
+  the HMAC-authenticated payload timestamp as well as the header timestamp.
+  This is fail-closed but actual Didit retry timestamps, key rotation and real
+  session behavior still require provider validation before deployment.
+- `supabase/manual-verification-work/cleanup-scheduler.prototype.yml` sketches a
+  credential-gated 15-minute cleanup scheduler. It is intentionally inactive;
+  production needs a separately provisioned secret, reachable private worker,
+  operational failure alerts, backlog monitoring, and validation of deletion
+  and backup/provider retention before activating it.
