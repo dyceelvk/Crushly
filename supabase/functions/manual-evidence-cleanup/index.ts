@@ -2,18 +2,18 @@
 // not publicly invoked and never expose this secret to clients. Checks the
 // durable queue. An item is removed only after the private object is removed.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-function same(a:string,b:string):boolean {
- const aa=new TextEncoder().encode(a), bb=new TextEncoder().encode(b);
- if(aa.length!==bb.length) return false;
- let diff=0; for(let i=0;i<aa.length;i++) diff|=aa[i]^bb[i]; return diff===0;
-}
 Deno.serve(async req=>{
  if(req.method!=='POST') return new Response('Method not allowed',{status:405});
- const secret=Deno.env.get('MANUAL_EVIDENCE_CLEANUP_SECRET')??'';
- if(secret.length<32||!same(req.headers.get('x-cleanup-secret')??'',secret)) return new Response('Unauthorized',{status:401});
+ const secret=req.headers.get('x-cleanup-secret')??'';
+ if(secret.length<32||secret.length>256) return new Response('Unauthorized',{status:401});
  const url=Deno.env.get('SUPABASE_URL')??'',key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
  if(!url||!key) return new Response('Not configured',{status:503});
  const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+ const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret));
+ const digest=Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');
+ const {data:allowed,error:authError}=await client.rpc('manual_evidence_cleanup_authenticate',{p_digest:digest});
+ if(authError) return new Response('Authorization unavailable',{status:503});
+ if(allowed!==true) return new Response('Unauthorized',{status:401});
  const {error:expireError}=await client.rpc('manual_evidence_expire',{p_limit:100});
  if(expireError) { await client.rpc('manual_evidence_cleanup_heartbeat',{p_failed:1}); return new Response('Expiry unavailable',{status:503}); }
  const {data:paths,error}=await client.rpc('manual_evidence_cleanup_batch',{p_limit:100});

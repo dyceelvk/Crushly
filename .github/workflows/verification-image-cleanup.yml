@@ -18,27 +18,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Configure worker secret in Supabase
+      - name: Configure worker credential digest
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.configure_secret }}
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json,os,urllib.request,urllib.error
-          secret=os.environ.get('CLEANUP_SECRET','')
-          token=os.environ.get('SUPABASE_ACCESS_TOKEN','')
-          if len(secret)<32 or not token: raise SystemExit('Required deployment secret missing')
-          request=urllib.request.Request('https://api.supabase.com/v1/projects/yzcssyebozfkmojqqdhc/secrets',
-             data=json.dumps([{'name':'MANUAL_EVIDENCE_CLEANUP_SECRET','value':secret}]).encode(),
-             headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
-          try:
-              with urllib.request.urlopen(request,timeout=45) as response:
-                  if response.status not in (200,201,204): raise SystemExit('Secret configuration failed')
-          except urllib.error.HTTPError as e: raise SystemExit('Secret configuration HTTP '+str(e.code))
-          print('Worker credential configured')
-          PY
+          if [ ${#CLEANUP_SECRET} -lt 32 ] || [ -z "$SUPABASE_DB_URL" ]; then echo 'Required setup secret missing'; exit 1; fi
+          digest=$(printf '%s' "$CLEANUP_SECRET" | sha256sum | cut -d' ' -f1)
+          printf "insert into public.manual_evidence_cleanup_auth_state(singleton,secret_digest) values (true,'%s') on conflict(singleton) do update set secret_digest=excluded.secret_digest;\n" "$digest" | psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1
+          echo 'Worker credential configured'
       - name: Process protected cleanup batch
         env:
           HOLUP_PROJECT_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
