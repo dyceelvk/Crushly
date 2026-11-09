@@ -12,8 +12,10 @@ begin
  denied:=false; begin perform public.holup_admin_reports(false,50,0); exception when others then denied:=true; end; assert denied,'non-admin read reports';
  denied:=false; begin perform public.holup_admin_accounts('Marcus',30); exception when others then denied:=true; end; assert denied,'non-admin searched accounts';
  denied:=false; begin perform public.holup_admin_set_report_handled(rid,true); exception when others then denied:=true; end; assert denied,'non-admin altered reports';
+ denied:=false; begin perform public.holup_admin_analytics(); exception when others then denied:=true; end; assert denied,'non-admin read analytics';
  denied:=false; begin perform public.holup_admin_audit(50); exception when others then denied:=true; end; assert denied,'non-admin read audit';
  perform set_config('request.jwt.claim.sub',au::text,true);
+ result:=public.holup_admin_analytics(); assert result ? 'members' and result ? 'seenLast7Days' and result ? 'whispersLast7Days', 'analytics missing data';
  result:=public.holup_admin_reports(false,50,0); assert exists(select 1 from jsonb_array_elements(result) item where (item->>'id')::bigint=rid), 'admin cannot see report';
  assert public.holup_admin_set_report_handled(rid,true),'admin cannot mark report';
  result:=public.holup_admin_reports(true,50,0); assert exists(select 1 from jsonb_array_elements(result) item where (item->>'id')::bigint=rid), 'reviewed report missing';

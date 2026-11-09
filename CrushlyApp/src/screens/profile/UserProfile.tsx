@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, type AddUpListVisibility } from '../../api/service';
 import { formatCount } from '../../lib/counts';
+import { SpaceNavigation } from '../../navigation/SpaceNavigation';
 import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -280,7 +281,8 @@ export function SpaceScreen({
      cover: the picture is still the first thing you see, and the person, the
      Add up and the four tabs are on the same screen with it. */
   const hasBanner = !!bannerUrl;
-  const heroH = bannerPending || hasBanner ? Math.min(heroW * 0.62, 320) : insets.top + 105;
+  // Banner and plain cover share the same horizontal band: the avatar never moves.
+  const heroH = insets.top + 105;
 
   /**
    * What tapping somebody's face means.
@@ -583,7 +585,8 @@ export function SpaceScreen({
               {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
             </Txt>
             {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
-              {([['addUps', 'Add Ups', relationship.data.addUps, relationship.data.canViewAddUps], ['keptClose', 'Kept Close', relationship.data.keptClose, relationship.data.canViewKeptClose]] as const).map(([kind, label, count, canView]) => canView ? <Pressable key={kind} onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList(kind); }} accessibilityRole="button" accessibilityLabel={`${count} ${label}. View people`}><Txt variant="small"><Txt variant="smallStrong">{formatCount(count)}</Txt> {label}</Txt></Pressable> : <Txt key={kind} variant="small"><Txt variant="smallStrong">{formatCount(count)}</Txt> {label}</Txt>)}
+              {relationship.data.canViewAddUps ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong">{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable> : <Txt variant="small"><Txt variant="bodyStrong">{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt>}
+              {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
               {mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
             </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
             {p.bio ? <View style={{ marginTop: space.sm }}>
@@ -767,6 +770,7 @@ export function SpaceScreen({
               visitor's report link moved in there with them. */}
         </View>
       </ScrollView>
+      {!mine ? <SpaceNavigation /> : null}
 
       {/* --------------------------------------------- the face, full screen
           The picture on its own, nothing over it: the same photograph the cover
@@ -892,7 +896,7 @@ export function SpaceScreen({
       </View>
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
       <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
-        ['everyone', 'Everyone who can view your Space'], ['close', 'Mutual Close Ones'], ['private', 'Only you'],
+        ['everyone', 'Everyone who can view your Space'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals stay visible. Individual Spaces still follow their privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
       <SpaceRelationshipList targetId={p.id} viewerId={meQ.data?.id ?? 0} kind={relationshipList} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>

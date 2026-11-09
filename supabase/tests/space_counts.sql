@@ -1,7 +1,7 @@
 -- Identity visibility is enforced in SQL, not merely by hiding a button.
 begin;
 do $test$
-declare owner_uuid uuid; close_uuid uuid; other_uuid uuid; owner_id bigint; close_id bigint; other_id bigint; r jsonb; denied boolean;
+declare owner_uuid uuid; close_uuid uuid; other_uuid uuid; owner_id bigint; close_id bigint; other_id bigint; r jsonb; denied boolean; public_post bigint; private_post bigint; public_before bigint; owner_before bigint;
 begin
   select id into owner_uuid from auth.users where email='marcus@crushly.app';
   select id into close_uuid from auth.users where email='daniel@crushly.app';
@@ -22,8 +22,21 @@ begin
   insert into crushes(from_id,to_id,status) values(close_id,owner_id,'accepted'),(other_id,owner_id,'pending');
 
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
+  public_before := (space_relationship_stats(owner_id)->>'postLikes')::bigint;
+  reset role;
+  perform set_config('request.jwt.claim.sub',owner_uuid::text,true); set local role authenticated;
+  owner_before := (space_relationship_stats(owner_id)->>'postLikes')::bigint;
+  reset role;
+  insert into public.posts(author_id,body,audience) values(owner_id,'public fixture','everyone') returning id into public_post;
+  insert into public.posts(author_id,body,audience) values(owner_id,'private fixture','private') returning id into private_post;
+  insert into public.post_reactions(post_id,user_id) values(public_post,other_id),(private_post,other_id);
+  perform set_config('request.jwt.claim.sub',owner_uuid::text,true); set local role authenticated;
+  assert (space_relationship_stats(owner_id)->>'postLikes')::bigint=owner_before+2, 'owner likes count wrong';
+  reset role;
+  perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
   r:=space_relationship_stats(owner_id);
-  assert (r->>'addUps')::int=2 and (r->>'keptClose')::int=2, 'counts incorrect';
+  assert (r->>'postLikes')::bigint=public_before+1, 'private post reaction leaked';
+  assert (r->>'addUps')::int=2 and r->'keptClose'='null'::jsonb, 'counts incorrect';
   assert not (r->>'canViewAddUps')::boolean and not (r->>'canViewKeptClose')::boolean, 'private list exposed';
   assert r->>'addUpVisibility' is null, 'owner setting exposed';
   denied:=false; begin perform space_relationship_people(owner_id,'addUps'); exception when others then denied:=true; end; assert denied, 'stranger accessed private add ups';
@@ -39,9 +52,8 @@ begin
   reset role;
 
   perform set_config('request.jwt.claim.sub',close_uuid::text,true); set local role authenticated;
-  r:=space_relationship_stats(owner_id); assert (r->>'canViewAddUps')::boolean and (r->>'canViewKeptClose')::boolean, 'mutual Keep pair should be allowed';
-  assert jsonb_array_length(space_relationship_people(owner_id,'addUps')->'items')=2;
-  assert jsonb_array_length(space_relationship_people(owner_id,'keptClose')->'items')=2;
+  r:=space_relationship_stats(owner_id); assert not (r->>'canViewAddUps')::boolean and not (r->>'canViewKeptClose')::boolean, 'legacy mutual keeps are not accepted Close Ones';
+  denied:=false; begin perform space_relationship_people(owner_id,'keptClose'); exception when others then denied:=true; end; assert denied, 'unapproved Keep exposed';
   reset role;
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
   denied:=false; begin perform space_relationship_people(owner_id,'addUps'); exception when others then denied:=true; end; assert denied, 'close-only exposed to stranger';

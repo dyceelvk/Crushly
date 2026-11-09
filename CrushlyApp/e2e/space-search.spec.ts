@@ -39,6 +39,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/holup_is_admin') body = isAdmin;
     else if (path === '/rest/v1/rpc/holup_app_settings') body = { callsEnabled: false, publicSharingEnabled: true, announcement: null };
     else if (path === '/rest/v1/rpc/holup_admin_state') body = { features: { calls: false, public_post_sharing: true }, announcement: { title: '', body: '', active: false } };
+    else if (path === '/rest/v1/rpc/holup_admin_analytics') body = { members: 4, seenLast7Days: 2, newMembersLast7Days: 1, postsLast7Days: 3, reactionsLast7Days: 2, commentsLast7Days: 1, whispersLast7Days: 1, openReports: 1 };
     else if (path === '/rest/v1/rpc/holup_admin_set_feature') body = true;
     else if (path === '/rest/v1/rpc/holup_admin_reports') body = [{ id: 81, reporterId: 2, reporterName: 'Reporter', reportedId: 3, reportedName: 'Reported', reason: 'other', details: 'Report details', context: 'profile', handled: false, createdAt: Date.now() }];
     else if (path === '/rest/v1/rpc/public_post_preview') body = { id: 11, body: onePost.body, author: person.name };
@@ -163,6 +164,8 @@ test('verified admin can access the server-backed feature controls', async ({ pa
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByText('Holup admin', { exact: true }).click();
   await expect(page.getByText('Operations and controls')).toBeVisible();
+  await expect(page.getByText('Seen in last 7 days')).toBeVisible();
+  await page.getByRole('tab', { name: 'Action board', exact: true }).click();
   await expect(page.getByLabel('Voice calls', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Public post links', { exact: true })).toBeVisible();
   await page.getByLabel('Title', { exact: true }).fill('Draft announcement');

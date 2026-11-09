@@ -10,6 +10,7 @@ import { CountBadge } from '../components/Badges';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBadges } from '../api/hooks';
 import { haptic } from '../lib/haptics';
+import { SpaceNavigation } from './SpaceNavigation';
 
 const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap] | 'crush'> = {
   Flows: ['home', 'home-outline'],
@@ -26,6 +27,8 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { data: badges } = useBadges(true);
+
+  if (state.routes[state.index]?.name === 'Profile') return <SpaceNavigation />;
 
   // Crushes is a part of Home now, so its count rides on Home's icon rather
   // than on a tab of its own.

@@ -267,7 +267,7 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export type AddUpListVisibility = 'everyone' | 'close' | 'private';
-export type SpaceRelationshipStats = { addUps: number; keptClose: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
+export type SpaceRelationshipStats = { addUps: number; keptClose: number | null; postLikes: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
 export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
   return rpc('space_relationship_stats', { p_target_id: id });
 }
@@ -447,6 +447,8 @@ export type AdminState = { features: { calls: boolean; public_post_sharing: bool
 export const isHolupAdmin = () => rpc<boolean>('holup_is_admin');
 export const appSettings = () => rpc<AppSettings>('holup_app_settings');
 export const adminState = () => rpc<AdminState>('holup_admin_state');
+export type AdminAnalytics = { members: number; seenLast7Days: number; newMembersLast7Days: number; postsLast7Days: number; reactionsLast7Days: number; commentsLast7Days: number; whispersLast7Days: number; openReports: number };
+export const adminAnalytics = () => rpc<AdminAnalytics>('holup_admin_analytics');
 export const adminSetFeature = (key: 'calls' | 'public_post_sharing', enabled: boolean) => rpc<boolean>('holup_admin_set_feature', { p_key: key, p_enabled: enabled });
 export const adminSetAnnouncement = (title: string, body: string, active: boolean) => rpc<boolean>('holup_admin_announcement', { p_title: title, p_body: body, p_active: active });
 
