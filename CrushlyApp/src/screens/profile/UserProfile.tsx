@@ -6,11 +6,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { CrushIcon } from '../../components/Logo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { LinkText } from '../../components/LinkText';
+import { copySpaceLink, shareSpaceLink } from '../../lib/spaceShareActions';
 import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Chip, ChipGroup } from '../../components/Chip';
-import { BottomSheet } from '../../components/BottomSheet';
+import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Tabs } from '../../components/Tabs';
 import { useMemberCircles } from '../../api/hooks';
@@ -202,6 +204,8 @@ export function SpaceScreen({
   /** The full-screen picture, and the chooser that decides which door opens. */
   const [photoOpen, setPhotoOpen] = useState(false);
   const [faceMenu, setFaceMenu] = useState(false);
+  const [spaceMenu, setSpaceMenu] = useState(false);
+  const [showFullBio, setShowFullBio] = useState(false);
   /**
    * Whether the page has scrolled past the cover.
    *
@@ -259,9 +263,8 @@ export function SpaceScreen({
      picture having been cropped and the rest of the space abandoned. 0.62 is a
      cover: the picture is still the first thing you see, and the person, the
      Add up and the four tabs are on the same screen with it. */
-  const heroH = Math.min(heroW * 0.62, 320);
-  /** The photo behind the blurred cover: the one the reader is looking at. */
-  const backdrop = p?.photos?.[index]?.url || p?.photos?.[0]?.url || '';
+  const hasBanner = !!bannerUrl;
+  const heroH = bannerPending || hasBanner ? Math.min(heroW * 0.62, 320) : insets.top + 105;
 
   /**
    * What tapping somebody's face means.
@@ -385,6 +388,11 @@ export function SpaceScreen({
 
   const lifestyle = lifestyleFacts(p);
 
+  const spaceActions = [
+    { label: 'Share Space', icon: <Ionicons name="share-outline" size={20} color={colors.textSecondary} />, immediateOnWeb: true, onPress: () => { void shareSpaceLink(p.id).then((result) => { if (result === 'copied') toast({ kind: 'success', title: 'Link copied' }); }).catch(() => toast({ kind: 'error', title: 'Couldn’t share link' })); } },
+    { label: 'Copy Space link', icon: <Ionicons name="copy-outline" size={20} color={colors.textSecondary} />, hint: 'Space privacy still applies', immediateOnWeb: true, onPress: () => { void copySpaceLink(p.id).then(() => toast({ kind: 'success', title: 'Link copied' })).catch(() => toast({ kind: 'error', title: 'Couldn’t copy link' })); } },
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
@@ -403,64 +411,15 @@ export function SpaceScreen({
         }}
         scrollEventThrottle={16}
       >
-        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative', overflow: 'hidden', backgroundColor: '#0A0710' }}>
-          {/* The cover is the picture, not a crop of it.
-              A photograph forced to fill a 4:5 block loses whatever was at its
-              edges — a wide shot became a slice, and a logo became a slab of
-              letters. What a Space does now is what every video screen already
-              does: the same picture, blown up and softened, fills the cover, and
-              the picture itself sits whole on top of it. Nothing is cropped, the
-              edges are the photo's own colours, and a portrait or a landscape
-              both look deliberate. */}
-          {!bannerPending && !bannerUrl && backdrop ? (
-            <Image
-              source={mediaSource(mediaUrl(backdrop))}
-              style={{ position: 'absolute', top: -24, left: -24, right: -24, bottom: -24 }}
-              contentFit="cover"
-              blurRadius={26}
-              transition={180}
-              cachePolicy="memory-disk"
-            />
-          ) : null}
-          <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(7,7,8,0.24)' }} />
+        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative', overflow: 'hidden', backgroundColor: hasBanner ? '#0A0710' : colors.bg }}>
           {bannerPending ? (
             <Skeleton style={{ width: heroW, height: heroH, borderRadius: 0 }} />
           ) : bannerUrl ? (
-            <Image source={mediaSource(mediaUrl(bannerUrl))} style={{ width: heroW, height: heroH }} contentFit="cover" cachePolicy="none" accessibilityLabel={`${p.name}’s Space banner`} />
-          ) : (
-            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32} accessibilityLabel={`${p.photos.length} photos`}>
-              {(p.photos.length ? p.photos : [{ id: 0, url: '' }]).map((ph, i) => (
-                <Photo key={ph.id} uri={ph.url || null} fit="contain" style={{ width: heroW, height: heroH }} alt={`${p.name}, photo ${i + 1} of ${p.photos.length}`} priority={i === 0 ? 'high' : 'low'} />
-              ))}
-            </ScrollView>
-          )}
-          {/* A feathered transition to the active Holup surface, not a dark
-              bar. It stays below the dots and controls and never catches taps. */}
-          <LinearGradient
-            pointerEvents="none"
-            colors={[`${colors.bg}00`, `${colors.bg}18`, `${colors.bg}85`, colors.bg]}
-            locations={[0, 0.32, 0.72, 1]}
-            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: Math.min(heroH * 0.48, 150) }}
-          />
-          {/* The dots stay with the photograph, because they count photographs.
-              Everything else that used to share this row is a control, and a
-              control belongs in the header above, where it does not scroll
-              away. */}
-          <View style={{ position: 'absolute', top: insets.top + space.sm + 8, left: gutter, right: gutter, flexDirection: 'row', gap: 4, justifyContent: 'center' }} accessibilityElementsHidden>
-            {!bannerPending && !bannerUrl && p.photos.length > 1
-              ? p.photos.map((ph, i) => <View key={ph.id} style={{ flex: 1, maxWidth: 40, height: 3, borderRadius: 2, backgroundColor: i === index ? '#fff' : 'rgba(255,255,255,0.35)' }} />)
-              : null}
-          </View>
-          {/* Only the state pills live on the cover now. The name, the face and
-              the actions sit under it, on the page background, which is what
-              stops the identity block from eating the screen the tabs need. */}
-          <View style={{ position: 'absolute', left: gutter, right: gutter, bottom: space.md }}>
-            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-              {p.online ? <Pill tone="glass" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} /> : p.activity ? <Pill tone="glass" label={p.activity} /> : null}
-              {p.crush.mutual ? <Pill tone="glass" label="Both added up" icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : p.crush.received ? <Pill tone="glass" label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'} icon={<Ionicons name="heart" size={11} color={colors.crush} />} /> : null}
-              {keep.data?.keepsYou ? <Pill tone="glass" label="Keeps you close" icon={<Ionicons name="bookmark" size={11} color={colors.gold} />} /> : null}
-            </View>
-          </View>
+            <>
+              <Image source={mediaSource(mediaUrl(bannerUrl))} style={{ width: heroW, height: heroH }} contentFit="cover" cachePolicy="none" accessibilityLabel={`${p.name}’s Space banner`} />
+              <LinearGradient pointerEvents="none" colors={[`${colors.bg}00`, `${colors.bg}18`, `${colors.bg}85`, colors.bg]} locations={[0, 0.32, 0.72, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: Math.min(heroH * 0.48, 150) }} />
+            </>
+          ) : null}
         </View>
 
         {/*
@@ -607,6 +566,10 @@ export function SpaceScreen({
             <Txt variant="small" color="textSecondary" style={{ marginTop: space.xs }}>
               {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
             </Txt>
+            {p.bio ? <View style={{ marginTop: space.sm }}>
+              <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
+              {p.bio.length > 80 ? <Pressable onPress={() => setShowFullBio((open) => !open)} accessibilityRole="button" accessibilityLabel={showFullBio ? 'Show less bio' : 'Show full bio'}><Txt variant="small" color="gold">{showFullBio ? 'Show less' : 'Show more'}</Txt></Pressable> : null}
+            </View> : null}
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.xs, flexWrap: 'wrap' }}>
                 {/* Keep Close and Crush are things one member does to another.
@@ -874,7 +837,7 @@ export function SpaceScreen({
             borderBottomColor: colors.border,
           }}
         />
-        {!scrolled ? (
+        {!scrolled && hasBanner ? (
           <LinearGradient
             colors={['rgba(7,7,8,0.38)', 'transparent']}
             style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 96 }}
@@ -891,22 +854,23 @@ export function SpaceScreen({
               The gear on Notifications opens notification settings for the same
               reason: a gear means settings, wherever it is drawn. */}
           {mine ? (
-            <IconButton icon="settings-outline" variant={scrolled ? 'surface' : 'glass'} label="Settings" onPress={() => navigation.navigate('Settings')} />
+            <IconButton icon="settings-outline" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label="Settings" onPress={() => navigation.navigate('Settings')} />
           ) : goBack ? (
-            <IconButton icon="chevron-back" variant={scrolled ? 'surface' : 'glass'} label="Go back" onPress={goBack} />
+            <IconButton icon="chevron-back" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label="Go back" onPress={goBack} />
           ) : null}
           <View style={{ flex: 1 }} />
           {mine ? (
-            <IconButton icon="bookmark-outline" variant={scrolled ? 'surface' : 'glass'} label="Picked" onPress={() => navigation.navigate('SavedPosts')} />
+            <IconButton icon="bookmark-outline" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label="Picked" onPress={() => navigation.navigate('SavedPosts')} />
           ) : null}
+          {mine ? <IconButton icon="ellipsis-horizontal" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label="More Space options" onPress={() => setSpaceMenu(true)} /> : null}
           {mine ? (
-            <IconButton icon="create-outline" variant={scrolled ? 'surface' : 'glass'} label="Edit Space" onPress={() => navigation.navigate('EditProfile')} />
+            <IconButton icon="create-outline" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label="Edit Space" onPress={() => navigation.navigate('EditProfile')} />
           ) : (
-            <IconButton icon="ellipsis-horizontal" variant={scrolled ? 'surface' : 'glass'} label={`More options for ${p.name}`} onPress={() => openActions(member)} />
+            <IconButton icon="ellipsis-horizontal" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label={`More options for ${p.name}`} onPress={() => openActions(member, spaceActions)} />
           )}
         </View>
       </View>
-
+      <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
     </View>
   );
 }
@@ -1266,7 +1230,7 @@ function SpaceAbout({
 
   return (
     <View style={{ gap: space.lg }}>
-      {p.bio ? <Txt variant="body">{p.bio}</Txt> : null}
+      {p.bio ? <Txt variant="body"><LinkText text={p.bio} bare /></Txt> : null}
 
       {hasWords && (p.intentions.length || p.relationshipIntention) ? (
         <Section title="Looking for">

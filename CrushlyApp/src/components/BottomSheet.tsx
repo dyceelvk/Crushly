@@ -137,6 +137,8 @@ export type SheetAction = {
   onPress: () => void;
   destructive?: boolean;
   hint?: string;
+  /** Preserve the browser user gesture for clipboard and Web Share. */
+  immediateOnWeb?: boolean;
 };
 
 /** Action list (profile "More", message long-press, etc.). */
@@ -150,7 +152,8 @@ export function ActionSheet({ visible, onClose, title, actions }: { visible: boo
             key={a.label}
             onPress={() => {
               onClose();
-              setTimeout(a.onPress, Platform.OS === 'web' ? 0 : 220);
+              if (Platform.OS === 'web' && a.immediateOnWeb) a.onPress();
+              else setTimeout(a.onPress, Platform.OS === 'web' ? 0 : 220);
             }}
             accessibilityRole="button"
             accessibilityLabel={a.label}

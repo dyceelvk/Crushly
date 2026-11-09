@@ -6,7 +6,7 @@ const API = 'https://verification-test.supabase.co';
 const MEDIA = 'https://crushly-media.dyceelvk.workers.dev';
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', 'base64');
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'offline@example.com' };
-const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
+const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', bio: 'My site https://example.com/about', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
 async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false) {
@@ -47,7 +47,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/edit_post') { const args = route.request().postDataJSON() as Record<string, unknown>; commentCalls.push(args); body = { ...onePost, id: 12, audience: args.p_audience, body: args.p_body, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: true, likeCount: 0, liked: false, commentCount: 1, viewCount: 2 }; }
     else if (path === '/rest/v1/rpc/post_comment_settings') body = true;
     else if (path === '/rest/v1/rpc/post_likers') body = { items: [] };
-    else if (path === '/rest/v1/rpc/post_comments_feed') body = { items: [{ id: 45, body: 'Hello there', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }] };
+    else if (path === '/rest/v1/rpc/post_comments_feed') body = { items: [{ id: 45, body: 'Hello there', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }, { id: 47, body: 'See https://example.com/comment.', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }] };
     else if (path === '/rest/v1/rpc/comment_on_post') { commentCalls.push(route.request().postDataJSON() as Record<string, unknown>); body = { id: 46 }; }
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
@@ -223,4 +223,39 @@ test('active Flow video plays and stops when moving to the next page', async ({ 
   await expect.poll(async () => (await state()).some(v => v.src.includes('/12.webm') && v.fit === 'contain' && !v.paused && v.time > 0.2), { timeout: 20000 }).toBe(true);
   await expect.poll(async () => (await state()).filter(v => v.src.includes('/11.webm')).every(v => v.paused), { timeout: 10000 }).toBe(true);
   expect((await state()).filter(v => v.src.includes('/12.webm')).some(v => v.fit === 'contain')).toBe(true);
+});
+
+
+test('Space bio link opens inside Holup and own Space link copies from three dots', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  const bioLink = page.getByRole('link', { name: /Open link to example.com\/about inside Holup/ }).first();
+  await expect(bioLink).toBeVisible({ timeout: 30000 });
+  await bioLink.click();
+  await expect(page.getByText('Inside Holup', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close preview' }).click();
+  await page.getByRole('button', { name: 'More Space options' }).click();
+  await page.getByRole('button', { name: 'Copy Space link' }).click();
+  await expect(page.getByText('Link copied')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/?space=1');
+});
+
+test('comment link closes sheet and opens inside Holup without punctuation', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Crushes', { exact: true }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: /Comments, 1 comment/ }).first().click();
+  await page.getByRole('link', { name: 'Open link to example.com/comment inside Holup' }).click();
+  await expect(page.getByText('Inside Holup', { exact: true })).toBeVisible();
+  await expect(page.locator('iframe[title="Link preview"]')).toHaveAttribute('src', 'https://example.com/comment');
+});
+
+test('post composer link control inserts a web address', async ({ page }) => {
+  await offline(page, []); await page.goto('/');
+  await page.getByRole('button', { name: 'Create post' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: /Post\. Words, photos and clips/ }).click();
+  await page.getByRole('button', { name: 'Add link to post' }).click();
+  await page.getByLabel('Web address').fill('example.com/path');
+  await page.getByRole('button', { name: 'Add link', exact: true }).click();
+  await expect(page.getByPlaceholder('Good energy, better days. Same me, just more focused.')).toHaveValue('https://example.com/path');
 });

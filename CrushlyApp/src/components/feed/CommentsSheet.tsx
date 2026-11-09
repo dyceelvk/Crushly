@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../Photo';
 import { Txt } from '../Txt';
+import { LinkText } from '../LinkText';
 import { useToast } from '../Toast';
 import { Suggestions } from '../Suggestions';
 import { useMentionInput } from '../useMentionInput';
@@ -233,7 +234,7 @@ export function CommentsSheet({
               marginTop: 3,
             }}
           >
-            {comment.hidden ? 'This comment was removed.' : comment.body}
+            {comment.hidden ? 'This comment was removed.' : <LinkText text={comment.body} bare onBeforeOpenLink={onClose} />}
           </Txt>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 7 }}>
@@ -462,6 +463,7 @@ export function CommentsSheet({
                 <View
                   style={{
                     flex: 1,
+                    minWidth: 0,
                     flexDirection: 'row',
                     alignItems: 'center',
                     backgroundColor: NOIR.field,
@@ -477,7 +479,7 @@ export function CommentsSheet({
                     onSelectionChange={mention.onSelectionChange}
                     placeholder={replyTo ? `Reply to ${replyTo.author.name}…` : 'Add comment…'}
                     placeholderTextColor={NOIR.muted}
-                    style={{ flex: 1, color: NOIR.text, fontFamily: fonts.regular, fontSize: 14.5, paddingVertical: 10 }}
+                    style={{ flex: 1, minWidth: 0, color: NOIR.text, fontFamily: fonts.regular, fontSize: 14.5, paddingVertical: 10 }}
                     returnKeyType="send"
                     onSubmitEditing={() => void submit()}
                     multiline={false}
@@ -490,7 +492,7 @@ export function CommentsSheet({
                     }}
                     accessibilityRole="button"
                     accessibilityLabel="Mention somebody"
-                    style={{ paddingHorizontal: 6, paddingVertical: 8 }}
+                    style={{ width: 34, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <Txt style={{ fontFamily: fonts.bold, fontSize: 16, color: NOIR.secondary }}>@</Txt>
                   </Pressable>
@@ -499,7 +501,7 @@ export function CommentsSheet({
                     accessibilityRole="button"
                     accessibilityLabel="Emoji"
                     accessibilityState={{ expanded: emojiOpen }}
-                    style={{ paddingHorizontal: 6, paddingVertical: 8 }}
+                    style={{ width: 34, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <Ionicons name="happy-outline" size={20} color={emojiOpen ? NOIR.accent : NOIR.secondary} />
                   </Pressable>
