@@ -1,0 +1,28 @@
+name: Monitor verification image cleanup
+on:
+  schedule:
+    - cron: '55 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: 'Send one test alert to the Holup support address instead of checking health'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: holup-verification-retention-monitor
+  cancel-in-progress: false
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the cleanup pipeline and send an alert on failure
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
+          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+          TEST_ALERT: ${{ inputs.test_alert || false }}
+        run: python3 .github/scripts/verification-retention-monitor.py
