@@ -1,7 +1,13 @@
--- A Moment reply points to the Moment, not a permanent copy of its content.
--- Each tap rechecks the current Moment, expiry, audience, and thread access.
--- Remove legacy snapshots from raw rows as well as RPC results: participants can
--- otherwise select their own message rows directly through RLS.
+-- Prepare per-member hide metadata without exposing it to clients.
+create table if not exists public.hidden_whispers (
+  message_id bigint not null references public.messages(id) on delete cascade,
+  user_id bigint not null references public.profiles(id) on delete cascade,
+  primary key(message_id,user_id)
+);
+alter table public.hidden_whispers enable row level security;
+revoke all on public.hidden_whispers from public, anon, authenticated;
+
+-- Moment replies are references, not permanent snapshots of private content.
 update public.messages
    set meta=coalesce(meta,'{}'::jsonb) - array['momentKind','momentBody','momentMedia','momentStyle']::text[]
  where kind='moment_reply'

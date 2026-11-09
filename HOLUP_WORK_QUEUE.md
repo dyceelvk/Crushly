@@ -665,3 +665,15 @@
   run succeeds and the Worker announces 1.0.88.
 - Remaining unreleased migrations were renumbered `20261109153401`–`004`
   after deployed location; they still need coordinated review before release.
+- The user asked to move directly to the other reported fixes. For exact Moment
+  replies, production migration `20261109153925_whisper_moment_links` is applied
+  with a private hidden-message table foundation; existing Moment snapshot
+  fields were removed from three message rows, and member/anonymous grants
+  were checked. The tappable client is prepared in `/home/user/holup-moment-release`
+  but has not been released. Crucially, this live migration is not yet on main:
+  Android release `42646506754` commits directly to main without rebasing, so
+  wait for it to finish before merging/releasing the Moment client and exact
+  migration; do not run main database push in the meantime. The saved migration
+  in the work branch matches the remote statement, excluding trailing newline.
+- Remaining unpublished migrations were renumbered
+  `20261109153926`–`928` after the live Moment migration.
