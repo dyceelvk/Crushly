@@ -165,3 +165,9 @@ withdraw legacy auto-awards, or make uploads available. Record this exact
 migration on main once the running Android release has finished; until then do
 not run main's database push. Further activation needs the live upload route,
 Didit cutover, consent/retention details, authorization and compatibility review.
+
+Production now has a JWT-gated `manual-evidence` Edge endpoint, pinned to
+commit `5e3051829fe8e475d9f99ec94b0029563fd0b521`; an unauthenticated call was
+denied. The actual authenticated upload/read path and full bundled module are
+not yet verified. User-facing RPCs remain disabled. No real files should be
+collected until the integrated privacy and deletion path is checked.

@@ -553,3 +553,14 @@
   Wait for Android release run `42628810477` to finish before adding the exact
   recorded migration to the latest main, so its release-record bot push is not
   disrupted. Work-branch pending migrations renumbered `20261109140001`–`005`.
+- Production Edge `manual-evidence` v1 was deployed with gateway JWT
+  verification and pinned-source import at `5e3051829fe8e475d9f99ec94b0029563fd0b521`.
+  Unauthenticated requests received HTTP 401. The real signed-in upload/read
+  path, the full bundled runtime, malicious files and user-data deletion remain
+  unverified. Member application/list RPC grants are still withheld and no
+  manual cases exist; do not solicit IDs or claim the review feature works.
+- Vercel `dpl_AhaNdqQdf2q9fr4dKsyyZF3otmqJ` finished READY/PROMOTED on
+  `holupapp.vercel.app`; fetching the live JS confirmed the new Space-menu and
+  post-link controls. It contains only the scoped `732d095` web fixes, not the
+  rest of the experimental work. Android `42628810477` was still compiling at
+  last check; no 1.0.87 Android release was confirmed.
