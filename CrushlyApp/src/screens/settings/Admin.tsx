@@ -33,7 +33,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const [removalReason, setRemovalReason] = useState('');
   const [confirmRemoval, setConfirmRemoval] = useState(false);
   const reports = useQuery({ queryKey: ['admin-reports', handled, reportPage], queryFn: () => service.adminReports(handled, reportPage * 50), enabled: data.isSuccess && section === 'reports', staleTime: 30000 });
-  const accounts = useQuery({ queryKey: ['admin-accounts', submittedSearch], queryFn: () => service.adminAccounts(submittedSearch), enabled: data.isSuccess && section === 'accounts' && submittedSearch.length >= 2, staleTime: 30000 });
+  const accounts = useQuery({ queryKey: ['admin-accounts', submittedSearch], queryFn: () => service.adminAccounts(submittedSearch), enabled: data.isSuccess && section === 'accounts' && (submittedSearch.length >= 2 || /^[0-9]+$/.test(submittedSearch)), staleTime: 30000 });
   const verifications = useQuery({ queryKey: ['admin-verifications'], queryFn: service.adminVerifications, enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
   const audit = useQuery({ queryKey: ['admin-audit'], queryFn: service.adminAudit, enabled: data.isSuccess && section === 'audit', staleTime: 0 });
   const inspectPost = useMutation({ mutationFn: (id: number) => service.adminReportedPost(id),
@@ -102,7 +102,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
         <Txt variant="heading">Accounts</Txt>
         <Txt variant="small" color="textSecondary">Search by name, username or member ID. Up to 30 matches are shown. Account suspension controls are not available yet.</Txt>
         <Input label="Find an account" value={search} onChangeText={setSearch} maxLength={100} />
-        <Button title="Search accounts" size="sm" disabled={search.trim().length < 2} onPress={() => setSubmittedSearch(search.trim())} />
+        <Button title="Search accounts" size="sm" disabled={search.trim().length < 2 && !/^[0-9]+$/.test(search.trim())} onPress={() => setSubmittedSearch(search.trim())} />
         {accounts.isFetching ? <LoadingBlock label="Searching accounts" /> : accounts.isError ? <ErrorState error={accounts.error} message="Account search is unavailable." onRetry={() => void accounts.refetch()} /> : submittedSearch && !accounts.data?.length ? <Txt color="textSecondary">No matching accounts.</Txt> : accounts.data?.map((a) => <View key={a.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>
           <Txt variant="bodyStrong">{a.name || 'Member'} · #{a.id}</Txt>
           <Txt variant="small" color="textSecondary">{a.username ? `@${a.username} · ` : ''}{a.status} · {a.onboarded ? 'onboarded' : 'not onboarded'} · {a.verification}</Txt>

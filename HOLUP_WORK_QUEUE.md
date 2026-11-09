@@ -222,3 +222,6 @@
 - Main commit ad03f71 records the already-applied production migration so the
   live schema does not have an untracked migration. It contains no app changes;
   commit uses [skip ci] in line with the user's request not to run tests.
+- Vercel's production deployment for main ad03f71 is READY and promoted; it
+  redeploys the prior app sources with the migration-record commit, not the new
+  admin or birthday-recovery client. Android offered version remains 1.0.86.

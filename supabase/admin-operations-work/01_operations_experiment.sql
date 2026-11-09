@@ -37,7 +37,7 @@ returns jsonb language plpgsql security definer set search_path=public as $$
 declare term text:=lower(btrim(coalesce(p_query,''))); result jsonb;
 begin
  if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
- if length(term)<2 or length(term)>100 then perform public.crushly_fail(400,'','Search using 2 to 100 characters.'); end if;
+ if length(term)>100 or (length(term)<2 and term !~ '^[0-9]+$') then perform public.crushly_fail(400,'','Enter a member ID or at least 2 characters.'); end if;
  insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'search_accounts','{}'::jsonb);
  select coalesce(jsonb_agg(jsonb_build_object('id',q.id,'name',q.name,'username',q.username,'status',q.status,
   'onboarded',q.onboarded,'verification',q.verification) order by q.id desc),'[]'::jsonb) into result
