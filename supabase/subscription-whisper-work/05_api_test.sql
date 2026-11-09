@@ -96,9 +96,10 @@ begin
  reset role;
  update public.privacy set incognito=true where user_id=7;
  perform set_config('request.jwt.claim.sub',u::text,true); set local role authenticated;
- assert jsonb_array_length(public.v3_keep_people('incoming')->'items')=1, 'hidden profile in incoming list';
+ r:=public.v3_keep_people('incoming');
+ assert not exists(select 1 from jsonb_array_elements(r->'items') x where (x->'profile'->>'id')::int=7 and (x->'profile') ? 'bio'), 'hidden profile details in incoming list';
  insert into public.blocks(blocker_id,blocked_id) values(4,5);
- assert jsonb_array_length(public.v3_keep_people('incoming')->'items')=0, 'blocked profile in incoming list';
+ assert not exists(select 1 from jsonb_array_elements(public.v3_keep_people('incoming')->'items') x where (x->'profile'->>'id')::int=5), 'blocked profile in incoming list';
  assert jsonb_array_length(public.v3_keep_people('mutual')->'items')=0, 'blocked profile in mutual list';
  reset role;
  raise notice 'subscription hub privacy and pagination tests passed';

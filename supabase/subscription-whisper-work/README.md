@@ -127,3 +127,12 @@ forced revocation, and tests with the real service and Android are outstanding.
 The 08 experiment also wraps legacy directional Keep/let-go in the pair-locked
 methods, and fails obsolete approval/cancellation/destructive removal RPCs closed
 with an update-required error. It does not provide a full client update gate.
+
+For private Spaces, 08 now permits the recipient of an incoming Keep to see a
+minimal id/name-only card and Keep the sender back, without exposing that Space's
+private profile details before reciprocity. A stranger cannot add a hidden
+Space; blocks and active/onboarded status are checked under the pair lock.
+`10_private_keep_back_test.sql` tests the direct RPC and limited card. The
+older “private-Space reciprocal adding needs a safe flow” warning above is
+superseded by this experimental implementation, but live service, old clients
+and mobile testing are still needed before release.

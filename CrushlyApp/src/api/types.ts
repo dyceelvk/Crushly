@@ -70,6 +70,9 @@ export type Profile = {
   canMessage: boolean;
   acceptsCrushes: boolean;
   at?: number;
+  /** Incoming Keep card metadata, present only in the signed-in member’s list. */
+  canKeepBack?: boolean;
+  limitedSpace?: boolean;
 };
 
 /** A post in the Flow: does not expire, unlike a Moment. */

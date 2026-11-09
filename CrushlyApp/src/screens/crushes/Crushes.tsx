@@ -12,7 +12,7 @@ import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { Button } from '../../components/Button';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useKeepRequests, useMe, useOpenConversation } from '../../api/hooks';
+import { useKeepClose, useKeepRequests, useMe, useOpenConversation } from '../../api/hooks';
 import type { Profile } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
@@ -42,6 +42,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
   const { data: me } = useMe();
   const requests = useKeepRequests(me?.id ?? 0, tab, true);
   const open = useOpenConversation();
+  const keepBack = useKeepClose();
 
   useEffect(() => {
     if (initial) setTab(initial);
@@ -65,8 +66,15 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
   };
 
   const footer = (p: Profile) => (
-    <View style={{ marginTop: 8 }}>
-      <Button title="Whisper" size="sm" variant="secondary" icon="chatbubble-outline" onPress={() => message(p)} />
+    <View style={{ marginTop: 8, gap: 8 }}>
+      {p.canKeepBack ? (
+        <Button title="Keep Close back" size="sm" variant="crush" accessibilityLabel={`Keep ${p.name} Close back`}
+          disabled={keepBack.isPending} onPress={() => keepBack.mutate(p.id, {
+            onSuccess: () => toast({ kind: 'success', title: 'You’re Close Ones' }),
+            onError: (e) => toast({ kind: 'error', title: 'Couldn’t Keep Close', message: (e as Error).message }),
+          })} />
+      ) : null}
+      {!p.limitedSpace ? <Button title="Whisper" size="sm" variant="secondary" icon="chatbubble-outline" onPress={() => message(p)} /> : null}
     </View>
   );
 
@@ -122,7 +130,15 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
+        renderItem={({ item }) => item.limitedSpace ? (
+          <View style={{ width: tileW }}>
+            <View style={{ backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: space.md, gap: 6 }}>
+              <Txt variant="subheading">{item.name}</Txt>
+              <Txt variant="small" color="textSecondary">Keeps you Close. Their Space is private until you’re Close Ones.</Txt>
+            </View>
+            {footer(item)}
+          </View>
+        ) : (
           <ProfileTile profile={item} width={tileW} caption={caption(item)} onOpen={() => openProfile(item.id)} footer={footer(item)} />
         )}
         ListEmptyComponent={

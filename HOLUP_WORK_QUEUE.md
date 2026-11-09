@@ -138,3 +138,19 @@
   passed twice-applied, direct-write boundary tests. The exact-APK Android
   re-walk was dispatched as CI run 42598886227 and was still running at the
   latest check; no release has been published.
+
+## Private Close Ones flow and Android result
+- CI 42598886227 succeeded, including re-walking the exact emulator APK from
+  42570564697 with the corrected Moment-input focus handling. That proves that
+  earlier binary passed the revised emulator walk, not that today's newer app
+  branch has passed an Android release/device test or was published.
+- In 08, a person who Keeps the recipient Close can appear as a minimal incoming
+  card even when their Space is private. Only id/name are exposed (no photo,
+  bio, age, handle, activity or other private details). The recipient can Keep
+  back directly; the now-mutual pair gains access under existing privacy rules.
+  A stranger cannot use this to Keep a private profile, and blocks win. This is
+  an experiment, not deployed. Fresh legacy SQL + v3/08 replay, private-flow,
+  Whisper behavior and race tests passed; real hosted tests remain required.
+  Local verification: full fresh migration/test replay, both v3 concurrency
+  scripts and private Keep-back tests passed; typecheck, 300 + 3 + 7 unit tests,
+  mock build and all 31 mocked browser cases passed.

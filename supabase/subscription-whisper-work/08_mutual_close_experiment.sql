@@ -34,6 +34,60 @@ begin
  end if;
  return public.public_profile(p_viewer,p_target,p_full);
 end $$;
+-- A private Space can initiate a Keep; the recipient may safely Keep back
+-- without seeing that Space's private content before the reciprocal action.
+-- Existence, status and block checks are repeated under the shared pair lock.
+create or replace function public.v3_keep_subscribe(p_target bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); inserted int; incoming boolean;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+ perform public.v3_pair_lock(me,p_target);
+ incoming:=exists(select 1 from public.keeps where keeper_id=p_target and kept_id=me);
+ if public.is_blocked_pair(me,p_target) or not exists(select 1 from public.profiles p where p.id=p_target and p.onboarded and p.status='active')
+   or (public.load_visible_profile(me,p_target,false) is null and not incoming) then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ if not exists(select 1 from public.keeps where keeper_id=me and kept_id=p_target) and
+    (select count(*) from public.keeps where keeper_id=me and created_at>public.now_ms()-86400000::bigint)>=100 then
+   perform public.crushly_fail(429,'','That’s a lot for one day.'); end if;
+ insert into public.keeps(keeper_id,kept_id) values(me,p_target) on conflict do nothing;
+ get diagnostics inserted=row_count;
+ if inserted>0 then perform public.notify_to(p_target,'keep',me,null,''); end if;
+ return jsonb_build_object('keeps',true,'keepsYou',incoming,'mutual',incoming);
+end $$;
+
+-- Only an incoming actor who chose to Keep this recipient may be shown as a
+-- limited card when their Space is private; no photo, bio, age, city, handle,
+-- online state, interests, posts or other profile attributes are returned.
+-- Ordinary directory lists continue to filter private identities completely.
+create or replace function public.v3_keep_people(p_direction text,p_offset integer default 0,p_limit integer default 40) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_direction is null or p_direction not in ('incoming','outgoing','mutual') then perform public.crushly_fail(400,'','Unknown list.'); end if;
+ with ids as (
+  select case when p_direction='incoming' then k.keeper_id else k.kept_id end as person,k.created_at as at
+  from public.keeps k where
+    ((p_direction='incoming' and k.kept_id=me) or (p_direction in ('outgoing','mutual') and k.keeper_id=me))
+    and (p_direction<>'mutual' or exists(select 1 from public.keeps k2 where k2.keeper_id=k.kept_id and k2.kept_id=me))
+ ), loaded as (
+  select ids.person,ids.at,public.relationship_list_profile(me,ids.person) as profile,
+   not exists(select 1 from public.keeps k2 where k2.keeper_id=me and k2.kept_id=ids.person) as can_keep_back,
+   p.name from ids join public.profiles p on p.id=ids.person
+   where p.onboarded and p.status='active' and not public.is_blocked_pair(me,ids.person)
+ ), readable as (
+  select person,at,can_keep_back,(profile is null) as limited,
+   coalesce(profile,case when p_direction='incoming' then jsonb_build_object('id',person,'name',name,'photos','[]'::jsonb) end) as profile
+  from loaded
+ ), page as (select * from readable where profile is not null order by at desc,person desc offset off limit lim+1)
+ select jsonb_build_object('items',coalesce((select jsonb_agg(jsonb_build_object('profile',profile,'at',at,
+     'canKeepBack',p_direction='incoming' and can_keep_back,'limited',limited) order by at desc,person desc)
+   from (select * from page order by at desc,person desc limit lim) q),'[]'::jsonb),'hasMore',(select count(*)>lim from page)) into result;
+ return result;
+end $$;
+
 -- Legacy directional Keep endpoints must use the same pair lock and visibility
 -- checks as new clients. Return the historic JSON shape, but never raw counts
 -- for an unavailable/blocked Space.

@@ -619,3 +619,27 @@ test('Space labels mutual Keep Close from subscriptions, not legacy connection f
   await page.getByRole('button', { name: 'Keep Ada close' }).click();
   await expect(page.getByText('Mutual Keep Close', { exact: true })).toBeVisible();
 });
+
+test('private Space can Keep Close back without showing hidden profile details first', async ({ page }) => {
+  await offline(page, []);
+  let mutual = false;
+  let keeps = 0;
+  const reply = (value: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(value), headers: { 'access-control-allow-origin': '*' } });
+  await page.route(`${API}/rest/v1/rpc/list_conversations`, route => route.fulfill(reply({ items: [] })));
+  await page.route(`${API}/rest/v1/rpc/v3_keep_people`, route => {
+    const args = route.request().postDataJSON() as { p_direction: string };
+    const items = args.p_direction === 'incoming' ? [{ profile: mutual ? person : { id: 2, name: 'Ada', photos: [] }, at: Date.now(), limited: !mutual, canKeepBack: !mutual }] : [];
+    return route.fulfill(reply({ items, hasMore: false }));
+  });
+  await page.route(`${API}/rest/v1/rpc/v3_keep_subscribe`, route => { keeps++; mutual = true; return route.fulfill(reply({ keeps: true, keepsYou: true, mutual: true })); });
+  await page.route(`${API}/rest/v1/rpc/v3_keep_stats`, route => route.fulfill(reply({ keeps: mutual, keepsYou: true, keptClose: 1, keeping: 1, canViewKeptClose: mutual })));
+  await page.goto('/');
+  await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Keep Close people' }).click();
+  await expect(page.getByText('Their Space is private until you’re Close Ones.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Whisper', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Keep Ada Close back' }).click();
+  await expect.poll(() => keeps).toBe(1);
+  await expect(page.getByText('Their Space is private until you’re Close Ones.', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Whisper', exact: true })).toBeVisible();
+});

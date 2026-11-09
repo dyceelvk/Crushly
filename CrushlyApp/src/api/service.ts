@@ -709,8 +709,8 @@ export async function keepClose(memberId: number): Promise<KeepState> {
 }
 
 export async function keepCloseRequests(direction: 'incoming' | 'outgoing' | 'mutual', offset: number): Promise<{ items: Profile[]; hasMore: boolean }> {
-  const page = await rpc<{ items: { profile: unknown; at: number }[]; hasMore: boolean }>('v3_keep_people', { p_direction: direction, p_offset: offset, p_limit: 40 });
-  return { items: (page.items ?? []).map((item) => ({ ...profileShape(item.profile), at: item.at })), hasMore: !!page.hasMore };
+  const page = await rpc<{ items: { profile: unknown; at: number; canKeepBack?: boolean; limited?: boolean }[]; hasMore: boolean }>('v3_keep_people', { p_direction: direction, p_offset: offset, p_limit: 40 });
+  return { items: (page.items ?? []).map((item) => ({ ...profileShape(item.profile), at: item.at, canKeepBack: item.canKeepBack === true, limitedSpace: item.limited === true })), hasMore: !!page.hasMore };
 }
 export async function acceptKeepClose(memberId: number): Promise<KeepState> {
   return rpc<KeepState>('accept_keep_close', { p_from_id: memberId });
