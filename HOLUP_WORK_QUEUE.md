@@ -483,3 +483,12 @@
   Didit callback, the experimental app and unrelated outstanding work have not
   been deployed. Production legacy Didit auto-award still operates. Do not push
   the work branch to main or release its APK as if the dependencies were live.
+- Android candidate GitHub run `42623845740` completed successfully; artifact
+  `13678880892` contains a 95,083,972-byte APK SHA-256
+  `f5c7d1c8d529e220d447a9569f090e0da8d5349daa6ba9c121ec5756c4663350`.
+  `apksigner verify` shows certificate SHA-256
+  `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`, the same
+  as installed 1.0.86. This verifies signing-certificate equality, NOT a real
+  update installation or app/backend functionality. The certificate is an
+  Android debug certificate. The APK has NOT been released and must not be
+  pumped while its backend dependencies and privacy protections are incomplete.
