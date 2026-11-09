@@ -32,6 +32,7 @@ import { formatCount } from '../../lib/counts';
 import { timeAgo } from '../../lib/format';
 import { fonts, radius } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import type { Post, PostComment } from '../../api/types';
 
 /**
@@ -77,6 +78,7 @@ export function CommentsSheet({
   };
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const keyboard = useAndroidKeyboardOverlap();
   const { data: me } = useMe();
   const toast = useToast();
 
@@ -328,6 +330,7 @@ export function CommentsSheet({
   return (
     <>
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <View ref={keyboard.root} onLayout={keyboard.measure} style={{ flex: 1 }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} accessibilityLabel="Close comments" accessibilityRole="button" />
 
@@ -337,8 +340,8 @@ export function CommentsSheet({
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 0,
-            height: Math.min(height * 0.74, 680),
+            bottom: keyboard.overlap,
+            height: Math.min(height * 0.74, 680, Math.max(160, height - keyboard.overlap - insets.top)),
             backgroundColor: NOIR.sheet,
             borderTopLeftRadius: radius.xl,
             borderTopRightRadius: radius.xl,
@@ -524,6 +527,7 @@ export function CommentsSheet({
           ) : null}
         </Animated.View>
       </KeyboardAvoidingView>
+      </View>
     </Modal>
       <ConfirmSheet
         visible={doomed !== null}

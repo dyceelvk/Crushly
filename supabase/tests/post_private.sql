@@ -1,0 +1,66 @@
+-- Runs only against the throwaway migrated/seeded database.
+begin;
+do $test$
+declare
+  au uuid; vu uuid; aid bigint; vid bigint; pid bigint; cid bigint; msgid bigint;
+  path text; url text; r jsonb; denied boolean; po public.posts;
+begin
+  select id into au from auth.users where email='marcus@crushly.app';
+  select id into vu from auth.users where email='daniel@crushly.app';
+  select id into aid from profiles where auth_user_id=au;
+  select id into vid from profiles where auth_user_id=vu;
+  assert aid is not null and vid is not null;
+  update privacy set profile_visibility='everyone',incognito=false where user_id=aid;
+  delete from blocks where (blocker_id=vid and blocked_id=aid) or (blocker_id=aid and blocked_id=vid);
+  insert into connections(user_a,user_b) values(least(aid,vid),greatest(aid,vid)) on conflict do nothing;
+  insert into conversations(user_a,user_b) values(least(aid,vid),greatest(aid,vid)) on conflict (user_a,user_b) do update set closed=false returning id into cid;
+  path:='posts/'||aid||'/private-test.jpg';
+  url:='https://crushly-media.dyceelvk.workers.dev/m/'||path;
+  insert into posts(author_id,body,media_url,audience) values(aid,'privatefixtureword',url,'everyone') returning id into pid;
+  insert into post_saves(user_id,post_id) values(vid,pid);
+  -- Old versions of the app stored snapshots in Whisper message rows.
+  insert into messages(conversation_id,sender_id,kind,body,meta)
+    values(cid,aid,'post','privatefixtureword',jsonb_build_object('postId',pid,'body','privatefixtureword','mediaUrl',url,'name','Secret')) returning id into msgid;
+  perform set_config('request.jwt.claim.sub',au::text,true);
+  set local role authenticated;
+  r:=edit_post(pid,null,'private',null);
+  assert r->>'audience'='private', 'edit did not persist private';
+  assert (can_view_media(path,url)->>'allowed')::boolean, 'owner cannot view media';
+  r:=send_message(cid,'post','',null,jsonb_build_object('postId',pid));
+  assert r->'meta' = jsonb_build_object('postId',pid) and r->>'body'='Shared a post', 'new share exposes private snapshot';
+  reset role;
+  assert (select meta = jsonb_build_object('postId',pid) and body='Shared a post' and media_url is null from messages where id=msgid), 'old snapshot was not redacted';
+  select * into po from posts where id=pid;
+  assert can_view_post(po,aid) and not can_view_post(po,vid) and not can_view_post(po,null), 'private visibility incorrect';
+  perform set_config('request.jwt.claim.sub',vu::text,true);
+  set local role authenticated;
+  assert not (can_view_media(path,url)->>'allowed')::boolean, 'private media leaked to connection';
+  assert not exists(select 1 from posts where id=pid), 'private post exposed via direct table';
+  denied:=false; begin perform load_post(pid); exception when others then denied:=true; end;
+  assert denied, 'load_post leaked private post';
+  denied:=false; begin perform post_comments_feed(pid); exception when others then denied:=true; end;
+  assert denied, 'private comments leaked';
+  denied:=false; begin perform post_likers(pid); exception when others then denied:=true; end;
+  assert denied, 'private likers leaked';
+  denied:=false; begin perform record_post_view(pid,2000); exception when others then denied:=true; end;
+  assert denied, 'private post recorded as visible';
+  assert position('privatefixtureword' in space_posts(aid,50)::text)=0, 'private post leaked via Space';
+  assert position('privatefixtureword' in crush_posts_feed(50)::text)=0, 'private post leaked via Crushes';
+  assert position('privatefixtureword' in flow_feed(50)::text)=0, 'private post leaked via Flow';
+  assert position('privatefixtureword' in saved_posts(50)::text)=0, 'private post leaked via saved posts';
+  denied:=false; begin perform edit_post(pid,null,'everyone',null); exception when others then denied:=true; end;
+  assert denied, 'non-owner edited private post';
+  denied:=false; begin perform send_message(cid,'post','',null,jsonb_build_object('postId',pid)); exception when others then denied:=true; end;
+  assert denied, 'non-owner shared private post';
+  r:=search_holup('privatefixtureword','top');
+  assert jsonb_array_length(r->'posts')=0, 'private post leaked via search';
+  perform set_config('request.jwt.claim.sub',au::text,true);
+  r:=edit_post(pid,null,'connections',null);
+  assert r->>'audience'='connections';
+  perform set_config('request.jwt.claim.sub',vu::text,true);
+  assert (load_post(pid)->>'id')::bigint=pid, 'connection visibility did not restore';
+  assert (can_view_media(path,url)->>'allowed')::boolean, 'connection media access did not restore';
+  reset role;
+  raise notice 'private post and Whisper regression tests passed';
+end $test$;
+rollback;

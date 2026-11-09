@@ -1,8 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Txt } from './Txt';
-import { useTheme } from '../theme/ThemeProvider';
 import { motion } from '../theme/tokens';
 
 /**
@@ -19,8 +17,7 @@ import { motion } from '../theme/tokens';
  *
  * * Tap toggles playback.
  * * The state is *shown*: the disc flashes the new state and fades away while
- *   playing; while paused it stays, because a frozen frame with no explanation
- *   reads as a crash.
+ *   playing or paused; the control remains accessible even when the icon fades.
  *
  * The animation is a scale-and-fade rather than a sprite, so it costs one
  * animated value and works the same in the browser and on a phone.
@@ -58,7 +55,7 @@ export function PlayPauseFlash({
   label?: string;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(playing ? 0 : 1)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
   const first = useRef(true);
 
   useEffect(() => {
@@ -66,7 +63,7 @@ export function PlayPauseFlash({
     // with a pause icon before the first frame has even arrived.
     if (first.current) {
       first.current = false;
-      opacity.setValue(playing ? 0 : 1);
+      opacity.setValue(0);
       return;
     }
 
@@ -83,10 +80,9 @@ export function PlayPauseFlash({
     Animated.parallel([
       Animated.spring(scale, { toValue: 1, speed: 22, bounciness: 6, useNativeDriver: useNative }),
       Animated.timing(opacity, {
-        toValue: playing ? 0 : 1,
-        duration: playing ? motion.slow : motion.fast,
-        // A paused clip keeps the disc; a playing clip lets it go.
-        delay: playing ? motion.base : 0,
+        toValue: 0,
+        duration: motion.slow,
+        delay: motion.base,
         easing: Easing.out(Easing.quad),
         useNativeDriver: useNative,
       }),
@@ -169,11 +165,6 @@ export function PlayPauseFlash({
           />
         </Animated.View>
 
-        {!compact && !playing ? (
-          <Txt variant="caption" style={{ color: '#FFFFFF', marginTop: 10, opacity: 0.85 }}>
-            Paused
-          </Txt>
-        ) : null}
       </View>
     </Pressable>
   );

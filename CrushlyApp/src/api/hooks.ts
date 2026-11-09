@@ -333,7 +333,7 @@ export function useSpacePosts(memberId: number, enabled = true) {
 export function useEditPost() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { postId: number; body?: string; audience?: 'everyone' | 'connections' }) =>
+    mutationFn: (input: { postId: number; body?: string; audience?: 'everyone' | 'connections' | 'private' }) =>
       service.editPost(input),
     onSuccess: (post) => {
       qc.setQueryData(keys.post(post.id), post);

@@ -434,13 +434,14 @@ export function SpaceScreen({
               ))}
             </ScrollView>
           )}
-          {/* One even veil over the whole photograph — five per cent, edge to
-              edge — and nothing else. The cover used to blur and darken across
-              its bottom third, which read as a bruise lying on the picture
-              rather than a frame around it, and it buried whatever the person
-              had chosen to show at the bottom of their own cover. A photograph
-              that needs shading to be legible is the wrong photograph. */}
-          <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(7,7,8,0.05)' }} />
+          {/* A feathered transition to the active Holup surface, not a dark
+              bar. It stays below the dots and controls and never catches taps. */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={[`${colors.bg}00`, `${colors.bg}18`, `${colors.bg}85`, colors.bg]}
+            locations={[0, 0.32, 0.72, 1]}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: Math.min(heroH * 0.48, 150) }}
+          />
           {/* The dots stay with the photograph, because they count photographs.
               Everything else that used to share this row is a control, and a
               control belongs in the header above, where it does not scroll

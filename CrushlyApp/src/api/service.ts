@@ -648,7 +648,7 @@ export async function deletePostComment(commentId: number): Promise<void> {
 export async function editPost(input: {
   postId: number;
   body?: string;
-  audience?: 'everyone' | 'connections';
+  audience?: 'everyone' | 'connections' | 'private';
 }): Promise<Post> {
   return rpc<Post>('edit_post', {
     p_post_id: input.postId,

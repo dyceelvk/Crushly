@@ -29,6 +29,7 @@ import { pickImage } from '../../lib/media';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { useVideoNote } from '../../components/VideoNote';
 import { CallSheet } from '../../components/CallSheet';
+import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import { CallManager, type CallState } from '../../lib/call';
 import { supabase, toApiError } from '../../api/client';
 import { haptic } from '../../lib/haptics';
@@ -117,6 +118,7 @@ function HeaderState({
 }
 
 export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
+  const keyboard = useAndroidKeyboardOverlap();
   const { conversationId } = route.params;
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -399,7 +401,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View ref={keyboard.root} onLayout={keyboard.measure} style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* Header */}
       <View style={{ paddingTop: insets.top, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bg }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.sm, paddingVertical: 8, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
@@ -430,13 +432,6 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             </View>
           </Pressable>
           <IconButton
-            icon="call-outline"
-            variant="gold"
-            label="Start voice call"
-            onPress={startCall}
-            disabled={!canSend || recording || callState !== 'idle'}
-          />
-          <IconButton
             icon="ellipsis-horizontal"
             variant="plain"
             label="Whisper options"
@@ -445,7 +440,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         </View>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, paddingBottom: keyboard.overlap }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />
         ) : chat.error ? (
@@ -577,7 +572,6 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
-                  <TrayButton icon="call-outline" label="Call" onPress={startCall} />
                   <TrayButton icon="person-circle-outline" label="Share Space" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
                 <Txt variant="label" color="textMuted" style={{ marginBottom: 6 }}>

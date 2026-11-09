@@ -231,7 +231,7 @@ function BareContent({ m }: { m: Message }) {
  */
 function SharedPostBubble({ m }: { m: Message }) {
   const { colors } = useTheme();
-  const name = String(m.meta.name ?? 'Member');
+  const name = typeof m.meta.name === 'string' ? m.meta.name : null;
   const body = String(m.meta.body ?? '');
   const media = typeof m.meta.mediaUrl === 'string' ? m.meta.mediaUrl : null;
   const video = m.meta.mediaKind === 'video';
@@ -271,10 +271,10 @@ function SharedPostBubble({ m }: { m: Message }) {
       <View style={{ flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
         <View style={{ gap: 2 }}>
           <Txt variant="caption" color={mine ? '#FFFFFF' : 'gold'} numberOfLines={1} style={{ opacity: mine ? 0.8 : 1 }}>
-            {mine ? `You shared ${name}’s post` : `${name}’s post`}
+            {name ? (mine ? `You shared ${name}’s post` : `${name}’s post`) : 'Shared a post'}
           </Txt>
           <Txt variant="small" color={mine ? '#FFFFFF' : 'text'} numberOfLines={3}>
-            {body || (media ? (video ? 'A clip' : 'A photo') : 'A post')}
+            {body || (media ? (video ? 'A clip' : 'A photo') : 'Open to see if this post is available to you.')}
           </Txt>
         </View>
         <Txt variant="caption" color={mine ? '#FFFFFF' : 'gold'} style={{ opacity: mine ? 0.8 : 1 }}>

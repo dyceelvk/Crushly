@@ -335,6 +335,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
                still reacts: both gestures are decided in one place so a double
                tap cannot also fire the pause. */
             <EditedClip
+              key={post.id}
               uri={resolveVideoUri(post.mediaUrl)}
               live={post.edit ?? null}
               autoPlay
@@ -390,8 +391,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       />
       <LinearGradient
         pointerEvents="none"
-        colors={['rgba(7,7,8,0)', 'rgba(7,7,8,0.72)', 'rgba(7,7,8,0.96)']}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 380 }}
+        colors={['rgba(7,7,8,0)', 'rgba(7,7,8,0.12)', 'rgba(7,7,8,0.48)']}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 240 }}
       />
 
       {/* ------------------------------------------------------------ top bar */}
@@ -412,7 +413,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             THE FLOW
           </Txt>
           <Txt variant="bodyStrong" numberOfLines={1}>
-            {post.audience === 'everyone' ? 'Everyone' : 'Your connections'}
+            {post.audience === 'everyone' ? 'Public' : post.audience === 'private' ? 'Only you' : post.audience === 'circle' ? 'Circle' : 'Your connections'}
           </Txt>
         </View>
         {/* The three dots are for every post, not only your own: keeping a post,

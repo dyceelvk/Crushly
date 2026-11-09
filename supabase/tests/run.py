@@ -138,6 +138,8 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'space_search.sql'):
             return 1
+        if not run_file(ROOT / 'post_private.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

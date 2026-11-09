@@ -73,7 +73,7 @@ export type Profile = {
 };
 
 /** A post in the Flow: does not expire, unlike a Moment. */
-export type PostAudience = 'connections' | 'everyone' | 'circle';
+export type PostAudience = 'connections' | 'everyone' | 'circle' | 'private';
 
 /**
  * What you can say about a post. The same five words a Moment accepts, so the

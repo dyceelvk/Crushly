@@ -32,16 +32,14 @@ export function EditPostSheet({
   const toast = useToast();
   const edit = useEditPost();
   const [body, setBody] = useState('');
-  const [audience, setAudience] = useState<'everyone' | 'connections'>('everyone');
+  const [audience, setAudience] = useState<'everyone' | 'connections' | 'private'>('everyone');
 
   // Seed from the post each time the sheet opens, so a cancelled edit does not
   // come back the next time.
   useEffect(() => {
     if (!visible || !post) return;
     setBody(post.body ?? '');
-    // A Circle post keeps its audience (the room decides), so only the two
-    // real choices are ever shown.
-    setAudience(post.audience === 'everyone' ? 'everyone' : 'connections');
+    setAudience(post.audience === 'circle' ? 'connections' : post.audience);
   }, [visible, post]);
 
   const max = post?.mediaUrl ? 300 : 2000;
@@ -49,12 +47,12 @@ export function EditPostSheet({
   // A post with no picture has to keep some words; one with a picture may be
   // left with none.
   const empty = !trimmed && !post?.mediaUrl;
-  const dirty = !!post && (trimmed !== (post.body ?? '').trim() || audience !== (post.audience === 'everyone' ? 'everyone' : 'connections'));
+  const dirty = !!post && (trimmed !== (post.body ?? '').trim() || (post.circleId == null && audience !== post.audience));
 
   const save = async () => {
     if (!post || empty || !dirty) return;
     try {
-      await edit.mutateAsync({ postId: post.id, body: trimmed, audience });
+      await edit.mutateAsync({ postId: post.id, body: trimmed, audience: post.circleId == null ? audience : undefined });
       toast({ kind: 'success', title: 'Post updated' });
       onClose();
     } catch (e) {
@@ -131,22 +129,23 @@ export function EditPostSheet({
           </Txt>
         </View>
 
-        <View>
+        {post?.circleId == null ? <View>
           <Txt variant="label" color="textSecondary" style={{ marginBottom: space.sm }}>
             Who can see it
           </Txt>
-          <Segmented<'everyone' | 'connections'>
+          <Segmented<'everyone' | 'connections' | 'private'>
             value={audience}
             onChange={setAudience}
             options={[
-              { value: 'everyone', label: 'Everyone' },
+              { value: 'everyone', label: 'Public' },
               { value: 'connections', label: 'Connections' },
+              { value: 'private', label: 'Private' },
             ]}
           />
           <Txt variant="caption" color="textMuted" style={{ marginTop: 6 }}>
-            Changing this takes the post out of — or puts it into — the public Flow.
+            Private means only you can see this post.
           </Txt>
-        </View>
+        </View> : <Txt variant="caption" color="textMuted">The Circle controls who can see this post.</Txt>}
       </View>
     </BottomSheet>
   );
