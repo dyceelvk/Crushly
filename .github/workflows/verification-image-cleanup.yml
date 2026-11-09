@@ -1,0 +1,48 @@
+name: Remove expired verification images
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      configure_secret:
+        description: 'Set up or rotate the protected worker secret'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: holup-verification-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure worker credential digest
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.configure_secret }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ ${#CLEANUP_SECRET} -lt 32 ] || [ -z "$SUPABASE_DB_URL" ]; then echo 'Required setup secret missing'; exit 1; fi
+          digest=$(printf '%s' "$CLEANUP_SECRET" | sha256sum | cut -d' ' -f1)
+          printf "insert into public.manual_evidence_cleanup_auth_state(singleton,secret_digest) values (true,'%s') on conflict(singleton) do update set secret_digest=excluded.secret_digest;\n" "$digest" | psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1
+          echo 'Worker credential configured'
+      - name: Process protected cleanup batch
+        env:
+          HOLUP_PROJECT_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          CLEANUP_SECRET: ${{ secrets.MANUAL_EVIDENCE_CLEANUP_SECRET }}
+        run: |
+          set -euo pipefail
+          case "$HOLUP_PROJECT_URL" in https://yzcssyebozfkmojqqdhc.supabase.co) ;; *) echo 'Unexpected project URL'; exit 1;; esac
+          if [ ${#CLEANUP_SECRET} -lt 32 ]; then echo 'Cleanup credential missing'; exit 1; fi
+          response=$(mktemp); trap 'rm -f "$response"' EXIT
+          code=$(curl --silent --show-error --max-time 90 -o "$response" -w '%{http_code}' -X POST -H "x-cleanup-secret: $CLEANUP_SECRET" "$HOLUP_PROJECT_URL/functions/v1/manual-evidence-cleanup")
+          if [ "$code" != 200 ]; then echo "Cleanup failed: HTTP $code"; exit 1; fi
+          python3 - "$response" <<'PY'
+          import json,sys
+          with open(sys.argv[1]) as f: data=json.load(f)
+          if not isinstance(data,dict) or data.get('failed')!=0 or not isinstance(data.get('removed'),int): raise SystemExit('Unexpected cleanup result')
+          print('Cleanup batch completed; objects removed:',data['removed'])
+          PY
