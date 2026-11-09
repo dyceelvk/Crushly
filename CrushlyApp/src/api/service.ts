@@ -1615,3 +1615,15 @@ export async function appUpdate(): Promise<AppUpdate> {
   if (!res.ok) throw new ApiError(res.status, 'Couldn’t check for an update.');
   return (await res.json()) as AppUpdate;
 }
+
+// Manual verification prototype. These RPCs are not yet in the production DB.
+export type ManualVerificationKind = 'creator' | 'person_id';
+export type ManualVerificationProgress = { kind: ManualVerificationKind; eligible: boolean; adminExempt: boolean; addUps: number; mediaPosts: number; textPosts: number; crushes: number; weeklyPosts: number[] };
+export type ManualVerificationCase = { id: number; memberId: number; memberName: string; kind: ManualVerificationKind; status: 'open' | 'approved' | 'rejected' | 'withdrawn'; createdAt: number };
+export type ManualVerificationThread = { id: number; kind: ManualVerificationKind; status: ManualVerificationCase['status']; memberId: number; criteria: ManualVerificationProgress; messages: { id: number; role: 'member' | 'admin'; body: string; createdAt: number }[] };
+export const verificationProgress = (kind: ManualVerificationKind, memberId?: number) => rpc<ManualVerificationProgress>('manual_verification_progress', { p_kind: kind, ...(memberId ? { p_member: memberId } : {}) });
+export const verificationApply = (kind: ManualVerificationKind) => rpc<{ id: number }>('manual_verification_apply', { p_kind: kind });
+export const verificationCases = (admin = false) => rpc<ManualVerificationCase[]>('manual_verification_cases_list', { p_admin: admin });
+export const verificationThread = (id: number) => rpc<ManualVerificationThread>('manual_verification_thread', { p_case: id });
+export const verificationSend = (id: number, text: string) => rpc<boolean>('manual_verification_send', { p_case: id, p_body: text });
+export const verificationDecide = (id: number, decision: 'approve' | 'reject', reason: string) => rpc<boolean>('manual_verification_decide', { p_case: id, p_decision: decision, p_reason: reason });

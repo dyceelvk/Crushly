@@ -268,3 +268,29 @@
 - Teen safety reporting is additionally sketched as an isolated RPC with an
   adult-impostor category, rate limit and optional atomic block. This is not a
   staffed moderation queue or client UI; unreviewed and not deployed.
+
+## Manual verification — current user priority
+- User asked to pause Supabase changes and build admin-controlled verification.
+  No Supabase project, Didit function, live database, production web or Android
+  was changed for this task. Riel Vault was not changed. Teen work is paused.
+- Decisions: 10k incoming Add Ups, 1k image/video posts, 100 text posts, 500k
+  Crushes/likes on posts, plus 3 posts in each of the last four 7-day periods
+  for creator (gold); 5k Add Ups, 1k photo/video posts, 50 text posts and 50k
+  Crushes on video posts for person ID (diamond blue). The user clarified all
+  post thresholds count posts, PI 1k is photos+videos, admin retains existing
+  verification/exemption, and Didit live capture is mandatory for person ID
+  only and directed by admin. Creator badge recognizes popularity, not ID.
+- Experimental `supabase/manual-verification-work/01_verification_experiment.sql`
+  and local Settings/admin screens provide an unreleased prototype for progress,
+  application, private text review, questions, gold approval and rejection
+  with reasons/audit. PI approval fails closed without case-bound trusted Didit
+  evidence. No provider evidence integration exists, so PI approval is not
+  available. Document/selfie upload and secure admin viewing do not exist. The
+  UI explicitly warns not to send documents in text messages. Existing live
+  Didit functions still independently award badges and must be retired or
+  switched to evidence-only before release; pending requests need a plan.
+- See README for critical retention, secure evidence, session-binding, audit,
+  migration and validation blockers. No tests were run. A web build was started
+  after npm ci; outcome must be checked. No changes have shipped. Current counts
+  exclude Circle posts and other reaction kinds; media classification by file
+  extension needs production review, especially videos and public URLs.

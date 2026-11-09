@@ -31,8 +31,8 @@ const DIAMOND_DEEP = '#08333F';
 const TIER_LABEL: Record<BadgeTier, string> = {
   none: '',
   verified: 'Verified',
-  gold: 'Gold — earned on Holup',
-  diamond: 'Holup company account',
+  gold: 'Gold — creator verification',
+  diamond: 'Diamond blue — person ID verification or Holup company account',
 };
 
 export function VerifiedBadge({

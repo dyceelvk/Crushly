@@ -1,190 +1,82 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Linking, Platform, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useQueryClient } from '@tanstack/react-query';
-import { Screen, Header, useLayout } from '../../components/Layout';
+import React, { useState } from 'react';
+import { View } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Screen, Header } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';
-import { Avatar } from '../../components/Photo';
-import { VerifiedBadge } from '../../components/Badges';
+import { Input } from '../../components/Input';
+import { ConfirmSheet } from '../../components/BottomSheet';
+import { ErrorState, LoadingBlock } from '../../components/States';
 import { useToast } from '../../components/Toast';
-import { keys, useMe } from '../../api/hooks';
-import { startDiditVerification, getDiditStatus, type DiditStatusResponse } from '../../api/service';
 import { useTheme } from '../../theme/ThemeProvider';
-import { radius, space } from '../../theme/tokens';
-import { isVerificationReturn, redirectToVerification, verificationPhase } from '../../lib/verification';
+import { space } from '../../theme/tokens';
+import { timeAgoLong } from '../../lib/format';
+import * as service from '../../api/service';
 import type { ScreenProps } from '../../navigation/types';
 
-/** What Didit checks for the member — the hosted flow runs these for us. */
-const DIDIT_STEPS = [
-  { icon: 'card-outline' as const, title: 'Scan your ID', body: 'Your document is checked securely by our identity partner.' },
-  { icon: 'happy-outline' as const, title: 'Liveness check', body: 'Live capture only — Didit’s camera takes a fresh selfie. Photos from your gallery can’t be used.' },
-  { icon: 'git-compare-outline' as const, title: 'Face match', body: 'Your selfie is matched to your document photo.' },
-];
+const kindLabel = (kind: service.ManualVerificationKind) => kind === 'creator' ? 'Creator verification' : 'Person ID verification';
+
+export function VerificationThread({ caseId, onBack, admin = false }: { caseId: number; onBack: () => void; admin?: boolean }) {
+  const { colors } = useTheme(); const toast = useToast(); const qc = useQueryClient();
+  const [message, setMessage] = useState('');
+  const [reason, setReason] = useState('');
+  const [decision, setDecision] = useState<'approve' | 'reject' | null>(null);
+  const thread = useQuery({ queryKey: ['manual-verification-thread', caseId], queryFn: () => service.verificationThread(caseId), staleTime: 0, refetchInterval: 15000 });
+  const decide = useMutation({ mutationFn: (value: 'approve' | 'reject') => service.verificationDecide(caseId, value, reason.trim()), onSuccess: () => { setDecision(null); setReason(''); void qc.invalidateQueries({ queryKey: ['manual-verification-thread', caseId] }); void qc.invalidateQueries({ queryKey: ['manual-verification-cases'] }); toast({ kind: 'success', title: 'Decision recorded' }); }, onError: (e) => { setDecision(null); toast({ kind: 'error', title: 'Decision not recorded', message: (e as Error).message }); } });
+  const send = useMutation({ mutationFn: () => service.verificationSend(caseId, message.trim()), onSuccess: () => { setMessage(''); void qc.invalidateQueries({ queryKey: ['manual-verification-thread', caseId] }); }, onError: (e) => toast({ kind: 'error', title: 'Message not sent', message: (e as Error).message }) });
+  return <Screen keyboard><Header title="Verification review" back onBack={onBack} />
+    {thread.isLoading ? <LoadingBlock label="Loading review" /> : thread.isError || !thread.data ? <ErrorState error={thread.error} message="Review is unavailable." onRetry={() => void thread.refetch()} /> : <View style={{ gap: space.md }}>
+      <Txt variant="bodyStrong">{kindLabel(thread.data.kind)} · {thread.data.status}</Txt>
+      <Txt variant="small" color="textSecondary">This is a private review conversation. Do not send ID numbers or document images in text messages.</Txt>
+      {thread.data.messages.length === 0 ? <Txt color="textSecondary">No messages yet. A reviewer may ask you questions here.</Txt> : thread.data.messages.map(m => <View key={m.id} style={{ padding: space.md, borderRadius: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+        <Txt variant="smallStrong">{m.role === 'admin' ? 'Holup reviewer' : 'Applicant'} · {timeAgoLong(m.createdAt)}</Txt><Txt variant="body">{m.body}</Txt>
+      </View>)}
+      {thread.data.status === 'open' ? <><Input label="Message" value={message} onChangeText={setMessage} multiline maxLength={2000} /><Button title="Send message" onPress={() => send.mutate()} disabled={!message.trim()} loading={send.isPending} /></> : null}
+      {admin && thread.data.status === 'open' ? <View style={{ gap: space.sm }}>
+        <Txt variant="bodyStrong">Review decision</Txt>
+        <Txt variant="small" color="textSecondary">{thread.data.kind === 'person_id' ? 'Person ID approval requires a successful Didit live capture linked to this case. That integration is not available yet.' : 'Gold is creator recognition; it does not assert ID verification.'}</Txt>
+        <Input label="Decision reason" value={reason} onChangeText={setReason} multiline maxLength={500} />
+        {thread.data.kind === 'creator' ? <Button title="Approve gold badge" onPress={() => setDecision('approve')} disabled={reason.trim().length < 10 || decide.isPending} /> : null}
+        <Button title="Reject application" variant="danger" onPress={() => setDecision('reject')} disabled={reason.trim().length < 10 || decide.isPending} />
+      </View> : null}
+      <Button title="Refresh" variant="secondary" onPress={() => void thread.refetch()} />
+    </View>}
+    <ConfirmSheet visible={decision !== null} title={decision === 'approve' ? 'Award creator verification?' : 'Reject this application?'} message="The decision and reason will be sent to the applicant and recorded in the admin audit." confirmLabel={decision === 'approve' ? 'Approve' : 'Reject'} destructive={decision === 'reject'} loading={decide.isPending} onCancel={() => setDecision(null)} onConfirm={() => { if (decision) decide.mutate(decision); }} />
+  </Screen>;
+}
 
 export function VerificationScreen({ navigation }: ScreenProps<'Verification'>) {
-  const { data: me } = useMe();
-  const { colors } = useTheme();
-  const { contentWidth, gutter } = useLayout();
-  const toast = useToast();
-  const qc = useQueryClient();
-  const [busy, setBusy] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<DiditStatusResponse | null>(null);
-
-  const status = result?.status ?? me?.verification.status ?? 'none';
-  const verified = status === 'verified';
-  const rejected = status === 'rejected';
-  const hasSession = !!result?.sessionId || status === 'pending';
-  const phase = verificationPhase(result?.diditStatus ?? null);
-  const w = Math.min(contentWidth - gutter * 2, 340);
-
-  const refresh = useCallback(async () => {
-    setChecking(true);
-    try {
-      setResult(await getDiditStatus());
-      await qc.invalidateQueries({ queryKey: keys.me });
-    } catch (e) {
-      toast({ kind: 'error', title: 'Couldn’t check the status', message: (e as Error).message });
-    } finally {
-      setChecking(false);
-    }
-  }, [qc, toast]);
-
-  // Load the real provider state, including legacy links that were never opened.
-  // A return URL is only a cue to poll — never trust its claimed result.
-  useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && isVerificationReturn(window.location.search)) {
-      const params = new URLSearchParams(window.location.search);
-      params.delete('didit');
-      params.delete('status');
-      const query = params.toString();
-      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
-      toast({ kind: 'info', title: 'Back from verification', message: 'Checking your result…' });
-    }
-    void refresh();
-  }, [refresh, toast]);
-
-  const start = async (newSession = false) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const { url } = await startDiditVerification(newSession);
-      if (Platform.OS === 'web') redirectToVerification(url, window.location);
-      else await Linking.openURL(url);
-      void qc.invalidateQueries({ queryKey: keys.me });
-    } catch (e) {
-      toast({ kind: 'error', title: 'Couldn’t start verification', message: (e as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Screen
-      footer={
-        verified ? undefined : (
-          <View style={{ gap: space.xs }}>
-            <Button
-              title={rejected ? 'Try verification again' : hasSession ? 'Continue verification' : 'Start verification'}
-              icon="shield-checkmark-outline"
-              onPress={() => void start(rejected)}
-              loading={busy}
-              disabled={checking}
-            />
-            {hasSession ? (
-              <>
-                <Button title="Check status" variant="secondary" icon="refresh" onPress={refresh} loading={checking} disabled={busy} />
-                <Button title="Start a new session" variant="ghost" onPress={() => void start(true)} disabled={busy || checking} />
-              </>
-            ) : null}
-          </View>
-        )
-      }
-    >
-      <Header title="Get verified" back onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Profile' })} />
-
-      <View style={{ alignItems: 'center', marginTop: space.lg }}>
-        <View>
-          <Avatar uri={me?.profile.photos[0]?.url} name={me?.profile.name} size={104} ring={verified ? 'gold' : undefined} />
-          {verified ? (
-            <View style={{ position: 'absolute', right: 0, bottom: 4 }}>
-              <VerifiedBadge size={30} />
-            </View>
-          ) : null}
-        </View>
-      </View>
-
-      {verified ? (
-        <View style={{ alignItems: 'center', marginTop: space.lg, gap: space.sm }}>
-          <Txt variant="heading" align="center">
-            You’re verified
-          </Txt>
-          <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Your badge shows on your Space. Thanks for keeping Holup real.
-          </Txt>
-        </View>
-      ) : rejected ? (
-        <View style={{ alignItems: 'center', marginTop: space.lg, gap: space.sm }}>
-          <Txt variant="heading" align="center">
-            Verification didn’t pass
-          </Txt>
-          <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            That happens — a blurry document or a bad angle is usually all it is. You can try again with a fresh session.
-          </Txt>
-        </View>
-      ) : hasSession ? (
-        <View style={{ alignItems: 'center', marginTop: space.lg, gap: space.sm }}>
-          <Txt variant="heading" align="center">
-            {phase === 'review' ? 'Verification under review' : phase === 'progress' ? 'Finish your verification' : 'Ready to verify'}
-          </Txt>
-          <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            {phase === 'review'
-              ? 'Your submitted checks are being reviewed. Tap “Check status” for the latest result.'
-              : 'Tap “Continue verification” to open the checks. Creating a session does not submit your verification or put it under review. Holup will redirect you to Didit, then back here when you finish.'}
-          </Txt>
-        </View>
-      ) : (
-        <View style={{ alignItems: 'center', marginTop: space.lg, gap: space.md }}>
-          <Txt variant="heading" align="center">
-            Prove it’s really you
-          </Txt>
-          <Txt variant="body" color="textSecondary" align="center" style={{ maxWidth: w }}>
-            Verification runs through our certified identity partner. Holup will redirect you to Didit, then bring you back here when you finish. Tapping the button only opens those checks — it doesn’t submit anything or put you in review; the result arrives when you complete them with Didit.
-          </Txt>
-          <View style={{ width: w, gap: space.sm, marginTop: space.xs }}>
-            {DIDIT_STEPS.map((s) => (
-              <View key={s.title} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.goldSoft,
-                    borderWidth: 1,
-                    borderColor: colors.goldLine,
-                  }}
-                >
-                  <Ionicons name={s.icon} size={18} color={colors.gold} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Txt variant="bodyStrong">{s.title}</Txt>
-                  <Txt variant="small" color="textMuted">
-                    {s.body}
-                  </Txt>
-                </View>
-              </View>
-            ))}
-          </View>
-          <View style={{ width: w, padding: space.md, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-            <Txt variant="small" color="textSecondary">
-              Your ID is checked securely by our identity partner and is never shown to other members. Your verification result controls the badge on your profile.
-            </Txt>
-          </View>
-        </View>
-      )}
-    </Screen>
-  );
+  const [kind, setKind] = useState<service.ManualVerificationKind | null>(null);
+  const [caseId, setCaseId] = useState<number | null>(null);
+  const toast = useToast(); const qc = useQueryClient(); const { colors } = useTheme();
+  const progress = useQuery({ queryKey: ['verification-progress', kind], queryFn: () => service.verificationProgress(kind!), enabled: !!kind, staleTime: 0 });
+  const cases = useQuery({ queryKey: ['manual-verification-cases'], queryFn: () => service.verificationCases(), staleTime: 0 });
+  const apply = useMutation({ mutationFn: () => service.verificationApply(kind!), onSuccess: (v) => { void qc.invalidateQueries({ queryKey: ['manual-verification-cases'] }); setCaseId(v.id); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t apply', message: (e as Error).message }) });
+  if (caseId !== null) return <VerificationThread caseId={caseId} onBack={() => setCaseId(null)} />;
+  return <Screen><Header title="Verification" back onBack={() => kind ? setKind(null) : navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Profile' })} />
+    {!kind ? <View style={{ gap: space.md }}>
+      <Txt color="textSecondary">Choose a verification. Meeting the requirements lets you apply; a Holup reviewer makes the final decision.</Txt>
+      <Button title="Creator verification · Gold" onPress={() => setKind('creator')} />
+      <Button title="Person ID verification · Diamond blue" variant="secondary" onPress={() => setKind('person_id')} />
+      <Txt variant="heading">Your applications</Txt>
+      {cases.isLoading ? <LoadingBlock label="Loading applications" /> : cases.isError ? <ErrorState error={cases.error} message="Applications are unavailable." onRetry={() => void cases.refetch()} /> : !cases.data?.length ? <Txt color="textSecondary">No applications yet.</Txt> : cases.data.map(item => <View key={item.id} style={{ padding: space.md, borderWidth: 1, borderColor: colors.border, borderRadius: 14, gap: space.xs }}><Txt variant="bodyStrong">{kindLabel(item.kind)} · {item.status}</Txt><Button title="Open review" size="sm" variant="secondary" onPress={() => setCaseId(item.id)} /></View>)}
+    </View> : <View style={{ gap: space.md }}>
+      <Txt variant="heading">{kindLabel(kind)}</Txt>
+      <Txt color="textSecondary">{kind === 'creator' ? 'Gold recognizes creators and their growth on Holup.' : 'Diamond blue recognizes a person’s identity after a reviewer’s decision and Didit live capture.'}</Txt>
+      {progress.isLoading ? <LoadingBlock label="Checking your progress" /> : progress.isError || !progress.data ? <ErrorState error={progress.error} message="Requirements are unavailable." onRetry={() => void progress.refetch()} /> : <>
+        <Txt variant="bodyStrong">Your progress</Txt>
+        <Txt>Add Ups: {progress.data.addUps.toLocaleString()} / {kind === 'creator' ? '10,000' : '5,000'}</Txt>
+        <Txt>Photo or video posts: {progress.data.mediaPosts.toLocaleString()} / 1,000</Txt>
+        <Txt>Text posts: {progress.data.textPosts.toLocaleString()} / {kind === 'creator' ? '100' : '50'}</Txt>
+        <Txt>{kind === 'creator' ? 'Crushes on posts' : 'Crushes on videos'}: {progress.data.crushes.toLocaleString()} / {kind === 'creator' ? '500,000' : '50,000'}</Txt>
+        {kind === 'creator' ? <Txt>Posts in each of the last four 7-day periods: {progress.data.weeklyPosts.join(' / ')} (3 per period)</Txt> : null}
+        {progress.data.adminExempt ? <Txt color="textSecondary">Admin accounts are exempt from the thresholds.</Txt> : null}
+        <Txt variant="small" color="textSecondary">Counts use current posts and Crush reactions, not deleted posts or other reactions. Meeting the thresholds does not automatically award a badge.</Txt>
+        <Button title="Apply for review" onPress={() => apply.mutate()} disabled={!progress.data.eligible} loading={apply.isPending} />
+      </>}
+      <Txt variant="bodyStrong">What a reviewer may ask for</Txt>
+      <Txt color="textSecondary">{kind === 'creator' ? 'Your creator or public name, a short description of your work, and links to official channels or publications that show your work belongs to you. The reviewer may ask follow-up questions.' : 'Your full legal name and the name you use on Holup. If requested, you will complete a Didit live selfie and capture a valid government ID in the provider’s secure flow. A reviewer may ask follow-up questions.'}</Txt>
+      <Txt variant="small" color="textSecondary">Never share passwords or sign-in codes. Do not send identity numbers, selfies or documents in chat. Secure evidence submission and the admin-directed capture flow are not yet available.</Txt>
+    </View>}
+  </Screen>;
 }

@@ -14,6 +14,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
 import * as service from '../../api/service';
 import type { ScreenProps } from '../../navigation/types';
+import { VerificationThread } from './Verification';
 
 export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const { colors } = useTheme();
@@ -25,6 +26,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const [body, setBody] = useState('');
   const [active, setActive] = useState(false);
   const [section, setSection] = useState<'controls' | 'reports' | 'accounts' | 'verification' | 'audit'>('controls');
+  const [reviewCase, setReviewCase] = useState<number | null>(null);
   const [handled, setHandled] = useState(false);
   const [reportPage, setReportPage] = useState(0);
   const [search, setSearch] = useState('');
@@ -34,7 +36,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const [confirmRemoval, setConfirmRemoval] = useState(false);
   const reports = useQuery({ queryKey: ['admin-reports', handled, reportPage], queryFn: () => service.adminReports(handled, reportPage * 50), enabled: data.isSuccess && section === 'reports', staleTime: 30000 });
   const accounts = useQuery({ queryKey: ['admin-accounts', submittedSearch], queryFn: () => service.adminAccounts(submittedSearch), enabled: data.isSuccess && section === 'accounts' && (submittedSearch.length >= 2 || /^[0-9]+$/.test(submittedSearch)), staleTime: 30000 });
-  const verifications = useQuery({ queryKey: ['admin-verifications'], queryFn: service.adminVerifications, enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
+  const verifications = useQuery({ queryKey: ['manual-verification-cases', 'admin'], queryFn: () => service.verificationCases(true), enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
   const audit = useQuery({ queryKey: ['admin-audit'], queryFn: service.adminAudit, enabled: data.isSuccess && section === 'audit', staleTime: 0 });
   const inspectPost = useMutation({ mutationFn: (id: number) => service.adminReportedPost(id),
     onSuccess: (post, reportId) => { setReviewedPost({ reportId, post }); setRemovalReason(''); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); },
@@ -52,6 +54,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['admin-state'] }); void qc.invalidateQueries({ queryKey: ['app-settings'] }); };
   const feature = useMutation({ mutationFn: ({ key, enabled }: { key: 'calls' | 'public_post_sharing'; enabled: boolean }) => service.adminSetFeature(key, enabled), onSuccess: refresh, onError: (e) => toast({ kind: 'error', title: 'Not changed', message: (e as Error).message }) });
   const announcement = useMutation({ mutationFn: () => service.adminSetAnnouncement(title, body, active), onSuccess: () => { dirty.current = false; refresh(); toast({ kind: 'success', title: 'Announcement saved' }); }, onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
+  if (reviewCase !== null) return <VerificationThread caseId={reviewCase} admin onBack={() => { setReviewCase(null); void verifications.refetch(); }} />;
   return <Screen><Header title="Holup admin" subtitle="Operations and controls" back />
     {data.isLoading ? <LoadingBlock label="Loading admin controls" /> : data.isError || !data.data ? <ErrorState error={data.error} message="Admin controls are unavailable." onRetry={() => void data.refetch()} /> : <View style={{ gap: space.lg, paddingBottom: space.xl }}>
       <View accessibilityRole="tablist" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
@@ -110,10 +113,10 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
       </View> : null}
       {section === 'verification' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Verification</Txt>
-        <Txt variant="small" color="textSecondary">Recent request statuses. Decisions and identity evidence remain with the verification provider; this screen cannot approve or reject them.</Txt>
+        <Txt variant="small" color="textSecondary">Review applications, ask questions, and decide on creator badges. Person ID approval requires a trusted Didit capture integration.</Txt>
         {verifications.isLoading ? <LoadingBlock label="Loading verification requests" /> : verifications.isError ? <ErrorState error={verifications.error} message="Verification requests are unavailable." onRetry={() => void verifications.refetch()} /> : !verifications.data?.length ? <Txt color="textSecondary">No verification requests.</Txt> : verifications.data.map((v) => <View key={v.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>
           <Txt variant="bodyStrong">{v.memberName} · #{v.memberId}</Txt>
-          <Txt variant="small" color="textSecondary">{v.status} · {timeAgoLong(v.createdAt)}</Txt>
+          <Txt variant="small" color="textSecondary">{v.kind === 'creator' ? 'Creator · Gold' : 'Person ID · Diamond blue'} · {v.status} · {timeAgoLong(v.createdAt)}</Txt><Button title="Open review" size="sm" variant="secondary" onPress={() => setReviewCase(v.id)} />
         </View>)}
       </View> : null}
       {section === 'audit' ? <View style={{ gap: space.md }}>
