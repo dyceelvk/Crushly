@@ -7,7 +7,7 @@ const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated',
 const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
-async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = []) {
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false) {
   let banner: string | null = null;
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
@@ -32,6 +32,15 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
       const params = route.request().postDataJSON() as Record<string, unknown>; calls.push(params);
       body = { members: params.p_category === 'top' || params.p_category === 'people' ? [person] : [], posts: ['top', 'photos'].includes(String(params.p_category)) ? [onePost] : [], moments: [], sounds: params.p_category === 'sounds' ? [{ id: 20, title: 'Holiday tune' }] : [], places: params.p_category === 'places' ? [{ name: 'Lagos' }] : [], hashtags: params.p_category === 'hashtags' ? [{ tag: 'holiday' }] : [] };
     }
+    else if (path === '/rest/v1/rpc/holup_trends') body = [{ term: '#commentfixture', postCount: 2 }];
+    else if (path === '/rest/v1/rpc/holup_is_admin') body = isAdmin;
+    else if (path === '/rest/v1/rpc/holup_app_settings') body = { callsEnabled: false, publicSharingEnabled: true, announcement: null };
+    else if (path === '/rest/v1/rpc/holup_admin_state') body = { features: { calls: false, public_post_sharing: true }, announcement: { title: '', body: '', active: false } };
+    else if (path === '/rest/v1/rpc/holup_admin_set_feature') body = true;
+    else if (path === '/rest/v1/rpc/public_post_preview') body = { id: 11, body: onePost.body, author: person.name };
+    else if (path === '/rest/v1/rpc/post_viewers') body = { items: [{ profile: person, viewedAt: Date.now() }] };
+    else if (path === '/rest/v1/rpc/load_post') { const id = Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id); body = { ...onePost, id, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: id === 12, likeCount: 0, liked: false, commentCount: 1, saved: false, viewCount: 2 }; }
+    else if (path === '/rest/v1/rpc/edit_post') { const args = route.request().postDataJSON() as Record<string, unknown>; commentCalls.push(args); body = { ...onePost, id: 12, audience: args.p_audience, body: args.p_body, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: true, likeCount: 0, liked: false, commentCount: 1, viewCount: 2 }; }
     else if (path === '/rest/v1/rpc/post_comment_settings') body = true;
     else if (path === '/rest/v1/rpc/post_likers') body = { items: [] };
     else if (path === '/rest/v1/rpc/post_comments_feed') body = { items: [{ id: 45, body: 'Hello there', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }] };
@@ -117,4 +126,57 @@ test('comments remain text-only with replies, emoji and mentions', async ({ page
   await page.getByRole('button', { name: 'Mention somebody' }).click();
   await expect(page.getByLabel('Add a comment')).toHaveValue('@');
   await expect(page.getByRole('button', { name: /attach photo|voice comment/i })).toHaveCount(0);
+});
+
+
+test('trends from comments lead to real searches', async ({ page }) => {
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  await page.getByRole('button', { name: 'Search Holup' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Search #commentfixture' }).click();
+  await expect.poll(() => calls.at(-1)?.p_query).toBe('commentfixture');
+  expect(calls.at(-1)?.p_hashtag).toBe(true);
+});
+
+test('a web post link opens after authentication and shows count only to non-owner', async ({ page }) => {
+  await offline(page, []); await page.goto('/?post=11');
+  await expect(page.getByText('hello #holiday').last()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByLabel('2 views', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /see viewers/i })).toHaveCount(0);
+});
+
+test('owner can open the viewer list', async ({ page }) => {
+  await offline(page, []); await page.goto('/?post=12');
+  await page.getByRole('button', { name: '2 views, see viewers' }).click({ timeout: 30000 });
+  await expect(page.getByText('Only you can see who viewed this.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+});
+
+test('verified admin can access the server-backed feature controls', async ({ page }) => {
+  await offline(page, [], [], true); await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByText('Holup admin', { exact: true }).click();
+  await expect(page.getByText('Feature controls and announcements')).toBeVisible();
+  await expect(page.getByLabel('Voice calls', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Public post links', { exact: true })).toBeVisible();
+});
+
+
+test('a post owner can select Private while editing', async ({ page }) => {
+  const calls: Record<string, unknown>[] = []; await offline(page, [], calls); await page.goto('/?post=12');
+  await page.getByRole('button', { name: 'More for this post' }).click({ timeout: 30000 });
+  await page.getByText('Edit the words', { exact: true }).click();
+  await page.getByText('Private', { exact: true }).last().click();
+  await page.getByRole('button', { name: 'Save this post' }).click();
+  await expect.poll(() => calls.some((call) => call.p_audience === 'private')).toBe(true);
+});
+
+test('external sharing copies a real public post URL', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await offline(page, []); await page.goto('/?post=11');
+  await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Copy post link' }).click();
+  await expect(page.getByText('Link copied')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/v/11');
 });

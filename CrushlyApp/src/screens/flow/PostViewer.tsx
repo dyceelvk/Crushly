@@ -3,17 +3,21 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
-  PanResponder,
-  Share,
+  FlatList,
+  useWindowDimensions,
+  type ViewToken,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { useTrackPostView } from '../../lib/useTrackPostView';
+import { PostViews } from '../../components/ViewersSheet';
 import { KeepsYouChip } from '../../components/KeepsYouChip';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -28,7 +32,7 @@ import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import {
   useDeletePost,
-  useFlow,
+  useRankedFlow,
   useMe,
   useOpenConversation,
   usePost,
@@ -38,7 +42,6 @@ import {
 import type { Post, ReactionKind } from '../../api/types';
 import { REACTION_KINDS } from '../../api/types';
 import { EditedClip } from '../../components/EditedClip';
-import type { StageFit } from '../../lib/videoFrame';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -95,8 +98,40 @@ const REACTION_NAME: Record<ReactionKind, string> = {
   clap: 'Clap',
 };
 
+/** A real vertical pager: neighbouring pages can load while the active clip plays. */
 export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'>) {
-  const { postId } = route.params;
+  const initialId = route.params.postId;
+  const flow = useRankedFlow();
+  const { height } = useWindowDimensions();
+  const focused = useIsFocused();
+  const [activeId, setActiveId] = useState(initialId);
+  // Keep the selected post first even when the ranked feed arrives later.
+  const ids = useMemo(() => [initialId, ...flow.posts.map((p) => p.id).filter((id) => id !== initialId)], [initialId, flow.posts]);
+  const byId = useMemo(() => new Map(flow.posts.map((p) => [p.id, p])), [flow.posts]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const first = viewableItems.find((item) => item.isViewable && typeof item.item === 'number');
+    if (first) setActiveId(first.item as number);
+  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 65 }).current;
+  return <FlatList
+    data={ids}
+    keyExtractor={(id) => String(id)}
+    pagingEnabled
+    decelerationRate="fast"
+    showsVerticalScrollIndicator={false}
+    windowSize={3}
+    initialNumToRender={2}
+    maxToRenderPerBatch={2}
+    getItemLayout={(_data, index) => ({ length: height, offset: height * index, index })}
+    onEndReached={() => flow.loadOlder()}
+    onEndReachedThreshold={0.6}
+    onViewableItemsChanged={onViewableItemsChanged}
+    viewabilityConfig={viewabilityConfig}
+    renderItem={({ item }) => <View style={{ height }}><PostViewerPage postId={item} navigation={navigation} active={focused && activeId === item} fallback={byId.get(item)} /></View>}
+  />;
+}
+
+function PostViewerPage({ postId, navigation, active, fallback }: { postId: number; navigation: ScreenProps<'PostViewer'>['navigation']; active: boolean; fallback?: Post }) {
   const openProfile = useProfileTap();
   const insets = useSafeAreaInsets();
   const { contentWidth, gutter } = useLayout();
@@ -104,12 +139,12 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const toast = useToast();
 
   const { data: me } = useMe();
-  const flow = useFlow();
   // A post view must not go empty just because the post scrolled out of the
   // current feed page, so it is fetched directly and falls back to the page.
   const postQuery = usePost(postId);
-  const post = postQuery.data ?? flow.data?.items.find((p) => p.id === postId) ?? null;
+  const post = postQuery.isError ? null : (postQuery.data ?? fallback ?? null);
 
+  useTrackPostView(post?.id ?? null, active && !!post, post?.mine ?? false);
   const react = useReactToPost();
   const keep = useSavePost();
   const remove = useDeletePost();
@@ -122,10 +157,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const [shareOpen, setShareOpen] = useState(false);
   // The three dots: everything you can do to a post that isn't a reaction.
   const [moreOpen, setMoreOpen] = useState(false);
-  // How a clip sits on the full-screen stage. `fit` shows the whole frame and
-  // fills the space around it with a soft copy of itself; `fill` crops to the
-  // screen and leaves no space at all. See `stageFit` in lib/videoFrame.
-  const [stageFitMode, setStageFitMode] = useState<StageFit>('fit');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const { openActions } = useMemberActions();
@@ -232,65 +263,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }
   }, [post, authorName, toast]);
 
-  const share = useCallback(async () => {
-    if (!post) return;
-    try {
-      await Share.share({
-        message: post.body ? `${post.body}\n\n— ${authorName} on Holup` : `${authorName} on Holup`,
-      });
-    } catch {
-      // Backing out of a share sheet is not a failure worth reporting.
-    }
-  }, [post, authorName]);
-
-  /**
-   * The reel.
-   *
-   * Watching one post at a time was the right shape; being trapped in the one
-   * you tapped was not. The order is the feed's own order, so swiping up is
-   * simply "the next thing down the list" — no new list, no new fetch, no
-   * second definition of what comes next.
-   */
-  const reel = flow.data?.items ?? [];
-  const at = post ? reel.findIndex((x) => x.id === post.id) : -1;
-  const nextPost = at >= 0 && at < reel.length - 1 ? reel[at + 1] : null;
-  const prevPost = at > 0 ? reel[at - 1] : null;
-
-  const step = useCallback(
-    (dir: 1 | -1) => {
-      // The ends are glued, not announced. A toast saying "that's the most
-      // recent" turns a swipe into a lecture; the reel simply stops, the way a
-      // physical reel does when it reaches the end.
-      const target = dir === 1 ? nextPost : prevPost;
-      if (!target) return;
-      // The same screen, showing the next post: the route is the only state, so
-      // Back still leaves the viewer rather than walking the reel.
-      navigation.setParams({ postId: target.id });
-    },
-    [nextPost, prevPost, navigation, toast],
-  );
-  const stepRef = useRef(step);
-  stepRef.current = step;
-
-  // A sheet on top owns the gesture: nothing should page the reel out from
-  // under a comment somebody is halfway through writing.
-  const sheetOpen = commentsOpen || shareOpen || moreOpen || reactionsOpen || editOpen || confirmDelete;
-  const sheetRef = useRef(sheetOpen);
-  sheetRef.current = sheetOpen;
-
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) =>
-        !sheetRef.current && Math.abs(g.dy) > 26 && Math.abs(g.dy) > Math.abs(g.dx) * 1.6,
-      onPanResponderRelease: (_e, g) => {
-        if (g.dy < -60) stepRef.current(1);
-        else if (g.dy > 60) stepRef.current(-1);
-      },
-    }),
-  ).current;
 
   if (!post) {
-    const loading = (flow.isLoading || postQuery.isLoading) && postQuery.data === undefined;
+    const loading = postQuery.isLoading && postQuery.data === undefined;
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.sm }}>
         {loading ? (
@@ -316,7 +291,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const needsReadMore = body.length > 140;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#05060f' }} {...pan.panHandlers}>
+    <View style={{ flex: 1, backgroundColor: '#05060f' }}>
       {/* ---------------------------------------------------------- the stage */}
       <Pressable
         onPress={onMediaTap}
@@ -327,10 +302,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           post.mediaKind === 'video' ? (
             /* The stage is the box here, so the clip fills it rather than shaping
                itself. What fills the leftover space is the decision the stage
-               makes: a landscape clip used to be letterboxed in black, which
-               read as a fault rather than a frame. Now the whole picture sits on
-               a blurred copy of itself, and the button in the top bar swaps that
-               for a crop that leaves no space at all.
+               makes: the whole picture stays visible, with a softened copy
+               behind it when the frame does not match the screen.
                `controls` gives it the tap-to-pause it never had, and double tap
                still reacts: both gestures are decided in one place so a double
                tap cannot also fire the pause. */
@@ -338,10 +311,10 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
               key={post.id}
               uri={resolveVideoUri(post.mediaUrl)}
               live={post.edit ?? null}
-              autoPlay
+              autoPlay={active}
               loop
               fill
-              fit={stageFitMode}
+              fit="fit"
               controls
               holdToPause
               onDoubleTap={() => void reactWith('crush')}
@@ -420,14 +393,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             sending it to somebody, reporting it and deleting it all live here.
             Delete used to be the only thing in this corner, which meant the one
             destructive action in the app was also the easiest one to hit. */}
-        {post.mediaKind === 'video' ? (
-          <IconButton
-            icon={stageFitMode === 'fit' ? 'expand-outline' : 'contract-outline'}
-            label={stageFitMode === 'fit' ? 'Fill the screen' : 'See the whole frame'}
-            variant="glass"
-            onPress={() => setStageFitMode(stageFitMode === 'fit' ? 'fill' : 'fit')}
-          />
-        ) : null}
         <IconButton icon="ellipsis-horizontal" label="More for this post" variant="glass" onPress={() => setMoreOpen(true)} />
       </View>
 
@@ -477,6 +442,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
           bottom: insets.bottom + 92,
         }}
       >
+        <PostViews post={post} light />
         <Pressable
           onPress={() => openProfile(post.author.id)}
           accessibilityRole="button"
@@ -700,7 +666,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
             label="Share outside Holup"
             onPress={() => {
               setMoreOpen(false);
-              void share();
+              setShareOpen(true);
             }}
           />
           {post.mine ? (

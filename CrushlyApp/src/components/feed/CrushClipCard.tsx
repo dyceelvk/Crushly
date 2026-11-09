@@ -13,6 +13,8 @@ import { useOpenConversation, useReactToPost } from '../../api/hooks';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { timeAgo } from '../../lib/format';
+import { useTrackPostView } from '../../lib/useTrackPostView';
+import { PostViews } from '../ViewersSheet';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { Post } from '../../api/types';
@@ -38,6 +40,7 @@ import type { RootStackParamList } from '../../navigation/types';
  * picture opens the post, where the full rail lives.
  */
 export function CrushClipCard({ post, active }: { post: Post; active: boolean }) {
+  useTrackPostView(post.id, active, post.mine);
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -100,6 +103,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
             </View>
           </Pressable>
 
+          <PostViews post={post} light />
           {post.body ? (
             <Txt variant="body" numberOfLines={2} color="#FFFFFF" style={{ marginTop: 6 }}>
               {post.body}

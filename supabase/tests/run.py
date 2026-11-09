@@ -79,6 +79,8 @@ def main() -> int:
         for table in ['profiles', 'photos', 'crushes', 'connections', 'conversations', 'messages', 'moments', 'notifications']:
             cur.execute(f'select count(*) from {table}')
             print(f'  {table}: {cur.fetchone()[0]}')
+        # Existing call smoke cases exercise the enabled feature; production defaults off.
+        cur.execute("update public.holup_features set enabled=true where key='calls'")
         if not run_file(ROOT / 'smoke.sql'):
             return 1
         # Comments are a conversation now: likes, one level of replies, and a
@@ -139,6 +141,15 @@ def main() -> int:
         if not run_file(ROOT / 'space_search.sql'):
             return 1
         if not run_file(ROOT / 'post_private.sql'):
+            return 1
+        if not run_file(ROOT / 'private_viewers.sql'):
+            return 1
+        cur.execute("update public.holup_features set enabled=false where key='calls'")
+        if not run_file(ROOT / 'public_share.sql'):
+            return 1
+        if not run_file(ROOT / 'search_trends.sql'):
+            return 1
+        if not run_file(ROOT / 'admin_controls.sql'):
             return 1
         print('ALL TESTS PASSED')
         return 0

@@ -8,6 +8,7 @@ import { ageFromBirthdate } from '../lib/format';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import { profileShape } from '../lib/profileShape';
 import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
+import type { ViewerPage } from './types';
 import {
   INTENTIONS as catalogIntentions,
   INTERESTS as catalogInterests,
@@ -425,6 +426,28 @@ export async function recordPostView(
     p_dwell_ms: Math.round(dwellMs),
     p_completed: completed,
     p_position: position,
+  });
+}
+
+export type AppSettings = { callsEnabled: boolean; publicSharingEnabled: boolean; announcement: { title: string; body: string } | null };
+export type AdminState = { features: { calls: boolean; public_post_sharing: boolean }; announcement: { title: string; body: string; active: boolean } };
+export const isHolupAdmin = () => rpc<boolean>('holup_is_admin');
+export const appSettings = () => rpc<AppSettings>('holup_app_settings');
+export const adminState = () => rpc<AdminState>('holup_admin_state');
+export const adminSetFeature = (key: 'calls' | 'public_post_sharing', enabled: boolean) => rpc<boolean>('holup_admin_set_feature', { p_key: key, p_enabled: enabled });
+export const adminSetAnnouncement = (title: string, body: string, active: boolean) => rpc<boolean>('holup_admin_announcement', { p_title: title, p_body: body, p_active: active });
+
+/** Check that an external link has a public landing at the time it is made. */
+export async function publicPostPreview(postId: number): Promise<{ id: number; body: string; author: string } | null> {
+  return rpc('public_post_preview', { p_post_id: postId });
+}
+
+/** Owner-only lists; the database, not the client, authorizes the request. */
+export async function viewerPage(kind: 'post' | 'moment', id: number, offset: number): Promise<ViewerPage> {
+  return rpc<ViewerPage>(kind === 'post' ? 'post_viewers' : 'moment_viewers', {
+    [kind === 'post' ? 'p_post_id' : 'p_moment_id']: id,
+    p_limit: 100,
+    p_offset: offset,
   });
 }
 
@@ -1460,6 +1483,11 @@ export async function tagSuggest(query: string): Promise<{ tag: string; uses: nu
 }
 
 /** Members you can already see, plus the Flows and Moments you may see. */
+/** Real terms from posts and comments the caller is allowed to read. */
+export async function holupTrends(): Promise<{ term: string; postCount: number }[]> {
+  return rpc('holup_trends', { p_limit: 10 });
+}
+
 export async function searchAll(query: string, category: SearchCategory, filters: SearchFilters): Promise<SearchResults> {
   const q = String(query ?? '').trim();
   if (q.length < 2) return { members: [], posts: [], moments: [], sounds: [], places: [], hashtags: [] };

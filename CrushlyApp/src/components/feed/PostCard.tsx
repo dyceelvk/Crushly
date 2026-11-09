@@ -23,6 +23,8 @@ import { HIT, elevation, radius, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { momentRing } from '../../lib/momentRings';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { useTrackPostView } from '../../lib/useTrackPostView';
+import { PostViews } from '../ViewersSheet';
 import { formatCount, spokenCount } from '../../lib/counts';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -64,6 +66,7 @@ export function PostCard({
    */
   onOpen?: () => void;
 }) {
+  useTrackPostView(p.id, active, p.mine);
   const navigation = useNavigation<Nav>();
   const { colors } = useTheme();
   const toast = useToast();
@@ -164,7 +167,7 @@ export function PostCard({
             </View>
           </View>
         </Pressable>
-        <Pill label={p.audience === 'everyone' ? 'Everyone' : 'Connections'} tone={p.audience === 'everyone' ? 'open' : 'quiet'} />
+        <Pill label={p.audience === 'everyone' ? 'Public' : p.audience === 'private' ? 'Only you' : p.audience === 'circle' ? 'Circle' : 'Connections'} tone={p.audience === 'everyone' ? 'open' : 'quiet'} />
         {p.mine ? (
           <IconButton
             icon="trash-outline"
@@ -292,6 +295,7 @@ export function PostCard({
         />
       </View>
 
+      <PostViews post={p} />
       <ShareToWhisper visible={shareOpen} post={p} onClose={() => setShareOpen(false)} />
 
       {!p.mine && p.author.crush?.mutual ? (

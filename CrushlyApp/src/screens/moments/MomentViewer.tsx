@@ -11,6 +11,7 @@ import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { CrushButton } from '../../components/CrushButton';
 import { ConfirmSheet } from '../../components/BottomSheet';
+import { ViewersSheet } from '../../components/ViewersSheet';
 import { EmptyState } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
@@ -91,6 +92,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [focused, setFocused] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [viewersOpen, setViewersOpen] = useState(false);
   const [localReaction, setLocalReaction] = useState<Record<number, string | null>>({});
   const [holding, setHolding] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,7 +115,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const targetIndex = !searchTargetUsed.current && gi === 0 && group ? initialMomentIndex(group.moments, momentId) : null;
   const displayIndex = targetIndex ?? mi;
   const moment = group && group.moments.length ? group.moments[Math.min(displayIndex, group.moments.length - 1)] : undefined;
-  const paused = focused || reactOpen || confirmDelete || holding;
+  const paused = focused || reactOpen || confirmDelete || viewersOpen || holding;
   const playbackDurationMs = moment?.kind === 'video'
     ? Math.max(100, Math.min(60_000, moment.durationMs ?? DURATION))
     : DURATION;
@@ -481,13 +483,13 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         {/* Bottom */}
         <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.md) }}>
           {mine ? (
-            <View style={{ gap: 4, paddingVertical: space.xs }} accessible accessibilityLabel={`Seen by ${moment.viewCount ?? 0}. ${reactionsLine ?? 'No reactions yet'}`}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ gap: 4, paddingVertical: space.xs }}>
+              <Pressable onPress={() => setViewersOpen(true)} accessibilityRole="button" accessibilityLabel={`Seen by ${moment.viewCount ?? 0}. See viewers`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 6 }}>
                 <Ionicons name="eye-outline" size={18} color="#fff" />
                 <Txt variant="bodyStrong" color="#fff">
                   Seen by {moment.viewCount ?? 0}
                 </Txt>
-              </View>
+              </Pressable>
               <Txt variant="small" color="rgba(255,255,255,0.75)">
                 {reactionsLine ?? 'No reactions yet. Replies arrive in your Whispers.'}
               </Txt>
@@ -548,6 +550,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         </View>
       </View>
 
+      {mine ? <ViewersSheet kind="moment" id={moment.id} visible={viewersOpen} onClose={() => setViewersOpen(false)} /> : null}
       <ConfirmSheet
         visible={confirmDelete}
         title="Delete this Moment?"

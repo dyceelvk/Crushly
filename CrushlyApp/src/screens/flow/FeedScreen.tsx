@@ -5,6 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeedTabs, type FeedTab } from '../../components/feed/FeedTabs';
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import { PostCard } from '../../components/feed/PostCard';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { NotificationsSheet } from '../../components/NotificationsSheet';
@@ -77,6 +78,7 @@ export function FeedScreen() {
   const [tab, setTab] = useState<'crushes' | 'connections'>(
     route.params?.tab === 'connections' ? 'connections' : 'crushes',
   );
+  const swipe = useSwipeTabs({ options: ['crushes', 'connections'] as const, value: tab, onChange: setTab, width: contentWidth });
   // A notification about an add up opens Crushes, a Circle opens Connections.
   useEffect(() => {
     if (route.params?.tab === 'connections' || route.params?.tab === 'crushes') setTab(route.params.tab);
@@ -131,7 +133,7 @@ export function FeedScreen() {
   })();
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
       {tab === 'crushes' ? (
         <CrushesFeed />
       ) : following.isLoading ? (

@@ -1,0 +1,34 @@
+begin;
+do $test$
+declare au uuid; vu uuid; aid bigint; vid bigint; p1 bigint; p2 bigint; p3 bigint; p4 bigint; r jsonb;
+begin
+  select id into au from auth.users where email='marcus@crushly.app'; select id into vu from auth.users where email='daniel@crushly.app';
+  select id into aid from profiles where auth_user_id=au; select id into vid from profiles where auth_user_id=vu;
+  update privacy set profile_visibility='everyone',incognito=false where user_id=aid;
+  delete from blocks where (blocker_id=aid and blocked_id=vid) or (blocker_id=vid and blocked_id=aid);
+  insert into posts(author_id,body,audience) values(aid,'first', 'everyone') returning id into p1;
+  insert into posts(author_id,body,audience) values(aid,'second', 'everyone') returning id into p2;
+  insert into posts(author_id,body,audience) values(aid,'secretfixture', 'private') returning id into p3;
+  insert into posts(author_id,body,audience) values(aid,'secretfixture', 'private') returning id into p4;
+  insert into post_comments(post_id,author_id,body) values(p1,aid,'#commentfixture deliciousfixture'),(p2,aid,'#commentfixture deliciousfixture');
+  perform set_config('request.jwt.claim.sub',vu::text,true);
+  set local role authenticated;
+  r:=holup_trends(20);
+  assert exists(select 1 from jsonb_array_elements(r) x where x->>'term'='#commentfixture' and (x->>'postCount')::int=2), 'comment hashtag trend missing';
+  assert exists(select 1 from jsonb_array_elements(r) x where x->>'term'='deliciousfixture'), 'comment word trend missing';
+  assert not exists(select 1 from jsonb_array_elements(r) x where x->>'term'='secretfixture'), 'private post in trends';
+  r:=search_holup('commentfixture','top',0,'relevance','','all',true);
+  assert jsonb_array_length(r->'posts')=2, 'comment hashtag search not connected to posts';
+  r:=search_holup('deliciousfixture','top');
+  assert jsonb_array_length(r->'posts')=2, 'comment text search not connected to posts';
+  reset role;
+  update post_comments set hidden=true where post_id=p2;
+  set local role authenticated;
+  r:=holup_trends(20);
+  assert not exists(select 1 from jsonb_array_elements(r) x where x->>'term'='#commentfixture'), 'hidden comment contributed to trend';
+  r:=search_holup('deliciousfixture','top');
+  assert jsonb_array_length(r->'posts')=1, 'hidden comment returned in search';
+  reset role;
+  raise notice 'privacy-aware comment trend tests passed';
+end $test$;
+rollback;

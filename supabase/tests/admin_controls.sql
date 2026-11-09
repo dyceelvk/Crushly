@@ -1,0 +1,32 @@
+begin;
+do $test$
+declare au uuid; vu uuid; aid bigint; vid bigint; cid bigint; pid bigint; denied boolean; room text; r jsonb;
+begin
+ select id into au from auth.users where email='marcus@crushly.app'; select id into vu from auth.users where email='daniel@crushly.app';
+ select id into aid from profiles where auth_user_id=au; select id into vid from profiles where auth_user_id=vu;
+ insert into holup_admins(auth_user_id) values(au) on conflict do nothing;
+ insert into connections(user_a,user_b) values(least(aid,vid),greatest(aid,vid)) on conflict do nothing;
+ insert into conversations(user_a,user_b) values(least(aid,vid),greatest(aid,vid)) on conflict (user_a,user_b) do update set closed=false returning id into cid;
+ delete from blocks where (blocker_id=aid and blocked_id=vid) or (blocker_id=vid and blocked_id=aid);
+ insert into posts(author_id,body,audience) values(aid,'public admin fixture','everyone') returning id into pid;
+ update privacy set profile_visibility='everyone',incognito=false where user_id=aid;
+ perform set_config('request.jwt.claim.sub',vu::text,true); set local role authenticated;
+ assert not holup_is_admin(), 'non-admin identified as admin';
+ denied:=false; begin perform holup_admin_state(); exception when others then denied:=true; end; assert denied,'non-admin read admin panel';
+ denied:=false; begin perform holup_admin_set_feature('calls',true); exception when others then denied:=true; end; assert denied,'non-admin changed feature';
+ denied:=false; begin perform holup_admin_announcement('Hacked','Message',true); exception when others then denied:=true; end; assert denied,'non-admin changed announcement';
+ denied:=false; begin perform register_call_room(cid); exception when others then denied:=true; end; assert denied,'disabled calls still work';
+ perform set_config('request.jwt.claim.sub',au::text,true);
+ assert holup_is_admin(); perform holup_admin_set_feature('calls',true);
+ room:=register_call_room(cid); assert can_join_call(room),'enabled call not authorized';
+ perform holup_admin_set_feature('calls',false); assert not can_join_call(room),'disabled call remains joinable';
+ perform holup_admin_set_feature('public_post_sharing',false); assert public_post_preview(pid) is null,'share switch not enforced';
+ perform holup_admin_set_feature('public_post_sharing',true); assert public_post_preview(pid) is not null,'share switch did not restore';
+ perform holup_admin_announcement('Hello','Real announcement',true);
+ perform set_config('request.jwt.claim.sub',vu::text,true); r:=holup_app_settings();
+ assert r->'announcement'->>'body'='Real announcement' and (r->>'callsEnabled')::boolean=false,'app settings incorrect';
+ reset role;
+ assert (select count(*) from holup_admin_events where actor=au)>=5,'admin changes not audited';
+ raise notice 'admin controls tests passed';
+end $test$;
+rollback;

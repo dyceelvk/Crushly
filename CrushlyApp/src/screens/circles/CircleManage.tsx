@@ -1,3 +1,4 @@
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import React, { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,6 +67,7 @@ export function CircleManageScreen() {
 
   /* A notification about a request opens on Requests: the work, not the roster. */
   const [tab, setTab] = useState<Tab>(openOn ?? 'members');
+  const swipe = useSwipeTabs({ options: ['members', 'requests', 'invited', 'declined'] as Tab[], value: tab, onChange: setTab, width: contentWidth });
   const [inviting, setInviting] = useState(false);
   const [query, setQuery] = useState('');
   /** People invited since this sheet opened, so the row flips at once. */
@@ -115,7 +117,7 @@ export function CircleManageScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + space.sm,

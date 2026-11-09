@@ -14,6 +14,8 @@ import { useConversations, useSendMessage } from '../api/hooks';
 import type { ConversationSummary, Post } from '../api/types';
 import { timeAgo } from '../lib/format';
 import { haptic } from '../lib/haptics';
+import { postShareUrl } from '../lib/postShare';
+import { publicPostPreview } from '../api/service';
 
 /**
  * Send a post into a Whisper.
@@ -24,9 +26,7 @@ import { haptic } from '../lib/haptics';
  * now opens the rooms you actually have, and sending puts a card in the thread
  * that both sides can tap to open the post.
  *
- * The card is a snapshot taken by the server (`send_message`, `p_kind = 'post'`),
- * so a recipient sees the author's real name and media, and a private post
- * cannot be passed around by knowing its id.
+ * Shared cards contain a reference only; access is checked when opened.
  */
 export function ShareToWhisper({
   visible,
@@ -63,15 +63,32 @@ export function ShareToWhisper({
     }
   };
 
-  const outside = async () => {
-    if (!post) return;
+  const prepareLink = async (): Promise<string | null> => {
+    if (!post) return null;
     try {
-      await Share.share({
-        message: post.body ? `${post.body}\n\n— on Holup` : 'A post on Holup',
-      });
-    } catch {
-      // Backing out of the system sheet is not a failure worth reporting.
+      if (!await publicPostPreview(post.id)) {
+        toast({ kind: 'info', title: 'Not a public post', message: 'Only publicly available posts can be shared outside Holup.' });
+        return null;
+      }
+      return postShareUrl(post.id);
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t prepare link', message: (e as Error).message });
+      return null;
     }
+  };
+  const outside = async () => {
+    const url = await prepareLink();
+    if (!url) return;
+    try { await Share.share({ message: url }); } catch { /* dismissed */ }
+  };
+  const copy = async () => {
+    const url = await prepareLink();
+    if (!url) return;
+    try {
+      const Clipboard = await import('expo-clipboard');
+      await Clipboard.setStringAsync(url);
+      toast({ kind: 'success', title: 'Link copied' });
+    } catch (e) { toast({ kind: 'error', title: 'Couldn’t copy link', message: (e as Error).message }); }
   };
 
   return (
@@ -142,6 +159,10 @@ export function ShareToWhisper({
       </ScrollView>
 
       <View style={{ padding: space.md, borderTopWidth: 1, borderTopColor: colors.border }}>
+        <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel="Copy post link" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>
+          <Ionicons name="link-outline" size={20} color={colors.textSecondary} />
+          <Txt variant="body">Copy link</Txt>
+        </Pressable>
         <Pressable
           onPress={outside}
           accessibilityRole="button"

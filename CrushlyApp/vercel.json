@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/v/:id", "destination": "/api/post-share?id=:id" }
+  ]
+}

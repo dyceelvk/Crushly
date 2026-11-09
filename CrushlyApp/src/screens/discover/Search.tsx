@@ -15,10 +15,11 @@ import { Input } from '../../components/Input';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { BottomSheet, ActionSheet } from '../../components/BottomSheet';
 import { Button } from '../../components/Button';
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
-import { useSearch } from '../../api/hooks';
+import { useSearch, useHolupTrends } from '../../api/hooks';
 import type { SearchCategory, SearchFilters } from '../../api/types';
 import { Suggestions } from '../../components/Suggestions';
 import { useMentionInput } from '../../components/useMentionInput';
@@ -52,6 +53,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const [text, setText] = useState(seed);
   const [query, setQuery] = useState(seed.trim());
   const [tab, setTab] = useState<SearchCategory>('top');
+  const swipe = useSwipeTabs({ options: tabs.map((item) => item.id), value: tab, onChange: setTab, width: contentWidth });
   const [selectedPlace, setSelectedPlace] = useState('');
   const [recents, setRecents] = useState<string[]>([]);
   const [menu, setMenu] = useState(false);
@@ -82,6 +84,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const words = query.replace(/^[@#]/, '').trim();
   const asked = words.length >= 2;
   const filtersActive = applied.sort !== 'relevance' || applied.period !== 'any' || !!applied.author || applied.content !== 'all';
+  const trends = useHolupTrends(!asked);
   const results = useSearch(words, tab, { place: tab === 'people' ? selectedPlace : '', hashtag: query.startsWith('#'), since, sort: applied.sort, author: applied.author, content: tab === 'top' ? applied.content : 'all' });
   const data = results.data;
   const total = (data?.members.length ?? 0) + (data?.posts.length ?? 0) + (data?.moments.length ?? 0) + (data?.sounds.length ?? 0) + (data?.places.length ?? 0) + (data?.hashtags.length ?? 0);
@@ -102,7 +105,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const hashtags = (limit?: number) => (data?.hashtags ?? []).slice(0, limit).map((t) => <Row key={`tag-${t.tag}`} label={`Search hashtag ${t.tag}`} onPress={go(() => { setText(`#${t.tag}`); setQuery(`#${t.tag}`); setSelectedPlace(''); setTab('top'); })}><Ionicons name="pricetag-outline" size={22} color={colors.primary} /><Txt variant="bodyStrong" style={{ flex: 1 }}>#{t.tag}</Txt><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Row>);
   const block = (title: string, count: number, content: React.ReactNode, target: SearchCategory) => count ? <Section title={title} more={count > 3 ? count : 0} onMore={() => setTab(target)}>{content}</Section> : null;
 
-  return <View style={{ flex: 1, backgroundColor: colors.bg }}>
+  return <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
       <IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />
       <View style={{ flex: 1 }}><Input value={text} onChangeText={(value) => { setSelectedPlace(''); searchInput.onChangeText(value); }} onSelectionChange={searchInput.onSelectionChange} onSubmitEditing={() => { if (asked) remember(words); }} placeholder="Search Holup" icon="search" autoFocus returnKeyType="search" autoCorrect={false} maxLength={120} accessibilityLabel="Search" /></View>
@@ -121,7 +124,16 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
       {!asked ? <>
         {recents.length ? <View style={{ marginTop: space.md }}><View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Txt variant="label" color="textSecondary">RECENT</Txt><Pressable onPress={() => { setRecents([]); storage.remove(RECENT_KEY); }} accessibilityRole="button" accessibilityLabel="Clear recent searches"><Txt variant="caption" color="textMuted">Clear</Txt></Pressable></View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: space.sm }}>{recents.map((word) => <View key={word} style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 8, height: 36, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}><Pressable onPress={() => { setText(word); setQuery(word); setSelectedPlace(''); remember(word); }} accessibilityRole="button" accessibilityLabel={`Search again for ${word}`}><Txt variant="small" numberOfLines={1} style={{ maxWidth: 160 }}>{word}</Txt></Pressable><Pressable onPress={() => forget(word)} accessibilityRole="button" accessibilityLabel={`Remove ${word} from recent searches`} style={{ paddingLeft: 10, paddingVertical: 8 }}><Ionicons name="close" size={15} color={colors.textMuted} /></Pressable></View>)}</View></View> : null}
-        <EmptyState icon="search-outline" title="Search Holup" message="Find people, posts, Moments, sounds, places and hashtags." />
+        {trends.data?.length ? <View style={{ marginTop: space.lg }}>
+          <Txt variant="label" color="textSecondary">TRENDING ON POSTS</Txt>
+          <Txt variant="caption" color="textMuted" style={{ marginTop: 4, marginBottom: 8 }}>From posts and comments you can see · past 7 days</Txt>
+          {trends.data.map((trend) => <Row key={trend.term} label={`Search ${trend.term}`} onPress={() => { setText(trend.term); setQuery(trend.term); setTab('top'); setSelectedPlace(''); }}>
+            <Ionicons name="trending-up-outline" size={20} color={colors.primary} />
+            <Txt variant="bodyStrong" style={{ flex: 1 }}>{trend.term}</Txt>
+            <Txt variant="caption" color="textMuted">{trend.postCount} posts</Txt>
+          </Row>)}
+        </View> : trends.isError ? <Txt color="textSecondary" style={{ marginTop: space.md }}>Trends couldn’t load. You can still search.</Txt> : null}
+        {!trends.data?.length ? <EmptyState icon="search-outline" title="Search Holup" message="Find people, posts, Moments, sounds, places and hashtags." /> : null}
       </> : results.isLoading ? <View style={{ gap: space.sm, marginTop: space.md }}><Skeleton style={{ height: 56, borderRadius: radius.md }} /><Skeleton style={{ height: 56, borderRadius: radius.md }} /><Skeleton style={{ height: 56, borderRadius: radius.md }} /></View>
       : results.isError ? <ErrorState error={results.error} message="Search didn’t load." onRetry={results.refetch} />
       : total === 0 ? <EmptyState icon="search-outline" title={`Nothing for “${words}”`} message="Try another word or change your filters." />

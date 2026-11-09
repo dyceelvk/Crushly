@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
 import { useTheme } from '../../theme/ThemeProvider';
+import { CrushIcon } from '../Logo';
 import { space, stroke } from '../../theme/tokens';
 
 /**
@@ -145,7 +146,7 @@ export function FeedTabs({
           hitSlop={10}
           style={{ paddingHorizontal: compact ? 10 : 14, paddingVertical: 10 }}
         >
-          <Ionicons name="search" size={compact ? 19 : 21} color={colors.text} />
+          <SearchGlyph size={compact ? 19 : 21} color={colors.text} />
         </Pressable>
       ) : null}
       {onBell ? (
@@ -168,4 +169,27 @@ export function FeedTabs({
       <View style={{ height: 0, backgroundColor: colors.text }} />
     </View>
   );
+}
+
+/** Short 60ms icon sequence, with a long still interval and reduced-motion opt-out. */
+function SearchGlyph({ size, color }: { size: number; color: string }) {
+  const { reduceMotion } = useTheme();
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (reduceMotion) { setIndex(0); return; }
+    let tick: ReturnType<typeof setInterval> | undefined;
+    const burst = () => {
+      let next = 0;
+      tick = setInterval(() => {
+        next += 1;
+        setIndex(next % 6);
+        if (next >= 6 && tick) { clearInterval(tick); tick = undefined; }
+      }, 60);
+    };
+    const cycle = setInterval(burst, 8000);
+    return () => { clearInterval(cycle); if (tick) clearInterval(tick); };
+  }, [reduceMotion]);
+  const icons = ['search', 'people-outline', 'sparkles-outline', 'heart-outline', null, 'pricetag-outline'] as const;
+  const icon = icons[index];
+  return icon ? <Ionicons name={icon} size={size} color={color} /> : <CrushIcon size={size} color={color} />;
 }

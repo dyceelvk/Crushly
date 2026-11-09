@@ -101,6 +101,8 @@ export type Post = {
   likeCount: number;
   liked: boolean;
   commentCount: number;
+  /** Distinct qualifying viewers, excluding the post author. */
+  viewCount?: number | null;
   /**
    * What you said, if you said anything. Null when you have not reacted.
    * Optional because post objects reach the client from cached pages written
@@ -698,3 +700,7 @@ export type AppUpdate = {
   sha256?: string | null;
   notes: string;
 };
+
+/** A viewer whose profile may be hidden by their own privacy settings. */
+export type ViewerItem = { profile: Profile | null; viewedAt: number };
+export type ViewerPage = { items: ViewerItem[]; count?: number };

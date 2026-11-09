@@ -1,3 +1,4 @@
+import { useSwipeTabs } from '../../components/SwipeTabs';
 import React, { useEffect, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -41,6 +42,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
   const { contentWidth, gutter, columns } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useCrushes();
   const [tab, setTab] = useState<Tab>(initial ?? route.params?.tab ?? 'incoming');
+  const swipe = useSwipeTabs({ options: ['incoming', 'outgoing', 'mutual'] as Tab[], value: tab, onChange: setTab, width: contentWidth });
   const pass = usePass();
   const accept = useAcceptAddUp();
   const decline = useDeclineAddUp();
@@ -170,7 +172,7 @@ export function CrushesScreen({ embedded = false, initial }: { embedded?: boolea
   }[tab];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
       <FlatList
         data={isLoading ? [] : list}
         key={`${columns}-${tab}`}

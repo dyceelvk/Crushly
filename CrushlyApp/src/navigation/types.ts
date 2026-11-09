@@ -41,6 +41,7 @@ export type RootStackParamList = {
   Filters: undefined;
   Notifications: undefined;
   Settings: undefined;
+  Admin: undefined;
   EditProfile: undefined;
   Verification: undefined;
   Plus: { feature?: string } | undefined;

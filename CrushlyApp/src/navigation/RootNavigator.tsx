@@ -12,6 +12,9 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useBadges, useMarkNotificationsRead, useNotifications } from '../api/hooks';
 import { useToast } from '../components/Toast';
 import { TabBar } from './TabBar';
+import { AdminScreen } from '../screens/settings/Admin';
+import { Announcement } from '../components/Announcement';
+import { View } from 'react-native';
 import type { RootStackParamList, TabParamList } from './types';
 import { notificationText } from '../screens/notifications/Notifications';
 
@@ -131,8 +134,9 @@ function LiveNotifications() {
 function MainTabs() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <LiveNotifications />
+      <Announcement />
       <Tabs.Navigator
         tabBar={(props) => <TabBar {...props} onCreate={() => navigation.navigate('CreatePost')} />}
         screenOptions={{ headerShown: false, lazy: true }}
@@ -143,7 +147,7 @@ function MainTabs() {
         <Tabs.Screen name="Profile" component={ProfileTabScreen} options={{ title: 'Space' }} />
       </Tabs.Navigator>
 
-    </>
+    </View>
   );
 }
 
@@ -203,6 +207,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="Admin" component={AdminScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
           <Stack.Screen name="Verification" component={VerificationScreen} />
           <Stack.Screen name="Safety" component={SafetyScreen} />

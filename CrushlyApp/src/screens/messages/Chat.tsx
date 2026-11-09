@@ -18,7 +18,7 @@ import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
 import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
-import { useChat, useConversation, useCrushes, useMe } from '../../api/hooks';
+import { useChat, useConversation, useCrushes, useMe, useAppSettings } from '../../api/hooks';
 import type { Message, ReplyQuote } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -126,6 +126,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const { contentWidth, width } = useLayout();
   const { data: conv, error: convError, refetch: refetchConv } = useConversation(conversationId);
   const { data: me } = useMe();
+  const { data: appSettings } = useAppSettings();
+  const callsEnabled = appSettings?.callsEnabled === true;
   const { data: crushes } = useCrushes();
   const chat = useChat(conversationId);
   const { openActions } = useMemberActions();
@@ -206,7 +208,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   // Incoming call requests arrive as 'call' messages; prompt once per request.
   useEffect(() => {
-    if (!conv?.canSend || conv.closed || callState !== 'idle') return;
+    if (!callsEnabled || !conv?.canSend || conv.closed || callState !== 'idle') return;
     const incoming = chat.messages.find(
       (m) => m.kind === 'call' && !m.mine && m.meta?.channel && !seenCalls.current.has(m.id) && Date.now() - m.createdAt < 45_000,
     );
@@ -215,7 +217,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       setCallChannel(String(incoming.meta.channel));
       void getCall().incoming(String(incoming.meta.channel));
     }
-  }, [chat.messages, callState, getCall, conv?.canSend, conv?.closed]);
+  }, [chat.messages, callState, getCall, conv?.canSend, conv?.closed, callsEnabled]);
 
   useEffect(() => () => {
     void callRef.current?.hangup().catch(() => {});
@@ -431,6 +433,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               />
             </View>
           </Pressable>
+          {callsEnabled ? <IconButton icon="call-outline" variant="gold" label="Start voice call" onPress={startCall} disabled={!canSend || recording || callState !== 'idle'} /> : null}
           <IconButton
             icon="ellipsis-horizontal"
             variant="plain"
@@ -572,6 +575,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
+                  {callsEnabled ? <TrayButton icon="call-outline" label="Call" onPress={startCall} /> : null}
                   <TrayButton icon="person-circle-outline" label="Share Space" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
                 <Txt variant="label" color="textMuted" style={{ marginBottom: 6 }}>

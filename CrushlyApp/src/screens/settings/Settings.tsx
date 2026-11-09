@@ -16,7 +16,7 @@ import { useProfileTap } from '../../lib/useProfileTap';
 import { EmptyState, LoadingBlock } from '../../components/States';
 import { Wordmark } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
-import { keys, useBlocks, useMe, useUnblock, useUpdateNotificationSettings } from '../../api/hooks';
+import { keys, useBlocks, useMe, useUnblock, useUpdateNotificationSettings, useIsHolupAdmin } from '../../api/hooks';
 import * as service from '../../api/service';
 import type { Me } from '../../api/types';
 import { useAuth } from '../../state/auth';
@@ -33,6 +33,7 @@ import type { ScreenProps } from '../../navigation/types';
 
 export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const { data: me } = useMe();
+  const { data: isAdmin } = useIsHolupAdmin();
   const { signOut } = useAuth();
   const { appearance } = useTheme();
   const toast = useToast();
@@ -79,6 +80,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   return (
     <Screen>
       <Header title="Settings" back />
+      {isAdmin ? <Group title="Administration"><ListRow title="Holup admin" subtitle="Features and announcements" icon="settings-outline" onPress={() => navigation.navigate('Admin')} last /></Group> : null}
       <Group title="Account">
         <ListRow title="Account & security" subtitle={me?.email} icon="person-circle-outline" onPress={() => navigation.navigate('Account')} />
         <ListRow

@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from './src/state/auth';
 import { ToastProvider } from './src/components/Toast';
 import { UpdateGate } from './src/components/UpdateGate';
 import { MemberActionsProvider } from './src/state/memberActions';
+import { SharedPostIntent } from './src/components/SharedPostIntent';
 import { BootCanvas } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import type { RootStackParamList } from './src/navigation/types';
@@ -118,6 +119,7 @@ function Shell() {
           {/* A render error unmounts the tree and leaves a white page. The boundary
               makes that a sentence and a "Try again" instead. */}
           <ErrorBoundary>
+            <SharedPostIntent />
             <RootNavigator fontsReady={fontsReady} />
           </ErrorBoundary>
         </MemberActionsProvider>

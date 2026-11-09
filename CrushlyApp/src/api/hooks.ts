@@ -136,6 +136,12 @@ export const useSearch = (query: string, category: import('./types').SearchCateg
     staleTime: 15_000,
   });
 
+export const useIsHolupAdmin = () => useQuery({ queryKey: ['is-holup-admin'], queryFn: service.isHolupAdmin, staleTime: 60_000 });
+export const useAppSettings = () => useQuery({ queryKey: ['app-settings'], queryFn: service.appSettings, staleTime: 15_000, refetchInterval: 30_000 });
+
+export const useHolupTrends = (enabled: boolean) =>
+  useQuery({ queryKey: ['holup-trends'], queryFn: () => service.holupTrends(), enabled, staleTime: 60_000 });
+
 /** Discover's clips rail. Same TTL as the public feed it sits above. */
 export const useTrendingClips = () =>
   useQuery({ queryKey: ['trending-clips'] as const, queryFn: () => service.trendingClips(12), staleTime: 30_000 });
