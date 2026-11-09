@@ -24,6 +24,13 @@ MIGRATIONS = ROOT.parent / 'migrations'
 # Only the SQL. `migrations/` also holds a README, and feeding that to psql
 # fails with a syntax error that has nothing to do with any migration.
 MIGRATION_FILES = sorted(p for p in MIGRATIONS.iterdir() if p.suffix == '.sql')
+# Supabase records and executes migrations once; these one-shot migrations
+# create security-sensitive tables rather than claiming to be re-runnable.
+ONE_SHOT_MIGRATIONS = {
+    '20261109133904_manual_evidence_retention_foundation.sql',
+    '20261109134050_protect_evidence_cleanup_auth.sql',
+    '20261109140000_manual_verification_backend_inactive.sql',
+}
 SEED = ROOT.parent / 'seed.sql'
 STUBS = not bool(__import__('os').environ.get('TEST_DATABASE_URL'))
 
@@ -67,12 +74,15 @@ def main() -> int:
         for f in MIGRATION_FILES:
             if not run_file(f):
                 return 1
-        # Re-apply every migration: the SQL is intentionally re-runnable so
-        # setup.sql can be pasted into a live project again without errors.
+        # Re-apply only migrations designed for re-runs. Production's
+        # migration history runs every version once; the one-shot security
+        # migrations above must not recreate protected tables or reset data.
         for f in MIGRATION_FILES:
+            if f.name in ONE_SHOT_MIGRATIONS:
+                continue
             if not run_file(f):
                 return 1
-        print('migrations applied twice (idempotent)')
+        print('re-runnable migrations applied twice')
         if not run_file(SEED):
             return 1
         print('migrations + seed applied')
