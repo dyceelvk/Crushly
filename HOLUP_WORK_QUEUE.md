@@ -708,3 +708,28 @@
   site's JavaScript contains `whisper_moment_target`. Still no real-device
   end-to-end user session was run. Android 1.0.89 run `42650994778` remains in
   progress; don't describe it as released until Worker `/version` matches.
+
+## Current user direction and notification release
+- User asked to do all listed work **except item 5** (verification image
+  retention). Do not further develop retention in this batch. Manual verification
+  must not be activated in a way that silently bypasses the existing privacy
+  and retention protections; its unresolved retention dependency limits safe
+  end-to-end activation until addressed.
+- Notifications: live Supabase migration `20261109161552_whisper_activity_notifications`
+  changes the existing notification function to emit content-free Whisper
+  events, respect settings and deduplicate unread sender/thread events. Member
+  execute denied, service_role allowed; stored SQL digest excluding newline
+  `e40be4412f28560cdf975fdb48dce2559d665acb09d807c12591b04f7655dfee`
+  matches repository. Candidate release branch `build/holup-notification-release`
+  commit `0dd280a` includes full-screen Yours/From Holup/settings, grouped
+  categories, actual notifications and the production migration; focused CI
+  `42652614942` on `a2bc5f6` passed (same SQL, earlier filename). It retains
+  legacy Add Up wording/routes until relationship backend cutover.
+- This release is **not on main or live in the client**. Android 1.0.89 run
+  `42650994778` was still compiling, so don't push main until finished: bot
+  directly pushes release metadata. After finish fetch main, rebase/cherry-pick
+  candidate carefully, bump Android to a new version with release note, push main,
+  verify web/Vercel and then dispatch Android. The SQL migration is already
+  production and main must acquire the exact file before another database push.
+- Pending Whisper deletion and Space relationship migrations renumbered
+  `20261109161553` and `20261109161554`; both remain unsafe to bulk deploy.
