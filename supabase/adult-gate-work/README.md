@@ -1,12 +1,13 @@
-# Experimental adult profile gate — NOT deployed
+# Adult profile-write gate — partially deployed
 
 A live aggregate-only check found seven non-demo onboarded profiles: zero with a
 valid under-18 date and one with a missing/invalid birthday. No identity or
-birthday was retrieved. The present adult checks are client-side and therefore
-can be bypassed by a custom client. Do not enable teen mode or claim server-side
+birthday was retrieved. The new server guard validates birthday writes and onboarding transitions, but
+pre-onboarding access still requires server-side gating across social paths. Do not enable teen mode or claim server-side
 age isolation on this basis.
 
-01 and 02 are disposable experiments, not a release migration: the trigger
+01 and 02 are the original disposable experiments. The matching profile-write
+guard was deployed as `20261109110817_harden_adult_profile_writes`; the trigger
 rejects invalid/under-18 self-reported birthdays and completing onboarding
 without an adult birthday, while allowing incomplete signups. `age_of` handles
 invalid calendar dates and is STABLE because it depends on today's date. Test

@@ -241,3 +241,27 @@
   42605205587 is older than the latest local changes. Full admin operations,
   preview serving, server-wide age eligibility, teen separation, secure
   Realtime revocation and actual coordinated release remain open.
+
+## Teen isolation decision and foundation
+- User explicitly chose: Didit is **only for optional creator verification**;
+  minors can use Holup without Didit. Creators may earn verification for
+  virality/growth, and admins need controls to award it and ask applicants
+  questions. Do not make Didit or a badge mandatory for teen accounts.
+- With self-reported ages, an adult can lie. Account-group isolation can prevent
+  correctly classified adults and teens from contacting each other, but cannot
+  guarantee no adult will pose as a teen. Do not claim otherwise.
+- New `supabase/teen-isolation/01_tenant_foundation.sql` is an UNDEPLOYED,
+  unverified separate-project design: immutable self-reported teen DOB, minimum
+  privacy profile, explicit consent state, immediate directional Keep/mutual
+  Close Ones, blocks, and dynamic age eligibility. It is intentionally guarded
+  against installation in the adult database. It does not yet offer chat,
+  content, media, teen client, or admin interaction. It refuses teen social
+  access pending guardian consent. Consent evidence/workflow, safety moderation,
+  correct handling of adult impostors, account recovery, and country-specific
+  legal review are prerequisites, not solved by a consent flag. Realtime and
+  romantic features are absent. No teen project was created or enabled.
+- Need design separate creator-recognition badge vs Didit identity assurance so
+  an admin award based on popularity does not falsely claim document identity
+  verification; include applications, questions, user replies and audit in the
+  admin board. This replaces the earlier suggestion that Didit be required for
+  age verification. No test suites were run at user's request.
