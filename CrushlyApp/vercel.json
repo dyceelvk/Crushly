@@ -1,5 +1,12 @@
 {
   "rewrites": [
-    { "source": "/v/:id", "destination": "/api/post-share?id=:id" }
+    {
+      "source": "/verification",
+      "destination": "/"
+    },
+    {
+      "source": "/v/:id",
+      "destination": "/api/post-share?id=:id"
+    }
   ]
 }
