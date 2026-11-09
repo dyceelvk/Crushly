@@ -1,0 +1,64 @@
+name: Build secure Holup Android candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: CrushlyApp
+    env:
+      CI: '1'
+      HOLUP_SECURE_ANDROID: '1'
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
+      HOLUP_ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.HOLUP_ANDROID_RELEASE_KEYSTORE_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: CrushlyApp/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci --include=dev
+      - run: node scripts/check-public-build.mjs && npm run typecheck && npm test
+      - name: Prepare signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOLUP_ANDROID_RELEASE_KEY_PASSWORD" && test -n "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64"
+          umask 077
+          printf %s "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/holup-release.p12"
+          echo "HOLUP_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/holup-release.p12" >> "$GITHUB_ENV"
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build isolated candidate
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=armeabi-v7a,arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      - name: Verify signing identity and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature.txt"
+          grep -qi 'certificate SHA-256 digest: 7ff4777b984e44d6e31e485a958086e07ed7cd621ef6a822489d0d9cbf271ac5' "$RUNNER_TEMP/signature.txt"
+          "$tools/aapt" dump badging "$apk" | grep -q "package: name='app.holup.mobile'"
+          sha256sum "$apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Holup-secure-unreleased-candidate
+          path: CrushlyApp/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 2
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/holup-release.p12"

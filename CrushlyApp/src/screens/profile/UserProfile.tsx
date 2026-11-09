@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, publicFlow, type AddUpListVisibility } from '../../api/service';
+import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, setFollowSettings, pendingFollowRequests, respondToFollow, publicFlow, type AddUpListVisibility } from '../../api/service';
 import { formatCount } from '../../lib/counts';
 import { SpaceNavigation } from '../../navigation/SpaceNavigation';
 import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -8,6 +8,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { CrushIcon } from '../../components/Logo';
+import { FollowButton } from '../../components/FollowButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
@@ -26,11 +27,9 @@ import { Pill, VerifiedBadge } from '../../components/Badges';
 import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useAcceptAddUp, useDeclineAddUp, useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
+import { useOpenConversation, useSpacePosts, useUser } from '../../api/hooks';
 import type { FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
-import { useCrushFlow } from '../discover/Discover';
-import { celebrated } from '../crushes/MutualCrush';
 import { MOMENT_RING_SEEN } from '../../lib/momentRings';
 import { joinAction, policyLabel } from '../../lib/circleAccess';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -193,10 +192,6 @@ export function SpaceScreen({
     const group = moments.data?.others?.find((g) => g.user.id === id);
     return group ? !group.hasUnseen : false;
   })();
-  const { run: crushOn, pendingId } = useCrushFlow();
-  const undo = useUndoCrush();
-  const accept = useAcceptAddUp();
-  const decline = useDeclineAddUp();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
   const [index, setIndex] = useState(0);
@@ -204,9 +199,12 @@ export function SpaceScreen({
   const [photoOpen, setPhotoOpen] = useState(false);
   const [faceMenu, setFaceMenu] = useState(false);
   const [spaceMenu, setSpaceMenu] = useState(false);
-  const [relationshipList, setRelationshipList] = useState<'addUps' | 'keptClose' | null>(null);
+  const [relationshipList, setRelationshipList] = useState<'addUps' | 'addedUp' | 'keptClose' | null>(null);
   const [listOpenSequence, setListOpenSequence] = useState(0);
   const [visibilityMenu, setVisibilityMenu] = useState(false);
+  const [outgoingMenu, setOutgoingMenu] = useState(false);
+  const [approvalMenu, setApprovalMenu] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
   const qc = useQueryClient();
   const [showFullBio, setShowFullBio] = useState(false);
   /**
@@ -250,6 +248,11 @@ export function SpaceScreen({
   });
   const visibilityMutation = useMutation({ mutationFn: setAddUpListVisibility,
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] }); toast({kind: 'success', title: 'Privacy updated'}); },
+    onError: (e) => toast({kind:'error', title:'Couldn’t update privacy', message:(e as Error).message}),
+  });
+
+  const followSettingsMutation = useMutation({ mutationFn: ({approval, visibility}: {approval: boolean | null; visibility: AddUpListVisibility | null}) => setFollowSettings(approval, visibility),
+    onSuccess: () => { void qc.invalidateQueries({queryKey: ['space-relationship-stats']}); toast({kind:'success', title:'Privacy updated'}); },
     onError: (e) => toast({kind:'error', title:'Couldn’t update privacy', message:(e as Error).message}),
   });
 
@@ -345,59 +348,6 @@ export function SpaceScreen({
       toast({ kind: 'error', title: 'Couldn’t open chat', message: (e as Error).message });
     }
   };
-
-  /*
-   * One control, four states, and the state decides what it does.
-   *
-   * Add up → a request goes out. Request sent → the same control withdraws it,
-   * because a question you asked is a question you may take back. Accept →
-   * their request becomes a connection, which is worth the celebration screen.
-   * Connected → the control hands over to Whisper.
-   */
-  const onCrush = () => {
-    if (p.crush.mutual) return message();
-    if (p.crush.received) {
-      accept.mutate(p.id, {
-        onSuccess: (r) => {
-          if (r.connected) celebrated.add(p.id);
-          navigation.navigate('MutualCrush', { userId: p.id, name: p.name, photo: p.photos[0]?.url });
-        },
-        onError: (e) => toast({ kind: 'error', title: 'Request not accepted', message: (e as Error).message }),
-      });
-      return;
-    }
-    if (p.crush.sent) {
-      undo.mutate(p.id, {
-        onSuccess: () => toast({ kind: 'info', title: 'Request withdrawn', message: `${p.name} won’t see it anymore.` }),
-        onError: (e) => toast({ kind: 'error', title: 'Couldn’t withdraw', message: (e as Error).message }),
-      });
-      return;
-    }
-    if (!p.acceptsCrushes) {
-      toast({ kind: 'info', title: 'Verified members only', message: `${p.name} accepts Crushes from verified members. Verify your Space in a minute.` , onPress: () => navigation.navigate('Verification') });
-      return;
-    }
-    crushOn(p);
-  };
-
-  /* A decline is deliberately quiet: it changes two lists and tells nobody. */
-  const onDecline = () => {
-    decline.mutate(p.id, {
-      onSuccess: () => toast({ kind: 'info', title: 'Request declined', message: `${p.name} won’t be told.` }),
-      onError: (e) => toast({ kind: 'error', title: 'Couldn’t decline', message: (e as Error).message }),
-    });
-  };
-
-  /* What the one control is, right now. Kept in one place so the bar and the
-     pill in the hero can never disagree about the same pair. */
-  const addUp: { label: string; done: boolean } = p.crush.mutual
-    ? { label: 'Connected', done: true }
-    : p.crush.received
-      ? { label: 'Accept', done: false }
-      : p.crush.sent
-        ? { label: 'Request sent', done: true }
-        : { label: 'Add up', done: false };
-  const addUpBusy = pendingId === p.id || accept.isPending || undo.isPending;
 
   const lifestyle = lifestyleFacts(p);
 
@@ -507,68 +457,8 @@ export function SpaceScreen({
                   than a button. */}
               {mine ? null : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-                <Pressable
-                  onPress={p.crush.mutual ? message : onCrush}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    p.crush.mutual ? `Whisper ${p.name}` : p.crush.received ? `Accept ${p.name}’s Add Up request`
-                      : p.crush.sent ? 'Withdraw your Add Up request' : `Add up with ${p.name}`
-                  }
-                  disabled={addUpBusy}
-                  hitSlop={6}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6,
-                    paddingHorizontal: 16, paddingVertical: 10,
-                    borderRadius: radius.sm,
-                    backgroundColor: addUp.done ? colors.elevated : colors.primary,
-                    borderWidth: 1,
-                    borderColor: addUp.done ? colors.border : colors.primaryDeep,
-                    opacity: addUpBusy ? 0.6 : 1,
-                  }}
-                >
-                  {addUpBusy ? (
-                    <ActivityIndicator size="small" color={addUp.done ? colors.text : '#FFFFFF'} />
-                  ) : addUp.done ? (
-                    <Ionicons name="checkmark" size={16} color={colors.text} />
-                  ) : (
-                    /* The mark, not a plus. A plus is what every app in the
-                       store uses for "create", and on somebody's Space the one
-                       action is the product's own gesture — so it wears the
-                       product's own icon, the same one the whistle in the app
-                       wears. */
-                    <CrushIcon size={16} color="#FFFFFF" />
-                  )}
-                  <Txt variant="smallStrong" style={{ color: addUp.done ? colors.text : '#FFFFFF' }}>
-                    {p.crush.mutual ? 'Whisper' : addUp.label}
-                  </Txt>
-                </Pressable>
-
-                {/* One row, two doors, and the second one is the answer to a
-                    request when there is a request to answer. This used to be a
-                    footer pinned to the bottom of the page with the same Add up
-                    in it — the one action drawn twice, a screen apart, and the
-                    footer covered the last post as you read to the end. The
-                    header is always on screen, so the footer is gone and what
-                    was in it lives here. */}
-                {p.crush.mutual ? null : p.crush.received ? (
-                  <IconButton
-                    icon="close-outline"
-                    label={`Decline ${p.name}’s Add Up request`}
-                    size={40}
-                    variant="surface"
-                    color={colors.textMuted}
-                    onPress={onDecline}
-                  />
-                ) : (
-                  <IconButton
-                    icon="chatbubble-outline"
-                    label={p.canMessage ? `Whisper ${p.name}` : `Messaging ${p.name} needs them to add back`}
-                    size={40}
-                    variant="surface"
-                    color={p.canMessage ? colors.text : colors.textMuted}
-                    onPress={message}
-                  />
-                )}
+                <FollowButton id={p.id} name={p.name} />
+                <IconButton icon="chatbubble-outline" label={`Whisper ${p.name}`} size={40} variant="surface" color={p.canMessage ? colors.text : colors.textMuted} onPress={message} />
                 </View>
               )}
             </View>
@@ -581,9 +471,15 @@ export function SpaceScreen({
             </Txt>
             {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
               <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable>
+              <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addedUp)}</Txt> Added Up</Txt></Pressable>
               <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.keptClose} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.keptClose)}</Txt> Homies</Txt></Pressable>
               {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
-              {mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
+              {mine ? <>
+                <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Added Up list privacy" onPress={() => setOutgoingMenu(true)}><Txt variant="small" color="gold">Added Up privacy</Txt></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Add Up approval setting" onPress={() => setApprovalMenu(true)}><Txt variant="small" color="gold">Approval</Txt></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="View Add Up requests" onPress={() => setRequestsOpen(true)}><Txt variant="small" color="gold">Requests</Txt></Pressable>
+              </> : null}
             </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
             {p.bio ? <View style={{ marginTop: space.sm }}>
               <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
@@ -598,7 +494,7 @@ export function SpaceScreen({
                     so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
-                {relationship.data?.canViewKeptClose ? <Pill tone="gold" label="Close Ones" icon={<Ionicons name="people" size={11} color={colors.gold} />} /> : <Txt variant="small" color="textSecondary">Keep Close requests are being updated.</Txt>}
+                {relationship.data?.canViewKeptClose ? <Pill tone="gold" label="Homies" icon={<Ionicons name="people" size={11} color={colors.gold} />} /> : <Txt variant="small" color="textSecondary">Homie requests are being updated.</Txt>}
                 </>
                 )}
               </View>
@@ -870,12 +766,15 @@ export function SpaceScreen({
       <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
         ['everyone', 'Everyone who can view your Space'], ['close', 'Homies'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals stay visible. Individual Spaces still follow their privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
-      <SpaceRelationshipList targetId={p.id} name={p.name} viewerId={meQ.data?.id ?? 0} kind={relationshipList} canView={relationshipList === 'addUps' ? !!relationship.data?.canViewAddUps : !!relationship.data?.canViewKeptClose} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} onOpenPost={(postId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('PostViewer', { postId }), Platform.OS === 'web' ? 0 : 250); }} />
+      <ActionSheet visible={outgoingMenu} onClose={() => setOutgoingMenu(false)} title="Who can see people you added up?" actions={([['everyone','Everyone who can view your Space'],['close','Homies'],['private','Only you']] as [AddUpListVisibility,string][]).map(([value,label]) => ({ label: `${relationship.data?.outgoingVisibility === value ? '✓ ' : ''}${label}`, onPress: () => followSettingsMutation.mutate({approval: null, visibility:value}) }))} />
+      <ActionSheet visible={approvalMenu} onClose={() => setApprovalMenu(false)} title="Who can Add Up your Space?" actions={([ [false,'Allow Add Ups immediately'], [true,'Require my approval first'] ] as [boolean,string][]).map(([value,label]) => ({label:`${relationship.data?.approvalRequired === value ? '✓ ' : ''}${label}`, onPress: () => followSettingsMutation.mutate({approval:value, visibility:null})}))} />
+      {mine ? <FollowRequests visible={requestsOpen} onClose={() => setRequestsOpen(false)} viewerId={meQ.data?.id ?? 0} /> : null}
+      <SpaceRelationshipList targetId={p.id} name={p.name} viewerId={meQ.data?.id ?? 0} kind={relationshipList} canView={relationshipList === 'addUps' ? !!relationship.data?.canViewAddUps : relationshipList === 'addedUp' ? !!relationship.data?.canViewAddedUp : !!relationship.data?.canViewKeptClose} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} onOpenPost={(postId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('PostViewer', { postId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>
   );
 }
 
-function SpaceRelationshipList({ targetId, name, viewerId, kind, canView, openSequence, onClose, onOpen, onOpenPost }: { targetId: number; name: string; viewerId: number; kind: 'addUps' | 'keptClose' | null; canView: boolean; openSequence: number; onClose: () => void; onOpen: (id: number) => void; onOpenPost: (id: number) => void }) {
+function SpaceRelationshipList({ targetId, name, viewerId, kind, canView, openSequence, onClose, onOpen, onOpenPost }: { targetId: number; name: string; viewerId: number; kind: 'addUps' | 'addedUp' | 'keptClose' | null; canView: boolean; openSequence: number; onClose: () => void; onOpen: (id: number) => void; onOpenPost: (id: number) => void }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const q = useInfiniteQuery({
@@ -892,10 +791,10 @@ function SpaceRelationshipList({ targetId, name, viewerId, kind, canView, openSe
   return <Modal visible={!!kind} animationType="fade" onRequestClose={onClose}>
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: space.md, paddingVertical: space.sm, borderBottomWidth: 1, borderColor: colors.border }}>
-        <IconButton icon="chevron-back" label="Back to Space" onPress={onClose} /><Txt variant="subheading">{kind === 'keptClose' ? 'Homies' : 'Add Ups'}</Txt>
+        <IconButton icon="chevron-back" label="Back to Space" onPress={onClose} /><Txt variant="subheading">{kind === 'keptClose' ? 'Homies' : kind === 'addedUp' ? 'Added Up' : 'Add Ups'}</Txt>
       </View>
       <ScrollView contentContainerStyle={{ padding: space.md, paddingBottom: Math.max(insets.bottom, space.xl), gap: space.sm }}>
-        {!canView ? <Txt color="textSecondary">{name} has limited who can view {kind === 'keptClose' ? 'their Homies' : 'their Add Ups'}.</Txt> : <>
+        {!canView ? <Txt color="textSecondary">{name} {kind === 'addedUp' ? 'turned off access to view the people they added up' : `has limited who can view ${kind === 'keptClose' ? 'their Homies' : 'their Add Ups'}`}.</Txt> : <>
           <Txt variant="small" color="textSecondary">People whose Spaces are private or unavailable to you may not appear.</Txt>
           {q.isLoading && kind ? <LoadingBlock label="Loading people" /> : q.isError ? <ErrorState error={q.error} message="Couldn’t load people." onRetry={() => void q.refetch()} /> : people.length === 0 ? <EmptyState title="No people to show" /> : <View style={{ gap: 8, paddingTop: space.sm }}>
             {people.map((person) => <Pressable key={person.id} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Open ${person.name}’s Space`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Avatar uri={person.photos[0]?.url ?? null} name={person.name} size={42} /><View><Txt variant="bodyStrong">{person.name}</Txt>{person.username ? <Txt variant="small" color="textSecondary">@{person.username}</Txt> : null}</View></Pressable>)}
@@ -904,12 +803,22 @@ function SpaceRelationshipList({ targetId, name, viewerId, kind, canView, openSe
         </>}
         <Txt variant="subheading" style={{marginTop: space.xl}}>Discover</Txt>
         {suggestions.isError ? <Button title="Retry Discover" variant="ghost" onPress={() => void suggestions.refetch()} /> : suggestions.isLoading ? <LoadingBlock label="Loading Discover" /> : authors.length || videos.length ? <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: space.sm}}>
-          {authors.map(person => <Pressable key={`person-${person.id}`} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Discover ${person.name}’s Space`} style={{width: '47%', minHeight: 100, backgroundColor: colors.card, padding: space.md, borderRadius: 14, gap: 8}}><Avatar uri={person.photos?.[0]?.url ?? null} name={person.name} size={42} /><Txt variant="bodyStrong" numberOfLines={1}>{person.name}</Txt><Txt variant="small" color="textSecondary">View Space</Txt></Pressable>)}
+          {authors.map(person => <View key={`person-${person.id}`} style={{width: '47%', minHeight: 100, backgroundColor: colors.card, padding: space.md, borderRadius: 14, gap: 8}}><Pressable onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Discover ${person.name}’s Space`}><Avatar uri={person.photos?.[0]?.url ?? null} name={person.name} size={42} /><Txt variant="bodyStrong" numberOfLines={1}>{person.name}</Txt><Txt variant="small" color="textSecondary">View Space</Txt></Pressable><FollowButton id={person.id} name={person.name} compact /></View>)}
           {videos.map(post => <Pressable key={`video-${post.id}`} onPress={() => onOpenPost(post.id)} accessibilityRole="button" accessibilityLabel={`Watch ${post.author.name}’s Flow`} style={{width: '47%', backgroundColor: colors.card, borderRadius: 14, overflow: 'hidden'}}><ClipThumb uri={mediaUrl(post.mediaUrl) ?? ""} style={{width: '100%', height: 130}} /><View style={{padding: space.sm}}><Txt variant="bodyStrong" numberOfLines={1}>{post.author.name}</Txt><Txt variant="small" color="textSecondary">Watch Flow</Txt></View></Pressable>)}
         </View> : <Txt color="textSecondary">Nothing to discover right now.</Txt>}
       </ScrollView>
     </View>
   </Modal>;
+}
+
+function FollowRequests({visible, onClose, viewerId}: {visible:boolean; onClose:()=>void; viewerId:number}) {
+  const {colors} = useTheme(); const insets = useSafeAreaInsets(); const qc = useQueryClient(); const toast = useToast();
+  const q = useInfiniteQuery({queryKey:['holup-follow-requests',viewerId], initialPageParam:0, queryFn:({pageParam})=>pendingFollowRequests(pageParam), enabled:visible && !!viewerId, getNextPageParam:(last,pages)=>last.hasMore ? pages.reduce((n,p)=>n+p.items.length,0) : undefined, staleTime:0});
+  const response = useMutation({mutationFn:({id,accept}:{id:number;accept:boolean})=>respondToFollow(id,accept), onSuccess:()=>{ void qc.invalidateQueries({queryKey:['holup-follow-requests']}); void qc.invalidateQueries({queryKey:['space-relationship-stats']}); }, onError:(e)=>toast({kind:'error',title:'Couldn’t answer request',message:(e as Error).message})});
+  const items=q.data?.pages.flatMap(p=>p.items) ?? [];
+  return <Modal visible={visible} animationType="fade" onRequestClose={onClose}><View style={{flex:1,backgroundColor:colors.bg,paddingTop:insets.top}}><View style={{flexDirection:'row',alignItems:'center',gap:12,padding:space.md}}><IconButton icon="chevron-back" label="Back to Space" onPress={onClose}/><Txt variant="subheading">Add Up requests</Txt></View><ScrollView contentContainerStyle={{padding:space.md,gap:space.md}}>
+    {q.isLoading ? <LoadingBlock label="Loading requests"/> : q.isError ? <ErrorState error={q.error} message="Couldn’t load requests." onRetry={()=>void q.refetch()}/> : !items.length ? <Txt color="textSecondary">No requests right now.</Txt> : items.map(p=><View key={p.id} style={{flexDirection:'row',alignItems:'center',gap:8}}><Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={40}/><Txt variant="bodyStrong" style={{flex:1}}>{p.name}</Txt><Button title="Accept" size="sm" disabled={response.isPending} onPress={()=>response.mutate({id:p.id,accept:true})}/><Button title="Decline" variant="ghost" size="sm" disabled={response.isPending} onPress={()=>response.mutate({id:p.id,accept:false})}/></View>)}
+    {q.hasNextPage ? <Button title="Show more" loading={q.isFetchingNextPage} onPress={()=>void q.fetchNextPage()}/> : null}</ScrollView></View></Modal>;
 }
 
 /* ------------------------------------------------------- the three panels */

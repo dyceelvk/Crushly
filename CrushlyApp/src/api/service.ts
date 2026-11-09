@@ -267,13 +267,29 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export type AddUpListVisibility = 'everyone' | 'close' | 'private';
-export type SpaceRelationshipStats = { addUps: number; keptClose: number; postLikes: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
+export type SpaceRelationshipStats = { addUps: number; addedUp: number; keptClose: number; postLikes: number; canViewAddUps: boolean; canViewAddedUp: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null; outgoingVisibility: AddUpListVisibility | null; approvalRequired: boolean | null; myStatus: 'active' | 'pending' | null };
 export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
-  return rpc('space_relationship_stats', { p_target_id: id });
+  return rpc('holup_follow_stats', { p_target: id });
 }
-export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
-  const page = await rpc<{ items: Profile[]; hasMore: boolean }>('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 });
+export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'addedUp' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
+  const page = kind === 'keptClose'
+    ? await rpc<{ items: Profile[]; hasMore: boolean }>('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 })
+    : await rpc<{ items: Profile[]; hasMore: boolean }>('holup_follow_people', { p_target: id, p_kind: kind, p_offset: offset, p_limit: 40 });
   return { ...page, items: (page.items ?? []).map(profileShape) };
+}
+export async function followMember(id: number): Promise<{ status: 'active' | 'pending'; changed: boolean }> {
+  return rpc('holup_follow', { p_target: id });
+}
+export async function unfollowMember(id: number): Promise<void> { await rpc('holup_unfollow', { p_target: id }); }
+export async function setFollowSettings(approvalRequired: boolean | null, visibility: AddUpListVisibility | null): Promise<void> {
+  await rpc('holup_set_follow_settings', { p_approval: approvalRequired, p_outgoing_visibility: visibility });
+}
+export async function pendingFollowRequests(offset = 0): Promise<{items: Profile[]; hasMore: boolean}> {
+  const page = await rpc<{items: Profile[]; hasMore: boolean}>('holup_pending_follow_requests', {p_offset: offset, p_limit: 40});
+  return {...page, items: (page.items ?? []).map(profileShape)};
+}
+export async function respondToFollow(id: number, accept: boolean): Promise<void> {
+  await rpc('holup_respond_follow', {p_follower: id, p_accept: accept});
 }
 export async function setAddUpListVisibility(visibility: AddUpListVisibility): Promise<void> {
   await rpc('set_add_up_list_visibility', { p_visibility: visibility });

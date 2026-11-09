@@ -11,6 +11,8 @@ const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
 async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false) {
   let banner: string | null = null;
+  let followed = false;
+  let outgoingVisibility = 'private'; let approvalRequired = false;
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }].map((p) => Buffer.from(JSON.stringify(p)).toString('base64url')).join('.') + '.offline-signature';
   await page.addInitScript(({ user, token, exp }) => localStorage.setItem('sb-verification-test-auth-token', JSON.stringify({ user, access_token: token, refresh_token: 'offline-refresh', token_type: 'bearer', expires_at: exp, expires_in: 3600 })), { user, token, exp });
@@ -57,8 +59,12 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/moment_viewers') body = { count: 1, items: [{profile: person, viewedAt: Date.now()}] };
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [onePost] };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
-    else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private'};
-    else if (path === '/rest/v1/rpc/space_relationship_people') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {items: [person], hasMore: false}; }
+    else if (path === '/rest/v1/rpc/holup_follow_stats') body = {addUps: 3, addedUp: 4, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewAddedUp: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private', outgoingVisibility, approvalRequired, myStatus: followed ? 'active' : null};
+    else if (path === '/rest/v1/rpc/holup_follow') { followed = true; calls.push({followed: true}); body = {status:'active',changed:true}; }
+    else if (path === '/rest/v1/rpc/holup_unfollow') { followed = false; body = true; }
+    else if (path === '/rest/v1/rpc/holup_set_follow_settings') { const args = route.request().postDataJSON(); calls.push(args); outgoingVisibility=args.p_outgoing_visibility; approvalRequired=args.p_approval; body=true; }
+    else if (path === '/rest/v1/rpc/holup_pending_follow_requests') body = {items:[],hasMore:false};
+    else if (path === '/rest/v1/rpc/holup_follow_people' || path === '/rest/v1/rpc/space_relationship_people') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {items: [person], hasMore: false}; }
     else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
     else if (path === '/rest/v1/rpc/heartbeat') body = true;
@@ -360,4 +366,25 @@ test('a private relationship list shows the access notice without requesting ide
   await expect(page.getByText('Offline test has limited who can view their Add Ups.')).toBeVisible();
   expect(calls.some(x => x.p_kind === 'addUps')).toBe(false);
   await expect(page.getByRole('button', {name:'Back to Space'})).toBeVisible();
+});
+
+test('Added Up opens a real list and its visibility setting is saved', async ({page}) => {
+  const calls: Record<string, unknown>[] = []; await offline(page,calls); await page.goto('/');
+  await page.getByText('Space',{exact:true}).last().click({timeout:30000});
+  await page.getByRole('button',{name:'4 Added Up. View people'}).click();
+  await expect(page.getByRole('button',{name:'Open Ada’s Space'})).toBeVisible();
+  expect(calls.some(x=>x.p_kind === 'addedUp')).toBe(true);
+  await page.getByRole('button',{name:'Back to Space'}).click();
+  await page.getByRole('button',{name:'Added Up list privacy'}).click();
+  await page.getByText('Homies',{exact:true}).last().click();
+  await expect.poll(()=>calls.some(x=>x.p_outgoing_visibility === 'close')).toBe(true);
+});
+
+test('Discover suggestion Add Up calls the real follow action and reflects its result', async ({page}) => {
+  const calls: Record<string, unknown>[] = []; await offline(page,calls); await page.goto('/');
+  await page.getByText('Space',{exact:true}).last().click({timeout:30000});
+  await page.getByRole('button',{name:'3 Add Ups. View people'}).click();
+  await page.getByRole('button',{name:'Add Up Ada'}).click();
+  await expect.poll(()=>calls.some(x=>x.followed === true)).toBe(true);
+  await expect(page.getByRole('button',{name:'Added Up Ada'})).toBeVisible();
 });
