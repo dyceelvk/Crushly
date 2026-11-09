@@ -186,6 +186,7 @@ export async function getMe(): Promise<Me> {
       discoverable: !!privacy.discoverable,
       profileVisibility: privacy.profile_visibility,
       whoCanMessage: privacy.who_can_message,
+      whisperOpen: privacy.v3_whisper_open === true,
       whoCanCrush: privacy.who_can_crush,
       showAge: !!privacy.show_age,
       showCity: !!privacy.show_city,
@@ -268,10 +269,14 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export async function spaceRelationshipStats(id: number): Promise<import('./types').SpaceRelationshipStats> {
-  return rpc('space_relationship_stats', { p_target_id: id });
+  const stats = await rpc<import('./types').SpaceRelationshipStats>('space_relationship_stats', { p_target_id: id });
+  const close = await rpc<{ keptClose: number; canViewKeptClose: boolean }>('v3_keep_stats', { p_owner: id });
+  return { ...stats, keptClose: close.keptClose, canViewKeptClose: close.canViewKeptClose };
 }
 export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
-  return rpc('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 });
+  return kind === 'keptClose'
+    ? rpc('v3_kept_close_people', { p_owner: id, p_offset: offset, p_limit: 40 })
+    : rpc('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 });
 }
 export async function setAddUpListVisibility(visibility: import('./types').AddUpListVisibility): Promise<void> {
   await rpc('set_add_up_list_visibility', { p_visibility: visibility });
@@ -694,16 +699,18 @@ export async function editPost(input: {
 }
 
 export async function keepState(memberId: number): Promise<KeepState> {
-  return rpc<KeepState>('keep_state', { p_member_id: memberId });
+  const s = await rpc<{ keeps: boolean; keepsYou: boolean; keptClose: number; keeping: number }>('v3_keep_stats', { p_owner: memberId });
+  return { keeps: s.keeps, keepsYou: s.keepsYou, keepsCount: s.keeping, keptByCount: s.keptClose, self: false, incoming: false, outgoing: false };
 }
 
-/** Request Keep Close. Approval is always explicit. */
+/** Keep Close is an immediate one-way subscription. */
 export async function keepClose(memberId: number): Promise<KeepState> {
-  return rpc<KeepState>('keep_close', { p_member_id: memberId });
+  await rpc('v3_keep_subscribe', { p_target: memberId });
+  return keepState(memberId);
 }
 
-export async function keepCloseRequests(direction: 'incoming' | 'outgoing', offset: number): Promise<{ items: Profile[]; hasMore: boolean }> {
-  const page = await rpc<{ items: { profile: unknown; at: number }[]; hasMore: boolean }>('keep_close_request_list', { p_direction: direction, p_offset: offset, p_limit: 40 });
+export async function keepCloseRequests(direction: 'incoming' | 'outgoing' | 'mutual', offset: number): Promise<{ items: Profile[]; hasMore: boolean }> {
+  const page = await rpc<{ items: { profile: unknown; at: number }[]; hasMore: boolean }>('v3_keep_people', { p_direction: direction, p_offset: offset, p_limit: 40 });
   return { items: (page.items ?? []).map((item) => ({ ...profileShape(item.profile), at: item.at })), hasMore: !!page.hasMore };
 }
 export async function acceptKeepClose(memberId: number): Promise<KeepState> {
@@ -714,7 +721,7 @@ export async function declineKeepClose(memberId: number): Promise<void> {
 }
 
 export async function letGo(memberId: number): Promise<void> {
-  await rpc<boolean>('let_go', { p_member_id: memberId });
+  await rpc<boolean>('v3_keep_unsubscribe', { p_target: memberId });
 }
 
 export async function closeOnes(limit = 50): Promise<{ items: CloseOne[] }> {
@@ -983,6 +990,7 @@ export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
     );
   }
   const id = await meId();
+  if (patch.whisperOpen !== undefined) await rpc('v3_set_whisper_open', { p_open: patch.whisperOpen });
   const next: Record<string, unknown> = {};
   for (const [key, [column, kind]] of Object.entries(PRIVACY_FIELDS)) {
     if (!(key in patch)) continue;
@@ -1252,6 +1260,13 @@ export async function listBlocks(): Promise<BlockedMember[]> {
 }
 
 /* ---------------------------------------------------------------- messages */
+
+export async function acceptWhisper(conversationId: number): Promise<void> {
+  await rpc('v3_accept_whisper', { p_conversation_id: conversationId });
+}
+export async function declineWhisper(conversationId: number): Promise<void> {
+  await rpc('v3_decline_whisper', { p_conversation_id: conversationId });
+}
 
 export async function conversations(): Promise<ConversationSummary[]> {
   const res = await rpc<{ items: ConversationSummary[] }>('list_conversations');

@@ -11,6 +11,8 @@ import { TypingDots } from '../../components/TypingDots';
 import { RecordingWave } from '../../components/RecordingWave';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
+import { Button } from '../../components/Button';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActionSheet, BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
@@ -18,7 +20,7 @@ import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
 import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
 import { useLayout } from '../../components/Layout';
-import { useChat, useConversation, useCrushes, useMe, useAppSettings } from '../../api/hooks';
+import { useChat, useConversation, useCrushes, useMe, useAppSettings, keys } from '../../api/hooks';
 import type { Message, ReplyQuote } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -32,7 +34,7 @@ import { CallSheet } from '../../components/CallSheet';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import { CallManager, type CallState } from '../../lib/call';
 import { supabase, toApiError } from '../../api/client';
-import { whisperMomentTarget } from '../../api/service';
+import { acceptWhisper, declineWhisper, whisperMomentTarget } from '../../api/service';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -121,6 +123,8 @@ function HeaderState({
 export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const keyboard = useAndroidKeyboardOverlap();
   const { conversationId } = route.params;
+  const qc = useQueryClient();
+  const [requestBusy, setRequestBusy] = useState(false);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -451,7 +455,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 typing={chat.peerTyping}
                 recording={chat.peerRecording}
                 presence={chat.presence ? { online: chat.presence.online, activity: chat.presence.activity } : null}
-                fallbackOnline={!!peer?.online}
+                fallbackOnline={conv?.requestState === 'pending' ? false : !!peer?.online}
                 live={chat.live}
               />
             </View>
@@ -466,6 +470,28 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         </View>
       </View>
 
+      {conv?.isIncomingRequest && !chat.unavailable ? (
+        <View style={{ padding: space.md, backgroundColor: colors.card, gap: 8 }}>
+          <Txt variant="smallStrong">Whisper request</Txt>
+          <Txt variant="small" color="textSecondary">Accept or reply to start a conversation, or decline this request.</Txt>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Button title="Accept Whisper" size="sm" disabled={requestBusy} loading={requestBusy} onPress={async () => {
+              setRequestBusy(true);
+              try { await acceptWhisper(conversationId); await refetchConv(); void qc.invalidateQueries({ queryKey: keys.conversations }); void chat.reload(); }
+              catch (e) { toast({ kind: 'error', title: 'Couldn’t accept', message: (e as Error).message }); }
+              finally { setRequestBusy(false); }
+            }} />
+            <Button title="Decline Whisper" size="sm" variant="secondary" disabled={requestBusy} onPress={async () => {
+              setRequestBusy(true);
+              try { await declineWhisper(conversationId); void qc.invalidateQueries({ queryKey: keys.conversations }); navigation.goBack(); }
+              catch (e) { toast({ kind: 'error', title: 'Couldn’t decline', message: (e as Error).message }); }
+              finally { setRequestBusy(false); }
+            }} />
+          </View>
+        </View>
+      ) : conv?.requestState === 'pending' && !chat.unavailable ? (
+        <View style={{ paddingHorizontal: space.md, paddingVertical: space.xs }}><Txt variant="small" color="textSecondary">You can send two messages until this request is accepted.</Txt></View>
+      ) : null}
       <KeyboardAvoidingView style={{ flex: 1, paddingBottom: keyboard.overlap }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />

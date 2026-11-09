@@ -454,6 +454,7 @@ export type Privacy = {
   discoverable: boolean;
   profileVisibility: 'everyone' | 'connections';
   whoCanMessage: 'everyone' | 'crushes' | 'mutual';
+  whisperOpen: boolean;
   whoCanCrush: 'everyone' | 'verified';
   showAge: boolean;
   showCity: boolean;
@@ -569,6 +570,8 @@ export type ConversationSummary = {
   lastMessage: Message | null;
   unread: number;
   updatedAt: number;
+  requestState?: 'pending' | 'accepted';
+  isIncomingRequest?: boolean;
 };
 
 export type ConversationDetail = {
@@ -577,6 +580,10 @@ export type ConversationDetail = {
   peer: Peer;
   canSend: boolean;
   blockReason: string | null;
+  requestState?: 'pending' | 'accepted';
+  isIncomingRequest?: boolean;
+  requestMessages?: number;
+  requestLimit?: number;
 };
 
 export type MomentStyle = 'noir' | 'champagne' | 'crimson' | 'midnight' | 'emerald';

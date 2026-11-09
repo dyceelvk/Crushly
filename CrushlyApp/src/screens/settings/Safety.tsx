@@ -26,7 +26,7 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
   const tools: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
     { icon: 'ban-outline', title: 'Cut Off', body: 'Open any Space or Whisper, tap ··· and choose Cut Off. They’re never told.' },
     { icon: 'flag-outline', title: 'Flag', body: 'Same menu. Flags are confidential and reviewed by a person.' },
-    { icon: 'heart-dislike-outline', title: 'Remove a Connection', body: 'Ends Keep Close and closes your Whisper. Add Ups are separate.' },
+    { icon: 'heart-dislike-outline', title: 'Stop Keeping Close', body: 'Your Whisper and Add Up remain separate.' },
   ];
 
   return (
@@ -146,10 +146,9 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         ]}
         footer={p.profileVisibility === 'connections' ? 'Others see your main photo and name only until you’re connected.' : undefined}
       />
-      <View style={{ marginBottom: space.xl }}>
-        <Txt variant="label" color="textSecondary" style={{ marginBottom: space.xs, marginLeft: 4 }} accessibilityRole="header">Who can Whisper me</Txt>
-        <Txt variant="body">Only people in an approved Keep Close relationship with you.</Txt>
-      </View>
+      <Group title="Whisper requests" footer="When off, eligible people can send two messages until you accept or reply. Existing conversations stay open if you turn this off.">
+        <ListRow title="Receive Whispers without accepting" subtitle="Let eligible people start a conversation directly" icon="chatbubble-outline" toggle={{ value: p.whisperOpen, onChange: (v) => set({ whisperOpen: v }) }} last />
+      </Group>
       <Choice
         title="Who can add me up"
         value={p.whoCanCrush}

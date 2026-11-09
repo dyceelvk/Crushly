@@ -99,7 +99,7 @@ const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }>
     blocks: [
       { h: 'What’s an add up?', p: 'An Add Up follows someone immediately. It does not grant Whisper access.' },
       { h: 'What’s a Big Up?', p: 'An add up with a note that appears at the top of their add ups. You get 3 a day.' },
-      { h: 'Who can Whisper me?', p: 'Only someone in an approved Keep Close relationship with you. Either person may request; the other must accept.' },
+      { h: 'Who can Whisper me?', p: 'Eligible people can send up to two request messages until you accept or reply. You can also allow eligible people to message without accepting in Privacy.' },
       { h: 'How does verification work?', p: 'Tap “Verify with Didit”. Holup hands you to our identity partner, which captures a live selfie and checks your ID, then brings you straight back. Opening the check submits nothing on its own, and photos from your gallery can’t be used.' },
       { h: 'How do Moments work?', p: 'Share a photo or a few words. Moments disappear after 24 hours. Replies arrive as private Whispers.' },
       { h: 'How do I take a break?', p: 'Settings → Account & security → Hide my Space. Your Whispers stay open.' },

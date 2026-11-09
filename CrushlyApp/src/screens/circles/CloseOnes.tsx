@@ -65,7 +65,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
       >
         {embedded ? (
           <Txt variant="small" color="textSecondary" style={{ marginTop: space.md, marginBottom: space.sm }}>
-            People with an approved Keep Close relationship.
+            People you choose to Keep Close.
           </Txt>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -75,7 +75,7 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
                 Close Ones
               </Txt>
               <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
-                People with an approved Keep Close relationship.
+                People you choose to Keep Close.
               </Txt>
             </View>
           </View>
@@ -130,13 +130,13 @@ export function CloseOnesPane({ embedded = false }: { embedded?: boolean }) {
             <EmptyState
               icon="bookmark-outline"
               title="Nobody here yet"
-              message="Send a Keep Close request from someone’s Space. Once approved, they’ll appear here."
+              message="Choose Keep Close on someone’s Space and they’ll appear here."
               action={{ label: 'Find someone', onPress: () => navigation.navigate('Main', { screen: 'Discover' }) }}
             />
           )}
         </View>
       </ScrollView>
-      <ConfirmSheet visible={!!selected} onCancel={() => setSelected(null)} title="End Keep Close?" message={`Your Whisper with ${selected?.name ?? 'this member'} will close. Your Add Up is separate and won’t be removed.`} confirmLabel="End Keep Close" destructive loading={letGo.isPending} onConfirm={() => { if (selected) letGo.mutate(selected.id, { onSuccess: () => { setSelected(null); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) }); }} />
+      <ConfirmSheet visible={!!selected} onCancel={() => setSelected(null)} title="End Keep Close?" message={`Your Whisper with ${selected?.name ?? 'this member'} and your Add Up stay as they are.`} confirmLabel="End Keep Close" destructive loading={letGo.isPending} onConfirm={() => { if (selected) letGo.mutate(selected.id, { onSuccess: () => { setSelected(null); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) }); }} />
     </View>
   );
 }

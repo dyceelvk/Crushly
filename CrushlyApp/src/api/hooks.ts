@@ -790,7 +790,7 @@ function relationshipChanged(qc: QueryClient, memberId: number) {
   for (const key of [keys.keep(memberId), keys.user(memberId), keys.crushes, keys.closeOnes, keys.conversations, keys.badges, keys.notifications, ['keep-requests'], ['space-relationships'], ['space-relationship-people']]) void qc.invalidateQueries({ queryKey: key });
   postsChanged(qc);
 }
-export function useKeepRequests(viewerId: number, direction: 'incoming' | 'outgoing', enabled: boolean) {
+export function useKeepRequests(viewerId: number, direction: 'incoming' | 'outgoing' | 'mutual', enabled: boolean) {
   return useInfiniteQuery({
     queryKey: ['keep-requests', viewerId, direction], enabled: enabled && viewerId > 0,
     initialPageParam: 0,
@@ -1502,6 +1502,7 @@ export function useChat(conversationId: number) {
         // Typing ends when the message begins.
         liveRef.current?.typing(false);
         qc.invalidateQueries({ queryKey: keys.conversations });
+        qc.invalidateQueries({ queryKey: keys.conversation(conversationId) });
         return { ok: true as const };
       } catch (e) {
         if (epoch !== accessEpoch.current) return { ok: false as const, error: 'This Whisper is no longer available.' };

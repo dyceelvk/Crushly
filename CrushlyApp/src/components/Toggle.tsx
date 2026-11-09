@@ -19,6 +19,7 @@ export function Toggle({ value, onChange, label, disabled }: Props) {
       accessibilityRole="switch"
       accessibilityLabel={label}
       accessibilityState={{ checked: value, disabled }}
+      aria-checked={value}
       disabled={disabled}
       hitSlop={10}
       onPress={() => {

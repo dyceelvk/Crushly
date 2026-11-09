@@ -59,7 +59,7 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
     case 'mutual':
       return { title: `${name} had a connection update.` };
     case 'keep':
-      return n.body === 'request' ? { title: `${name} asked to Keep Close.`, detail: 'Open their Space to accept or decline.' } : n.body === 'accepted' ? { title: `${name} accepted your Keep Close request.`, detail: 'You can now Whisper.' } : { title: `${name} had a Keep Close update.`, detail: 'Open their Space for the current status.' };
+      return { title: `${name} Kept you Close.`, detail: 'Open their Space.' };
     case 'post_reaction':
       return { title: `${name} crushed on your post.`, detail: 'See what’s happening there.' };
     case 'post_comment':

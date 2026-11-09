@@ -51,6 +51,8 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/comment_on_post') { commentCalls.push(route.request().postDataJSON() as Record<string, unknown>); body = { id: 46 }; }
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
+    else if (path === '/rest/v1/rpc/v3_keep_stats') body = { keeps: false, keepsYou: false, keptClose: 0, keeping: 0, canViewKeptClose: false };
+    else if (path === '/rest/v1/rpc/v3_keep_people') body = { items: [], hasMore: false };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
     else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
@@ -348,7 +350,7 @@ test('notifications are a full screen with Holup and categorized activity', asyn
   await expect(page.getByText('Ada commented on your post.')).toBeVisible();
   await expect(page.getByText('Ada sent you a Whisper.')).toHaveCount(0);
   await page.getByRole('tab', { name: 'Kept Close' }).click();
-  await expect(page.getByText('Ada asked to Keep Close.')).toBeVisible();
+  await expect(page.getByText('Ada Kept you Close.')).toBeVisible();
   await page.getByRole('tab', { name: 'From Holup' }).click();
   await expect(page.getByText('Real announcement').last()).toBeVisible();
   await expect(page.getByText('Your Space is verified.')).toBeVisible();
@@ -361,6 +363,7 @@ test('Space relationship totals open real lists and owner can choose list privac
   let submitted = '';
   await page.route(`${API}/rest/v1/rpc/space_relationship_stats`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ addUps: 1, keptClose: 1, canViewAddUps: true, canViewKeptClose: true, addUpVisibility: visibility }), headers: { 'access-control-allow-origin': '*' } }));
   await page.route(`${API}/rest/v1/rpc/space_relationship_people`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [person], hasMore: false }), headers: { 'access-control-allow-origin': '*' } }));
+  await page.route(`${API}/rest/v1/rpc/v3_keep_stats`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ keeps: false, keepsYou: false, keeping: 0, keptClose: 1, canViewKeptClose: true }), headers: { 'access-control-allow-origin': '*' } }));
   await page.route(`${API}/rest/v1/rpc/set_add_up_list_visibility`, route => { submitted = (route.request().postDataJSON() as { p_visibility: string }).p_visibility; visibility = submitted; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(visibility), headers: { 'access-control-allow-origin': '*' } }); });
   await page.goto('/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
@@ -374,41 +377,39 @@ test('Space relationship totals open real lists and owner can choose list privac
   await expect(page.getByText('Add Up list privacy updated')).toBeVisible();
 });
 
-test('Space Add Up is independent of an explicitly approved Keep Close', async ({ page }) => {
+test('Space Add Up and immediate Keep Close subscriptions are independent', async ({ page }) => {
   await offline(page, []);
-  let followed = false, approved = false, incoming = true;
+  let followed = false, kept = false;
   const calls: string[] = [];
   const reply = (value: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(value), headers: { 'access-control-allow-origin': '*' } });
-  const currentProfile = () => ({ ...person, acceptsCrushes: true, canMessage: approved, messageBlockReason: approved ? null : 'Approve Keep Close before Whispering.', crush: { sent: followed, sentStatus: followed ? 'pending' : null, received: false, mutual: approved }, moments: [] });
-  const currentKeep = () => ({ keeps: approved, keepsYou: approved, keepsCount: approved ? 1 : 0, keptByCount: approved ? 1 : 0, self: false, incoming, outgoing: false });
+  const currentProfile = () => ({ ...person, acceptsCrushes: true, canMessage: true, messageBlockReason: null, crush: { sent: followed, sentStatus: followed ? 'pending' : null, received: false, mutual: false }, moments: [] });
+  const currentKeep = () => ({ keeps: kept, keepsYou: false, keeping: 0, keptClose: kept ? 1 : 0, canViewKeptClose: kept });
   await page.route(`${API}/rest/v1/rpc/load_profile`, route => route.fulfill(reply(currentProfile())));
-  await page.route(`${API}/rest/v1/rpc/keep_state`, route => route.fulfill(reply(currentKeep())));
-  await page.route(`${API}/rest/v1/rpc/space_relationship_stats`, route => route.fulfill(reply({ addUps: followed ? 1 : 0, keptClose: approved ? 1 : 0, canViewAddUps: false, canViewKeptClose: approved, addUpVisibility: null })));
+  await page.route(`${API}/rest/v1/rpc/v3_keep_stats`, route => route.fulfill(reply(currentKeep())));
+  await page.route(`${API}/rest/v1/rpc/space_relationship_stats`, route => route.fulfill(reply({ addUps: followed ? 1 : 0, keptClose: 0, canViewAddUps: false, canViewKeptClose: false, addUpVisibility: null })));
   await page.route(`${API}/rest/v1/rpc/crush_member`, route => { calls.push('add'); followed = true; return route.fulfill(reply({ mutual: false, isNew: true, request: 'following', profile: currentProfile() })); });
   await page.route(`${API}/rest/v1/rpc/uncrush_member`, route => { calls.push('unfollow'); followed = false; return route.fulfill(reply(true)); });
-  await page.route(`${API}/rest/v1/rpc/accept_keep_close`, route => { calls.push('accept'); approved = true; incoming = false; return route.fulfill(reply(currentKeep())); });
+  await page.route(`${API}/rest/v1/rpc/v3_keep_subscribe`, route => { calls.push('keep'); kept = true; return route.fulfill(reply(currentKeep())); });
   await page.goto('/?space=2');
   await expect(page.getByRole('button', { name: 'Add up with Ada' })).toBeVisible({ timeout: 30000 });
-  await expect(page.getByRole('button', { name: 'Whisper Ada requires approved Keep Close' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Whisper Ada', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Add up with Ada' }).click();
   await expect(page.getByRole('button', { name: 'Remove Add Up for Ada' })).toBeVisible();
-  expect(calls).toEqual(['add']);
-  await page.getByRole('button', { name: 'Accept Keep Close' }).click();
+  await page.getByRole('button', { name: 'Keep Ada close' }).click();
   await expect(page.getByRole('button', { name: 'Stop keeping Ada close' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Whisper Ada', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Remove Add Up for Ada' }).click();
   await expect(page.getByRole('button', { name: 'Add up with Ada' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Stop keeping Ada close' })).toBeVisible();
-  expect(calls).toEqual(['add', 'accept', 'unfollow']);
+  expect(calls).toEqual(['add', 'keep', 'unfollow']);
 });
 
-test('Keep Close request hub is reachable and pages through requests', async ({ page }) => {
+test('Keep Close subscription hub is reachable and pages through subscribers', async ({ page }) => {
   await offline(page, []);
   const offsets: number[] = [];
   const reply = (value: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(value), headers: { 'access-control-allow-origin': '*' } });
   await page.route(`${API}/rest/v1/rpc/crushes_feed`, route => route.fulfill(reply({ incoming: [], outgoing: [], mutual: [], requestCount: 0 })));
   await page.route(`${API}/rest/v1/rpc/list_conversations`, route => route.fulfill(reply({ items: [] })));
-  await page.route(`${API}/rest/v1/rpc/keep_close_request_list`, route => {
+  await page.route(`${API}/rest/v1/rpc/v3_keep_people`, route => {
     const body = route.request().postDataJSON() as { p_offset: number; p_direction: string };
     offsets.push(body.p_offset);
     const member = body.p_offset === 0 ? person : { ...person, id: 3, name: 'Tobi', username: 'tobi' };
@@ -416,7 +417,7 @@ test('Keep Close request hub is reachable and pages through requests', async ({ 
   });
   await page.goto('/');
   await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
-  await page.getByRole('button', { name: 'Keep Close requests' }).click();
+  await page.getByRole('button', { name: 'Keep Close people' }).click();
   await expect(page.getByRole('heading', { name: 'Keep Close' })).toBeVisible();
   await expect(page.getByText('Ada', { exact: true }).last()).toBeVisible();
   await page.getByRole('button', { name: 'Show more' }).click();
@@ -514,4 +515,93 @@ test('revoked Whisper clears cached history and ignores an older in-flight fetch
   revoked = false;
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.getByRole('button', { name: /Ada: Private history/ })).toBeVisible();
+});
+
+for (const decision of ['accept', 'decline'] as const) {
+  test(`Whisper requests inbox opens and ${decision}s a request`, async ({ page }) => {
+    await offline(page, []);
+    const peer = { id: 2, name: 'Ada', verified: false, photo: null, online: false };
+    const msg = { id: 301, conversationId: 5, senderId: 2, mine: false, kind: 'text', body: 'Hello request', mediaUrl: null, meta: {}, createdAt: Date.now(), readAt: null, reactions: [] };
+    let state: 'pending' | 'accepted' | 'declined' = 'pending';
+    const calls: string[] = [];
+    await page.route(`${API}/rest/v1/rpc/*`, async (route) => {
+      const name = new URL(route.request().url()).pathname.split('/').pop();
+      const args = route.request().postDataJSON() as Record<string, any>;
+      let body: unknown;
+      if (name === 'list_conversations') body = { items: state === 'declined' ? [] : [{ id: 5, peer, lastMessage: msg, unread: 1, updatedAt: Date.now(), requestState: state, isIncomingRequest: state === 'pending' }] };
+      else if (name === 'load_conversation') body = { id: 5, closed: false, peer, canSend: true, blockReason: null, requestState: state, isIncomingRequest: state === 'pending', requestMessages: 1, requestLimit: 2 };
+      else if (name === 'get_messages') body = { items: args.p_after_id ? [] : [msg], hasMore: false, lastReadMine: null };
+      else if (name === 'sync_whispers') body = [msg];
+      else if (name === 'mark_messages_delivered') body = { upTo: 0, count: 0 };
+      else if (name === 'peer_presence') body = { peerId: 2, online: null, activity: null, receipts: false, announce: false, closed: false };
+      else if (name === 'v3_accept_whisper') { calls.push(name); state = 'accepted'; body = true; }
+      else if (name === 'v3_decline_whisper') { calls.push(name); state = 'declined'; body = true; }
+      else return route.fallback();
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+    });
+    await page.goto('/');
+    await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+    await expect(page.getByRole('button', { name: /Ada.*Hello request/ })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Requests', exact: true }).click();
+    await page.getByRole('button', { name: /Ada.*Hello request/ }).click();
+    await expect(page.getByText('Whisper request', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: decision === 'accept' ? 'Accept Whisper' : 'Decline Whisper' }).click();
+    await expect.poll(() => calls).toEqual([`v3_${decision}_whisper`]);
+    if (decision === 'accept') await expect(page.getByText('Whisper request', { exact: true })).toHaveCount(0);
+    else await expect(page.getByText('No Whisper requests.')).toBeVisible();
+  });
+}
+
+test('Whisper privacy toggle persists the open-receiving setting through the server', async ({ page }) => {
+  await offline(page, []);
+  let opened = false;
+  const changes: boolean[] = [];
+  await page.route(`${API}/rest/v1/privacy*`, route => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ profile_visibility: 'everyone', discoverable: true, show_city: true, v3_whisper_open: opened }) }));
+  await page.route(`${API}/rest/v1/rpc/v3_set_whisper_open`, route => {
+    opened = (route.request().postDataJSON() as { p_open: boolean }).p_open;
+    changes.push(opened);
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(opened) });
+  });
+  await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByText('Privacy & visibility', { exact: true }).first().click();
+  const toggle = page.getByLabel('Receive Whispers without accepting');
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect.poll(() => changes).toEqual([true]);
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await expect.poll(() => changes).toEqual([true, false]);
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+});
+
+test('replying to a Whisper request updates the conversation to accepted', async ({ page }) => {
+  await offline(page, []);
+  const peer = { id: 2, name: 'Ada', verified: false, photo: null, online: false };
+  const msg = { id: 301, conversationId: 5, senderId: 2, mine: false, kind: 'text', body: 'Hello request', mediaUrl: null, meta: {}, createdAt: Date.now(), readAt: null, reactions: [] };
+  let accepted = false; let sent = '';
+  await page.route(`${API}/rest/v1/rpc/*`, async route => {
+    const name = new URL(route.request().url()).pathname.split('/').pop();
+    const args = route.request().postDataJSON() as Record<string, any>;
+    let body: unknown;
+    if (name === 'list_conversations') body = { items: [{ id: 5, peer, lastMessage: msg, unread: 1, updatedAt: Date.now(), requestState: accepted ? 'accepted' : 'pending', isIncomingRequest: !accepted }] };
+    else if (name === 'load_conversation') body = { id: 5, closed: false, peer, canSend: true, blockReason: null, requestState: accepted ? 'accepted' : 'pending', isIncomingRequest: !accepted, requestMessages: 1, requestLimit: 2 };
+    else if (name === 'get_messages') body = { items: args.p_after_id ? [] : [msg], hasMore: false, lastReadMine: null };
+    else if (name === 'sync_whispers') body = [msg];
+    else if (name === 'mark_messages_delivered') body = { upTo: 0, count: 0 };
+    else if (name === 'peer_presence') body = { peerId: 2, online: null, activity: null, receipts: false, announce: false, closed: false };
+    else if (name === 'send_message') { accepted = true; sent = args.p_body; body = { ...msg, id: 302, senderId: 1, mine: true, body: sent }; }
+    else return route.fallback();
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+  });
+  await page.goto('/');
+  await page.getByText('Whispers', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('tab', { name: 'Requests', exact: true }).click();
+  await page.getByRole('button', { name: /Ada.*Hello request/ }).click();
+  await expect(page.getByText('Whisper request', { exact: true })).toBeVisible();
+  await page.getByLabel('Whisper', { exact: true }).fill('Reply accepts');
+  await page.getByRole('button', { name: 'Send Whisper' }).click();
+  await expect.poll(() => sent).toBe('Reply accepts');
+  await expect(page.getByText('Whisper request', { exact: true })).toHaveCount(0);
 });

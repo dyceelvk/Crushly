@@ -76,3 +76,33 @@ insert guard. **They do not test the real application send/open APIs.**
    `python3 supabase/subscription-whisper-work/03_concurrency.py` (destructive).
 
 The test suite does not establish production safety and does not authorize rollout.
+
+## API and client integration checkpoint — still experimental
+
+`04_api_experiment.sql` adds a provisional integration against the real
+Whisper RPCs and direct message/media/receipt policies, a request inbox,
+server-serialized accept/decline/reply and immediate Add Up functions, a
+paged Keep subscription hub, and fails closed for **new** Whisper realtime
+and call joins. It must be applied only after `01_experiment.sql`, only to a
+disposable database. The app branch has partial request, setting and Keep UI.
+`05_api_test.sql` exercises actual RPCs and `06_api_concurrency.py` races real
+message sends with decisions, blocks and setting changes. Fresh legacy SQL,
+twice-applied experiments, prototype and real-RPC tests, and both race scripts
+passed locally. These tests do not exercise a hosted PostgREST/Realtime service,
+installed clients, actual notification delivery, or physical Android.
+
+The earlier warning about not testing the real RPCs describes `01_experiment`
+alone, not the later `04` integration. The generator outside this repo was used
+for an early draft of 04 and is stale; **the SQL file here is authoritative**.
+Never regenerate it from that old script without reconciling all later changes.
+
+**Release blockers:** `connections`-based profile, Close audience, `close_ones`,
+legacy badge and RPC paths still need coherent v3 semantics and a complete
+privacy review. The existing Space Add Up "Close" list ACL is still based on
+legacy connections and must be resolved against the new subscription model.
+Old clients can call obsolete relationship RPCs and cannot safely consume the
+new receipt restrictions. Forced disconnection of existing Realtime sockets
+and active call termination remain unsolved, and 04 deliberately disallows
+new joins. Retry/abuse controls, authoritative notification delivery, rollback,
+representative production data, Android smoke and device checks are incomplete.
+The source version is not a release migration and must not be shipped alone.

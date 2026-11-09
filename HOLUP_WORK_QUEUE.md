@@ -46,3 +46,26 @@
 - Whispers are independent of Keep Close: up to two messages total before acceptance; recipient may accept explicitly or by replying. An optional open setting allows any otherwise eligible sender to start without acceptance, and conversations started while it is on stay open when it is turned off. Existing conversations remain accepted; blocks still prevent contact. Unsubscribing must not end an accepted Whisper.
 - Previous `relationship-work/` SQL and dependent approval-based UI are **superseded** and must not ship. New `supabase/subscription-whisper-work/` is a standalone partial experiment only: directional Keep Close, subscriber count/list gate, preserving legacy rows/chats, durable two-message quota, reply/open consent and pair-lock tests. Existing clients and real message RPCs do not yet use it. Fresh SQL baseline, twice-applied experiment, targeted tests and seven lock-race cases passed; not deployed. See the experiment README for gaps.
 - Outstanding: redesign actual APIs/RLS/media/notifications/UI/settings and update gate, solve stale realtime and active call revocation, integrate both-user empty-chat behavior, abuse/retry controls, representative migration and rollback tests, teen isolation, protected video previews and Android release smoke/device tests. No launch yet.
+
+## v3 actual-API and client checkpoint (still NOT deployable)
+- The experimental 04 SQL now exercises actual Whisper open/send/list/access,
+  request and decision RPCs, direct receipt restrictions, pending presence
+  suppression, and fail-closed new Realtime/call joins. The client has an
+  incoming requests tab, accept/decline, reply-to-accept handling, open-messaging
+  setting, immediate Keep and a reachable subscription hub. Add Up follows have
+  a provisional independent server implementation. Existing conversations stay
+  accepted, and no changes have been deployed.
+- Fresh disposable database: full legacy suite before v3, 01 and 04 applied
+  twice, 02 and 05 assertions and 03 and 06 race suites passed. Real hosted
+  PostgREST/Realtime, old clients, Android and real notification delivery have
+  not been verified. Old connection-based privacy, Close-audience semantics,
+  `close_ones`, notification/badge paths and direct legacy RPCs must still be
+  reconciled; a subscriber list must not bypass profile/block privacy. See the
+  experiment README. Cached joined Realtime sockets remain a critical unresolved
+  revocation blocker. Keep calls and teen access disabled; do not publish.
+- Local verification for this checkpoint: TypeScript, 300 + 3 + 7 unit tests,
+  mock web export and 29 browser tests passed. Browser tests cover independent
+  Keep/Add Up, subscription hub, incoming request accept/decline, reply-to-accept,
+  open-setting changes, and the Moment-reply behavior with mocked APIs. SQL also
+  covers incoming/outgoing/mutual hub paging, hidden profiles and blocks. This
+  is not proof of real-service integration or release readiness.

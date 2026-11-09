@@ -28,7 +28,7 @@ import { useToast } from '../../components/Toast';
 import { useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
 import type { AddUpListVisibility, FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
-import { useAcceptKeepClose, useDeclineKeepClose, useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
+import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
 import { MOMENT_RING_SEEN } from '../../lib/momentRings';
 import { joinAction, policyLabel } from '../../lib/circleAccess';
@@ -197,8 +197,6 @@ export function SpaceScreen({
   })();
   const { run: crushOn, pendingId } = useCrushFlow();
   const undo = useUndoCrush();
-  const accept = useAcceptKeepClose();
-  const decline = useDeclineKeepClose();
   const open = useOpenConversation();
   const { openActions } = useMemberActions();
   const keep = useKeepState(id, !mine);
@@ -333,7 +331,7 @@ export function SpaceScreen({
 
   const message = async () => {
     if (!p.canMessage) {
-      toast({ kind: 'info', title: 'Not yet', message: p.messageBlockReason || 'A Keep Close request must be approved first.' });
+      toast({ kind: 'info', title: 'Not yet', message: p.messageBlockReason || 'This Space can’t receive a Whisper right now.' });
       return;
     }
     try {
@@ -361,7 +359,7 @@ export function SpaceScreen({
   };
   const addUp = { label: p.crush.sent ? 'Added up' : 'Add up', done: p.crush.sent };
   const addUpBusy = pendingId === p.id || undo.isPending;
-  const keepBusy = keepClose.isPending || letGo.isPending || accept.isPending || decline.isPending;
+  const keepBusy = keepClose.isPending || letGo.isPending;
 
   const lifestyle = lifestyleFacts(p);
 
@@ -507,7 +505,7 @@ export function SpaceScreen({
 
                 <IconButton
                   icon="chatbubble-outline"
-                  label={p.canMessage ? `Whisper ${p.name}` : `Whisper ${p.name} requires approved Keep Close`}
+                  label={p.canMessage ? `Whisper ${p.name}` : `Whisper ${p.name} unavailable`}
                   size={40} variant="surface" color={p.canMessage ? colors.text : colors.textMuted} onPress={message}
                 />
                 </View>
@@ -536,24 +534,20 @@ export function SpaceScreen({
                     so the chip is gone and the pencil is the only way in. */}
                 {mine ? null : (
                 <>
-                {keep.isError ? <Pressable accessibilityRole="button" accessibilityLabel="Retry Keep Close status" onPress={() => void keep.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load Keep Close. Retry</Txt></Pressable> : keep.data?.incoming && !keep.data.keeps ? <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  <Button title="Accept Keep Close" size="sm" variant="secondary" loading={accept.isPending} disabled={keepBusy} onPress={() => accept.mutate(id, { onSuccess: () => toast({ kind: 'success', title: 'Keep Close approved' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t accept', message: (e as Error).message }) })} />
-                  <Button title="Decline" size="sm" variant="ghost" loading={decline.isPending} disabled={keepBusy} onPress={() => decline.mutate(id, { onSuccess: () => toast({ kind: 'info', title: 'Request declined' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t decline', message: (e as Error).message }) })} />
-                </View> : <Pressable
+                {keep.isError ? <Pressable accessibilityRole="button" accessibilityLabel="Retry Keep Close status" onPress={() => void keep.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load Keep Close. Retry</Txt></Pressable> : <Pressable
                   onPress={() => {
                     haptic.tap();
                     if (keep.data?.keeps) setConfirmLetGo(true);
-                    else if (keep.data?.outgoing) letGo.mutate(id, { onSuccess: () => toast({ kind: 'info', title: 'Request cancelled' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t cancel', message: (e as Error).message }) });
-                    else keepClose.mutate(id, { onSuccess: () => toast({ kind: 'success', title: 'Keep Close request sent' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t send request', message: (e as Error).message }) });
+                    else keepClose.mutate(id, { onSuccess: () => toast({ kind: 'success', title: 'Kept Close' }), onError: (e) => toast({ kind: 'error', title: 'Couldn’t Keep Close', message: (e as Error).message }) });
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={keep.data?.keeps ? `Stop keeping ${p.name} close` : keep.data?.outgoing ? `Cancel Keep Close request to ${p.name}` : `Request to keep ${p.name} close`}
+                  accessibilityLabel={keep.data?.keeps ? `Stop keeping ${p.name} close` : `Keep ${p.name} close`}
                   hitSlop={8} disabled={keepBusy || !keep.data}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
-                    backgroundColor: keep.data?.keeps || keep.data?.outgoing ? colors.goldSoft : colors.card,
-                    borderWidth: 1, borderColor: keep.data?.keeps || keep.data?.outgoing ? colors.goldLine : colors.border, opacity: keep.data ? 1 : 0.6 }}>
+                    backgroundColor: keep.data?.keeps ? colors.goldSoft : colors.card,
+                    borderWidth: 1, borderColor: keep.data?.keeps ? colors.goldLine : colors.border, opacity: keep.data ? 1 : 0.6 }}>
                   <Ionicons name={keep.data?.keeps ? 'bookmark' : 'bookmark-outline'} size={12} color={keep.data?.keeps ? colors.gold : colors.textSecondary} />
-                  <Txt variant="caption" color={keep.data?.keeps || keep.data?.outgoing ? 'gold' : 'textSecondary'}>{!keep.data ? 'Loading…' : keep.data.keeps ? 'Kept Close' : keep.data.outgoing ? 'Request sent' : 'Keep Close'}</Txt>
+                  <Txt variant="caption" color={keep.data?.keeps ? 'gold' : 'textSecondary'}>{!keep.data ? 'Loading…' : keep.data.keeps ? 'Kept Close' : 'Keep Close'}</Txt>
                 </Pressable>}
                 </>
                 )}
@@ -822,7 +816,7 @@ export function SpaceScreen({
         </View>
       </View>
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
-      <ConfirmSheet visible={confirmLetGo} onCancel={() => setConfirmLetGo(false)} title="End Keep Close?" message={`Your Whisper with ${p.name} will close. Your Add Up is separate and won’t be removed.`} confirmLabel="End Keep Close" destructive loading={letGo.isPending} onConfirm={() => letGo.mutate(id, { onSuccess: () => { setConfirmLetGo(false); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) })} />
+      <ConfirmSheet visible={confirmLetGo} onCancel={() => setConfirmLetGo(false)} title="Stop Keeping Close?" message={`Your Whisper with ${p.name} and your Add Up stay as they are.`} confirmLabel="Stop Keeping Close" destructive loading={letGo.isPending} onConfirm={() => letGo.mutate(id, { onSuccess: () => { setConfirmLetGo(false); toast({ kind: 'info', title: 'Keep Close ended' }); }, onError: (e) => toast({ kind: 'error', title: 'Couldn’t end Keep Close', message: (e as Error).message }) })} />
       <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
         ['everyone', 'Everyone who can view your Space'], ['close', 'Approved Keep Close members'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals remain visible; individual Spaces still follow their own privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />

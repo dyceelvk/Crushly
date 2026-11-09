@@ -11,7 +11,7 @@ import { VerifiedBadge } from '../../components/Badges';
 import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
-import { useConversations, useCrushes, useOpenConversation } from '../../api/hooks';
+import { useConversations, useKeepRequests, useMe, useOpenConversation } from '../../api/hooks';
 import type { ConversationSummary, Message } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
@@ -28,7 +28,7 @@ export function MessagesScreen() {
    * the people you have chosen to keep near — which is the same question (who do
    * I talk to) and had no business being a separate room in a menu.
    */
-  const [segment, setSegment] = useState<'whispers' | 'close'>(route.params?.tab === 'close' ? 'close' : 'whispers');
+  const [segment, setSegment] = useState<'whispers' | 'requests' | 'close'>(route.params?.tab === 'close' ? 'close' : 'whispers');
   useEffect(() => {
     if (route.params?.tab) setSegment(route.params.tab === 'close' ? 'close' : 'whispers');
   }, [route.params?.tab]);
@@ -37,15 +37,16 @@ export function MessagesScreen() {
   const toast = useToast();
   const { contentWidth, gutter } = useLayout();
   const { data, isLoading, isError, error, refetch, isRefetching } = useConversations();
-  const { data: crushes } = useCrushes();
+  const { data: me } = useMe();
+  const kept = useKeepRequests(me?.id ?? 0, 'mutual', segment === 'whispers');
   const open = useOpenConversation();
 
   // Mutual Crushes you haven't started talking to yet.
   const fresh = useMemo(() => {
     const talking = new Set((data ?? []).filter((c) => c.lastMessage).map((c) => c.peer.id));
-    return (crushes?.mutual ?? []).filter((p) => !talking.has(p.id));
-  }, [data, crushes]);
-  const convs = useMemo(() => (data ?? []).filter((c) => c.lastMessage), [data]);
+    return (kept.data?.pages.flatMap((p) => p.items) ?? []).filter((p) => !talking.has(p.id));
+  }, [data, kept.data]);
+  const convs = useMemo(() => (data ?? []).filter((c) => c.lastMessage && (segment === 'requests' ? c.isIncomingRequest === true : c.isIncomingRequest !== true)), [data, segment]);
 
   // Search box: matches names, previews and message text.
   const [query, setQuery] = useState('');
@@ -81,15 +82,16 @@ export function MessagesScreen() {
         Whispers
       </Txt>
       <Txt variant="body" color="textSecondary" style={{ marginTop: 2 }}>
-        Whispers with your approved Keep Close members.
+        Your conversations and message requests.
       </Txt>
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Keep Close requests" onPress={() => navigation.navigate('CrushList', { tab: 'incoming' })} style={{ alignSelf: 'flex-start', paddingVertical: 8 }}>
-        <Txt variant="smallStrong" color="gold">Keep Close requests →</Txt>
+      <Pressable accessibilityRole="button" accessibilityLabel="Keep Close people" onPress={() => navigation.navigate('CrushList', { tab: 'incoming' })} style={{ alignSelf: 'flex-start', paddingVertical: 8 }}>
+        <Txt variant="smallStrong" color="gold">Keep Close people →</Txt>
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: space.sm }}>
         {([
           ['whispers', 'Whispers'],
+          ['requests', 'Requests'],
           ['close', 'Close Ones'],
         ] as const).map(([key, label]) => {
           const on = segment === key;
@@ -118,7 +120,7 @@ export function MessagesScreen() {
       {/* The box searches conversations, so it is not on the list of people:
           a search field that cannot find what is under it is a lie you can type
           into. */}
-      {segment === 'whispers' ? (
+      {segment !== 'close' ? (
       <Input
         icon="search"
         placeholder="Search your Whispers"
@@ -132,7 +134,7 @@ export function MessagesScreen() {
       />
       ) : null}
 
-      {filteredFresh.length ? (
+      {segment === 'whispers' && filteredFresh.length ? (
         <View style={{ marginTop: space.xl }}>
           <Txt variant="label" color="gold" style={{ marginBottom: space.sm }}>
             Kept Close
@@ -200,6 +202,8 @@ export function MessagesScreen() {
               message="Try another name or a word from a conversation."
               action={{ label: 'Clear search', onPress: () => setQuery('') }}
             />
+          ) : segment === 'requests' ? (
+            <EmptyState icon="mail-unread-outline" title="No Whisper requests." message="Requests appear here until you accept, reply or decline." />
           ) : filteredFresh.length ? (
             <View style={{ marginTop: space.xl, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
               <Txt variant="subheading">Make the first move</Txt>

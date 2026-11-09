@@ -7,7 +7,7 @@ import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { useToast } from '../components/Toast';
-import { useBlock, useRemoveConnection, useReport } from '../api/hooks';
+import { useBlock, useLetGo, useReport } from '../api/hooks';
 import { useTheme } from '../theme/ThemeProvider';
 import { space } from '../theme/tokens';
 import { REPORT_REASONS } from '../lib/catalog';
@@ -53,7 +53,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
   const [details, setDetails] = useState('');
   const [alsoBlock, setAlsoBlock] = useState(true);
   const block = useBlock();
-  const remove = useRemoveConnection();
+  const remove = useLetGo();
   const report = useReport();
 
   const close = () => setSheet(null);
@@ -84,9 +84,6 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
   const actions: SheetAction[] = member
     ? [
         ...extra,
-        ...(member.connected
-          ? [{ label: 'Remove connection', icon: icon('heart-dislike-outline'), hint: 'Ends Keep Close and closes your Whisper', onPress: () => confirmRemove(member) }]
-          : []),
         { label: `Flag ${member.name}`, icon: icon('flag-outline', colors.danger), destructive: true, hint: 'Confidential — they won’t know', onPress: () => openReport(member) },
         { label: `Cut Off ${member.name}`, icon: icon('ban-outline', colors.danger), destructive: true, hint: 'You’ll disappear from each other', onPress: () => confirmBlock(member) },
       ]
@@ -136,9 +133,9 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
 
       <ConfirmSheet
         visible={sheet === 'remove'}
-        title="Remove this connection?"
-        message={`This ends Keep Close with ${member?.name} and closes your Whisper for both of you. Your Add Up remains separate.`}
-        confirmLabel="Remove connection"
+        title="Stop Keeping Close?"
+        message={`Your Whisper with ${member?.name} and your Add Up stay as they are.`}
+        confirmLabel="Stop Keeping Close"
         destructive
         loading={remove.isPending}
         onCancel={close}
@@ -147,10 +144,9 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
           try {
             await remove.mutateAsync(member.id);
             close();
-            toast({ kind: 'success', title: 'Connection removed' });
-            member.onGone?.();
+            toast({ kind: 'success', title: 'Stopped Keeping Close' });
           } catch (e) {
-            toast({ kind: 'error', title: 'Couldn’t remove connection', message: (e as Error).message });
+            toast({ kind: 'error', title: 'Couldn’t stop Keeping Close', message: (e as Error).message });
           }
         }}
       />
