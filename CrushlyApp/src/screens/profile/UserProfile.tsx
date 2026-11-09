@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
 import { copySpaceLink, shareSpaceLink } from '../../lib/spaceShareActions';
+import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility } from '../../api/service';
+import { formatCount } from '../../lib/counts';
 import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
@@ -23,7 +26,7 @@ import { LoadingBlock, ErrorState, Skeleton, EmptyState } from '../../components
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import { useAcceptAddUp, useDeclineAddUp, useOpenConversation, useSpacePosts, useUndoCrush, useUser } from '../../api/hooks';
-import type { FullProfile, MomentSummary } from '../../api/types';
+import type { AddUpListVisibility, FullProfile, MomentSummary } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useKeepClose, useKeepState, useLetGo } from '../../api/hooks';
 import { useCrushFlow } from '../discover/Discover';
@@ -207,6 +210,9 @@ export function SpaceScreen({
   const [faceMenu, setFaceMenu] = useState(false);
   const [spaceMenu, setSpaceMenu] = useState(false);
   const [showFullBio, setShowFullBio] = useState(false);
+  const [relationshipList, setRelationshipList] = useState<'addUps' | 'keptClose' | null>(null);
+  const [visibilityMenu, setVisibilityMenu] = useState(false);
+  const queryClient = useQueryClient();
   /**
    * Whether the page has scrolled past the cover.
    *
@@ -247,6 +253,9 @@ export function SpaceScreen({
       ? asFullProfile(meQ.data, moments.data?.mine.moments ?? [])
       : null
     : otherQ.data ?? null;
+  const relationshipKey = ['space-relationships', meQ.data?.id ?? 0, p?.id ?? 0];
+  const relationship = useQuery({ queryKey: relationshipKey, queryFn: () => spaceRelationshipStats(p!.id), enabled: !!meQ.data?.id && !!p?.id, staleTime: 15_000 });
+  const visibilityMutation = useMutation({ mutationFn: setAddUpListVisibility, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: relationshipKey }); toast({ kind: 'success', title: 'Add Up list privacy updated' }); }, onError: (e) => toast({ kind: 'error', title: 'Privacy not changed', message: (e as Error).message }) });
   const bannerQ = useSpaceBanner(meQ.data?.id, p?.id);
   const bannerUrl = bannerQ.data ?? null;
   const bannerPending = !bannerQ.isError && (meQ.isLoading || bannerQ.isLoading);
@@ -388,6 +397,7 @@ export function SpaceScreen({
 
   const spaceActions = [
     { label: 'Share Space', icon: <Ionicons name="share-outline" size={20} color={colors.textSecondary} />, immediateOnWeb: true, onPress: () => { void shareSpaceLink(p.id).then((result) => { if (result === 'copied') toast({ kind: 'success', title: 'Link copied' }); }).catch(() => toast({ kind: 'error', title: 'Couldn’t share link' })); } },
+    ...(mine ? [{ label: 'Who can see my Add Ups', icon: <Ionicons name="shield-outline" size={20} color={colors.textSecondary} />, onPress: () => setVisibilityMenu(true) }] : []),
     { label: 'Copy Space link', icon: <Ionicons name="copy-outline" size={20} color={colors.textSecondary} />, hint: 'Space privacy still applies', immediateOnWeb: true, onPress: () => { void copySpaceLink(p.id).then(() => toast({ kind: 'success', title: 'Link copied' })).catch(() => toast({ kind: 'error', title: 'Couldn’t copy link' })); } },
   ];
 
@@ -564,6 +574,9 @@ export function SpaceScreen({
             <Txt variant="small" color="textSecondary" style={{ marginTop: space.xs }}>
               {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
             </Txt>
+            {relationship.data ? <View style={{ flexDirection: 'row', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
+              {([['addUps', 'Add Ups', relationship.data.addUps, relationship.data.canViewAddUps], ['keptClose', 'Kept Close', relationship.data.keptClose, relationship.data.canViewKeptClose]] as const).map(([kind, label, count, canView]) => canView ? <Pressable key={kind} onPress={() => setRelationshipList(kind)} accessibilityRole="button" accessibilityLabel={`${formatCount(count)} ${label}. View people`}><Txt variant="small"><Txt variant="smallStrong">{formatCount(count)}</Txt> {label}</Txt></Pressable> : <Txt key={kind} variant="small"><Txt variant="smallStrong">{formatCount(count)}</Txt> {label}</Txt>)}
+            </View> : null}
             {p.bio ? <View style={{ marginTop: space.sm }}>
               <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
               {p.bio.length > 80 ? <Pressable onPress={() => setShowFullBio((open) => !open)} accessibilityRole="button" accessibilityLabel={showFullBio ? 'Show less bio' : 'Show full bio'}><Txt variant="small" color="gold">{showFullBio ? 'Show less' : 'Show more'}</Txt></Pressable> : null}
@@ -869,8 +882,30 @@ export function SpaceScreen({
         </View>
       </View>
       <ActionSheet visible={spaceMenu} onClose={() => setSpaceMenu(false)} title="Your Space" actions={spaceActions} />
+      <ActionSheet visible={visibilityMenu} onClose={() => setVisibilityMenu(false)} title="Who can see your Add Ups?" actions={([
+        ['everyone', 'Everyone who can view your Space'], ['close', 'Approved Keep Close members'], ['private', 'Only you'],
+      ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals remain visible; individual Spaces still follow their own privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
+      <SpaceRelationshipList targetId={p.id} viewerId={meQ.data?.id ?? 0} kind={relationshipList} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>
   );
+}
+
+function SpaceRelationshipList({ targetId, viewerId, kind, onClose, onOpen }: { targetId: number; viewerId: number; kind: 'addUps' | 'keptClose' | null; onClose: () => void; onOpen: (id: number) => void }) {
+  const { colors } = useTheme();
+  const q = useInfiniteQuery({
+    queryKey: ['space-relationship-people', viewerId, targetId, kind], enabled: !!kind && !!viewerId,
+    initialPageParam: 0, queryFn: ({ pageParam }) => spaceRelationshipPeople(targetId, kind!, pageParam),
+    getNextPageParam: (last, pages) => last.hasMore ? pages.reduce((n, page) => n + page.items.length, 0) : undefined,
+    staleTime: 0,
+  });
+  const people = q.data?.pages.flatMap((page) => page.items) ?? [];
+  return <BottomSheet visible={!!kind} onClose={onClose} title={kind === 'keptClose' ? 'Kept Close' : 'Add Ups'}>
+    <Txt variant="small" color="textSecondary">People whose Spaces are private or unavailable to you may not appear.</Txt>
+    {q.isLoading && kind ? <LoadingBlock label="Loading people" /> : q.isError ? <ErrorState error={q.error} message="Couldn’t load people." onRetry={() => void q.refetch()} /> : people.length === 0 ? <EmptyState title="No people to show" /> : <View style={{ gap: 8, paddingTop: space.sm }}>
+      {people.map((person) => <Pressable key={person.id} onPress={() => onOpen(person.id)} accessibilityRole="button" accessibilityLabel={`Open ${person.name}’s Space`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Avatar uri={person.photos[0]?.url ?? null} name={person.name} size={42} /><View><Txt variant="bodyStrong">{person.name}</Txt>{person.username ? <Txt variant="small" color="textSecondary">@{person.username}</Txt> : null}</View></Pressable>)}
+      {q.hasNextPage ? <Button title="Show more" variant="ghost" loading={q.isFetchingNextPage} onPress={() => void q.fetchNextPage()} /> : null}
+    </View>}
+  </BottomSheet>;
 }
 
 /* ------------------------------------------------------- the three panels */

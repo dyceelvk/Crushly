@@ -1,0 +1,72 @@
+-- Identity lists are private unless their owner deliberately grants access.
+-- Counts include active relationships; individual Spaces still obey their own
+-- privacy and block rules, so a list can contain fewer identities than a count.
+alter table public.privacy add column if not exists add_up_list_visibility text not null default 'private';
+alter table public.privacy drop constraint if exists privacy_add_up_list_visibility_check;
+alter table public.privacy add constraint privacy_add_up_list_visibility_check check (add_up_list_visibility in ('everyone','close','private'));
+
+create or replace function public.space_relationship_stats(p_target_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); visibility text; allowed_close boolean;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if public.load_visible_profile(me,p_target_id,false) is null then
+    perform public.crushly_fail(404,'','Space not available.'); end if;
+  select add_up_list_visibility into visibility from public.privacy where user_id=p_target_id;
+  allowed_close := me=p_target_id or public.is_connected_pair(me,p_target_id);
+  return jsonb_build_object(
+    'addUps', (select count(*) from public.crushes c join public.profiles p on p.id=c.from_id
+      where c.to_id=p_target_id and c.status in ('pending','accepted') and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.from_id,p_target_id)),
+    'keptClose', (select count(*) from public.connections c join public.profiles p
+      on p.id=case when c.user_a=p_target_id then c.user_b else c.user_a end
+      where (c.user_a=p_target_id or c.user_b=p_target_id) and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.user_a,c.user_b)),
+    'canViewAddUps', me=p_target_id or visibility='everyone' or (visibility='close' and allowed_close),
+    'canViewKeptClose', allowed_close,
+    'addUpVisibility', case when me=p_target_id then visibility else null end
+  );
+end $$;
+
+create or replace function public.space_relationship_people(p_target_id bigint, p_kind text, p_offset integer default 0, p_limit integer default 40)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+  if p_kind is null or p_kind not in ('addUps','keptClose') then perform public.crushly_fail(400,'','Unknown list.'); end if;
+  stats:=public.space_relationship_stats(p_target_id);
+  if (p_kind='addUps' and not (stats->>'canViewAddUps')::boolean) or (p_kind='keptClose' and not (stats->>'canViewKeptClose')::boolean) then
+    perform public.crushly_fail(403,'','This list is private.'); end if;
+  with ids as (
+    select c.from_id as person, c.created_at as at from public.crushes c
+      where p_kind='addUps' and c.to_id=p_target_id and c.status in ('pending','accepted')
+    union all
+    select case when c.user_a=p_target_id then c.user_b else c.user_a end, c.created_at from public.connections c
+      where p_kind='keptClose' and (c.user_a=p_target_id or c.user_b=p_target_id)
+  ), readable as (
+    select ids.person, ids.at, public.load_visible_profile(me,ids.person,false) as member
+      from ids join public.profiles p on p.id=ids.person
+     where p.onboarded and p.status='active' and not public.is_blocked_pair(p_target_id,ids.person)
+       and not public.is_blocked_pair(me,ids.person)
+  ), page as (
+    select member,at,person from readable where member is not null order by at desc,person desc offset off limit lim+1
+  )
+  select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+    'hasMore',(select count(*)>lim from page)) into result;
+  return result;
+end $$;
+
+create or replace function public.set_add_up_list_visibility(p_visibility text) returns text
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if p_visibility is null or p_visibility not in ('everyone','close','private') then perform public.crushly_fail(400,'','Choose who can see the list.'); end if;
+  update public.privacy set add_up_list_visibility=p_visibility where user_id=me;
+  if not found then perform public.crushly_fail(404,'','Privacy settings not found.'); end if;
+  return p_visibility;
+end $$;
+revoke all on function public.space_relationship_stats(bigint) from public,anon,authenticated;
+revoke all on function public.space_relationship_people(bigint,text,integer,integer) from public,anon,authenticated;
+revoke all on function public.set_add_up_list_visibility(text) from public,anon,authenticated;
+grant execute on function public.space_relationship_stats(bigint),public.space_relationship_people(bigint,text,integer,integer),public.set_add_up_list_visibility(text) to authenticated,service_role;
+notify pgrst,'reload schema';

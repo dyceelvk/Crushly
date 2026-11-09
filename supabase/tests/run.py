@@ -142,6 +142,8 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'whisper_delete.sql'):
             return 1
+        if not run_file(ROOT / 'space_relationship_visibility.sql'):
+            return 1
         if not run_file(ROOT / 'space_search.sql'):
             return 1
         if not run_file(ROOT / 'post_private.sql'):

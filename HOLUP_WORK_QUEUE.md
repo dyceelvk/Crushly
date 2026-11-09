@@ -14,3 +14,8 @@
 - Isolated teen mode 12–17 with server-side prevention of adult contact and dating/romantic features. Do not lower age gate before end-to-end enforcement, moderation/safeguarding and tests.
 - User's 21-second video retry and physical Android behavior still unverified. Exact Android 1.0.87 smoke failed; production remains 1.0.86. Do not publish stale/failed builds.
 - Preserve privacy, private local drafts, stable feeds and the other existing acceptance criteria. Canonical holupapp.vercel.app; removed mecrushly.vercel.app must stay removed.
+
+## Local checkpoint: Space counts and identity-list privacy (not deployable yet)
+- Added a private-by-default server preference, profile/block-filtered paginated identity RPCs and Space count/list UI. Owner can select list visibility; all list access is checked server-side. SQL regression includes unauthorized access, all visibility modes, paging and hidden profiles. Browser interaction test uses a mocked API.
+- Current counts are based on the **legacy** active Add Up rows and accepted connections. The Add Up/Keep Close transition is NOT implemented. Do not deploy this migration or UI independently: the labels and behavior only become correct with the complete relationship migration, installed-client compatibility and all access paths tested.
+- Fresh PostgreSQL full suite, TypeScript, unit tests, mock web build and 20/20 offline browser checks passed. Native-device and concurrent-request verification remain open. Nothing from this checkpoint has shipped.

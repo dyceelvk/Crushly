@@ -354,3 +354,22 @@ test('notifications are a full screen with Holup and categorized activity', asyn
   await expect(page.getByText('Your Space is verified.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Notification settings' })).toBeVisible();
 });
+
+test('Space relationship totals open real lists and owner can choose list privacy', async ({ page }) => {
+  await offline(page, []);
+  let visibility = 'private';
+  let submitted = '';
+  await page.route(`${API}/rest/v1/rpc/space_relationship_stats`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ addUps: 1, keptClose: 1, canViewAddUps: true, canViewKeptClose: true, addUpVisibility: visibility }), headers: { 'access-control-allow-origin': '*' } }));
+  await page.route(`${API}/rest/v1/rpc/space_relationship_people`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [person], hasMore: false }), headers: { 'access-control-allow-origin': '*' } }));
+  await page.route(`${API}/rest/v1/rpc/set_add_up_list_visibility`, route => { submitted = (route.request().postDataJSON() as { p_visibility: string }).p_visibility; visibility = submitted; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(visibility), headers: { 'access-control-allow-origin': '*' } }); });
+  await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: '1 Add Ups. View people' }).click();
+  await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+  await page.getByRole('button', { name: 'More Space options' }).click();
+  await page.getByRole('button', { name: 'Who can see my Add Ups' }).click();
+  await page.getByRole('button', { name: 'Approved Keep Close members' }).click();
+  await expect.poll(() => submitted).toBe('close');
+  await expect(page.getByText('Add Up list privacy updated')).toBeVisible();
+});

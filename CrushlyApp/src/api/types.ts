@@ -164,6 +164,9 @@ export type PostLiker = {
 };
 
 /** What Keep Close looks like from one member's Space. */
+export type AddUpListVisibility = 'everyone' | 'close' | 'private';
+export type SpaceRelationshipStats = { addUps: number; keptClose: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
+
 export type KeepState = {
   keeps: boolean;
   keepsYou: boolean;
