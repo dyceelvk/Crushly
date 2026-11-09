@@ -456,11 +456,14 @@ export type AdminReport = { id: number; reporterId: number; reporterName: string
 export type AdminAccount = { id: number; name: string; username: string | null; status: string; onboarded: boolean; verification: string };
 export type AdminVerification = { id: number; memberId: number; memberName: string; status: string; createdAt: number; reviewedAt: number | null };
 export type AdminAuditEvent = { id: number; actor: string; kind: string; details: Record<string, unknown>; createdAt: number };
-export const adminReports = (handled = false) => rpc<AdminReport[]>('holup_admin_reports', { p_handled: handled });
+export const adminReports = (handled = false, offset = 0) => rpc<AdminReport[]>('holup_admin_reports', { p_handled: handled, p_limit: 51, p_offset: offset });
 export const adminSetReportHandled = (id: number, handled: boolean) => rpc<boolean>('holup_admin_set_report_handled', { p_report_id: id, p_handled: handled });
 export const adminAccounts = (query: string) => rpc<AdminAccount[]>('holup_admin_accounts', { p_query: query });
 export const adminVerifications = () => rpc<AdminVerification[]>('holup_admin_verifications');
 export const adminAudit = () => rpc<AdminAuditEvent[]>('holup_admin_audit');
+export type AdminReportedPost = { id: number; authorId: number; body: string; audience: string; hasMedia: boolean };
+export const adminReportedPost = (reportId: number) => rpc<AdminReportedPost>('holup_admin_reported_post', { p_report_id: reportId });
+export const adminRemoveReportedPost = (reportId: number, reason: string) => rpc<boolean>('holup_admin_remove_reported_post', { p_report_id: reportId, p_reason: reason });
 
 
 /** Check that an external link has a public landing at the time it is made. */

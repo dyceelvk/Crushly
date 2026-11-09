@@ -72,6 +72,41 @@ begin
  from (select id,actor,kind,details,created_at from public.holup_admin_events order by id desc limit least(greatest(coalesce(p_limit,50),1),100)) q;
  return result;
 end $$;
+-- Restrict content inspection and removal to a post identified by an existing
+-- member report, and ensure that the reported account authored that post.
+-- The result intentionally contains no original-media URL or private chat data.
+create or replace function public.holup_admin_reported_post(p_report_id bigint)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare r public.reports; po public.posts; post_id bigint;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ select * into r from public.reports where id=p_report_id;
+ if not found or coalesce(r.context,'') !~ '^post:[1-9][0-9]{0,17}$' then perform public.crushly_fail(404,'','No post is attached to this report.'); end if;
+ post_id:=substring(r.context from 6)::bigint;
+ select * into po from public.posts where id=post_id and author_id=r.reported_id;
+ if not found then perform public.crushly_fail(404,'','The reported post is no longer available.'); end if;
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_reported_post',jsonb_build_object('reportId',r.id,'postId',po.id));
+ return jsonb_build_object('id',po.id,'authorId',po.author_id,'body',po.body,'audience',po.audience,'hasMedia',po.media_url is not null);
+end $$;
+
+create or replace function public.holup_admin_remove_reported_post(p_report_id bigint,p_reason text)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare r public.reports; po public.posts; post_id bigint; reason text:=btrim(coalesce(p_reason,''));
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ if length(reason)<10 or length(reason)>500 then perform public.crushly_fail(400,'','Give a reason between 10 and 500 characters.'); end if;
+ select * into r from public.reports where id=p_report_id for update;
+ if not found or coalesce(r.context,'') !~ '^post:[1-9][0-9]{0,17}$' then perform public.crushly_fail(404,'','No post is attached to this report.'); end if;
+ post_id:=substring(r.context from 6)::bigint;
+ select * into po from public.posts where id=post_id and author_id=r.reported_id for update;
+ if not found then perform public.crushly_fail(404,'','The reported post is no longer available.'); end if;
+ delete from public.posts where id=po.id;
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'remove_reported_post',jsonb_build_object('reportId',r.id,'postId',po.id,'authorId',po.author_id,'reason',reason));
+ return true;
+end $$;
+revoke all on function public.holup_admin_reported_post(bigint),public.holup_admin_remove_reported_post(bigint,text) from public,anon,authenticated;
+grant execute on function public.holup_admin_reported_post(bigint),public.holup_admin_remove_reported_post(bigint,text) to authenticated,service_role;
+
 revoke all on function public.holup_admin_reports(boolean,integer,integer),public.holup_admin_set_report_handled(bigint,boolean),public.holup_admin_accounts(text,integer),public.holup_admin_verifications(integer),public.holup_admin_audit(integer) from public,anon,authenticated;
 grant execute on function public.holup_admin_reports(boolean,integer,integer),public.holup_admin_set_report_handled(bigint,boolean),public.holup_admin_accounts(text,integer),public.holup_admin_verifications(integer),public.holup_admin_audit(integer) to authenticated,service_role;
 commit;

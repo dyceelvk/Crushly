@@ -6,6 +6,7 @@ import { Txt } from '../../components/Txt';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { Segmented } from '../../components/Segmented';
+import { ConfirmSheet } from '../../components/BottomSheet';
 import { timeAgoLong } from '../../lib/format';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { useToast } from '../../components/Toast';
@@ -25,12 +26,22 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const [active, setActive] = useState(false);
   const [section, setSection] = useState<'controls' | 'reports' | 'accounts' | 'verification' | 'audit'>('controls');
   const [handled, setHandled] = useState(false);
+  const [reportPage, setReportPage] = useState(0);
   const [search, setSearch] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState('');
-  const reports = useQuery({ queryKey: ['admin-reports', handled], queryFn: () => service.adminReports(handled), enabled: data.isSuccess && section === 'reports', staleTime: 30000 });
+  const [reviewedPost, setReviewedPost] = useState<{ reportId: number; post: service.AdminReportedPost } | null>(null);
+  const [removalReason, setRemovalReason] = useState('');
+  const [confirmRemoval, setConfirmRemoval] = useState(false);
+  const reports = useQuery({ queryKey: ['admin-reports', handled, reportPage], queryFn: () => service.adminReports(handled, reportPage * 50), enabled: data.isSuccess && section === 'reports', staleTime: 30000 });
   const accounts = useQuery({ queryKey: ['admin-accounts', submittedSearch], queryFn: () => service.adminAccounts(submittedSearch), enabled: data.isSuccess && section === 'accounts' && submittedSearch.length >= 2, staleTime: 30000 });
   const verifications = useQuery({ queryKey: ['admin-verifications'], queryFn: service.adminVerifications, enabled: data.isSuccess && section === 'verification', staleTime: 30000 });
   const audit = useQuery({ queryKey: ['admin-audit'], queryFn: service.adminAudit, enabled: data.isSuccess && section === 'audit', staleTime: 0 });
+  const inspectPost = useMutation({ mutationFn: (id: number) => service.adminReportedPost(id),
+    onSuccess: (post, reportId) => { setReviewedPost({ reportId, post }); setRemovalReason(''); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); },
+    onError: (e) => toast({ kind: 'error', title: 'Post unavailable', message: (e as Error).message }) });
+  const removePost = useMutation({ mutationFn: ({ id, reason }: { id: number; reason: string }) => service.adminRemoveReportedPost(id, reason),
+    onSuccess: () => { setReviewedPost(null); setRemovalReason(''); void qc.invalidateQueries({ queryKey: ['admin-reports'] }); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); toast({ kind: 'success', title: 'Post removed' }); },
+    onError: (e) => toast({ kind: 'error', title: 'Post not removed', message: (e as Error).message }) });
   const reportAction = useMutation({ mutationFn: ({ id, value }: { id: number; value: boolean }) => service.adminSetReportHandled(id, value),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin-reports'] }); void qc.invalidateQueries({ queryKey: ['admin-audit'] }); toast({ kind: 'success', title: 'Report updated' }); },
     onError: (e) => toast({ kind: 'error', title: 'Report not changed', message: (e as Error).message }) });
@@ -66,18 +77,30 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
       {section === 'reports' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Reports</Txt>
         <Txt variant="small" color="textSecondary">Review reports privately. Marking a report reviewed does not suspend an account or remove content.</Txt>
-        <Segmented value={handled ? 'reviewed' : 'open'} onChange={(value) => setHandled(value === 'reviewed')} options={[{ value: 'open', label: 'Open' }, { value: 'reviewed', label: 'Reviewed' }]} />
-        {reports.isLoading ? <LoadingBlock label="Loading reports" /> : reports.isError ? <ErrorState error={reports.error} message="Reports are unavailable." onRetry={() => void reports.refetch()} /> : !(reports.data?.length) ? <Txt color="textSecondary">No reports in this list.</Txt> : reports.data.map((r) => <View key={r.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md, gap: space.xs }}>
+        <Segmented value={handled ? 'reviewed' : 'open'} onChange={(value) => { setHandled(value === 'reviewed'); setReportPage(0); setReviewedPost(null); }} options={[{ value: 'open', label: 'Open' }, { value: 'reviewed', label: 'Reviewed' }]} />
+        {reports.isLoading ? <LoadingBlock label="Loading reports" /> : reports.isError ? <ErrorState error={reports.error} message="Reports are unavailable." onRetry={() => void reports.refetch()} /> : !(reports.data?.length) ? <Txt color="textSecondary">No reports in this list.</Txt> : reports.data.slice(0, 50).map((r) => <View key={r.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md, gap: space.xs }}>
           <Txt variant="bodyStrong">{r.reportedName || 'Member'} · #{r.reportedId}</Txt>
           <Txt variant="small">Reported by {r.reporterName || 'Member'} · {timeAgoLong(r.createdAt)}</Txt>
           <Txt variant="body">{r.reason.replace(/_/g, ' ')}{r.context ? ` · ${r.context}` : ''}</Txt>
           {r.details ? <Txt variant="small" color="textSecondary">{r.details}</Txt> : null}
+          {/^post:[1-9][0-9]{0,17}$/.test(r.context) ? <Button title="Inspect reported post" size="sm" variant="secondary" disabled={inspectPost.isPending} onPress={() => inspectPost.mutate(r.id)} /> : null}
+          {reviewedPost?.reportId === r.id ? <View style={{ gap: space.sm, paddingVertical: space.sm }}>
+            <Txt variant="bodyStrong">Post #{reviewedPost.post.id} · {reviewedPost.post.audience}</Txt>
+            <Txt variant="body">{reviewedPost.post.body || 'No caption'}</Txt>
+            {reviewedPost.post.hasMedia ? <Txt variant="small" color="textSecondary">This post includes media, which is not available in this review panel. Review the evidence separately before deciding.</Txt> : null}
+            <Input label="Reason for removing the post" value={removalReason} onChangeText={setRemovalReason} multiline maxLength={500} />
+            <Button title="Remove reported post" size="sm" variant="danger" disabled={removalReason.trim().length < 10 || removePost.isPending} onPress={() => setConfirmRemoval(true)} />
+          </View> : null}
           <Button title={handled ? 'Reopen report' : 'Mark reviewed'} size="sm" variant="secondary" disabled={reportAction.isPending} onPress={() => reportAction.mutate({ id: r.id, value: !handled })} />
         </View>)}
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          {reportPage > 0 ? <Button title="Previous" size="sm" variant="secondary" full={false} onPress={() => { setReportPage(reportPage - 1); setReviewedPost(null); }} /> : null}
+          {(reports.data?.length ?? 0) > 50 ? <Button title="Next" size="sm" variant="secondary" full={false} onPress={() => { setReportPage(reportPage + 1); setReviewedPost(null); }} /> : null}
+        </View>
       </View> : null}
       {section === 'accounts' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Accounts</Txt>
-        <Txt variant="small" color="textSecondary">Search by name, username or member ID. Account suspension controls are not available yet.</Txt>
+        <Txt variant="small" color="textSecondary">Search by name, username or member ID. Up to 30 matches are shown. Account suspension controls are not available yet.</Txt>
         <Input label="Find an account" value={search} onChangeText={setSearch} maxLength={100} />
         <Button title="Search accounts" size="sm" disabled={search.trim().length < 2} onPress={() => setSubmittedSearch(search.trim())} />
         {accounts.isFetching ? <LoadingBlock label="Searching accounts" /> : accounts.isError ? <ErrorState error={accounts.error} message="Account search is unavailable." onRetry={() => void accounts.refetch()} /> : submittedSearch && !accounts.data?.length ? <Txt color="textSecondary">No matching accounts.</Txt> : accounts.data?.map((a) => <View key={a.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: space.md }}>
@@ -103,5 +126,10 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
         </View>)}
       </View> : null}
     </View>}
+    <ConfirmSheet visible={confirmRemoval} title="Remove this reported post?" message="The post will be deleted from Holup and cannot be restored here. Previously downloaded copies cannot be recalled. Your reason will be recorded in the admin audit." confirmLabel="Remove post" destructive loading={removePost.isPending}
+      onCancel={() => setConfirmRemoval(false)} onConfirm={() => {
+        setConfirmRemoval(false);
+        if (reviewedPost) removePost.mutate({ id: reviewedPost.reportId, reason: removalReason.trim() });
+      }} />
   </Screen>;
 }

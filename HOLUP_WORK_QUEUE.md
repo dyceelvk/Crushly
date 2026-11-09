@@ -194,3 +194,23 @@
   `verify/holup-android-build-only`, commit 2b754ae (app sources ad750a7).
   This workflow does not run tests and cannot publish; result was in progress
   at dispatch. Never promote its artifact while required DB APIs are missing.
+
+## Production incremental age hardening and latest build
+- Production Supabase migration `20261109110817_harden_adult_profile_writes`
+  was applied. This is the previously locally validated trigger/age function:
+  profile birthday writes and onboarding completion now reject invalid or
+  under-18 self-reported dates, and impossible dates no longer crash age_of.
+  Production catalog confirms its trigger exists. This is partial protection:
+  pre-onboarding social access is not comprehensively gated, self-reported
+  birthdays do not verify age, and teen isolation is NOT enabled. Existing
+  invalid records are not bulk-modified. Future migrations `000007`–`000011`
+  predate this applied version, so normal db push may require a coordinated
+  migration-history plan; never blindly run --include-all on production.
+- Android build-only run 42605205587 succeeded and generated artifact
+  13668875121. It contains app sources from ad750a7, was not tested or
+  published, and lacks the newer reported-post admin work. The updated web
+  build also completed locally and is not deployed.
+- Reported-post inspection/removal by a server-authorized admin (with reason,
+  confirmation, report/author matching and audit) and paged report browsing are
+  prototyped locally. Media evidence, account suspensions, verification review,
+  server authorization review and production deployment remain incomplete.
