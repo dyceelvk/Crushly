@@ -189,7 +189,8 @@ function SearchGlyph({ size, color }: { size: number; color: string }) {
     const cycle = setInterval(burst, 8000);
     return () => { clearInterval(cycle); if (tick) clearInterval(tick); };
   }, [reduceMotion]);
-  const icons = ['search', 'people-outline', 'sparkles-outline', 'heart-outline', null, 'pricetag-outline'] as const;
+  const icons = ['search', 'people-outline', 'aperture-outline', 'heart-outline', null, null] as const;
   const icon = icons[index];
+  if (index === 5) return <Txt style={{ fontSize: size, lineHeight: size + 2, color, fontWeight: '700' }}>#</Txt>;
   return icon ? <Ionicons name={icon} size={size} color={color} /> : <CrushIcon size={size} color={color} />;
 }
