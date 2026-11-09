@@ -28,6 +28,20 @@ begin
   );
 end $$;
 
+-- A directory list must never use the legacy profile exception that treats an
+-- old declined/cancelled Add Up as enough to view a connections-only profile.
+-- Treat incognito as private here as well: the list is a discoverability surface.
+create or replace function public.relationship_list_profile(p_viewer bigint,p_person bigint) returns jsonb
+language sql stable security definer set search_path=public as $$
+  select case when p_viewer=p_person or exists (
+    select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+    where p.id=p_person and p.onboarded and p.status='active'
+      and not public.is_blocked_pair(p_viewer,p_person)
+      and ((pr.profile_visibility='everyone' and not pr.incognito) or public.is_connected_pair(p_viewer,p_person))
+  ) then public.load_visible_profile(p_viewer,p_person,false) else null end
+$$;
+revoke all on function public.relationship_list_profile(bigint,bigint) from public,anon,authenticated;
+
 create or replace function public.space_relationship_people(p_target_id bigint, p_kind text, p_offset integer default 0, p_limit integer default 40)
 returns jsonb language plpgsql stable security definer set search_path=public as $$
 declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
@@ -43,7 +57,7 @@ begin
     select case when c.user_a=p_target_id then c.user_b else c.user_a end, c.created_at from public.connections c
       where p_kind='keptClose' and (c.user_a=p_target_id or c.user_b=p_target_id)
   ), readable as (
-    select ids.person, ids.at, public.load_visible_profile(me,ids.person,false) as member
+    select ids.person, ids.at, public.relationship_list_profile(me,ids.person) as member
       from ids join public.profiles p on p.id=ids.person
      where p.onboarded and p.status='active' and not public.is_blocked_pair(p_target_id,ids.person)
        and not public.is_blocked_pair(me,ids.person)

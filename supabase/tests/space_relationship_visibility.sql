@@ -49,6 +49,9 @@ begin
   reset role;
   -- Private individual profiles stay hidden, even in an otherwise visible list.
   update privacy set profile_visibility='connections' where user_id=close_id;
+  -- Legacy load_visible_profile has a broad historical-crush exception. A
+  -- cancelled follow must not reveal this private identity in a directory.
+  insert into crushes(from_id,to_id,status) values(close_id,other_id,'cancelled');
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
   r:=space_relationship_people(owner_id,'addUps');
   assert jsonb_array_length(r->'items')=1 and (r->'items'->0->>'id')::bigint=other_id, 'hidden profile leaked';
