@@ -598,3 +598,23 @@ test('Space navigation swipe goes to Whispers without opening Create', async ({p
   await expect(page.getByPlaceholder('Search your Whispers')).toBeVisible();
   await expect(page.getByRole('button', {name:'Create post', exact:true})).toBeVisible();
 });
+
+test('scrolling and swiping on a privacy selector never changes the setting', async ({page}) => {
+  const privacyWrites: string[] = [];
+  page.on('request', req => { if (req.method() === 'PATCH' && new URL(req.url()).pathname === '/rest/v1/privacy') privacyWrites.push(req.postData() || ''); });
+  await offline(page, []); await page.goto('/');
+  await page.getByText('Space', {exact:true}).last().click({timeout:30000});
+  await page.getByRole('button', {name:'Settings'}).click();
+  await page.getByText('Privacy & visibility', {exact:true}).first().click();
+  await expect(page.getByText('Show me in Discover', {exact:true})).toBeVisible();
+  await dragTouch(page, 320, 700, 320, 260);
+  const title = page.getByText('Who can see my full Space', {exact:true});
+  await expect(title).toBeVisible();
+  const row = title.locator('xpath=..').getByRole('tab', {name:'Everyone', exact:true});
+  await row.scrollIntoViewIfNeeded();
+  const box = await row.boundingBox();
+  if (!box) throw Error('Privacy selector not visible');
+  await dragTouch(page, 300, box.y + box.height / 2, 65, box.y + box.height / 2);
+  await page.waitForTimeout(400);
+  expect(privacyWrites).toEqual([]);
+});
