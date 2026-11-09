@@ -24,9 +24,28 @@ connections-only profile.
   these events differently; design and verify an update/compatibility gate before
   any rollout. The prototype uses the old `keep` kind with body markers for
   requests and approvals; old clients cannot interpret those safely.
-- Audit every Whisper entry point (including existing history, sync, media,
-  receipts, presence and direct RLS) for the chosen access and revocation rules.
-  The included tests cover send/open/reaction/realtime, not the entire audit.
+- `06_whisper_access.sql` is an **experimental, not yet approved product policy**:
+  after ending or blocking a pair, history/media are kept but not readable until
+  fresh approval and reopening. Its SQL gates history, sync, Moment links, direct
+  row reads, reactions, presence, media, badges, receipt writes and new call
+  rooms. Sender-side delete remains possible after ending, but the UI does not
+  yet provide a separated-thread deletion flow; block currently denies deletion.
+  This policy needs user confirmation and a complete privacy/UX audit.
+- A dangerous realtime gap remains: Supabase Realtime can cache channel
+  authorization for an existing subscription, and clients can send arbitrary
+  broadcast payloads, not merely the signals used by our client. A changed SQL
+  `can_join_whisper` test does **not** prove immediate revocation of an already
+  joined channel. Design/test a server-enforced revocation or disable the unsafe
+  transport with a compatible client; also prove active calls are terminated.
+  The calls feature remains disabled in production. Do not ship on SQL tests alone.
+- Direct `messages.read_at` and `delivered_at` were exposed by raw table SELECT
+  despite receipt privacy. The experiment revokes that raw access and requires
+  current clients to use the receipt-filtered RPC. This breaking change requires
+  a verified installed-client gate. Verify real PostgREST privileges and behavior.
+- Historical notification routing, client-side caches after revocation, genuine
+  storage/Worker access, all background/push paths, and realtime behavior need
+  integrated tests with real Supabase. Already downloaded or in-flight bytes
+  cannot be recalled.
 - Prove data conversion and atomic rollout against a representative copy, assess
   lock duration and rollback, and add migration tests to the canonical suite.
   This prototype intentionally keeps old migrations/tests unchanged.
@@ -43,8 +62,11 @@ with Supabase stubs installed:
    seed and full legacy tests. The stubbed platform setup is required first.
 2. Run `02_fixture.sql`, then `01_core.sql` twice with `psql -v ON_ERROR_STOP=1`.
 3. Run `03_test.sql` and `04_follow_whisper_test.sql` with the same setting.
-4. Point `TEST_DATABASE_URL` at that disposable database and run
-   `python3 supabase/relationship-work/05_concurrency.py`.
+4. Apply `06_whisper_access.sql` twice, then run `07_whisper_access_test.sql`.
+5. Point `TEST_DATABASE_URL` at that disposable database and run `05_concurrency.py`
+   and `08_receipt_concurrency.py`. These set up and change real rows and are
+   strictly for disposable databases. Run `supabase/tests/whisper_moment_links.sql`
+   after the prototype too.
 
 This is partial engineering verification, not a production-safety or release
 certification.
