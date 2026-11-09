@@ -32,7 +32,7 @@ async function member(page: Page, initial = 'Not Started', failStart = false) {
     else if (path === '/rest/v1/crushes') body = [];
     else if (path === '/functions/v1/didit-status') {
       polls++;
-      profile.verification = diditStatus === 'Approved' ? 'verified' : diditStatus === 'Not Started' ? 'none' : 'pending';
+      profile.verification = diditStatus === 'Not Started' ? 'none' : 'pending';
       body = { status: profile.verification, diditStatus, sessionId: 'offline-session' };
     } else if (path === '/functions/v1/didit-session') {
       starts.push(route.request().postDataJSON());
@@ -47,50 +47,27 @@ async function member(page: Page, initial = 'Not Started', failStart = false) {
   return { starts, polls: () => polls, approve: () => { diditStatus = 'Approved'; } };
 }
 
-test('unused session is ready, and Continue navigates the same tab after delayed response', async ({ page, context }) => {
-  const mocked = await member(page);
+test('legacy self-service is paused and existing requests are preserved', async ({ page }) => {
+  const mocked = await member(page, 'In Review');
   await page.goto('/verification');
-  await expect(page.getByText('Ready to verify', { exact: true })).toBeVisible();
-  await expect(page.getByText('Verification under review', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Continue verification', exact: true }).click();
-  await expect(page).toHaveURL(PROVIDER);
-  expect(context.pages()).toHaveLength(1);
-  expect(mocked.starts).toEqual([{ newSession: false }]);
-});
-
-test('failed session creation remains retryable and never claims verification opened', async ({ page }) => {
-  await member(page, 'Not Started', true);
-  await page.goto('/verification');
-  await page.getByRole('button', { name: 'Continue verification', exact: true }).click();
-  await expect(page.getByText('Verification provider is temporarily unavailable.', { exact: true })).toBeVisible();
-  await expect(page.getByText('Ready to verify', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue verification', exact: true })).toBeEnabled();
-  await expect(page).toHaveURL(/\/verification$/);
-});
-
-test('review is driven by provider status, not a click', async ({ page }) => {
-  await member(page, 'In Review');
-  await page.goto('/verification');
-  await expect(page.getByText('Verification under review', { exact: true })).toBeVisible();
+  await expect(page.getByText('Verification is being updated', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Your existing verification request is preserved/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Continue verification|Start verification|Start a new session/ })).toHaveCount(0);
+  expect(mocked.starts).toHaveLength(0);
+  await page.getByRole('button', { name: 'Check status' }).click();
+  await expect.poll(mocked.polls).toBeGreaterThan(1);
 });
 
 for (const path of ['/verification?didit=done&status=Approved', '/?didit=done&status=Approved']) {
-  test(`return ${path} polls the server instead of trusting URL approval`, async ({ page }) => {
+  test(`return ${path} cannot award a badge from the URL or provider approval`, async ({ page }) => {
     const mocked = await member(page);
     await page.goto(path);
-    await expect(page.getByText('Ready to verify', { exact: true })).toBeVisible();
+    await expect(page.getByText('Verification is being updated', { exact: true })).toBeVisible();
     await expect.poll(mocked.polls).toBeGreaterThan(0);
-    await expect(page.getByText('You’re verified', { exact: true })).toHaveCount(0);
     mocked.approve();
     await page.getByRole('button', { name: 'Check status', exact: true }).click();
-    await expect(page.getByText('You’re verified', { exact: true })).toBeVisible();
+    await expect(page.getByText('You’re verified', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Provider checks alone do not assign a badge/)).toBeVisible();
+    expect(mocked.starts).toHaveLength(0);
   });
 }
-
-test('explicit restart is distinct from Continue', async ({ page }) => {
-  const mocked = await member(page);
-  await page.goto('/verification');
-  await page.getByRole('button', { name: 'Start a new session', exact: true }).click();
-  await expect(page).toHaveURL(PROVIDER);
-  expect(mocked.starts).toEqual([{ newSession: true }]);
-});

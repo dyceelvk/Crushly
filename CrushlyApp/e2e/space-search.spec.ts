@@ -54,7 +54,8 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
     else if (path === '/rest/v1/rpc/space_posts') body = { items: [], nextCursor: null };
-    else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: 2, postLikes: 7, canViewAddUps: true, canViewKeptClose: false, addUpVisibility: 'private'};
+    else if (path === '/rest/v1/rpc/space_relationship_stats') body = {addUps: 3, keptClose: 2, postLikes: 7, canViewAddUps: true, canViewKeptClose: true, addUpVisibility: 'private'};
+    else if (path === '/rest/v1/rpc/space_relationship_people') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {items: [person], hasMore: false}; }
     else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: [] };
     else if (path === '/rest/v1/rpc/heartbeat') body = true;
@@ -278,4 +279,12 @@ test('Space has working app navigation and real stats', async ({ page }) => {
   }
   await page.getByRole('button', {name:'Connections', exact:true}).click();
   await expect(page.getByRole('tab', {name:'Connections', exact:true}).first()).toBeVisible();
+});
+
+test('owner can open the approved Close Ones list', async ({ page }) => {
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  await page.getByText('Space', { exact: true }).last().click({timeout:30000});
+  await page.getByRole('button', { name: '2 Kept Close. View people' }).click();
+  await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
+  expect(calls.some(x => x.p_kind === 'keptClose')).toBe(true);
 });
