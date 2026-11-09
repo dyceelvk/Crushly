@@ -164,3 +164,8 @@
   This is a compatibility-breaking change for clients that directly read the
   old table, so a real upgrade gate is still required. It does not complete the
   audit of every helper-dependent endpoint, media path or Realtime revocation.
+- Verification-only branch `verify/holup-close-privacy` points to 8a26268;
+  CI run 42601557167 was dispatched and is in progress. The verification branch
+  does not publish the app. Android for current sources has not been built or
+  walked against a properly staged backend; do not use the live backend as a
+  substitute for staging a client that depends on undeployed v3 APIs.
