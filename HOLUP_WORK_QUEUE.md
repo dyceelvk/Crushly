@@ -599,3 +599,11 @@
   if the new run succeeds. Vercel may deploy the record-only main commit next.
 - Manual verification UI, applicant RPC grants, Didit provider callback and
   legacy auto-award retirement remain incomplete. No claim of full completion.
+- GitHub CI `42633311055` and deploy-web `42633311151` passed on main
+  `232272e`, including the fixed DB test fixtures.
+- `APP_URL` was set to the authorized canonical `https://holupapp.vercel.app`.
+  Before the latest web change, `/verification?didit=done` was a 404. Main
+  `4f02ceb` adds a Vercel rewrite to the app root so the existing return-handler
+  can see the original path/query. Deployment `dpl_4FKwhsiBUE5NWZq3oXMQoQiPv3Xb`
+  was BUILDING at last check; verify the real callback returns 200 after it is
+  promoted. This does not validate a provider session or release manual review.
