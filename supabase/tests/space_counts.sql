@@ -13,12 +13,14 @@ begin
   update profiles set onboarded=true,status='active' where id in (owner_id,close_id,other_id);
   update privacy set profile_visibility='everyone',incognito=false,add_up_list_visibility='private' where user_id in (owner_id,close_id,other_id);
   delete from blocks where blocker_id in (owner_id,close_id,other_id) and blocked_id in (owner_id,close_id,other_id);
+  delete from holup_existing_close_pairs where user_a=owner_id or user_b=owner_id;
   delete from connections where user_a=owner_id or user_b=owner_id or (user_a in (close_id,other_id) and user_b in (close_id,other_id));
   delete from crushes where to_id=owner_id or (from_id in (owner_id,close_id,other_id) and to_id in (owner_id,close_id,other_id));
   delete from keeps where kept_id=owner_id or keeper_id=owner_id;
   -- One mutual and one incoming-only Keep; connections do not count.
   insert into keeps(keeper_id,kept_id) values(close_id,owner_id),(owner_id,close_id),(other_id,owner_id);
   insert into connections(user_a,user_b) values(least(owner_id,close_id),greatest(owner_id,close_id));
+  insert into holup_existing_close_pairs(user_a,user_b) values(least(owner_id,close_id),greatest(owner_id,close_id)) on conflict do nothing;
   insert into crushes(from_id,to_id,status) values(close_id,owner_id,'accepted'),(other_id,owner_id,'pending');
 
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
@@ -36,7 +38,7 @@ begin
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
   r:=space_relationship_stats(owner_id);
   assert (r->>'postLikes')::bigint=public_before+1, 'private post reaction leaked';
-  assert (r->>'addUps')::int=2 and r->'keptClose'='null'::jsonb, 'counts incorrect';
+  assert (r->>'addUps')::int=2 and (r->>'keptClose')::int=1, 'counts incorrect';
   assert not (r->>'canViewAddUps')::boolean and not (r->>'canViewKeptClose')::boolean, 'private list exposed';
   assert r->>'addUpVisibility' is null, 'owner setting exposed';
   denied:=false; begin perform space_relationship_people(owner_id,'addUps'); exception when others then denied:=true; end; assert denied, 'stranger accessed private add ups';
@@ -52,8 +54,8 @@ begin
   reset role;
 
   perform set_config('request.jwt.claim.sub',close_uuid::text,true); set local role authenticated;
-  r:=space_relationship_stats(owner_id); assert not (r->>'canViewAddUps')::boolean and not (r->>'canViewKeptClose')::boolean, 'legacy mutual keeps are not accepted Close Ones';
-  denied:=false; begin perform space_relationship_people(owner_id,'keptClose'); exception when others then denied:=true; end; assert denied, 'unapproved Keep exposed';
+  r:=space_relationship_stats(owner_id); assert (r->>'canViewAddUps')::boolean and (r->>'canViewKeptClose')::boolean, 'existing approved connection should be allowed';
+  assert jsonb_array_length(space_relationship_people(owner_id,'keptClose')->'items')=1, 'approved Close One absent';
   reset role;
   perform set_config('request.jwt.claim.sub',other_uuid::text,true); set local role authenticated;
   denied:=false; begin perform space_relationship_people(owner_id,'addUps'); exception when others then denied:=true; end; assert denied, 'close-only exposed to stranger';

@@ -267,7 +267,7 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export type AddUpListVisibility = 'everyone' | 'close' | 'private';
-export type SpaceRelationshipStats = { addUps: number; keptClose: number | null; postLikes: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
+export type SpaceRelationshipStats = { addUps: number; keptClose: number; postLikes: number; canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null };
 export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
   return rpc('space_relationship_stats', { p_target_id: id });
 }
