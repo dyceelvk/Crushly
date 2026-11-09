@@ -426,7 +426,7 @@ export function EditedClip({
       accessibilityLabel={!controls ? accessibilityLabel : undefined}
     >
       <VideoEditCanvas
-        backdrop={bands && Platform.OS === 'web' ? <BackdropClip source={uri} /> : null}
+        backdrop={bands && Platform.OS === 'web' ? <BackdropClip source={uri} active={allowed && playing} /> : null}
         player={player}
         edit={edit}
         clipTime={clipTime}
@@ -465,15 +465,16 @@ export function EditedClip({
  * take, and pausing it whenever another clip claims the audio would leave the
  * stage half black again while the clip on top kept playing.
  */
-function BackdropClip({ source }: { source: VideoSource }) {
+function BackdropClip({ source, active }: { source: VideoSource; active: boolean }) {
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
   });
 
   useEffect(() => {
-    player?.play();
-  }, [player]);
+    if (active) player?.play();
+    else player?.pause();
+  }, [player, active]);
 
   return (
     <VideoView

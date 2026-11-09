@@ -187,7 +187,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const startCall = async () => {
     setTray(false);
-    if (!canSend || recording || callState !== 'idle') return;
+    if (!callsEnabled || !canSend || recording || callState !== 'idle') return;
     let channel: string;
     try {
       const { data, error } = await supabase.rpc('register_call_room', { p_conversation_id: conversationId });
@@ -218,6 +218,10 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       void getCall().incoming(String(incoming.meta.channel));
     }
   }, [chat.messages, callState, getCall, conv?.canSend, conv?.closed, callsEnabled]);
+
+  useEffect(() => {
+    if (!callsEnabled) void callRef.current?.hangup().catch(() => {});
+  }, [callsEnabled]);
 
   useEffect(() => () => {
     void callRef.current?.hangup().catch(() => {});
