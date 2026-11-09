@@ -564,3 +564,12 @@
   post-link controls. It contains only the scoped `732d095` web fixes, not the
   rest of the experimental work. Android `42628810477` was still compiling at
   last check; no 1.0.87 Android release was confirmed.
+- Protected production synthetic evidence lifecycle run `42630542894`
+  succeeded: a temporary non-onboarded synthetic account/case signed in,
+  uploaded a generated PNG through `manual-evidence` (sanitized to JPEG),
+  read it, set the review decision to 31 days ago, verified access denial,
+  ran the real cleanup worker and verified physical Storage deletion. Cleanup
+  removed the temporary account/case. Post-check: synthetic accounts 0,
+  synthetic cases 0, bucket objects 0, deletion queue 0, last_failed 0. The
+  temporary diagnostic Edge function was deleted. This is one synthetic
+  end-to-end path, not provider, malformed-image, rate/load or privacy audit.

@@ -171,3 +171,12 @@ commit `5e3051829fe8e475d9f99ec94b0029563fd0b521`; an unauthenticated call was
 denied. The actual authenticated upload/read path and full bundled module are
 not yet verified. User-facing RPCs remain disabled. No real files should be
 collected until the integrated privacy and deletion path is checked.
+
+Protected production run `42630542894` exercised an entirely synthetic account
+and generated image through the JWT-gated evidence endpoint: upload, JPEG
+sanitization, authorized read, denial after a synthetic 31-day-old decision,
+queue processing, and actual Storage deletion all passed. The diagnostic
+account, case and temporary Edge function were removed; the bucket and queue
+were empty afterwards. This does not validate real applicant inputs, hostile
+images, service outages, long-running load or the Didit integration. Manual
+verification remains disabled for users.
