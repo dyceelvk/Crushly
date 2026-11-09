@@ -154,3 +154,13 @@
   Local verification: full fresh migration/test replay, both v3 concurrency
   scripts and private Keep-back tests passed; typecheck, 300 + 3 + 7 unit tests,
   mock build and all 31 mocked browser cases passed.
+- A current-schema catalog audit found one still-executable legacy RPC,
+  `crushes_feed()`, directly read historical `connections`. After someone
+  stopped Keeping Close, it could return a formerly mutual private profile and
+  pollute current Circle/share candidates. The local 08 experiment now derives
+  that list from mutual Keeps and denies direct client access to the historical
+  table. New test 11 reproduces the stale-row case and verifies both denial and
+  a genuine mutual candidate; full fresh SQL, replay and both races passed.
+  This is a compatibility-breaking change for clients that directly read the
+  old table, so a real upgrade gate is still required. It does not complete the
+  audit of every helper-dependent endpoint, media path or Realtime revocation.

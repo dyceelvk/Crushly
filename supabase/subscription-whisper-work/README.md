@@ -136,3 +136,9 @@ Space; blocks and active/onboarded status are checked under the pair lock.
 older “private-Space reciprocal adding needs a safe flow” warning above is
 superseded by this experimental implementation, but live service, old clients
 and mobile testing are still needed before release.
+
+`11_legacy_close_candidates_test.sql` guards against an old `connections` row
+returning a private profile after un-Keep. The experimental `crushes_feed`
+retains the mutual-candidate shape used by Circles/share but derives candidates
+from mutual Keeps. Authenticated and anonymous clients cannot directly read the
+historical table in 08; old-client upgrade/compatibility must precede cutover.

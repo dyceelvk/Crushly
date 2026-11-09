@@ -88,6 +88,30 @@ begin
  return result;
 end $$;
 
+-- Historical match rows are migration inputs, not current friendship evidence.
+-- Keep them available to trusted server code only; older installed clients may
+-- need an upgrade gate before a production cutover.
+revoke all on public.connections from public,anon,authenticated;
+
+-- Remaining old-client list and current Circle/share candidate callers must not
+-- read the obsolete connections table: its rows survive a one-sided un-Keep.
+-- Only mutual Close Ones are candidates. Old pending-crush queues are no longer
+-- relationship requests; legacy clients still require an explicit upgrade path.
+create or replace function public.crushes_feed() returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); mutual jsonb;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ select coalesce(jsonb_agg(q.profile || jsonb_build_object('at',q.at) order by q.at desc,q.person desc),'[]'::jsonb) into mutual
+ from (
+   select k.kept_id as person,k.created_at as at,public.relationship_list_profile(me,k.kept_id) as profile
+   from public.keeps k join public.profiles p on p.id=k.kept_id
+   where k.keeper_id=me and p.onboarded and p.status='active'
+    and public.is_connected_pair(me,k.kept_id) and not public.is_blocked_pair(me,k.kept_id)
+ ) q where q.profile is not null;
+ return jsonb_build_object('incoming','[]'::jsonb,'outgoing','[]'::jsonb,'mutual',mutual,'requestCount',0);
+end $$;
+
 -- Legacy directional Keep endpoints must use the same pair lock and visibility
 -- checks as new clients. Return the historic JSON shape, but never raw counts
 -- for an unavailable/blocked Space.
