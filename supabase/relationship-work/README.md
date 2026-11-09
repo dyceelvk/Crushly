@@ -1,4 +1,8 @@
-# Relationship redesign — isolated experiment, NOT a migration
+# SUPERSEDED relationship redesign — isolated experiment, NOT a migration
+
+The user has replaced approval-based Keep Close with one-way subscriptions and
+independent Whisper requests. This directory and dependent UI are obsolete and
+must not be deployed; see `../subscription-whisper-work/` for the new experiment.
 
 Nothing in this directory is deployed or picked up by the normal migration runner.
 Do not copy it to production or publish the dependent client as-is.

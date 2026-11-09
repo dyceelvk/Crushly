@@ -1,6 +1,6 @@
 # Holup work queue — not a release checklist completion claim
 
-## Latest decisions
+## SUPERSEDED earlier decisions (see v3 below)
 - Add Up becomes an immediate one-way follow, not a request. Remove the matchmaking/mutual animation.
 - Keep Close becomes a request that the other person accepts or declines. Whispers require an approved Keep Close relationship.
 - Migration: preserve existing mutual connections as approved Keep Close relationships; old one-way Keep Close entries become pending requests; existing active Add Ups become follows. Never silently approve a one-sided Keep Close.
@@ -40,3 +40,9 @@
 - Fresh disposable PostgreSQL: full legacy suite before experiment; core applied twice and earlier targeted tests; access experiment applied twice; access and Moment regression; request/block, approval/block, send/removal and delivery/read vs removal/block races in both orders; registration vs removal/block. These do not verify live Supabase, native Android or already-joined channels.
 - Critical release blocker discovered: Realtime join authorization may be cached while clients can broadcast arbitrary payloads, so SQL join checks alone cannot guarantee immediate post-block revocation. Need server-enforced disconnection or replacement/disablement and real-service tests; active-call revocation, notification routing, cache behavior and installed-client compatibility also remain. Calls stay disabled, adult age gate stays in place, no production rollout.
 - Confirmed policy with user: hide stored Whispers on separation until renewed approval; blocking denies access. Local client clears visible chat and invalidates older in-flight fetches when the server authoritatively denies the thread, disables composing, and hangs up the local call; a successful retry reconnects. Network errors do not masquerade as authorization revocation. This is not a substitute for forcing realtime revocation on the server.
+
+## Latest decision: subscriptions + independent Whisper requests (v3)
+- Add Up and Keep Close are separate immediate one-way subscriptions. Mutual Keep Close means both subscribe. Space owner and their Keep Close subscribers may see the Kept Close identities, subject to profile/block visibility.
+- Whispers are independent of Keep Close: up to two messages total before acceptance; recipient may accept explicitly or by replying. An optional open setting allows any otherwise eligible sender to start without acceptance, and conversations started while it is on stay open when it is turned off. Existing conversations remain accepted; blocks still prevent contact. Unsubscribing must not end an accepted Whisper.
+- Previous `relationship-work/` SQL and dependent approval-based UI are **superseded** and must not ship. New `supabase/subscription-whisper-work/` is a standalone partial experiment only: directional Keep Close, subscriber count/list gate, preserving legacy rows/chats, durable two-message quota, reply/open consent and pair-lock tests. Existing clients and real message RPCs do not yet use it. Fresh SQL baseline, twice-applied experiment, targeted tests and seven lock-race cases passed; not deployed. See the experiment README for gaps.
+- Outstanding: redesign actual APIs/RLS/media/notifications/UI/settings and update gate, solve stale realtime and active call revocation, integrate both-user empty-chat behavior, abuse/retry controls, representative migration and rollback tests, teen isolation, protected video previews and Android release smoke/device tests. No launch yet.
