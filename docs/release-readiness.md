@@ -457,10 +457,24 @@ The one pending Crush in production (`3 -> 24`) already had a Homie request, so
 the insert skipped it on conflict rather than duplicating: it was already where
 it belonged.
 
-The deployed web bundle is still the previous one. It sends `p_approval` when it
-saves settings and shows an Approval switch that no longer does anything; the
-function still accepts the argument and ignores it, so nothing breaks. The 🫂
-button ships with the next web deploy — **the client change is not live yet**.
+### Applied to the web app
+
+Deployed to production as `dpl_Csbcn6t9VXQqNFyHj6fyyVYdHwBT` from
+`dcb9beb` (branch `build/holup-follow-draft`) and promoted to
+`holupapp.vercel.app`. Checked against the bundle the site actually serves, not
+against the repo:
+
+- the Homie control renders as 🫂 with the label **Homie**, becoming
+  **Requested** while it waits — and **Homies** once accepted;
+- the strings `Approval`, `Add a Homie`, `Add Up requests`,
+  `require your approval` and `approvalRequired:!0` are **absent** from the
+  shipped bundle;
+- the Homie *request* inbox is still there (`View Homie requests`,
+  `Homie requests`), because answering a 🫂 is the one thing that waits on a
+  person.
+
+Both halves are therefore live together: the database refuses to hold a pending
+Add Up, and the app no longer offers a way to make one.
 
 ## Applying the cutover, when you say go
 
