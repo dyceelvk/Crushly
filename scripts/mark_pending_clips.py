@@ -22,11 +22,13 @@ post.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -76,32 +78,47 @@ def pending(limit: int, wanted: list[int]) -> list[dict]:
 
 
 class B2:
-    """Backblaze B2's native API — the same one the Worker uses."""
+    """Backblaze B2's native API, mirroring the Worker's working path exactly."""
 
     def __init__(self) -> None:
-        key_id = os.environ["B2_KEY_ID"]
-        key = os.environ["B2_APPLICATION_KEY"]
+        # Trimmed, like the Worker does: a stray space or newline picked up while
+        # pasting a secret is invisible in the GitHub UI and enough for Backblaze
+        # to answer 401. Cost an hour once; not twice.
+        key_id = os.environ["B2_KEY_ID"].strip()
+        key = os.environ["B2_APPLICATION_KEY"].strip()
         credentials = base64.b64encode(f"{key_id}:{key}".encode()).decode()
         request = urllib.request.Request(
-            "https://api.backblazeb2.com/b2api/v3/b2_authorize_account",
+            "https://api.backblazeb2.com/b2api/v2/b2_authorize_account",
             headers={"Authorization": f"Basic {credentials}"},
         )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.loads(response.read())
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = json.loads(response.read())
+        except urllib.error.HTTPError as error:
+            if error.code == 401:
+                raise SystemExit(
+                    "B2 refused the application key (401). Check B2_KEY_ID and "
+                    "B2_APPLICATION_KEY: the key id, not the account id, and no "
+                    "surrounding whitespace."
+                ) from error
+            raise
         self.auth = data["authorizationToken"]
-        self.api = data["apiInfo"]["storageApi"]["apiUrl"]
-        self.bucket_name = os.environ["B2_BUCKET"]
+        self.api = data["apiUrl"]
+        self.download_url = data["downloadUrl"]
+        self.account_id = data["accountId"]
+        self.bucket_name = os.environ["B2_BUCKET"].strip()
         self.bucket_id = self._bucket_id()
 
     def _bucket_id(self) -> str:
-        listing = self._call("b2_list_buckets", {"accountId": None, "bucketName": self.bucket_name})
-        return listing["buckets"][0]["bucketId"]
+        listing = self._call("b2_list_buckets", {"accountId": self.account_id})
+        for bucket in listing.get("buckets", []):
+            if bucket["bucketName"] == self.bucket_name:
+                return bucket["bucketId"]
+        raise SystemExit(f"bucket {self.bucket_name!r} is not visible to this key")
 
     def _call(self, endpoint: str, body: dict) -> dict:
-        if body.get("accountId") is None:
-            body.pop("accountId", None)
         request = urllib.request.Request(
-            f"{self.api}/b2api/v3/{endpoint}",
+            f"{self.api}/b2api/v2/{endpoint}",
             data=json.dumps(body).encode(),
             headers={"Authorization": self.auth, "Content-Type": "application/json"},
             method="POST",
@@ -110,7 +127,7 @@ class B2:
             return json.loads(response.read())
 
     def download(self, key: str, target: Path) -> None:
-        url = f"{self.api}/file/{self.bucket_name}/{urllib.parse.quote(key)}"
+        url = f"{self.download_url}/file/{self.bucket_name}/{urllib.parse.quote(key)}"
         request = urllib.request.Request(url, headers={"Authorization": self.auth})
         with urllib.request.urlopen(request, timeout=300) as response, target.open("wb") as handle:
             handle.write(response.read())
@@ -126,9 +143,11 @@ class B2:
                 "X-Bz-File-Name": urllib.parse.quote(key),
                 "Content-Type": "video/mp4",
                 "Content-Length": str(len(data)),
-                # B2 rejects an upload without a digest unless the bucket is set
-                # to allow it; sha1 is what its native API still asks for.
-                "X-Bz-Content-Sha1": __import__("hashlib").sha1(data).hexdigest(),
+                # Same rule as the Worker: hash what is small enough to hash, and
+                # be explicit rather than silent when it is not.
+                "X-Bz-Content-Sha1": hashlib.sha1(data).hexdigest()
+                if len(data) <= 4 * 1024 * 1024
+                else "do_not_verify",
             },
             method="POST",
         )
