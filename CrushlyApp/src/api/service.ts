@@ -945,16 +945,47 @@ export async function editPost(input: {
   });
 }
 
+/**
+ * Keep Close became an Add Up.
+ *
+ * On the v2 backend `keep_close` and `let_go` are closed — they return
+ * `409 relationship_upgrade_required` — because keeping somebody close *is*
+ * following them one way with nobody's permission. The screen is unchanged, so
+ * the verb is translated here rather than in every caller: the same button
+ * writes `holup_follow`, and the same state comes back in the old shape so the
+ * Space's toggle stays in step.
+ */
 export async function keepState(memberId: number): Promise<KeepState> {
+  if (await relationshipBackend() === 'v2') {
+    const [status, stats] = await Promise.all([
+      rpc<FollowStatus>('holup_follow_status', { p_target: memberId }),
+      rpc<{ addUps?: number; addedUp?: number; canViewAddUps?: boolean }>('holup_follow_stats', { p_target: memberId }),
+    ]);
+    return {
+      keeps: status?.status === 'active' || status?.status === 'pending',
+      keepsYou: false,
+      keepsCount: Number(stats?.addUps ?? 0),
+      keptByCount: Number(stats?.addedUp ?? 0),
+      self: false,
+    };
+  }
   return rpc<KeepState>('keep_state', { p_member_id: memberId });
 }
 
 /** Keep Close is one-way and silent: they are never told you let go either. */
 export async function keepClose(memberId: number): Promise<KeepState> {
+  if (await relationshipBackend() === 'v2') {
+    await rpc('holup_follow', { p_target: memberId });
+    return keepState(memberId);
+  }
   return rpc<KeepState>('keep_close', { p_member_id: memberId });
 }
 
 export async function letGo(memberId: number): Promise<void> {
+  if (await relationshipBackend() === 'v2') {
+    await rpc<boolean>('holup_unfollow', { p_target: memberId });
+    return;
+  }
   await rpc<boolean>('let_go', { p_member_id: memberId });
 }
 
