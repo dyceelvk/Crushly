@@ -23,6 +23,13 @@ const profile = {
   intentions: [], interests: [], languages: [], lifestyle: {},
 };
 
+/** An 80×80 coral square, as bytes, so the circles have something to paint. */
+const PHOTO = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAeElEQVR4nO3PQRHAIADAMEAhwlDM' +
+  'ay62uy5R0M579viT9XXA2wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xn' +
+  'uM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1Dx+sAnZPFLwyAAAAA' +
+  'ElFTkSuQmCC', 'base64');
+
 const person = (id: number, name: string) => ({ id, name, username: name.toLowerCase(), verified: false, photos: [] });
 
 /** Four Moments for Ada, one for Ben — the shape that broke the old row. */
@@ -60,8 +67,10 @@ async function offline(page: Page) {
     { user, token, exp },
   );
 
+  /* A real 80×80 PNG, not an empty body: an empty image is indistinguishable
+     from a circle that failed to draw, and the screenshot is the assertion here. */
   await page.route(`${MEDIA}/**`, (route) =>
-    route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: Buffer.from('') }),
+    route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: PHOTO }),
   );
 
   const post = {
@@ -80,6 +89,11 @@ async function offline(page: Page) {
     else if (path === '/rest/v1/notification_settings') body = {};
     else if (path === '/rest/v1/verification_requests') body = null;
     else if (path === '/rest/v1/rpc/visible_moments') body = moments();
+    /* The Crushes ring asks a narrower question now — `moment_circles()` returns
+       only people this member has met here. The mock answers both with the same
+       list: what is being checked is how a circle is drawn, not who qualifies,
+       and qualification is a database rule the RPC tests already cover. */
+    else if (path === '/rest/v1/rpc/moment_circles') body = moments();
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [post], nextCursor: null };
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [post] };
     else if (path === '/rest/v1/rpc/holup_app_settings') body = { callsEnabled: false, publicSharingEnabled: true, announcement: null };
@@ -122,6 +136,22 @@ test('Crushes opens on live Moments as circles, one per person', async ({ page }
   // only thing that says the other three are behind it.
   await expect(page.getByText('+3')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('Ben', { exact: true }).first()).toBeVisible();
+
+  /*
+   * The circle is a picture of the Moment, not a label for it.
+   *
+   * Ben's Moment is a photograph, so his circle has to contain a decoded image —
+   * the regression this guards against is a disc that is drawn but empty, which
+   * looks identical to a Moment that failed to load. A written Moment is words,
+   * and its text is asserted by the Discover test instead.
+   */
+  const painted = await page.evaluate(() =>
+    [...document.querySelectorAll('img')].filter((i) => i.naturalWidth > 0).length,
+  );
+  expect(painted).toBeGreaterThan(0);
+
+  // A written Moment shows its words inside the circle, not a caption under it.
+  await expect(page.locator('text=Ada says 1').first()).toBeVisible();
 });
 
 test('Discover shows one Moment card per person, with a round picture inside', async ({ page }) => {

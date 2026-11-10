@@ -21,6 +21,7 @@ export const keys = {
   conversations: ['conversations'] as const,
   conversation: (id: number) => ['conversation', id] as const,
   moments: ['moments'] as const,
+  momentCircles: ['moment-circles'] as const,
   flow: ['flow'] as const,
   notifications: ['notifications'] as const,
   badges: ['badges'] as const,
@@ -94,6 +95,22 @@ export const useConversation = (id: number) =>
 
 export const useMoments = () =>
   useQuery({ queryKey: keys.moments, queryFn: () => service.momentsFeed(), staleTime: 20_000 });
+
+/**
+ * The smaller set: people you have actually come across here.
+ *
+ * Same shape as `useMoments`, so the row above the feed groups and orders it
+ * exactly the same way. The difference is who is in it — see `momentCirclesFeed`.
+ * A separate key because it is a different question with a different answer:
+ * opening a Space or adding someone up must be able to refresh the ring without
+ * re-fetching the Discover grid.
+ */
+export const useMomentCircles = () =>
+  useQuery({
+    queryKey: keys.momentCircles,
+    queryFn: () => service.momentCirclesFeed(),
+    staleTime: 20_000,
+  });
 
 /**
  * The members whose Moment is still live and unseen.

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, setFollowSettings, publicFlow, type AddUpListVisibility } from '../../api/service';
 import { formatCount } from '../../lib/counts';
@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CrushIcon } from '../../components/Logo';
 import { FollowButton } from '../../components/FollowButton';
 import { HomieButton } from '../../components/HomieButton';
-import { homieStats, homieRequests, respondHomie } from '../../api/service';
+import { homieStats, homieRequests, recordSpaceView, respondHomie } from '../../api/service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
@@ -48,7 +48,7 @@ import { timeAgo } from '../../lib/format';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ScreenProps, RootStackParamList } from '../../navigation/types';
-import { useMe, useMoments, useMyCircles, useSpaceBanner } from '../../api/hooks';
+import { keys, useMe, useMoments, useMyCircles, useSpaceBanner } from '../../api/hooks';
 import type { Me } from '../../api/types';
 
 /**
@@ -208,6 +208,28 @@ export function SpaceScreen({
   const [homieRequestsOpen, setHomieRequestsOpen] = useState(false);
   const qc = useQueryClient();
   const [showFullBio, setShowFullBio] = useState(false);
+
+  /**
+   * Opening somebody's Space is the one thing the feed's ring could never learn
+   * any other way: there was no record of it anywhere. It is written once per
+   * visit, silently, and only ever read back by this member's own ring — the
+   * person whose Space it is has no way to see it.
+   *
+   * Refreshing the ring afterwards is what makes the row feel alive: open a
+   * stranger's Space, come back, and if they have a Moment live their face is
+   * there, because you have now come across them.
+   */
+  useEffect(() => {
+    if (mine || !id) return;
+    let live = true;
+    void recordSpaceView(id)
+      .then((ok) => {
+        if (live && ok) void qc.invalidateQueries({ queryKey: keys.momentCircles });
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [mine, id, qc]);
+
   /**
    * Whether the page has scrolled past the cover.
    *

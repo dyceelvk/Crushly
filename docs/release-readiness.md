@@ -907,6 +907,8 @@ somebody's live Moment short is a stranger change than the one being made.
 - **Crushes feed:** the live Moments are the first thing in the feed, as circles,
   one per person, with the ring colour the member wears everywhere else and a
   `+n` badge when they have more than one live. `components/MomentCircle.tsx`.
+  *Who* appears was wrong in this first cut — everybody visible, not the people
+  this member had come across. See the section below, which replaces the set.
 - **Discover:** still a card, because Discover is where you browse — but one card
   per person, with a round picture inside it and the same `+n` badge. It used to
   be one tile per Moment, so a member who posted four times in an afternoon
@@ -916,6 +918,63 @@ Both are covered offline by `e2e/moment-circles.spec.ts` (config
 `e2e/moments.config.ts`, wired into CI next to the other offline browser runs):
 Ada has four Moments, the feed shows one circle with `+3`, and Discover shows one
 card that contains exactly one of her Moments.
+
+## The ring is people you have come across, not everybody (2026-11-07)
+
+The circles shipped that afternoon were the right *shape* and the wrong *set*,
+and the clips inside them were blank. Three fixes, one of them in the database.
+
+### Who earns a circle
+
+The row was drawn from `visible_moments()`, which answers "what am I allowed to
+see" — and for a public Moment that is nearly everybody in the app. So the top of
+your own feed filled with strangers.
+
+`moment_circles()` answers a different question: whose Moment belongs in front of
+*me*. A face appears only if this member has at least one of
+
+| where | what it means |
+|---|---|
+| `crushes.from_id = me` | I added them up |
+| `connections` | we clicked with each other |
+| `keeps.keeper_id = me` | I keep them close |
+| `conversations` | we have a Whisper thread |
+| `space_views` | I opened their Space |
+
+and never if I passed on them. **A post I liked is deliberately not on that list:**
+a like is a reaction to one piece of writing, and it should not install a
+permanent face at the top of the feed. Viewing somebody's *Moment* is not on it
+either — watching a glimpse is not having come across a person.
+
+`visible_moments()` is untouched, so Discover still browses the wider set and a
+Moment you can see is still a Moment you can open. `can_view_moment` still has the
+last word in both: expiry, audience, blocks, incognito and profile visibility
+keep their meaning. Checked against the live catalog: both functions exist and
+`moment_circles()` is granted to `authenticated` only.
+
+### There was no record of opening a Space
+
+"Viewed their profile" could not be answered by any table in the schema. There is
+now `space_views` — one row per (viewer, viewed), with a first and last timestamp
+and a count — written by `record_space_view()`, called once when a Space opens.
+
+It is the most private table in the database: **no grant to `authenticated` at
+all**, RLS on with no policies, readable only inside the security-definer
+functions. The owner of the Space cannot learn who looked, and neither can any
+admin surface. Its only consumer is the viewer's own ring.
+
+### The circles were empty
+
+A clip Moment drew nothing inside its circle: `MomentPreview` paints a gradient
+with the words on it for a clip nobody started, and Ben's photograph came out as
+a hollow disc. `ClipThumb` already existed for exactly this — a muted player
+paused on frame one — and a photograph is simply the photograph. A written Moment
+is its words at 8 px. Anything that cannot draw falls back to the face, so a
+circle is never blank.
+
+The offline test grew a real PNG as its fixture (an empty body is indistinguishable
+from a broken image, which is how this passed review the first time) and now
+asserts that a decoded image is actually on the screen.
 
 ## Saving a clip to a device, and the 7-second end card (2026-11-07)
 

@@ -1729,6 +1729,31 @@ export async function momentsFeed(): Promise<MomentsFeed> {
   return groupMomentFeed(flat ?? [], me);
 }
 
+/**
+ * The ring above the Crushes feed: one circle per person you have met here.
+ *
+ * Not everybody with a live Moment. `moment_circles()` keeps a face only if you
+ * have added that person up, clicked with them, kept them close, whispered with
+ * them, or opened their Space — and drops anyone you passed on. Liking a post
+ * is not on that list, so a reaction never turns into a permanent face at the
+ * top of your feed.
+ *
+ * Discover keeps `momentsFeed()`: browsing is the whole point there, so it
+ * shows the wider set, as cards.
+ */
+export async function momentCirclesFeed(): Promise<MomentsFeed> {
+  const [flat, me] = await Promise.all([
+    rpc<FeedMoment[]>('moment_circles'),
+    myAuthorCard(),
+  ]);
+  return groupMomentFeed(flat ?? [], me);
+}
+
+/** "I opened this person's Space" — feeds only my own ring, never shown to them. */
+export async function recordSpaceView(memberId: number): Promise<boolean> {
+  return rpc<boolean>('record_space_view', { p_member_id: memberId });
+}
+
 async function myAuthorCard(): Promise<MomentAuthor> {
   const id = await meId();
   const p = unwrap(await supabase.from('profiles').select('name, verification').eq('id', id).single()) as Record<string, any>;
