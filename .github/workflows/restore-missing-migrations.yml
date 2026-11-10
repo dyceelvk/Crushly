@@ -1,0 +1,64 @@
+# Temporary: recovers migration files that were applied to production but never
+# committed, so the repository can reproduce the live schema again.
+#
+# The database records the exact statements it ran in
+# supabase_migrations.schema_migrations.statements. This reads them back with
+# psql and commits them, byte for byte, as supabase/migrations/<version>_<name>.sql
+# on a scratch branch. Nothing here writes to the database.
+#
+# Delete this file once the migrations are restored.
+
+name: Restore missing migrations
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    name: export applied statements
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Export applied-but-uncommitted migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_DB_URL:-}"
+          mkdir -p /tmp/restored
+          psql "$SUPABASE_DB_URL" -tA -F $'\t' -c "
+            select version, name
+            from supabase_migrations.schema_migrations
+            order by version" > /tmp/applied.tsv
+          psql "$SUPABASE_DB_URL" -tAc \
+            "select version from supabase_migrations.schema_migrations order by version" > /tmp/versions.txt
+          echo "live migrations: $(wc -l < /tmp/versions.txt)"
+          echo "repo migrations: $(ls supabase/migrations/*.sql | wc -l)"
+          # Every version the database has that the repository does not.
+          while IFS=$'\t' read -r version name; do
+            if [ -f "supabase/migrations/${version}_${name}.sql" ]; then continue; fi
+            out="supabase/migrations/${version}_${name}.sql"
+            psql "$SUPABASE_DB_URL" -tA -c "
+              select statements[1] from supabase_migrations.schema_migrations
+              where version = '${version}'" > "$out"
+            echo "restored ${out} ($(wc -c < "$out") bytes)"
+          done < /tmp/applied.tsv
+          git status --porcelain
+
+      - name: Commit to a scratch branch
+        run: |
+          set -euo pipefail
+          git config user.name "Holup Build"
+          git config user.email "rielosInc@gmail.com"
+          git checkout -B chore/restore-migrations
+          git add -A supabase/migrations
+          git commit -m "Restore migration files applied to production but never committed"
+          git push --force origin chore/restore-migrations
