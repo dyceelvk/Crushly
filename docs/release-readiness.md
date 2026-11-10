@@ -1,6 +1,6 @@
 # Holup — release readiness
 
-**Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `3c6083f`
+**Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `ccad7cb`
 **Production web:** `holupapp.vercel.app`, deployed from **`build/holup-follow-draft`**, not `main`
 **Production database:** `yzcssyebozfkmojqqdhc` (healthy)
 
@@ -84,6 +84,66 @@ the alias and inspected: it contains both contracts (`holup_follow_status`,
 **Still to be confirmed by the owner on a device:** counts loading on a real Space,
 one Add Up round trip, and the Homie request path. I can verify the bundle and the
 database contract from here; I cannot sign in as a member without an account.
+
+
+## Second pass, same day: the Retry chips had a second cause
+
+The owner reported the Space error persisting after the first fix, and suspected a
+bad manual deploy. Checked, in order:
+
+| Question | Answer |
+| --- | --- |
+| Did a manual deploy overwrite production? | **No.** `holupapp.vercel.app` served `dpl_85i4Yh3uYpYu53UjHqXAX3adrMNV` (`3c6083f`) until my next deploy replaced it. No deployment was created between them. |
+| Was the new bundle actually live? | Yes — the alias served it, and the bundle on the alias contained the fallback. |
+| So what was still failing? | A second, independent defect in the fallback itself. |
+
+**The defect.** `is_connected_pair` exists in production but was never granted to
+`authenticated`. Detection therefore correctly chose the legacy contract, counts
+loaded, and the two controls that asked for connection state answered
+`42501 permission denied` — painting "Retry Add Up" and "Retry Homies" over the
+Space. Verified by calling the deployed routines as a real member from SQL with a
+simulated JWT (`set local role authenticated` + `request.jwt.claims`):
+
+- `space_relationship_stats(24)` → `{addUps:1, keptClose:0, postLikes:0, canViewAddUps:false, …}` — works
+- `space_relationship_people(24,'addUps',0,40)` → `P0001 403 This list is private.` — works, refuses correctly
+- `is_connected_pair(41,24)` → **`42501 permission denied for function`**
+- `select from connections where user_a = me or user_b = me` → **works** (RLS `connections_pair`)
+- `has_function_privilege('authenticated', …)` across all 129 RPCs the app names: **`is_connected_pair` is the only one without EXECUTE**
+
+**The fix.** Connection state now comes from the `connections` row the member is
+already allowed to read. A regression test in `src/lib/relationshipLegacyContract.test.ts`
+fails the build if any `rpc('is_connected_pair')` reappears. A connected pair also no
+longer shows an Add Up button: the deployed backend answers `400 already connected`,
+so that button was a dead end; the Space's Homie control carries the state instead.
+
+**Deployed:** `dpl_8Cai2r4pYbzEfYFAV4ReuHcskwoD`, `READY`, `PROMOTED`, alias
+`holupapp.vercel.app`, commit `ccad7cb`, built from the **branch ref** so later pushes
+promote on their own. Live bundle `index-1067e606…`: `is_connected_pair` **0**
+occurrences, `space_relationship_stats` 1, `from('connections')` 1.
+Gates: typecheck clean, 323 JS tests green (311 + 5 + 7).
+
+### Full audit sweep, same pass
+
+| Check | Result |
+| --- | --- |
+| Every RPC the app names (129) exists in production | 14 missing, all relationship, all behind the fallback |
+| Every one is executable by `authenticated` | all but `is_connected_pair` (unused now) and `relationship_list_profile` (never called by the app) |
+| Every RPC call's **argument names** match the deployed signature | 129/129 match after parsing every call site |
+| Tables the app reads directly (`crushes`, `connections`, `keeps`, `moments`, `photos`, `profiles`, `privacy`, `notifications`, `notification_settings`, `preferences`, `verification_requests`) | RLS on, SELECT granted, one readable policy each |
+| Public routes | `/` 200, `/v/86` 200 `noindex, follow` + both deep links, `/v/1` 404, `/robots.txt`, `/sitemap.xml`, `/brand/*` 200 |
+
+### Found, deliberately not changed
+
+- `privacy.add_up_list_visibility` defaults to **`private`** for every account, and
+  nothing in the client ever sets it. So the Add Ups *count* is public while the
+  *list* is hidden for everyone until they change it by hand. That is a product
+  decision, not a bug to fix silently — flipping a privacy default to "everyone"
+  would be choosing for members. Flagged for the owner.
+- `relationship_list_profile` is `SECURITY DEFINER` but not granted to
+  `authenticated`; the app does not call it, so nothing breaks today.
+- The media Worker answers `401` to a bare file URL by design (private bucket);
+  the app attaches the member's token. Not a fault, but it makes a copied media
+  link look broken outside the app.
 
 ## What is LIVE
 
