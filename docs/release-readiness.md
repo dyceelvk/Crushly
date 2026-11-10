@@ -882,3 +882,53 @@ copy for a clip needs the media pipeline to run `mark-clip.py` on upload and wri
 the resulting B2 key + URL back to the post — a server step, in the Worker, with
 ffmpeg in the image. Until that exists, a download button would either do nothing
 or hand out an unmarked copy, and both are worse than no button.
+
+## Save-to-device, end to end (2026-11-07)
+
+The save row was inert because no post had a marked copy. It has two of them now,
+produced the same way every future clip will be.
+
+### The route the app calls
+
+`GET /d/<post id>` on the media Worker. The path is a **post id, never a storage
+key**, so a client cannot construct an address for a post it may not see, and a
+forwarded link is useless to anybody who could not have downloaded it themselves.
+The Worker asks the database (`post_download`), which applies `can_view_post`, and
+streams the bytes itself with `Content-Disposition: attachment` and
+`Cache-Control: private, no-store`.
+
+Verified against the live Worker: no token → `401 Sign in to save this.`; a bad
+token → rejected upstream. Verified against the database: the author of post 86
+gets a path, a random identity gets **null** — not an error, so a member cannot
+even learn whether a marked copy exists for a post they cannot see.
+
+### The copies
+
+| Post | Author | Marked key | Size |
+| --- | --- | --- | --- |
+| 86 | 3 | `posts/3/1794240963220-…-marked.mp4` | 18.2 MB |
+| 87 | 41 | `posts/41/1794267630223-…-marked.mp4` | 8.8 MB |
+
+Produced by `Mark clips for download` (run `42860307625`): pull the original from
+B2 → burn in the mark with **that author's** handle → append the 6-second splash →
+upload under a `-marked` key → record it. The original in `posts.media_url` is
+never touched, so playback inside Holup is unchanged.
+
+Batch rather than upload-time on purpose: an ffmpeg re-encode in the upload path
+would make a member wait for it, and a backlog clears in one run.
+
+### Two defects the real run found
+
+Neither would have shown up in a test:
+
+1. **`profiles` has no `handle` column** — it is `username`. Every clip failed
+   before encoding.
+2. **The handle was baked into the shared assets.** `holup-watermark.png` and the
+   splash both said `@Sativva`, so every clip in the app would have credited
+   whoever those files were made for. The mark is now a handle-free base lockup
+   and the handle is drawn per clip from `posts.author_id`; the splash carries no
+   handle at all.
+
+Also worth keeping: the job's first failure was a 401 from Backblaze that looked
+like bad credentials and was a stray newline in a secret. The Worker trims its
+credentials; the job now does too, and a 401 names the two secrets to check.
