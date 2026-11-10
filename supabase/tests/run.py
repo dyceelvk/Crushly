@@ -101,6 +101,8 @@ def main() -> int:
         cur.execute("update public.holup_features set enabled=true where key='calls'")
         if not run_file(ROOT / 'smoke.sql'):
             return 1
+        if not run_file(ROOT / 'internal_profile_serializer.sql'):
+            return 1
         # Comments are a conversation now: likes, one level of replies, and a
         # delete that cannot take somebody else's words with it.
         if not run_file(ROOT / 'comments.sql'):
