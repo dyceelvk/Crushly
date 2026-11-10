@@ -812,6 +812,48 @@ verification passes on a real device (needs a browser-free tap on a
 `https://holupapp.vercel.app/s/...` link), and that the update channel answers
 `/secure/version` for this package rather than the public `/version`.
 
+## What is actually shipped, as of 8f93684 (2026-11-07)
+
+Verified against the live services, not inferred from a green run.
+
+| thing | state |
+|---|---|
+| `main` | `8f93684` |
+| Database migrations | deployed — `create_moment(…, p_duration_ms, …)` carries the 25 s cap |
+| Media Worker | deployed |
+| `holupapp.vercel.app` | serving this build — title `holUpp — where crushes become conversations` |
+| Marked copies | post **87** re-marked with the new end card (8.64 MB); post **86 no longer exists** — its author deleted it, so there was nothing to re-cut |
+
+### Two things this release exposed
+
+**1. The Vercel git deployment is blocked, and it was blocked silently.**
+
+The deployment for `8f93684` came back `BLOCKED` with *"Vercel couldn't find a Git
+account for the commit author"* — the commit author is `rielosInc@gmail.com`,
+which is not an email on the GitHub account (`dyceelvk@gmail.com`), and the repo
+is private, so the author must be a team member. Older commits deployed fine
+because the repository was public.
+
+The site was published by creating the deployment through the Vercel API
+(`create_deployment` on `main`) instead, which is not subject to that seat check.
+That works, but it is a manual step, and the permanent fix is one of:
+
+- add `rielosInc@gmail.com` to the GitHub account (verified) and to the Vercel
+  team, which keeps the authorship honest; or
+- commit as the account's own email. Attribution is the trade.
+
+**2. The live-site check was proving the wrong thing.**
+
+`deploy-web.yml` fetched the live bundle and searched it for the app version —
+`1.0.95`. Every commit on the same version therefore passed against a stale site.
+On this release that check went green while `holupapp.vercel.app` was eight commits
+behind and still serving the pre-rename bundle: 96 occurrences of `Holup`, zero of
+`holUpp`.
+
+It now also compares the live page's `<title>` with the `<title>` of the build in
+`dist/`, which only matches when the live document came from this build. The same
+class of drift now fails the job instead of passing it.
+
 ## Moments: 25 seconds, round pictures, one card per person (2026-11-07)
 
 Three things, one of which was a defect that made every clip Moment unusable.

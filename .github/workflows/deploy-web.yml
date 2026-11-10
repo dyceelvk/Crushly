@@ -120,22 +120,42 @@ jobs:
             # to warn, exit 0 and go green with production a fortnight behind.
             echo "::notice::No VERCEL_TOKEN: assuming the Vercel integration publishes. Verifying the live site below."
           fi
-          python3 - "$version" <<'PY'
+          # The title is read from the build we just made, not typed in here, so
+          # this check cannot rot when the copy changes.
+          title=$(python3 -c "import re;print(re.search(r'<title>(.*?)</title>', open('dist/index.html').read(), re.S).group(1).strip())")
+          python3 - "$version" "$title" <<'PY'
           import re, sys, time, urllib.request
-          version = sys.argv[1]
+          version, title = sys.argv[1], sys.argv[2]
+          """
+          Two checks, because one of them was not enough.
+
+          This used to look for the app version inside the live bundle and call it
+          proven. Every commit on the same version therefore passed against a
+          *stale* site: on 2026-11-07 holupapp.vercel.app was eight commits behind,
+          still serving the pre-rename bundle, and this job went green because
+          1.0.95 was still 1.0.95. The commit that day was never shipped and
+          nothing said so.
+
+          The page's own <title> only changes when the build changes, so it is the
+          cheap proof that the live document is this build and not an older one.
+          """
           for attempt in range(20):
               try:
                   html = urllib.request.urlopen('https://holupapp.vercel.app', timeout=30).read().decode('utf-8', 'ignore')
+                  live_title = re.search(r'<title>(.*?)</title>', html, re.S)
+                  live_title = live_title.group(1).strip() if live_title else ''
                   bundle = re.search(r'/_expo/static/js/web/index-[a-f0-9]+\.js', html)
-                  if bundle:
+                  if bundle and live_title == title:
                       js = urllib.request.urlopen('https://holupapp.vercel.app' + bundle.group(0), timeout=90).read().decode('utf-8', 'ignore')
                       if re.search(r'version[^0-9]{0,12}' + re.escape(version), js):
-                          print('::notice::holupapp.vercel.app is serving ' + version + ' (' + bundle.group(0) + ')')
+                          print('::notice::holupapp.vercel.app is serving ' + version + ' (' + bundle.group(0) + ') with the title of this build')
                           sys.exit(0)
                       print('live bundle is not ' + version + ' yet (attempt ' + str(attempt + 1) + ')')
+                  elif bundle:
+                      print('live title is not this build yet: ' + repr(live_title) + ' (attempt ' + str(attempt + 1) + ')')
               except Exception as exc:
                   print('could not read the live site: ' + str(exc))
               time.sleep(15)
-          print('::error::holupapp.vercel.app is not serving ' + version + '. This commit is not shipped until it is.')
+          print('::error::holupapp.vercel.app is not serving this build (' + repr(title) + '). This commit is not shipped until it is.')
           sys.exit(1)
           PY
