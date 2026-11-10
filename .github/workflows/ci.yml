@@ -92,6 +92,11 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://verification-test.supabase.co
           EXPO_PUBLIC_SUPABASE_ANON_KEY: offline-public-key
+      # A native-only module imported anywhere the web bundle loads at startup
+      # throws on import and blanks the entire site - with a 200 and an empty
+      # #root. Typecheck and the tests both pass in that state, so this is the
+      # only thing standing between that mistake and production.
+      - run: node scripts/check-web-bundle.mjs dist
       - run: npx playwright test --config e2e/verification.config.ts
         env:
           E2E_START_SERVER: '1'
