@@ -1,7 +1,8 @@
 # Holup — release readiness
 
-**Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `8675fad` + local uncommitted work
-**Production web:** main `04210834` · **Production database:** `yzcssyebozfkmojqqdhc` (healthy)
+**Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `63f1a6c`
+**Production web:** `holupapp.vercel.app`, deployed from **`build/holup-follow-draft`**, not `main`
+**Production database:** `yzcssyebozfkmojqqdhc` (healthy)
 
 Three states are used throughout, and they are not interchangeable:
 
@@ -10,6 +11,26 @@ Three states are used throughout, and they are not interchangeable:
 - **BLOCKED** — cannot be completed from this sandbox; needs a key, a device, a browser runner or a database branch.
 
 ---
+
+## Deployed 2026-11-07
+
+`63f1a6c` is deployed to production: Vercel deployment `dpl_57MGTcoYY5AhU3NeEeHJnCGLijDg`,
+`READY`, `PROMOTED`, aliased to `holupapp.vercel.app`. Verified live, not inferred:
+
+| Live check | Result |
+| --- | --- |
+| `/` | `200`, title present, `holup-mark.png` in the structured data, `og:image:width` 1200 |
+| `/v/86` (public post) | `200`, `<meta name="robots" content="noindex, follow">`, `holup://v/86` **and** `crushly://v/86` links, `og:site_name`, image dimensions |
+| `/v/1` (not public) | `404`, zero `og:description` tags, `noindex` present |
+| `/v/0` | `404` |
+| `/robots.txt`, `/sitemap.xml` | `200`, `200` |
+| `/brand/holup-mark.png`, `/brand/share-card.png` | `200`, `200` |
+
+**Important finding:** the production alias `holupapp.vercel.app` was already pointed at
+`build/holup-follow-draft`, not `main`. The handoff note that "production web remains main
+`04210834`" was wrong: `main` is the older commit and is not what members are served. If the
+intent is for production to track `main`, that is a separate decision — right now a draft
+branch is the live site.
 
 ## What is LIVE
 
@@ -76,11 +97,7 @@ rather than something members would hit.
 
 ## Still blocked, and why it cannot be done from here
 
-**Vercel:** the connector token is scoped to read some resources, but `list_projects` on
-team `team_6rZb6JrK5NTdyceelvk` returns `Access denied`; this sandbox has no `VERCEL_TOKEN`
-and no GitHub write credential (the PAT used earlier was revoked by design). A deployment
-therefore cannot be triggered from here by any route: not the connector, not a git push, not
-the CLI. That is a credential decision for you, not a build problem.
+The web half is no longer blocked: see "Deployed 2026-11-07".
 
 **Android:** no keystore. `HOLUP_ANDROID_RELEASE_KEYSTORE_B` and
 `HOLUP_ANDROID_RELEASE_KEY_PASSWORD` are not in this environment, the Android SDK is not
@@ -96,7 +113,6 @@ reinstall with a drafts export first.
 | --- | --- | --- |
 | Relationship cutover (Add Ups / Homies / Whispers) | The database half is now validated (above), but it is still not shippable alone: legacy `ensure_conversation` can reopen closed threads, `remove_connection` can close a Whisper via `disconnect_pair`, `messages_pair` RLS has no block predicate, `can_view_media` has no Whisper-consent state, `can_join_whisper` admits unblocked participants, and Realtime knows only membership. The candidates add state that no legacy API, notification, call, media or Realtime path reads yet. Your own rule — never ship the relationship migration independently of a compatible client — is what still blocks it. | The remaining build: rewire `send_message`/`open_conversation`/media/calls/Realtime/notifications onto the new state, gate legacy writes, ship the matching client, then apply the migration in the same release. The database validation that used to gate this is done. |
 | Secure Android release | Needs `HOLUP_ANDROID_RELEASE_KEYSTORE_B` and `HOLUP_ANDROID_RELEASE_KEY_PASSWORD`, the EAS/keystore identity, a signed APK/AAB, a streamed SHA-256 in the update metadata, a secure-to-secure upgrade on a physical device, and a reviewed one-time reinstall path from the old debug signer that does not destroy app-private drafts. | The keystore secrets and a device. `build-secure-android.yml` is `workflow_dispatch` only and uses exactly those two secrets plus the two public Supabase build values. |
-| Vercel direct deploy | No `VERCEL_TOKEN` in this environment; the workflow expects one. | A token, or push to the production branch with the Vercel Git integration. |
 
 ## Deliberate, documented gaps
 
