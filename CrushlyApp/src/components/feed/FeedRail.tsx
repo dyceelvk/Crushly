@@ -111,7 +111,7 @@ export function FeedRail({
 
       {item('Pick', null, (
         <Ionicons
-          name={post.saved ? 'download' : 'download-outline'}
+          name={post.saved ? 'bookmark' : 'bookmark-outline'}
           size={30}
           color={post.saved ? colors.gold : '#FFFFFF'}
         />

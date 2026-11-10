@@ -811,3 +811,59 @@ Two things a build cannot prove, both now unblocked: that Android's App Links
 verification passes on a real device (needs a browser-free tap on a
 `https://holupapp.vercel.app/s/...` link), and that the update channel answers
 `/secure/version` for this package rather than the public `/version`.
+
+## Saving a clip to a device, and the 6-second end splash (2026-11-07)
+
+Two things were asked for: a Tik-Tok-shaped ending for exported video, and a
+download that marks what leaves the app.
+
+### The splash
+
+`assets/share/holup-end-splash-6s.mp4` — 1080×1920, 30 fps, exactly 6.000 s, with
+a silent audio track so it can be appended to a clip that already has music
+without cutting the music. Mark, wordmark, handle, `HOLUP ORIGINAL`, and the
+address small enough to read only if you look for it. It settles in over 700 ms
+and then holds; a splash that moves is a splash people skip.
+
+Regenerate it with `scripts/make-end-splash.py`; the artwork is the supplied
+logo, so no platform UI is reproduced anywhere in it.
+
+### The mark
+
+`assets/share/holup-watermark.png` — mark, wordmark and handle, with a soft
+shadow so it stays legible over pale and dark footage alike.
+
+`scripts/mark-clip.py in.mp4 out.mp4 --handle @Sativva` burns the mark into a clip
+and appends the splash. Two properties matter and both are deliberate:
+
+- **the mark drifts** ±14 px over a six-second cycle. A stamp pinned to one pixel
+  is trivial to crop out; one that moves is not;
+- **the marked copy is a separate file.** The app plays the original, untouched.
+  Drawing a stamp on the device would mean shipping a video encoder to every
+  phone and re-encoding a clip the creator already uploaded.
+
+### The download
+
+`src/lib/clipSaveRules.ts` decides; `src/lib/downloadClip.ts` does the work —
+`expo-file-system` into the cache, `MediaLibrary.Asset.create` into the gallery,
+then the cache copy is deleted. On web the same marked file goes to the browser's
+downloads under the same name, `holup-<post id>.mp4`.
+
+The rule the tests enforce is the one that matters: **a download is offered only
+when a marked copy exists.** `canSaveClip` is false for a photo, false for a clip
+with no `downloadUrl`, and there is no fallback to the original — falling back
+would hand out somebody's work with no name on it.
+
+A stray download arrow was found on the way: `FeedRail` drew a download glyph for
+Pick, which is a bookmark. `FeedRail` is not rendered anywhere — `PostCard` has
+its own rail, already bookmarked correctly — so it was dead code carrying a
+misleading shape. Fixed rather than deleted silently, in case it is reused.
+
+### What is not done, and cannot be done in the app
+
+**No post has a `downloadUrl` yet, so the button does not render anywhere.** That
+is the honest state: the client is ready, the files are not. Producing a marked
+copy for a clip needs the media pipeline to run `mark-clip.py` on upload and write
+the resulting B2 key + URL back to the post — a server step, in the Worker, with
+ffmpeg in the image. Until that exists, a download button would either do nothing
+or hand out an unmarked copy, and both are worse than no button.

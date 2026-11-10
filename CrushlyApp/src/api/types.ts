@@ -93,6 +93,13 @@ export type Post = {
   mediaUrl: string | null;
   /** Whether the media is a photo or a clip. Null when the post has no media. */
   mediaKind: 'photo' | 'video' | null;
+  /**
+   * The marked copy of a clip: same footage, with the Holup mark and the
+   * creator's handle burnt in. Only what is saved to a device uses this; the
+   * app always plays `mediaUrl`. Null when the pipeline has not produced one
+   * yet, and then no download is offered at all.
+   */
+  downloadUrl?: string | null;
   /** Words and stickers drawn over a clip. Null when the post is not a clip. */
   edit: LiveEdit | null;
   audience: PostAudience;

@@ -24,6 +24,7 @@ import { HIT, elevation, radius, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { momentRing } from '../../lib/momentRings';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { canSaveClip, saveClipToDevice } from '../../lib/downloadClip';
 import { useTrackPostView } from '../../lib/useTrackPostView';
 import { PostViews } from '../ViewersSheet';
 import { formatCount, spokenCount } from '../../lib/counts';
@@ -105,6 +106,30 @@ export function PostCard({
 
   // A post leaves the feed two ways now: into a Whisper, or out of the app.
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Saving a clip is a download plus a gallery insert, so it can take a moment
+  // on a slow connection. The button says so instead of looking ignored.
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const outcome = await saveClipToDevice({ id: p.id, mediaKind: p.mediaKind, downloadUrl: p.downloadUrl });
+      if (outcome === 'saved') {
+        toast({ kind: 'success', title: 'Saved to your gallery', message: 'The clip carries the Holup mark and the creator’s handle.' });
+      } else if (outcome === 'downloaded') {
+        toast({ kind: 'success', title: 'Clip downloaded', message: 'The clip carries the Holup mark and the creator’s handle.' });
+      } else if (outcome === 'denied') {
+        toast({ kind: 'error', title: 'Photos and videos are off', message: 'Allow photo access in Settings and tap Save again.' });
+      } else {
+        toast({ kind: 'error', title: 'Not ready yet', message: 'The sharable copy of this clip is still being prepared.' });
+      }
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t save the clip', message: e instanceof Error ? e.message : 'Please try again shortly.' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // The file's real shape, once it reports one. Starts at 4:5 — the commonest
   // portrait photo — so the space is held open and the feed does not jump when
@@ -281,6 +306,16 @@ export function PostCard({
           onPress={() => (onOpen ? onOpen() : setCommentsOpen(true))}
         />
         <PostAction icon="arrow-redo-outline" label="Share this post" onPress={() => setShareOpen(true)} />
+        {/* Saving is offered only for a clip the pipeline has already marked; a
+            post with no marked copy gets no button rather than a button that
+            hands out an unattributed copy. */}
+        {canSaveClip(p) ? (
+          <PostAction
+            icon={saving ? 'hourglass-outline' : 'download-outline'}
+            label="Save this clip to your device"
+            onPress={save}
+          />
+        ) : null}
         <View style={{ flex: 1 }} />
         {/* Pick keeps the post in public: it lands in the picker's collection and
             on their Space, where anyone who can see the Space can read it. It is

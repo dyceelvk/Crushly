@@ -76,6 +76,13 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Holup saves clips you choose to keep to this phone's gallery.",
+          "granularPermissions": ["video"]
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Holup uses your approximate location to show distance. Your exact location is never shared."
