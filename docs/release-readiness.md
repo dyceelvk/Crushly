@@ -381,6 +381,12 @@ either all of it committed or none of it did — and the migration history row w
 written with that same text. The `http` extension was dropped immediately after;
 the project is back to the five extensions it had (plus nothing).
 
+**Client deployed with it:** Vercel production now serves commit `6c67427`
+(deployment `dpl_DABeFHEHceYxUsjV6EkRLirgQCHe`, promoted, `holupapp.vercel.app`
+answers 200). That build contains the in-thread Whisper request UI and the
+`keepClose`/`letGo`/`keepState` translation onto the v2 verbs, so no installed
+client is left calling a closed routine.
+
 **What this means for installed clients:** the app probes `holup_follow_status`
 on first relationship action and switches to the v2 contract by itself
 (`relationshipBackend()` in `service.ts`). Builds that predate that probe will
