@@ -11,7 +11,7 @@ import { TypingDots } from '../../components/TypingDots';
 import { RecordingWave } from '../../components/RecordingWave';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
-import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
+import { ActionSheet, BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
@@ -128,12 +128,16 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const { data: conv, error: convError, refetch: refetchConv } = useConversation(conversationId);
   const { data: me } = useMe();
   const { data: appSettings } = useAppSettings();
-  const callsEnabled = appSettings?.callsEnabled === true;
+  // Independent Whisper signaling uses polling until private call channels
+  // have revocable authorization. Do not offer a non-working call control.
+  const callsEnabled = appSettings?.callsEnabled === true && !!conv && !conv.whisperConsent;
   const { data: crushes } = useCrushes();
-  const chat = useChat(conversationId);
+  const chat = useChat(conversationId, !conv ? 'loading' : conv.whisperConsent ? 'independent' : 'legacy');
   const { openActions } = useMemberActions();
   const [text, setText] = useState('');
   const [accepting, setAccepting] = useState(false);
+  const [deleteForEveryone, setDeleteForEveryone] = useState<Message | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [flashId, setFlashId] = useState<number | null>(null);
   const listRef = useRef<FlatList<Row>>(null);
@@ -397,6 +401,17 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     },
     [chat, toast],
   );
+
+  const deleteMessage = async (message: Message, everyone: boolean) => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await chat.remove(message.id, everyone);
+      if (replyTo?.id === message.id) setReplyTo(null);
+      setDeleteForEveryone(null);
+    } catch (e) { toast({ kind: 'error', title: 'Couldn’t delete Whisper', message: (e as Error).message }); }
+    finally { setDeleting(false); }
+  };
 
   const openProfile = useProfileTap();
   // A post shared into the thread is a door back to the post.
@@ -793,6 +808,20 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             <Txt variant="bodyStrong">Copy text</Txt>
           </Pressable>
         ) : null}
+        {consent && actionFor && actionFor.id > 0 ? (
+          <>
+            <Pressable onPress={() => { const m = actionFor; setActionFor(null); void deleteMessage(m, false); }}
+              accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+              <Ionicons name="trash-outline" size={20} color={colors.textSecondary} /><Txt variant="bodyStrong">Delete for me</Txt>
+            </Pressable>
+            {actionFor.mine ? (
+              <Pressable onPress={() => { const m = actionFor; setActionFor(null); setTimeout(() => setDeleteForEveryone(m), 250); }}
+                accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} /><Txt variant="bodyStrong" color="danger">Delete for everyone</Txt>
+              </Pressable>
+            ) : null}
+          </>
+        ) : null}
         {actionFor && !actionFor.mine ? (
           <Pressable
             onPress={() => { setActionFor(null); if (peer) openActions({ id: peer.id, name: peer.name, connected: true, context: `message:${actionFor.id}`, onGone: () => navigation.goBack() }); }}
@@ -806,6 +835,12 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           </Pressable>
         ) : null}
       </BottomSheet>
+
+      <ConfirmSheet visible={!!deleteForEveryone} title="Delete for everyone?"
+        message="This removes the Whisper from this conversation for both people. They may already have seen or saved it."
+        confirmLabel="Delete for everyone" destructive loading={deleting}
+        onCancel={() => setDeleteForEveryone(null)}
+        onConfirm={() => { if (deleteForEveryone) void deleteMessage(deleteForEveryone, true); }} />
 
       {/* Share a profile */}
       <ActionSheet

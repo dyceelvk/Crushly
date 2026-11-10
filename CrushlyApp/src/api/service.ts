@@ -1429,6 +1429,12 @@ export async function listBlocks(): Promise<BlockedMember[]> {
 export async function acceptWhisper(conversationId: number): Promise<void> {
   await rpc('holup_accept_whisper', { p_conversation_id: conversationId });
 }
+export async function deleteWhisper(messageId: number, everyone: boolean): Promise<void> {
+  await rpc('holup_delete_whisper', { p_message_id: messageId, p_everyone: everyone });
+}
+export async function visibleWhisperIds(conversationId: number, ids: number[]): Promise<number[]> {
+  return rpc('holup_visible_whisper_ids', { p_conversation_id: conversationId, p_ids: ids });
+}
 export async function setWhisperOpen(open: boolean): Promise<Me> {
   await rpc('holup_set_whisper_open', { p_open: open });
   return getMe();

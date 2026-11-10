@@ -6,6 +6,7 @@ import type { SendDraft } from './service';
 import { liveMomentUserIds } from '../lib/profileTap';
 import { openWhisperLive, type WhisperLive, type WhisperLiveStatus } from '../lib/whisperLive';
 import { applyUpTo } from '../lib/messageStatus';
+import { reconcileWhisperMessages } from '../lib/whisperReconcile';
 import { stillTyping } from '../lib/presence';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
@@ -1170,7 +1171,8 @@ export function useSendMessage() {
  * failure mode for a Whisper. It is a safety net, not the mechanism: while the
  * channel is live, new messages land in well under a second.
  */
-export function useChat(conversationId: number) {
+export function useChat(conversationId: number, mode: 'loading' | 'legacy' | 'independent' = 'legacy') {
+  const independent = mode === 'independent';
   const qc = useQueryClient();
   const { data: me } = useMe();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1274,6 +1276,26 @@ export function useChat(conversationId: number) {
     }
   }, [absorb, applyReadState, conversationId]);
 
+  // Reconcile all loaded ids (including quoted originals) so server deletion
+  // is reflected in an already open thread, not only after reopening it.
+  const reconcileDeleted = useCallback(async () => {
+    if (!independent) return;
+    const current = messagesRef.current;
+    const ids = [...new Set(current.flatMap((m) => {
+      const quote = Number(m.meta?.replyTo?.id ?? 0);
+      return [m.id, quote].filter((id) => Number.isSafeInteger(id) && id > 0);
+    }))];
+    if (!ids.length) return;
+    try {
+      const visible = new Set<number>();
+      for (let i = 0; i < ids.length; i += 200) {
+        for (const id of await service.visibleWhisperIds(conversationId, ids.slice(i, i + 200))) visible.add(id);
+      }
+      const checked = new Set(ids);
+      setMessages((prev) => reconcileWhisperMessages(prev, checked, visible));
+    } catch { /* preserve data on network failure; next poll retries */ }
+  }, [conversationId, independent]);
+
   /* ------------------------------------------------------------- presence */
 
   useEffect(() => {
@@ -1290,7 +1312,8 @@ export function useChat(conversationId: number) {
   /* --------------------------------------------------------------- channel */
 
   useEffect(() => {
-    if (!Number.isFinite(conversationId) || conversationId <= 0) return;
+    if (!Number.isFinite(conversationId) || conversationId <= 0 || mode === 'loading') return;
+    if (independent) { setLive('offline'); setPeerHere(false); return; }
     const chat = openWhisperLive({
       conversationId,
       myId: me?.id ?? null,
@@ -1316,7 +1339,7 @@ export function useChat(conversationId: number) {
       liveRef.current = null;
       setPeerHere(false);
     };
-  }, [catchUp, conversationId, me?.id]);
+  }, [catchUp, conversationId, me?.id, independent, mode]);
 
   /* ---------------------------------------------------------- safety poll */
 
@@ -1327,13 +1350,14 @@ export function useChat(conversationId: number) {
       if (cancelled) return;
       if (AppState.currentState !== 'active') return;
       void catchUp();
+      void reconcileDeleted();
     };
-    const timer = setInterval(tick, SAFETY_POLL_MS);
+    const timer = setInterval(tick, independent ? 5_000 : SAFETY_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [catchUp, error, loading]);
+  }, [catchUp, error, loading, independent, reconcileDeleted]);
 
   /*
    * Backgrounding the app is a statement about presence: you are not here. So
@@ -1433,6 +1457,17 @@ export function useChat(conversationId: number) {
 
   const discard = useCallback((localId: string) => setMessages((prev) => prev.filter((m) => m.localId !== localId)), []);
 
+  const remove = useCallback(async (messageId: number, everyone: boolean) => {
+    await service.deleteWhisper(messageId, everyone);
+    setMessages((prev) => prev.filter((m) => m.id !== messageId).map((m) => {
+      if (Number(m.meta?.replyTo?.id ?? 0) !== messageId) return m;
+      const { replyTo: _deleted, ...meta } = m.meta;
+      return { ...m, meta };
+    }));
+    void qc.invalidateQueries({ queryKey: keys.conversations });
+    void qc.invalidateQueries({ queryKey: keys.badges });
+  }, [qc]);
+
   const react = useCallback(async (messageId: number, kind = 'crush') => {
     const updated = await service.reactToMessage(messageId, kind);
     setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
@@ -1454,6 +1489,7 @@ export function useChat(conversationId: number) {
     loadingMore,
     send,
     discard,
+    remove,
     react,
     typing,
     recording,
