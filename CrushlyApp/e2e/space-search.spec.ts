@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 const API = 'https://verification-test.supabase.co';
+// A fixed 32-hex token, so the share assertions are deterministic offline.
+const SHARE_TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 const MEDIA = 'https://crushly-media.dyceelvk.workers.dev';
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', 'base64');
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'offline@example.com' };
@@ -34,6 +36,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/verification_requests') body = null;
     else if (path === '/rest/v1/rpc/space_banner') body = banner;
     else if (path === '/rest/v1/rpc/set_space_banner') { const old = banner; banner = (route.request().postDataJSON() as { p_url: string | null }).p_url; body = old; }
+    else if (path === '/rest/v1/rpc/holup_space_share_token') body = SHARE_TOKEN;
     else if (path === '/rest/v1/rpc/search_holup') {
       const params = route.request().postDataJSON() as Record<string, unknown>; calls.push(params);
       body = { members: params.p_category === 'top' || params.p_category === 'people' ? [person] : [], posts: ['top', 'photos'].includes(String(params.p_category)) ? [onePost] : [], moments: [], sounds: params.p_category === 'sounds' ? [{ id: 20, title: 'Holiday tune' }] : [], places: params.p_category === 'places' ? [{ name: 'Lagos' }] : [], hashtags: params.p_category === 'hashtags' ? [{ tag: 'holiday' }] : [] };
@@ -270,7 +273,8 @@ test('Space bio link opens inside Holup and own Space link copies from three dot
   await page.getByRole('button', { name: 'More Space options' }).click();
   await page.getByRole('button', { name: 'Copy Space link' }).click();
   await expect(page.getByText('Link copied')).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/?space=1');
+  // A Space link carries a minted token, never the member's sequential id.
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`https://holupapp.vercel.app/s/${SHARE_TOKEN}`);
 });
 
 test('comment link closes sheet and opens inside Holup without punctuation', async ({ page }) => {
@@ -639,10 +643,10 @@ test('Homie requests are explicit and pending requests can be withdrawn', async 
  await page.getByRole('button',{name:'Back to Space'}).last().click();
  await page.getByRole('button',{name:'2 Homies. View people'}).click();
  await page.getByRole('button',{name:'Open Ada’s Space'}).click();
- const add=page.getByRole('button',{name:'Add a Homie: Ada'});
+ const add=page.getByRole('button',{name:'Ask Ada to be Homies'});
  await expect(add).toBeVisible(); await add.click();
- await expect(page.getByRole('button',{name:'Withdraw Homie request to Ada'})).toBeVisible();
- await page.getByRole('button',{name:'Withdraw Homie request to Ada'}).click();
+ const withdraw=page.getByRole('button',{name:'Homie request to Ada sent. Tap to withdraw'});
+ await expect(withdraw).toBeVisible(); await withdraw.click();
  await expect(add).toBeVisible();
  expect(calls.some(c=>c.homie==='request')).toBe(true);
  expect(calls.some(c=>c.homie==='withdraw')).toBe(true);
