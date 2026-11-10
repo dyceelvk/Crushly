@@ -2,15 +2,19 @@
 -- Old RPCs, notification formatting, client transition and concurrency must be
 -- reconciled before it can be wired or applied to production.
 begin;
+-- Add Ups need nobody's approval: there is no approval column, because there is
+-- no rule to hold. Only the privacy of the list is a setting.
 create table public.holup_follow_settings (
  user_id bigint primary key references public.profiles(id) on delete cascade,
- approval_required boolean not null default false,
  outgoing_visibility text not null default 'private' check(outgoing_visibility in ('everyone','close','private'))
 );
 create table public.holup_follows (
  follower_id bigint not null references public.profiles(id) on delete cascade,
  followed_id bigint not null references public.profiles(id) on delete cascade,
- status text not null check(status in ('active','pending','declined')),
+ -- Only 'active' is ever written now. 'declined' stays legal so a historic row or
+ -- an old client's answer cannot violate the table, but 'pending' is gone: an Add
+ -- Up that can wait for permission is not an Add Up.
+ status text not null check(status in ('active','declined')),
  created_at bigint not null default public.now_ms(), decided_at bigint,
  primary key(follower_id,followed_id), check(follower_id<>followed_id)
 );
@@ -27,12 +31,17 @@ alter table public.holup_follows enable row level security;
 alter table public.holup_follow_settings enable row level security;
 revoke all on public.holup_follows,public.holup_follow_settings from public,anon,authenticated;
 
--- Preserve only explicitly accepted follows; a pending legacy request remains
--- pending rather than being represented as consent. Keeps are NOT follows.
-lock table public.crushes,public.blocks in share row exclusive mode;
+-- Accepted Crushes and Keeps both become active Add Ups: each is a one-way follow
+-- that needs nobody's permission. A pending Crush was a request to connect, so it
+-- is not an Add Up at all — it goes to the Homie inbox instead.
+lock table public.crushes,public.blocks,public.keeps in share row exclusive mode;
 insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
- select c.from_id,c.to_id,case c.status when 'accepted' then 'active' else 'pending' end,c.created_at,c.responded_at
- from public.crushes c where c.status in ('pending','accepted') and not public.is_blocked_pair(c.from_id,c.to_id);
+ select c.from_id,c.to_id,'active',c.created_at,c.responded_at
+ from public.crushes c where c.status='accepted' and not public.is_blocked_pair(c.from_id,c.to_id);
+insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
+ select k.keeper_id,k.kept_id,'active',k.created_at,k.created_at
+ from public.keeps k where not public.is_blocked_pair(k.keeper_id,k.kept_id)
+ on conflict(follower_id,followed_id) do nothing;
 
 create or replace function public.holup_follow_pair_lock(a bigint,b bigint) returns void
 language sql volatile security definer set search_path=public as $$
@@ -40,21 +49,26 @@ language sql volatile security definer set search_path=public as $$
 $$;
 revoke all on function public.holup_follow_pair_lock(bigint,bigint) from public,anon,authenticated;
 
+-- `p_approval` is kept in the signature and ignored. Installed clients still send
+-- it, and dropping the argument would turn their settings call into a PGRST202;
+-- but there is no state for it to change, and the answer says so every time.
 create or replace function public.holup_set_follow_settings(p_approval boolean,p_outgoing_visibility text) returns jsonb
 language plpgsql security definer set search_path=public as $$
 declare me bigint:=public.me_id(); s public.holup_follow_settings;
 begin
  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
- if (p_approval is null and p_outgoing_visibility is null) or (p_outgoing_visibility is not null and p_outgoing_visibility not in ('everyone','close','private')) then
+ if p_outgoing_visibility is not null and p_outgoing_visibility not in ('everyone','close','private') then
   perform public.crushly_fail(400,'','Choose a valid privacy setting.'); end if;
- insert into public.holup_follow_settings(user_id,approval_required,outgoing_visibility) values(me,coalesce(p_approval,false),coalesce(p_outgoing_visibility,'private'))
- on conflict(user_id) do update set approval_required=coalesce(p_approval,holup_follow_settings.approval_required),outgoing_visibility=coalesce(p_outgoing_visibility,holup_follow_settings.outgoing_visibility) returning * into s;
- return jsonb_build_object('approvalRequired',s.approval_required,'outgoingVisibility',s.outgoing_visibility);
+ insert into public.holup_follow_settings(user_id,outgoing_visibility)
+   values(me,coalesce(p_outgoing_visibility,'private'))
+ on conflict(user_id) do update set outgoing_visibility=coalesce(p_outgoing_visibility,holup_follow_settings.outgoing_visibility)
+ returning * into s;
+ return jsonb_build_object('approvalRequired',false,'outgoingVisibility',s.outgoing_visibility);
 end $$;
 
 create or replace function public.holup_follow(p_target bigint) returns jsonb
 language plpgsql security definer set search_path=public as $$
-declare me bigint:=public.me_id(); r public.holup_follows; needs_approval boolean; target record;
+declare me bigint:=public.me_id(); r public.holup_follows; target record;
 begin
  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
  if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
@@ -79,12 +93,12 @@ begin
  if (select count(*) from public.holup_follow_attempts where follower_id=me)>=100 then
    perform public.crushly_fail(429,'rate_limit','Please wait before adding up more people.'); end if;
  insert into public.holup_follow_attempts(follower_id) values(me);
- -- Serialize with settings writes. The row exists even for the default.
- insert into public.holup_follow_settings(user_id) values(p_target) on conflict do nothing;
- select approval_required into needs_approval from public.holup_follow_settings where user_id=p_target for update;
+ -- An Add Up is immediate. There is no approval step to wait for, so there is no
+ -- pending state to reach: the row is written active, now, and the person added
+ -- up is told. Only a Homie asks permission.
  insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
- values(me,p_target,case when needs_approval then 'pending' else 'active' end,public.now_ms(),case when needs_approval then null else public.now_ms() end)
- on conflict(follower_id,followed_id) do update set status=excluded.status,created_at=excluded.created_at,decided_at=excluded.decided_at returning * into r;
+ values(me,p_target,'active',public.now_ms(),public.now_ms())
+ on conflict(follower_id,followed_id) do update set status='active',created_at=excluded.created_at,decided_at=excluded.decided_at returning * into r;
  -- An Add Up is announced, once. `notify_to` collapses a repeat into the unread
  -- row that is already there, and the member's own "Add Ups" switch can silence
  -- it without touching anything else.
@@ -146,7 +160,7 @@ begin
   'canViewAddUps',me=p_target or incoming='everyone' or (incoming='close' and homies),
   'canViewAddedUp',me=p_target or outgoing='everyone' or (outgoing='close' and homies),
   'outgoingVisibility',case when me=p_target then outgoing else null end,
-  'approvalRequired',case when me=p_target then coalesce((select approval_required from public.holup_follow_settings where user_id=p_target),false) else null end,
+  'approvalRequired',false,
   'myStatus',case when me<>p_target then (select status from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending')) else null end,
   'keptClose',base->'keptClose','canViewKeptClose',base->'canViewKeptClose','postLikes',base->'postLikes','addUpVisibility',base->'addUpVisibility');
 end $$;

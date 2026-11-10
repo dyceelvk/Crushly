@@ -11,4 +11,10 @@ begin
  insert into connections(user_a,user_b) values(least(a,b),greatest(a,b)) on conflict do nothing;
  insert into holup_existing_close_pairs(user_a,user_b) values(least(a,b),greatest(a,b)) on conflict do nothing;
  insert into keeps(keeper_id,kept_id) values(a,b),(a,c),(c,a) on conflict do nothing;
+ -- A Keep is a one-way Add Up and needs no answer. A *pending Crush* is the thing
+ -- that was a request to connect, so it is the one that arrives as a Homie
+ -- request. The fixture supplies both, because the migration treats them
+ -- differently and the Homies suite is about the second kind.
+ insert into crushes(from_id,to_id,status,created_at) values(a,c,'pending',public.now_ms()),(c,a,'pending',public.now_ms())
+ on conflict (from_id,to_id) do nothing;
 end $$;

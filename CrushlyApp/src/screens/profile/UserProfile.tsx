@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, setFollowSettings, pendingFollowRequests, respondToFollow, publicFlow, type AddUpListVisibility } from '../../api/service';
+import { spaceRelationshipStats, spaceRelationshipPeople, setAddUpListVisibility, setFollowSettings, publicFlow, type AddUpListVisibility } from '../../api/service';
 import { formatCount } from '../../lib/counts';
 import { SpaceNavigation } from '../../navigation/SpaceNavigation';
 import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -205,8 +205,6 @@ export function SpaceScreen({
   const [listOpenSequence, setListOpenSequence] = useState(0);
   const [visibilityMenu, setVisibilityMenu] = useState(false);
   const [outgoingMenu, setOutgoingMenu] = useState(false);
-  const [approvalMenu, setApprovalMenu] = useState(false);
-  const [requestsOpen, setRequestsOpen] = useState(false);
   const [homieRequestsOpen, setHomieRequestsOpen] = useState(false);
   const qc = useQueryClient();
   const [showFullBio, setShowFullBio] = useState(false);
@@ -484,9 +482,7 @@ export function SpaceScreen({
               {mine && relationship.data.backend === 'v2' ? <>
                 <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Added Up list privacy" onPress={() => setOutgoingMenu(true)}><Txt variant="small" color="gold">Added Up privacy</Txt></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Add Up approval setting" onPress={() => setApprovalMenu(true)}><Txt variant="small" color="gold">Approval</Txt></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="View Homie requests" onPress={() => setHomieRequestsOpen(true)}><Txt variant="small" color="gold">Homie requests</Txt></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="View Add Up requests" onPress={() => setRequestsOpen(true)}><Txt variant="small" color="gold">Requests</Txt></Pressable>
               </> : mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
             </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
             {p.bio ? <View style={{ marginTop: space.sm }}>
@@ -775,9 +771,7 @@ export function SpaceScreen({
         ['everyone', 'Everyone who can view your Space'], ['close', 'Homies'], ['private', 'Only you'],
       ] as [AddUpListVisibility, string][]).map(([value, label]) => ({ label: `${relationship.data?.addUpVisibility === value ? '✓ ' : ''}${label}`, hint: 'Totals stay visible. Individual Spaces still follow their privacy settings.', onPress: () => visibilityMutation.mutate(value) }))} />
       <ActionSheet visible={outgoingMenu} onClose={() => setOutgoingMenu(false)} title="Who can see people you added up?" actions={([['everyone','Everyone who can view your Space'],['close','Homies'],['private','Only you']] as [AddUpListVisibility,string][]).map(([value,label]) => ({ label: `${relationship.data?.outgoingVisibility === value ? '✓ ' : ''}${label}`, onPress: () => followSettingsMutation.mutate({approval: null, visibility:value}) }))} />
-      <ActionSheet visible={approvalMenu} onClose={() => setApprovalMenu(false)} title="Who can Add Up your Space?" actions={([ [false,'Allow Add Ups immediately'], [true,'Require my approval first'] ] as [boolean,string][]).map(([value,label]) => ({label:`${relationship.data?.approvalRequired === value ? '✓ ' : ''}${label}`, onPress: () => followSettingsMutation.mutate({approval:value, visibility:null})}))} />
       {mine ? <HomieRequests visible={homieRequestsOpen} onClose={() => setHomieRequestsOpen(false)} viewerId={meQ.data?.id ?? 0} /> : null}
-      {mine ? <FollowRequests visible={requestsOpen} onClose={() => setRequestsOpen(false)} viewerId={meQ.data?.id ?? 0} /> : null}
       <SpaceRelationshipList targetId={p.id} name={p.name} viewerId={meQ.data?.id ?? 0} kind={relationshipList} canView={relationshipList === 'addUps' ? !!relationship.data?.canViewAddUps : relationshipList === 'addedUp' ? !!relationship.data?.canViewAddedUp : !!homies.data?.canView} openSequence={listOpenSequence} onClose={() => setRelationshipList(null)} onOpen={(personId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('UserProfile', { id: personId }), Platform.OS === 'web' ? 0 : 250); }} onOpenPost={(postId) => { setRelationshipList(null); setTimeout(() => navigation.navigate('PostViewer', { postId }), Platform.OS === 'web' ? 0 : 250); }} />
     </View>
   );
@@ -833,19 +827,6 @@ function HomieRequests({visible,onClose,viewerId}: {visible:boolean;onClose:()=>
     {q.hasNextPage ? <Button title="Show more" loading={q.isFetchingNextPage} onPress={()=>void q.fetchNextPage()}/> : null}</ScrollView></View></Modal>;
 }
 
-function FollowRequests({visible, onClose, viewerId}: {visible:boolean; onClose:()=>void; viewerId:number}) {
-  const {colors} = useTheme(); const insets = useSafeAreaInsets(); const qc = useQueryClient(); const toast = useToast();
-  const q = useInfiniteQuery({queryKey:['holup-follow-requests',viewerId], initialPageParam:0, queryFn:({pageParam})=>pendingFollowRequests(pageParam), enabled:visible && !!viewerId, getNextPageParam:(last,pages)=>last.hasMore ? pages.reduce((n,p)=>n+p.items.length,0) : undefined, staleTime:0});
-  const response = useMutation({mutationFn:({id,accept}:{id:number;accept:boolean})=>respondToFollow(id,accept), onSuccess:()=>{ void qc.invalidateQueries({queryKey:['holup-follow-requests']}); void qc.invalidateQueries({queryKey:['space-relationship-stats']}); }, onError:(e)=>toast({kind:'error',title:'Couldn’t answer request',message:(e as Error).message})});
-  const items=q.data?.pages.flatMap(p=>p.items) ?? [];
-  return <Modal visible={visible} animationType="fade" onRequestClose={onClose}><View style={{flex:1,backgroundColor:colors.bg,paddingTop:insets.top}}><View style={{flexDirection:'row',alignItems:'center',gap:12,padding:space.md}}><IconButton icon="chevron-back" label="Back to Space" onPress={onClose}/><Txt variant="subheading">Add Up requests</Txt></View><ScrollView contentContainerStyle={{padding:space.md,gap:space.md}}>
-    {q.isLoading ? <LoadingBlock label="Loading requests"/> : q.isError ? <ErrorState error={q.error} message="Couldn’t load requests." onRetry={()=>void q.refetch()}/> : !items.length ? <Txt color="textSecondary">No requests right now.</Txt> : items.map(p=><View key={p.id} style={{flexDirection:'row',alignItems:'center',gap:8}}><Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={40}/><Txt variant="bodyStrong" style={{flex:1}}>{p.name}</Txt><Button title="Accept" size="sm" disabled={response.isPending} onPress={()=>response.mutate({id:p.id,accept:true})}/><Button title="Decline" variant="ghost" size="sm" disabled={response.isPending} onPress={()=>response.mutate({id:p.id,accept:false})}/></View>)}
-    {q.hasNextPage ? <Button title="Show more" loading={q.isFetchingNextPage} onPress={()=>void q.fetchNextPage()}/> : null}</ScrollView></View></Modal>;
-}
-
-/* ------------------------------------------------------- the three panels */
-
-/** What they have posted. On this product a post is a Crush. */
 function SpacePosts({
   items,
   loading,

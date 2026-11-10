@@ -43,6 +43,9 @@ say "building the deployed schema (migrations + seed)"
 "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -c "drop database if exists $DB with (force);" -c "create database $DB;"
 "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -d "$DB" -v ON_ERROR_STOP=1 -f "$ROOT/supabase/tests/stubs.sql" >/dev/null
 for f in $(ls "$ROOT"/supabase/migrations/*.sql | sort); do
+  # Corrections that presuppose the relationship cutover are skipped on a fresh
+  # build: the candidate below already contains the corrected rules.
+  if head -1 "$f" | grep -q 'REQUIRES: relationship_cutover'; then continue; fi
   "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -d "$DB" -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>&1 \
     || { echo "migration failed: $(basename "$f")"; exit 1; }
 done
@@ -74,6 +77,11 @@ if [ "$MODE" = each ]; then
     "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -c "drop database if exists $db with (force);" -c "create database $db;" >/dev/null
     "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -d "$db" -v ON_ERROR_STOP=1 -f "$ROOT/supabase/tests/stubs.sql" >/dev/null 2>&1
     for f in $(ls "$ROOT"/supabase/migrations/*.sql | sort); do
+      # A migration marked REQUIRES: relationship_cutover corrects a database that
+      # already has the relationship objects. A fresh build gets those rules from
+      # the cutover candidate below, so replaying the correction first would fail
+      # on a table that does not exist yet.
+      if head -1 "$f" | grep -q 'REQUIRES: relationship_cutover'; then continue; fi
       "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -d "$db" -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>&1 || return 1
     done
     "$PSQL" -h 127.0.0.1 -U postgres -q -p 5432 -d "$db" -v ON_ERROR_STOP=1 -f "$ROOT/supabase/seed.sql" >/dev/null 2>&1

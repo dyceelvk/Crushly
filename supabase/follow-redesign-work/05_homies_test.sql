@@ -13,6 +13,17 @@ begin
  assert not holup_homie_pair(a,c), 'legacy Keep wrongly treated as consent';
  assert exists(select 1 from holup_homie_requests where sender_id=a and recipient_id=c and status='pending');
  assert exists(select 1 from holup_homie_requests where sender_id=c and recipient_id=a and status='pending');
+ -- The Keeps in the fixture did NOT become requests: a Keep is a one-way Add Up,
+ -- which needs nobody's answer, so it arrives as an active follow instead.
+ assert exists(select 1 from holup_follows where follower_id=a and followed_id=c and status='active'),
+   'a Keep did not arrive as an Add Up';
+ assert not exists(select 1 from holup_follows where status='pending'),
+   'an Add Up is waiting for approval it does not need';
+ assert (select count(*) from holup_homie_requests
+          where status='pending' and sender_id in (a,c) and recipient_id in (a,c))
+        = (select count(*) from crushes
+            where status='pending' and from_id in (a,c) and to_id in (a,c)),
+   'Homie requests did not come from the pending Crushes and only from them';
  assert not exists(select 1 from holup_homie_requests where sender_id=a and recipient_id=b);
  -- Counts are visible on an authorized Space, identities require accepted Homie.
  perform set_config('request.jwt.claim.sub',cu::text,true); set local role authenticated;

@@ -292,6 +292,7 @@ export type SpaceRelationshipStats = {
   canViewKeptClose: boolean;
   addUpVisibility: AddUpListVisibility | null;
   outgoingVisibility: AddUpListVisibility | null;
+  /** Always false: an Add Up needs nobody's approval. Kept for older servers. */
   approvalRequired: boolean | null;
   myStatus: 'active' | 'pending' | null;
   backend: RelationshipBackend;
@@ -493,6 +494,11 @@ export async function unfollowMember(id: number): Promise<void> {
   await rpc('uncrush_member', { p_target_id: id });
 }
 
+/**
+ * Add Ups never need approval, so `approvalRequired` is only kept for the RPC's
+ * two-argument signature. Passing it does nothing and cannot turn a rule back on;
+ * what this actually sets now is who may see the list.
+ */
 export async function setFollowSettings(approvalRequired: boolean | null, visibility: AddUpListVisibility | null): Promise<void> {
   if (await relationshipBackend() === 'v2') {
     await rpc('holup_set_follow_settings', { p_approval: approvalRequired, p_outgoing_visibility: visibility });

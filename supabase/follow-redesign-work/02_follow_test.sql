@@ -34,20 +34,24 @@ begin
  denied:=false; begin perform holup_follow_people(a,'addedUp'); exception when others then denied:=true; end; assert denied;
  reset role;
  perform set_config('request.jwt.claim.sub',au::text,true); set local role authenticated;
- perform holup_set_follow_settings(true,'everyone');
+ -- `approval` is still accepted on the wire and does nothing. An Add Up asks
+ -- nobody's permission, so asking the backend to require one must not create one.
+ assert (holup_set_follow_settings(true,'everyone')->>'approvalRequired')='false',
+   'approval survived a call that tried to turn it on';
  reset role;
  perform set_config('request.jwt.claim.sub',cu::text,true); set local role authenticated;
  assert (holup_follow_stats(a)->>'canViewAddedUp')::boolean;
  assert jsonb_array_length(holup_follow_people(a,'addedUp')->'items')=1;
- r:=holup_follow(a); assert r->>'status'='pending';
- assert (holup_follow_stats(a)->>'addUps')::int=0, 'pending is not an approved follow';
- denied:=false; begin perform holup_respond_follow(a,true); exception when others then denied:=true; end; assert denied, 'sender accepted own request';
+ r:=holup_follow(a);
+ assert r->>'status'='active', 'an Add Up waited for approval';
+ assert (holup_follow_stats(a)->>'addUps')::int=1, 'an immediate Add Up did not count';
+ assert jsonb_array_length(holup_pending_follow_requests()->'items')=0,
+   'an Add Up created something for the other person to answer';
  reset role;
+ -- Nobody has an approval to answer, and nobody can answer one.
  perform set_config('request.jwt.claim.sub',au::text,true); set local role authenticated;
- assert jsonb_array_length(holup_pending_follow_requests()->'items')=1;
- assert (holup_respond_follow(c,true)->>'status')='active';
- assert jsonb_array_length(holup_pending_follow_requests()->'items')=0;
- assert (holup_follow_stats(a)->>'addUps')::int=1;
+ denied:=false; begin perform holup_respond_follow(c,true); exception when others then denied:=true; end;
+ assert denied, 'an approval was answered on an Add Up that never asked';
  reset role;
  -- Blocks delete both directions; unblocking cannot silently restore either.
  perform set_config('request.jwt.claim.sub',au::text,true); set local role authenticated;

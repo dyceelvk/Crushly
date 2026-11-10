@@ -407,6 +407,37 @@ what is permitted from here on, and what new accounts start at. Their original
 16/17 values are not recoverable, and silently rewriting a preference a member
 can see would be a worse answer than leaving it where they left it.
 
+## Add Up and Homie are not the same kind of thing
+
+Stated by the owner and now enforced in the database:
+
+| | Add Up | Homie |
+| --- | --- | --- |
+| Control | the Add Up button | the 🫂 button, labelled **Homie** |
+| Ask permission first | **no** | **yes** |
+| State while waiting | none — it is done the moment it is tapped | `pending`, until the other person answers |
+| Can be declined | no | yes |
+| What it is | a one-way follow | a relationship both people agreed to |
+
+Concretely, `20261110100000_add_up_needs_no_approval`:
+
+- `holup_follow` writes `active` immediately. There is no pending Add Up.
+- `holup_follows` can no longer hold `pending` — the check constraint allows only
+  `active` and `declined`, so the rule cannot be reintroduced by a stray write.
+- The `approval_required` column is dropped. `holup_set_follow_settings` still
+  accepts `p_approval` (installed clients send it) and ignores it, answering
+  `approvalRequired: false` every time.
+- The client's "Approval" setting and its Add Up requests sheet are gone. The
+  Homie control is one button: 🫂 **Homie**, which becomes *Requested* while it
+  waits and *Homies* once accepted.
+
+The correction also fixes what the first backfill got wrong once the rule is
+stated plainly. A **Keep** was a one-way, unanswered follow, so it is an Add Up
+and arrives `active`. A **pending Crush** was a request to connect, which is a
+Homie, so it becomes an unanswered Homie request instead — and the Homie requests
+the first backfill manufactured from Keeps are removed, because their senders
+never asked.
+
 ## Applying the cutover, when you say go
 
 It is one transaction and one command. Nothing below has been run against the
