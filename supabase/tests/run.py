@@ -166,6 +166,8 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'whisper_presence_guard.sql'):
             return 1
+        if not run_file(ROOT / 'whisper_raw_block.sql'):
+            return 1
         if not run_file(ROOT / 'space_search.sql'):
             return 1
         if not run_file(ROOT / 'post_private.sql'):
