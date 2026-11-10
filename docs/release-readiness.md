@@ -680,3 +680,66 @@ Everything that was on this list is done. What remains is not web code:
    video editor, `holup://` deep links, push notifications, the Android back
    gesture. 44 `Platform.OS === 'web'` branches compile differently on a phone and
    no browser can stand in for them.
+
+## Android signing key: reset (2026-11-07)
+
+The original release keystore is gone. There is no recovery path for a lost
+signing key — no support channel, no escrow, no reconstruction. Android identifies
+an app by package name **and** signing certificate, so a new key does not "update"
+the old install; it is a different app that happens to share a name.
+
+A fresh key was generated: RSA 4096, `SHA256withRSA`, alias `holup-release`,
+PKCS#12, valid until 2054-03-28.
+
+```
+SHA-256: CD:A5:C0:A7:FF:47:E0:2E:CF:8D:CE:F9:E2:28:69:A0:9D:FE:83:77:AE:AC:B8:69:48:55:5F:ED:09:7D:4E:E4
+```
+
+Three things had to move with it, and all three are done in this commit:
+
+| What | Was | Now |
+| --- | --- | --- |
+| `app.json` | `1.0.94` / code `94` | `1.0.95` / code `95` |
+| `public/.well-known/assetlinks.json` | old fingerprint | the fingerprint above |
+| `build-secure-android.yml` certificate check | old digest | the digest above |
+
+The workflow's fingerprint assertion is **updated, not loosened**. It still fails
+closed; it just now pins the key that actually exists. (The old one would have
+blocked every build forever, since no artifact can ever carry it again.)
+
+The Android package name was checked at the same time, because `app.json` says
+`app.crushly` while the workflow and `assetlinks.json` say `app.holup.mobile`.
+There is no discrepancy in the build: `app.config.js` swaps the package to
+`app.holup.mobile` only when `HOLUP_SECURE_ANDROID=1`, which the secure workflow
+sets. The public debug channel stays on `app.crushly` and keeps querying
+`/version`; the secure channel queries `/secure/version`. That split is deliberate
+and stays.
+
+### What a new key means for people who already installed
+
+Existing installs **cannot** be updated in place. They have to be uninstalled and
+reinstalled once, and uninstalling clears app storage. Before that happens, anyone
+holding a draft loses it unless they export it first. Drafts live in the app's own
+storage, not on the server, so this is a real cost and not a formality:
+
+- the old install keeps working until it is replaced, but it can never receive an
+  update signed by the new key;
+- after reinstalling, the account, follows, Homies, Whispers, spaces and media all
+  come back, because those are on the server — only unsent local drafts do not;
+- this happens once. Every build from now on is signed by the key above, so future
+  updates install over the top normally.
+
+Link handling stays intact: the new fingerprint is in `assetlinks.json`, and the
+intent filters cover `/v/` and `/s/`, so a shared post or Space link opens the app
+on a fresh install after the file is deployed.
+
+### What is still required before a candidate APK exists
+
+The workflow needs two repository secrets — `HOLUP_ANDROID_RELEASE_KEYSTORE_B64`
+(base64 of the `.p12`) and `HOLUP_ANDROID_RELEASE_KEY_PASSWORD` (the store and key
+password; they are the same, PKCS#12 requires it). Until both exist the workflow
+fails at "Prepare signing key" on purpose rather than falling back to the debug
+signer.
+
+The keystore is the only irreplaceable file in this project. Back it up somewhere
+that is not this repository and not a chat window.

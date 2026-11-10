@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "app.holup.mobile",
-      "sha256_cert_fingerprints": ["7F:F4:77:7B:98:4E:44:D6:E3:1E:48:5A:95:80:86:E0:7E:D7:CD:62:1E:F6:A8:22:48:9D:0D:9C:BF:27:1A:C5"]
+      "sha256_cert_fingerprints": ["CD:A5:C0:A7:FF:47:E0:2E:CF:8D:CE:F9:E2:28:69:A0:9D:FE:83:77:AE:AC:B8:69:48:55:5F:ED:09:7D:4E:E4"]
     }
   }
 ]

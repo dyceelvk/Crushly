@@ -53,7 +53,7 @@ jobs:
           apk=android/app/build/outputs/apk/release/app-release.apk
           tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature.txt"
-          grep -qi 'certificate SHA-256 digest: 7ff4777b984e44d6e31e485a958086e07ed7cd621ef6a822489d0d9cbf271ac5' "$RUNNER_TEMP/signature.txt"
+          grep -qi 'certificate SHA-256 digest: cda5c0a7ff47e02ecf8dcef9e22869a09dfe8377aeacb86948555fed097d4ee4' "$RUNNER_TEMP/signature.txt"
           "$tools/aapt" dump badging "$apk" | grep -q "package: name='app.holup.mobile'"
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
