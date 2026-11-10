@@ -1,9 +1,9 @@
 /**
- * Holup is one 16+ product. This value is duplicated by the database trigger
+ * Holup is currently 18+ until protected teen mode is ready. This value is duplicated by the database trigger
  * in the reviewed release migration; it is intentionally not an account type
  * or a client-only access check.
  */
-export const MINIMUM_MEMBER_AGE = 16;
+export const MINIMUM_MEMBER_AGE = 18;
 
 export const memberAgeLabel = () => `${MINIMUM_MEMBER_AGE}+`;
 

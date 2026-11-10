@@ -356,7 +356,7 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
     const next: typeof errors = {};
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) next.email = 'Enter a valid email address.';
     if (password.length < 8) next.password = 'Use at least 8 characters.';
-    if (!ageEligible) next.ageEligible = 'Please confirm you’re 16 or older.';
+    if (!ageEligible) next.ageEligible = 'Please confirm you’re 18 or older.';
     setErrors(next);
     if (Object.keys(next).length) return;
     setLoading(true);
@@ -573,7 +573,7 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
         onPress={() => setAgeEligible((a) => !a)}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: ageEligible }}
-        accessibilityLabel="I’m 16 or older and agree to the Terms and Community Guidelines"
+        accessibilityLabel="I’m 18 or older and agree to the Terms and Community Guidelines"
         style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: rhythm.group, paddingVertical: 4 }}
       >
         <View
@@ -585,7 +585,7 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
           {ageEligible ? <Ionicons name="checkmark" size={16} color={colors.onGold} /> : null}
         </View>
         <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
-          I’m 16 or older and I agree to the Terms and Community Guidelines.
+          I’m 18 or older and I agree to the Terms and Community Guidelines.
         </Txt>
       </Pressable>
       {errors.ageEligible ? (

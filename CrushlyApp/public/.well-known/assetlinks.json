@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.holup.mobile",
+      "sha256_cert_fingerprints": ["7F:F4:77:7B:98:4E:44:D6:E3:1E:48:5A:95:80:86:E0:7E:D7:CD:62:1E:F6:A8:22:48:9D:0D:9C:BF:27:1A:C5"]
+    }
+  }
+]

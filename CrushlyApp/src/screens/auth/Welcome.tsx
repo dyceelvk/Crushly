@@ -149,7 +149,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
           </Pressable>
 
           <Txt variant="caption" color="textMuted" align="center" style={{ marginTop: space.xs }}>
-            For people 16+. Built for real connection.
+            For people 18+. Built for real connection.
           </Txt>
         </Animated.View>
       </View>
