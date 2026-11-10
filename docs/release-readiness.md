@@ -786,3 +786,28 @@ The file now uses the version the database recorded and keeps its explanation.
 lesson is the workflow ordering, not the SQL: a failing `db push` blocks the web
 deploy job behind it, so "the site didn't update" and "the migrations are
 inconsistent" are the same symptom and deserve the same urgency.
+
+## Candidate APK built (2026-11-07)
+
+`Build secure Holup Android candidate` run `42836501075` on `f5d322f` succeeded
+end to end — typecheck, the 339 unit tests, `expo prebuild`, the release build,
+and the signing assertion. Read back from the artifact itself rather than from
+the build log:
+
+| | |
+| --- | --- |
+| package | `app.holup.mobile` |
+| version | `1.0.95` (versionCode `95`) |
+| min / target SDK | 28 / 36 |
+| signature | APK Signature Scheme v2 |
+| certificate SHA-256 | `CD:A5:C0:A7:…:4E:E4` — matches the key and the live `assetlinks.json` |
+
+This is the first artifact that can actually replace an install, and it is also a
+candidate, not a release: it is not published anywhere, the artifact is retained
+two days on the run, and the native paths (camera, video editor, push, back
+gesture, `holup://` links) still need a person holding a phone.
+
+Two things a build cannot prove, both now unblocked: that Android's App Links
+verification passes on a real device (needs a browser-free tap on a
+`https://holupapp.vercel.app/s/...` link), and that the update channel answers
+`/secure/version` for this package rather than the public `/version`.
