@@ -345,9 +345,9 @@ def return_to_tabs(tries=4):
     adb('shell', 'am', 'force-stop', PACKAGE)
     time.sleep(1.5)
     adb('shell', 'am', 'start', '-n', LAUNCHER[0])
-    time.sleep(8)
-    seen = nodes() or []
-    if not (find(seen, 'Home') and find(seen, 'Space')):
+    # A cold restart can paint the tabs after the old fixed 8-second delay.
+    # Poll for the real accessibility labels; never assume startup succeeded.
+    if not wait_for(['Home', 'Space'], 90, 'restart to return to main tabs'):
         fail('could not return to the main tabs, even after restarting')
     return True
 
