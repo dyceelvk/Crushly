@@ -591,15 +591,92 @@ select
       where f.follower_id = c.from_id and f.followed_id = c.to_id and f.status = 'active')) as crushes_without_add_up;
 ```
 
+### Whisper walked as a member, on production
+
+The one flow in this release that had never been touched by a human. Same method
+as Add Up / Homie: two throwaway Spaces (QA Emeka, QA Ngozi), a real Chromium, the
+live site, the database checked after each step.
+
+| Step | Result |
+| --- | --- |
+| Emeka opens Ngozi's Space, taps the Whisper button | thread opens with "Whisper request sent — You can send 2 messages before QA Ngozi answers. Make them count." |
+| Emeka sends two messages | both stored; her Whispers row reads **QA Emeka · Wants to Whisper · Request sent · 2/2** |
+| Emeka reloads | banner corrects to "Both messages sent — Waiting for QA Ngozi to accept", composer locked |
+| Ngozi opens the chat | "**QA Emeka wants to Whisper** — 2 messages are waiting. Accept to open the conversation, or decline to close it." with **Accept · Decline inside the chat** |
+| Ngozi taps Accept | decision card gone, composer opens, she replies |
+| Emeka reopens | her reply is there and he can write again |
+
+That is the flow exactly as specified: request → conversation opens → two messages
+→ the recipient decides **inside the chat**.
+
+One thing that looks wrong and is not: a Whisper whose sender has not yet written
+anything is deliberately absent from the Whispers list — the list only shows
+conversations that have a message, so it cannot fill up with empty rows. Worth
+knowing before calling it a bug.
+
+One thing that was *stale but self-correcting*: the banner still read "You can send
+2 messages" immediately after the second message, and settled to "Both messages
+sent" on reload. The stored state was right throughout; the banner reads the state
+fetched with the conversation.
+
+### Space links now unfurl, through a token
+
+A shared Space used to serve the app shell and preview as the generic card.
+`/s/<token>` is a real landing page now — title, description, Open Graph and
+Twitter tags, canonical URL, and links that open the app (`holup://space/<id>`,
+plus `crushly://space/<id>` for older installs).
+
+**The token is the point, not a detail.** Profile ids are sequential and every
+member's privacy row defaults to `profile_visibility = 'everyone'`, so a preview
+answered by id would have let anybody walk `/s/1`, `/s/2`, … and harvest names,
+cities and bios with no sign-in. Instead:
+
+- the token is minted by the database when a member taps share — 32 hex characters,
+  one per Space — and requires a signed-in member who can already see that Space, so
+  a link cannot be created for a hidden profile;
+- the preview stays gated on the member's *current* visibility, so withdrawing it
+  withdraws the card while the link is still in circulation;
+- revoking kills every copy of the link at once.
+
+Verified live against production:
+
+| Check | Result |
+| --- | --- |
+| `/s/<valid token>` | `200`, `<title>Spencer on Holup</title>`, `og:description` "@alfie · Enugu. See their Space on Holup." |
+| `/s/41` (id shape) | `404` — the enumerable form does not exist |
+| `/s/<32 f's>` | `404` |
+| Token revoked, then requested | `404` |
+| Member set visibility to `connections` with a live link | `404`, restored afterwards |
+| `/v/86`, `/`, `/robots.txt` | `200`, `200`, `200` |
+
+### The branch drift that was quietly costing members work
+
+Aligning `main` turned up something worse than a tidy-up. `main` and the deployed
+branch had diverged on 2026-11-09: `main` carried **seven commits production had
+never run** — swipe navigation with nested gesture safeguards, Moment activity
+dismissal, picture tap back on the Flow, feed sound and share controls, the
+legacy-signer publication block, and
+`CrushlyApp/public/.well-known/assetlinks.json`.
+
+That last file is the one that matters for the APK: without it an
+`https://holupapp.vercel.app/...` link opens a browser tab instead of the app,
+because Android cannot verify the host. It is live now (`200`, package
+`app.holup.mobile`, one SHA-256 fingerprint).
+
+Merged, with conflicts resolved to this branch — it is the newer product, and main
+still had the old "Homie requests are being updated" pill where this branch has the
+real 🫂 button. Typecheck clean, 339 tests green, deployed **from `main`**, and both
+branches now point at the same commit so they cannot drift apart again unnoticed.
+
 ### What is left on web
 
-1. **A shared Space does not unfurl.** `/?space=<id>` serves the app shell, so it
-   previews as the generic card. Needs a visibility-safe public Space RPC — a
-   design decision before it is code.
-2. **One legacy profile is `onboarded` with no birthdate.** Asking that member for
-   a birthday is a product call.
-3. **Production deploys from `build/holup-follow-draft`, not `main`.** Fine as a
-   choice; it should be a deliberate one before APKs are cut from the same tree.
-4. **The Whisper flow has not been walked end to end** the way Add Up and Homie
-   now have: request → thread opens → two messages → Accept/Decline inside the
-   chat. Same method, not yet done.
+Everything that was on this list is done. What remains is not web code:
+
+1. **The Android build.** Needs `HOLUP_ANDROID_RELEASE_KEYSTORE_B64` and
+   `HOLUP_ANDROID_RELEASE_KEY_PASSWORD`. Everything the app needs to be the same app
+   on a phone is now in place: one source, the App Links file, and `/s/` and `/v/`
+   in the Android intent filters.
+2. **A human walking the native-only paths** once a signed build exists — camera,
+   video editor, `holup://` deep links, push notifications, the Android back
+   gesture. 44 `Platform.OS === 'web'` branches compile differently on a phone and
+   no browser can stand in for them.
