@@ -836,11 +836,26 @@ because the repository was public.
 
 The site was published by creating the deployment through the Vercel API
 (`create_deployment` on `main`) instead, which is not subject to that seat check.
-That works, but it is a manual step, and the permanent fix is one of:
+That works, but it is a manual step, and the permanent fix had two candidates:
 
 - add `rielosInc@gmail.com` to the GitHub account (verified) and to the Vercel
   team, which keeps the authorship honest; or
 - commit as the account's own email. Attribution is the trade.
+
+**Resolved 2026-11-07 — commit as `dyceelvk@gmail.com`.** Adding a second member
+is not available on the current Vercel plan without a paid upgrade, so the second
+option was taken: the repository sets `user.email` to the account's own, already
+verified address. `rielosInc@gmail.com` remains the contact/brand address and is
+not wired into the app; it is no longer the commit author.
+
+```
+git config --local user.email "dyceelvk@gmail.com"
+```
+
+Deploys are triggered by the commit author matching a team member. Any future
+commit authored from an address that is not on the GitHub account and the Vercel
+team will show `BLOCKED` again — check `get_deployment` for `BLOCKED` rather than
+trusting a push notification.
 
 **2. The live-site check was proving the wrong thing.**
 
