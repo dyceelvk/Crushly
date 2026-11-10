@@ -393,13 +393,16 @@ on first relationship action and switches to the v2 contract by itself
 receive the 409 update prompt on Add Up / Homie actions — the honest outcome, and
 the reason the client copy in the store must be refreshed.
 
-**Still outstanding, and it is a product decision, not a bug:** production runs
-`20261110023805_restore_adult_gate_until_teen_protections`, which replaced the
-16+ gate with **18+**. That contradicts the stated requirement (16+, not 18+),
-and it is why `minimum_age.sql` fails on a replay of the deployed schema
-(27/28). Re-applying 16+ is a one-line threshold change plus the preference
-floor; it has not been made, because reversing a deliberate safeguarding
-decision is the owner's call, not a deploy step.
+**The 16+ rule is restored** by `20261110090000_restore_minimum_age_16` (see
+below), which replaced the 18+ gate that `20261110023805` had put in its place.
+With it, every suite in the repository passes on a replay of the deployed schema:
+**28/28**.
+
+The migration deliberately does *not* lower anyone's saved age filters. Members
+whose `age_min` was raised to 18 now see an 18 floor; the migration only changes
+what is permitted from here on, and what new accounts start at. Their original
+16/17 values are not recoverable, and silently rewriting a preference a member
+can see would be a worse answer than leaving it where they left it.
 
 ## Applying the cutover, when you say go
 
