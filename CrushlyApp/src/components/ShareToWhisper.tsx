@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from './Txt';
@@ -16,8 +16,9 @@ import { timeAgo } from '../lib/format';
 import { haptic } from '../lib/haptics';
 import { postShareUrl } from '../lib/postShare';
 import { canSaveClip } from '../lib/clipSaveRules';
+import { postDownloadUrl } from '../lib/mediaHost';
 import { saveClipToDevice } from '../lib/downloadClip';
-import { publicPostPreview } from '../api/service';
+import { publicPostPreview, postDownload } from '../api/service';
 
 /**
  * Send a post into a Whisper.
@@ -46,6 +47,10 @@ export function ShareToWhisper({
   const [query, setQuery] = useState('');
   const [sentTo, setSentTo] = useState<Record<number, true>>({});
   const [saving, setSaving] = useState(false);
+  // The marked copy is looked up when the sheet opens, not carried on every post
+  // in every feed: it is needed on one screen, and a storage key has no business
+  // travelling to every client.
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const people: ConversationSummary[] = useMemo(() => {
     const items: ConversationSummary[] = list.data ?? [];
@@ -92,12 +97,22 @@ export function ShareToWhisper({
    * pipeline has produced a marked copy — see `canSaveClip` — so a tap can never
    * hand out somebody's work with no name on it.
    */
+  useEffect(() => {
+    let live = true;
+    setDownloadUrl(null);
+    if (!post || post.mediaKind !== 'video') return () => { live = false; };
+    void postDownload(post.id)
+      .then((copy) => { if (live && copy) setDownloadUrl(postDownloadUrl(post.id)); })
+      .catch(() => { /* no row, rather than a row that fails on tap */ });
+    return () => { live = false; };
+  }, [post]);
+
   const save = async () => {
-    if (!post || saving) return;
+    if (!post || saving || !downloadUrl) return;
     setSaving(true);
     haptic.tap();
     try {
-      const outcome = await saveClipToDevice({ id: post.id, mediaKind: post.mediaKind, downloadUrl: post.downloadUrl });
+      const outcome = await saveClipToDevice({ id: post.id, mediaKind: post.mediaKind, downloadUrl });
       if (outcome === 'saved') {
         toast({ kind: 'success', title: 'Saved to your device', message: 'This copy carries the Holup mark and the creator’s handle.' });
       } else if (outcome === 'downloaded') {
@@ -192,7 +207,7 @@ export function ShareToWhisper({
       </ScrollView>
 
       <View style={{ padding: space.md, borderTopWidth: 1, borderTopColor: colors.border }}>
-        {canSaveClip(post ?? {}) ? (
+        {canSaveClip({ mediaKind: post?.mediaKind, downloadUrl }) ? (
           <Pressable
             onPress={save}
             disabled={saving}

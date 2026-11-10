@@ -583,6 +583,43 @@ export default {
       return apkBuild(url, env, origin, request.method === 'HEAD');
     }
 
+    /**
+     * A clip somebody asked to keep: the marked copy, streamed as a download.
+     *
+     * The path is the post id, not a storage key, so the client never learns
+     * where the file lives and cannot construct a key for a post it may not see.
+     * `post_download` applies `can_view_post` and returns null for every refusal,
+     * so a block, a private audience or a deleted post all read as 404 here — the
+     * same answer whether the copy exists or not.
+     */
+    if (url.pathname.startsWith('/d/')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return fail(405, 'Unsupported method.', origin);
+      }
+      const token = bearerToken(request, new URL(request.url).searchParams.get('token'));
+      if (!token) return fail(401, 'Sign in to save this.', origin);
+
+      const postId = Number(decodeURIComponent(url.pathname.replace(/^\/d\/?/, '')));
+      if (!Number.isSafeInteger(postId) || postId <= 0) return fail(404, 'That clip isn’t available.', origin);
+
+      const copy = await rpc<{ path: string } | null>(env, token, 'post_download', { p_post_id: postId });
+      if (!copy.ok) return fail(copy.status, copy.message, origin);
+      if (!copy.data?.path) return fail(404, 'That clip isn’t available.', origin);
+
+      const auth = await b2Auth(env);
+      const upstream = await b2Download(env, auth, copy.data.path);
+      if (!upstream.ok) return fail(404, 'That clip isn’t available.', origin);
+
+      // A download, not a page: the browser and Android both need the filename,
+      // and a marked copy must never be cached under a key another member shares.
+      const headers = new Headers(upstream.headers);
+      headers.set('Content-Type', 'video/mp4');
+      headers.set('Content-Disposition', `attachment; filename="holup-${postId}.mp4"`);
+      headers.set('Cache-Control', 'private, no-store');
+      headers.set('X-Content-Type-Options', 'nosniff');
+      return new Response(request.method === 'HEAD' ? null : upstream.body, { status: 200, headers });
+    }
+
     const { path, queryToken } = splitPath(url);
     const token = bearerToken(request, queryToken);
     if (!token) return fail(401, 'Sign in to load this.', origin);

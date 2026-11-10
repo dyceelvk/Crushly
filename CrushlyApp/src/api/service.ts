@@ -917,6 +917,20 @@ export async function likePostComment(
 }
 
 /** One post by id, enforcing the same audience and block rules as the Feed. */
+/**
+ * Does this post have a marked copy ready to save?
+ *
+ * Asked when the share sheet opens rather than shipped on every post: the row is
+ * only ever needed on one screen, and a `path` in a feed row would be a storage
+ * key travelling to every client. Null means "no copy", which is also the answer
+ * for every refusal — the server does not tell a member whether a marked copy
+ * exists for a post they cannot see.
+ */
+export async function postDownload(postId: number): Promise<{ bytes: number | null } | null> {
+  const copy = await rpc<{ path: string; bytes: number | null } | null>('post_download', { p_post_id: postId });
+  return copy ? { bytes: copy.bytes ?? null } : null;
+}
+
 export async function loadPost(postId: number): Promise<Post> {
   return rpc<Post>('load_post', { p_post_id: postId });
 }

@@ -91,6 +91,20 @@ export function mediaStoreUrl(path: string, withToken = tokenInQuery): string {
   return withToken && token ? `${url}?token=${encodeURIComponent(token)}` : url;
 }
 
+/**
+ * The download address for a post's marked copy.
+ *
+ * The path is the post id, never a storage key — the Worker resolves it through
+ * `post_download`, which applies `can_view_post`. So a member cannot build a
+ * URL for a post they cannot see, and the URL cannot be forwarded to somebody
+ * who could not have downloaded it themselves.
+ */
+export function postDownloadUrl(postId: number): string | null {
+  if (!mediaStoreEnabled) return null;
+  const url = `${MEDIA_BASE_URL}/d/${postId}`;
+  return tokenInQuery && token ? `${url}?token=${encodeURIComponent(token)}` : url;
+}
+
 /** Absolute media-Worker URL → its stored path, or null if it isn't ours. */
 export function mediaStorePath(url: string): string | null {
   if (!mediaStoreEnabled || !url.startsWith(`${MEDIA_BASE_URL}/m/`)) return null;

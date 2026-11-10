@@ -1,0 +1,67 @@
+# Produces the marked copy of every clip that does not have one yet.
+#
+# This is the server half of "save clip to device". The app never re-encodes
+# anything: a job downloads the original from the private bucket, burns in the
+# Holup mark and the creator's handle, appends the 6-second end splash, uploads
+# the result and records where it went. The copy that plays inside Holup is never
+# touched, and the marked copy is only ever handed out through `post_download`,
+# which applies `can_view_post`.
+#
+# Manual, on purpose. Marking every clip the moment it is uploaded would put an
+# ffmpeg transcode in the upload path and make a member wait for it; a batch that
+# runs on demand keeps uploads instant and lets a backlog be cleared in one go.
+#
+# Secrets used: SUPABASE_DB_URL, B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET.
+# Nothing sensitive is committed and nothing is echoed.
+
+name: Mark clips for download
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many posts to process in this run'
+        required: false
+        default: '20'
+      post_ids:
+        description: 'Specific post ids (comma separated). Empty = whatever is missing a copy.'
+        required: false
+        default: ''
+
+concurrency:
+  group: mark-clips
+  cancel-in-progress: false
+
+jobs:
+  mark:
+    name: mark and upload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ffmpeg and the drawing library
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg postgresql-client
+          python -m pip install --quiet pillow imageio imageio-ffmpeg
+          ffmpeg -version | head -1
+
+      - name: Mark the clips
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          LIMIT: ${{ inputs.limit }}
+          POST_IDS: ${{ inputs.post_ids }}
+        run: |
+          python scripts/mark_pending_clips.py
+
+      - name: Summary
+        if: always()
+        run: echo "Finished. See the log above for per-post results."
