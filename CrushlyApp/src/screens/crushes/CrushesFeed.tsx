@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Skeleton } from '../../components/States';
 import { Button } from '../../components/Button';
 import { PostCard } from '../../components/feed/PostCard';
 import { CrushClipCard } from '../../components/feed/CrushClipCard';
+import { MomentCircles } from '../../components/MomentCircle';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
 import { useCrushesFeed } from '../../api/hooks';
@@ -128,10 +129,18 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
         alignSelf: 'center',
         gap: space.md,
         paddingTop: top,
-        paddingHorizontal: space.md,
         paddingBottom: space.xxxl,
         flexGrow: 1,
       }}
+      /* The live Moments, one circle per person, are the first thing in the feed.
+         They sit above the first card rather than inside it: a Moment is a face
+         with a day to live, and a face belongs at the top of a feed. The row hides
+         itself when nothing is live, so this costs an empty feed nothing. */
+      ListHeaderComponent={
+        <View style={{ marginHorizontal: -space.md }}>
+          <MomentCircles />
+        </View>
+      }
       renderItem={({ item, index }) => (
         <Measured index={index} id={item.id} onReport={focus.report}>
           {/* A clip is the card; a photograph and a written post keep the card

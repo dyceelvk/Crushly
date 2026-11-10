@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { EditedClip } from '../../components/EditedClip';
 import { ProgressBar } from '../../components/States';
 import { splitForUpload, emptyEdit, playbackLength, type VideoEdit } from '../../lib/videoEdit';
+import { MOMENT_CLIP_SECONDS, clipTimeLabel } from '../../lib/momentClip';
 import { preparedClip } from '../../lib/videoEncode';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { takeTrimResult } from '../common/VideoTrimScreen';
@@ -158,7 +159,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
-        videoMaxDuration: 60, // Moments allow up to one minute
+        videoMaxDuration: MOMENT_CLIP_SECONDS, // a Moment clip is 25 seconds
         quality: 0.8,
       });
       if (result.canceled || !result.assets?.length) return;
@@ -179,7 +180,11 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
       });
       navigation.navigate('VideoTrim', {
         sourceUri,
-        sourceDuration: (asset.duration ?? 0) / 1000,
+        // The raw picker number, not a guess at its unit: the trim screen runs it
+        // through `pickerSeconds`, which is where the milliseconds-versus-seconds
+        // question is answered. Dividing here is what turned a 25-second clip
+        // into 0.025 seconds and a one-second Moment.
+        sourceDuration: asset.duration ?? 0,
         category: 'moment',
       });
     } catch (e) {
@@ -192,7 +197,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
     try {
       const prepared = clip ? await preparedClip(clipEdit, clip.uri, 'moment') : null;
       const durationMs = clip
-        ? Math.max(100, Math.min(60_000, Math.round(playbackLength(clipEdit ?? emptyEdit((clip.durationMs || 0) / 1000)) * 1000)))
+        ? Math.max(100, Math.min(MOMENT_CLIP_SECONDS * 1000, Math.round(playbackLength(clipEdit ?? emptyEdit((clip.durationMs || 0) / 1000)) * 1000)))
         : null;
       await createMoment({
         kind: mode,
@@ -342,12 +347,12 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <Txt variant="smallStrong">Clip length</Txt>
             <Txt variant="smallStrong" color="gold">
-              {`${Math.floor((clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) / 60)}:${String(Math.floor((clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) % 60)).padStart(2, '0')} / 1:00`}
+              {`${clipTimeLabel(clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000)} / ${clipTimeLabel(MOMENT_CLIP_SECONDS)}`}
             </Txt>
           </View>
           <ProgressBar
-            value={Math.min(1, (clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) / 60)}
-            label="Moment clip length, up to one minute"
+            value={Math.min(1, (clipEdit ? playbackLength(clipEdit) : clip.durationMs / 1000) / MOMENT_CLIP_SECONDS)}
+            label={`Moment clip length, up to ${MOMENT_CLIP_SECONDS} seconds`}
             style={{ height: 6 }}
           />
           <Button
@@ -366,7 +371,7 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
             accessibilityLabel="Adjust Moment clip length"
           />
           <Txt variant="caption" color="textMuted">
-            Choose up to 1 minute. Your Moment disappears in 24 hours.
+            Choose up to 25 seconds. Your Moment disappears in 24 hours.
           </Txt>
         </View>
       ) : null}

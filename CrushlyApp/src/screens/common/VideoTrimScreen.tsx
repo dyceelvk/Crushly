@@ -10,6 +10,13 @@ import { IconButton } from '../../components/IconButton';
 import { ProgressBar } from '../../components/States';
 import { radius, space } from '../../theme/tokens';
 import { clampEdit, emptyEdit, segmentsOf, type VideoEdit } from '../../lib/videoEdit';
+import {
+  MOMENT_CLIP_SECONDS,
+  clampWindow,
+  clipTimeLabel,
+  openingWindow,
+  pickerSeconds,
+} from '../../lib/momentClip';
 import type { ScreenProps } from '../../navigation/types';
 
 export type TrimResult = { edit: VideoEdit | null; category: 'post' | 'moment' | 'circle' };
@@ -58,11 +65,6 @@ export function VideoTrimScreen({ navigation, route }: ScreenProps<'VideoTrim'>)
   );
 }
 
-function timeLabel(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
 function MomentClipTrim({
   navigation,
   sourceUri,
@@ -77,86 +79,107 @@ function MomentClipTrim({
   const player = useVideoPlayer(sourceUri, (p) => {
     p.loop = false;
   });
-  const initialSeconds = Math.max(0, sourceDuration || initialEdit?.sourceDuration || 0);
-  const [total, setTotal] = useState(initialSeconds);
-  const initialSegments = useMemo(() => initialEdit ? segmentsOf(initialEdit) : [], [initialEdit]);
-  const initialStart = initialEdit?.trimStart ?? initialSegments[0]?.start ?? 0;
-  const initialEnd = initialEdit?.trimEnd ?? initialSegments[initialSegments.length - 1]?.end ?? Math.min(initialSeconds || 60, 60);
-  const [range, setRange] = useState({
-    start: Math.max(0, initialStart),
-    end: Math.min(initialSeconds || 60, Math.max(initialStart + 0.1, initialEnd)),
-  });
-  const [playing, setPlaying] = useState(false);
-  const max = Math.max(1, total || initialSeconds || 60);
 
-  // Picker metadata is usually present, but native/web decoders are the source
-  // of truth when it is not. Ask briefly until the player has loaded the track.
+  /**
+   * The length of the file, measured by the decoder.
+   *
+   * It used to start from `sourceDuration || 60` and fall back to `Math.max(1,…)`
+   * while the decoder was still loading — so a picker that reported nothing (or
+   * reported seconds as milliseconds) produced a *one-second* window over a
+   * twenty-second clip, and the Moment that came out was one second long. Now the
+   * screen waits for a real number, and the picker's number is only a hint that
+   * has to pass `pickerSeconds` before it is believed.
+   */
+  const hint = pickerSeconds(sourceDuration) ?? null;
+  const [total, setTotal] = useState(0);
+  const [window, setWindow] = useState<{ start: number; end: number } | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  // Ask the decoder. The picker's hint is only used if the decoder never answers,
+  // and even then it has to be a believable length before a window is opened.
   useEffect(() => {
-    if (total > 0) return;
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
-      const duration = Number(player.duration) || 0;
-      if (duration > 0) {
-        setTotal(duration);
-        setRange((current) => ({ start: Math.min(current.start, duration - 0.1), end: Math.min(current.end, duration) }));
+      const measured = Number(player.duration) || 0;
+      if (measured > 0) {
+        setTotal(measured);
         clearInterval(timer);
-      } else if (tries >= 40) {
+      } else if (tries >= 24) {
+        if (hint) setTotal(hint);
         clearInterval(timer);
       }
     }, 250);
     return () => clearInterval(timer);
-  }, [player, total]);
+  }, [player, hint]);
+
+  // Open on the whole clip — or its first 25 seconds — the moment it is known.
+  const selected = window;
+  useEffect(() => {
+    if (!total || selected) return;
+    const previous = initialEdit ? segmentsOf(initialEdit).pop() : null;
+    if (initialEdit && previous && previous.end > previous.start) {
+      setWindow(clampWindow(previous.start, previous.end, total));
+      return;
+    }
+    setWindow(openingWindow(total));
+  }, [total, selected, initialEdit]);
 
   useEffect(() => {
+    if (!selected) return;
     player.pause();
     setPlaying(false);
-    player.currentTime = range.start;
-  }, [player, range.start]);
+    player.currentTime = selected.start;
+  }, [player, selected?.start]);
 
-  // Keep the preview inside the selected window, while the visible range line
-  // and time count show exactly how much of the one-minute allowance is used.
+  // Keep the preview inside the selected window while it plays.
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || !selected) return;
     const timer = setInterval(() => {
-      if (player.currentTime >= range.end || player.currentTime < range.start) {
-        player.currentTime = range.start;
+      if (player.currentTime >= selected.end || player.currentTime < selected.start) {
+        player.currentTime = selected.start;
         player.play();
       }
     }, 120);
     return () => clearInterval(timer);
-  }, [player, playing, range.start, range.end]);
+  }, [player, playing, selected?.start, selected?.end]);
 
-  const setWindow = (low: number, high: number) => {
-    const start = Math.max(0, Math.min(low, max - 0.1));
-    let end = Math.max(start + 0.1, Math.min(high, max));
-    if (end - start > 60) end = start + 60;
-    setRange({ start, end });
+  const setRange = (low: number, high: number) => {
+    if (!total) return;
+    setWindow(clampWindow(low, high, total));
   };
 
   const useClip = () => {
-    const duration = max;
-    const base = emptyEdit(duration);
+    if (!total || !selected || selected.end <= selected.start) return;
     const edit = clampEdit({
-      ...base,
-      trimStart: range.start,
-      trimEnd: range.end,
-      segments: [{ id: 'moment-clip', start: range.start, end: range.end }],
+      ...emptyEdit(total),
+      trimStart: selected.start,
+      trimEnd: selected.end,
+      segments: [{ id: 'moment-clip', start: selected.start, end: selected.end }],
     }, 'moment');
     setTrimResult({ edit, category: 'moment' });
     navigation.pop();
   };
 
-  const selectedSeconds = Math.max(0, range.end - range.start);
+  const selectedSeconds = selected ? Math.max(0, selected.end - selected.start) : 0;
+  const reading = !total || !selected;
 
   return (
     <Screen
       scroll={false}
-      footer={<Button title="Use this clip" icon="checkmark" onPress={useClip} />}
+      footer={
+        <Button
+          title={reading ? 'Reading your clip…' : 'Use this clip'}
+          icon="checkmark"
+          onPress={useClip}
+          disabled={reading}
+          loading={reading}
+        />
+      }
     >
       <Header
         title="Trim your Moment"
-        subtitle="Choose the part you want to share."
+        subtitle={`Choose up to ${MOMENT_CLIP_SECONDS} seconds to share.`}
         back
         onBack={() => navigation.pop()}
         right={<IconButton icon="close" label="Cancel clip trim" onPress={() => navigation.pop()} />}
@@ -175,9 +198,10 @@ function MomentClipTrim({
               variant="glass"
               label={playing ? 'Pause preview' : 'Play preview'}
               onPress={() => {
+                if (reading || !selected) return;
                 if (playing) player.pause();
                 else {
-                  if (player.currentTime < range.start || player.currentTime >= range.end) player.currentTime = range.start;
+                  if (player.currentTime < selected.start || player.currentTime >= selected.end) player.currentTime = selected.start;
                   player.play();
                 }
                 setPlaying(!playing);
@@ -190,33 +214,41 @@ function MomentClipTrim({
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <Txt variant="bodyStrong">Clip length</Txt>
             <Txt variant="smallStrong" color="gold">
-              {timeLabel(selectedSeconds)} / 1:00 max
+              {clipTimeLabel(selectedSeconds)} / {clipTimeLabel(MOMENT_CLIP_SECONDS)} max
             </Txt>
           </View>
           <ProgressBar
-            value={Math.min(1, selectedSeconds / 60)}
-            label={`Moment clip length, ${timeLabel(selectedSeconds)} of 1 minute`}
+            value={Math.min(1, selectedSeconds / MOMENT_CLIP_SECONDS)}
+            label={`Moment clip length, ${clipTimeLabel(selectedSeconds)} of ${MOMENT_CLIP_SECONDS} seconds`}
             style={{ height: 6 }}
           />
-          <RangeSlider
-            min={0}
-            max={max}
-            low={range.start}
-            high={range.end}
-            step={0.5}
-            onChange={setWindow}
-            label="Clip trim"
-            formatValue={timeLabel}
-          />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Txt variant="caption" color="textMuted">In {timeLabel(range.start)}</Txt>
-            <Txt variant="caption" color="textMuted">Out {timeLabel(range.end)}</Txt>
-          </View>
-          {total > 60 ? (
+          {selected ? (
+            <>
+              <RangeSlider
+                min={0}
+                max={total}
+                low={selected.start}
+                high={selected.end}
+                step={0.5}
+                onChange={setRange}
+                label="Clip trim"
+                formatValue={clipTimeLabel}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Txt variant="caption" color="textMuted">In {clipTimeLabel(selected.start)}</Txt>
+                <Txt variant="caption" color="textMuted">Out {clipTimeLabel(selected.end)}</Txt>
+              </View>
+              {total > MOMENT_CLIP_SECONDS ? (
+                <Txt variant="caption" color="textSecondary">
+                  The source is {clipTimeLabel(total)} long. Choose any {MOMENT_CLIP_SECONDS} seconds of it.
+                </Txt>
+              ) : null}
+            </>
+          ) : (
             <Txt variant="caption" color="textSecondary">
-              The source is {timeLabel(total)} long. Choose any section up to one minute.
+              Reading the clip’s length…
             </Txt>
-          ) : null}
+          )}
         </View>
       </View>
     </Screen>

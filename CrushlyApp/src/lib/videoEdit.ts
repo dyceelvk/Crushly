@@ -22,6 +22,7 @@
  * `trimStart + clipTime`. Wall-clock time is `clipTime / speed`.
  */
 
+import { MOMENT_CLIP_SECONDS } from './momentClip';
 import {
   MIN_SEGMENT,
   Segment,
@@ -173,10 +174,13 @@ export const CAPTION_COLORS = ['#ffffff', '#000000', '#ffd166', '#ff5f8f', '#7ee
  */
 export const EDIT_LIMITS: Record<EditCategory, { maxSeconds: number; maxCaptions: number; maxStickers: number; note: string }> = {
   moment: {
-    maxSeconds: 60,
+    // 25 seconds, not a minute. A Moment is a glimpse that is gone tomorrow; the
+    // longer it is allowed to be, the more it is a post wearing a ring, and the
+    // trim screen is the only place anybody finds out what the limit is.
+    maxSeconds: MOMENT_CLIP_SECONDS,
     maxCaptions: 4,
     maxStickers: 6,
-    note: 'A Moment clip can be up to one minute, and disappears tomorrow.',
+    note: 'A Moment clip can be up to 25 seconds, and disappears tomorrow.',
   },
   post: {
     maxSeconds: 60,

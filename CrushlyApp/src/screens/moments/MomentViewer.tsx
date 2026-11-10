@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useIsFocused } from '@react-navigation/native';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
+import { MOMENT_CLIP_SECONDS } from '../../lib/momentClip';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -120,7 +121,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const moment = group && group.moments.length ? group.moments[Math.min(displayIndex, group.moments.length - 1)] : undefined;
   const paused = !screenFocused || focused || reactOpen || confirmDelete || viewersOpen || holding;
   const playbackDurationMs = moment?.kind === 'video'
-    ? Math.max(100, Math.min(60_000, moment.durationMs ?? DURATION))
+    ? Math.max(100, Math.min(MOMENT_CLIP_SECONDS * 1000, moment.durationMs ?? DURATION))
     : DURATION;
 
   // Start each person's sequence at their first unseen Moment.

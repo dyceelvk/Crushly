@@ -9,6 +9,7 @@ import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
 import { clampMemberAge, isMemberAgeEligible, MINIMUM_MEMBER_AGE } from '../lib/minimumAge';
+import { MOMENT_CLIP_SECONDS } from '../lib/momentClip';
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import { profileShape } from '../lib/profileShape';
 import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
@@ -1761,8 +1762,10 @@ export async function createMoment(input: {
   }
   if (input.kind === 'video') {
     if (!input.videoUri) throw new ApiError(400, 'Choose a clip to share.');
-    if (!input.durationMs || input.durationMs < 100 || input.durationMs > 60_000) {
-      throw new ApiError(400, 'Choose a clip that is no longer than 1 minute.');
+    // 25 seconds, matching `MOMENT_CLIP_SECONDS` and the database's own check.
+    // The lower bound is 100 ms so a broken decoder cannot post a frame.
+    if (!input.durationMs || input.durationMs < 100 || input.durationMs > MOMENT_CLIP_SECONDS * 1000) {
+      throw new ApiError(400, `Choose a clip that is no longer than ${MOMENT_CLIP_SECONDS} seconds.`);
     }
     const type = (input.videoMime || 'video/mp4').toLowerCase();
     const id = await meId();

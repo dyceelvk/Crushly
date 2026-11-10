@@ -111,6 +111,13 @@ jobs:
         env:
           E2E_START_SERVER: '1'
 
+      # Moments: a round picture per person in the Crushes feed, and one card per
+      # person in Discover — not one per Moment, which is what let one member's
+      # four clips push three other people off the row.
+      - run: npx playwright test --config e2e/moments.config.ts
+        env:
+          E2E_START_SERVER: '1'
+
   emulator-retry:
     name: Re-walk an identical test APK
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.apk_run_id != '' && startsWith(github.ref_name, 'verify/') }}

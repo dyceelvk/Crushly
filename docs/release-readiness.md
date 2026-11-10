@@ -812,6 +812,54 @@ verification passes on a real device (needs a browser-free tap on a
 `https://holupapp.vercel.app/s/...` link), and that the update channel answers
 `/secure/version` for this package rather than the public `/version`.
 
+## Moments: 25 seconds, round pictures, one card per person (2026-11-07)
+
+Three things, one of which was a defect that made every clip Moment unusable.
+
+### The one-second Moment
+
+The trim screen opened with `Math.max(1, total || initialSeconds || 60)` as the
+length of the file it was about to cut. When the decoder had not reported yet —
+and on the web it never does — that `1` *was* the file, so the window was
+0–1 seconds and the Moment that came out was one second long. Two other things
+were wrong underneath it:
+
+- the composer divided the picker's duration by 1000 to reach seconds. The picker
+  documents milliseconds but does not always deliver them, so a clip reported as
+  `25` (seconds) became `0.025`, which is the other way to get a one-second clip;
+- `createMoment` and the `create_moment` function both accepted up to 60 seconds,
+  so nothing downstream disagreed.
+
+Now the length is the decoder's number, the picker's number is a hint run through
+`pickerSeconds` (milliseconds past two minutes, seconds below it), an unknown
+length is `null` — "wait" — rather than zero, and no window is ever opened over
+an unmeasured file. `lib/momentClip.ts` holds all of it and is tested in
+`lib/momentClip.test.ts`: thirteen cases, including the exact 25-in-as-seconds
+case that produced 0.025.
+
+### 25 seconds
+
+`MOMENT_CLIP_SECONDS` is 25, and it is the single number the trim screen, the
+composer, the viewer, `createMoment` and `create_moment` all read. A moment is a
+glimpse that is gone tomorrow; a minute of glimpse is a post. Existing clips
+longer than 25 seconds are left alone — they expire within the day, and cutting
+somebody's live Moment short is a stranger change than the one being made.
+
+### A round picture, and one card per person
+
+- **Crushes feed:** the live Moments are the first thing in the feed, as circles,
+  one per person, with the ring colour the member wears everywhere else and a
+  `+n` badge when they have more than one live. `components/MomentCircle.tsx`.
+- **Discover:** still a card, because Discover is where you browse — but one card
+  per person, with a round picture inside it and the same `+n` badge. It used to
+  be one tile per Moment, so a member who posted four times in an afternoon
+  pushed three other people off the row.
+
+Both are covered offline by `e2e/moment-circles.spec.ts` (config
+`e2e/moments.config.ts`, wired into CI next to the other offline browser runs):
+Ada has four Moments, the feed shows one circle with `+3`, and Discover shows one
+card that contains exactly one of her Moments.
+
 ## Saving a clip to a device, and the 7-second end card (2026-11-07)
 
 Two things were asked for: a Tik-Tok-shaped ending for exported video, and a

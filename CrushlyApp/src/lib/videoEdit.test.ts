@@ -45,10 +45,17 @@ test('every category is capped at the seconds its limit allows', () => {
   }
 });
 
-test('a Moment clip can run up to one minute, never longer', () => {
+test('a Moment clip runs up to 25 seconds, never longer', () => {
   const e = clampEdit({ ...emptyEdit(300), trimEnd: 300 }, 'moment');
-  assert.equal(EDIT_LIMITS.moment.maxSeconds, 60);
-  assert.ok(clipLength(e) <= 60.001);
+  assert.equal(EDIT_LIMITS.moment.maxSeconds, 25);
+  assert.ok(clipLength(e) <= 25.001);
+});
+
+test('a Moment edited under the old minute limit is cut back to 25', () => {
+  // Somebody can still have a 60-second Moment edit sitting in a saved draft from
+  // before the limit changed. It is clamped on the way out, not silently posted.
+  const long = clampEdit({ ...emptyEdit(90), trimEnd: 58 }, 'moment');
+  assert.ok(clipLength(long) <= 25.001, `got ${clipLength(long)}`);
 });
 
 test('trimming drags overlays back inside the window', () => {
