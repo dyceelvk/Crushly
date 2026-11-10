@@ -42,7 +42,15 @@ begin
   -- exist at all), so they are the pair with a thread.
   perform set_config('request.jwt.claim.sub', daniel::text, false);
   conv_id := (public.open_conversation(marcus_id) ->> 'id')::bigint;
-  sent := public.send_message(conv_id, 'text', 'delivery, please', null, '{}'::jsonb);
+  -- A Whisper needs an answer, not just a connection. This suite is about
+  -- delivery stamps and receipts, so the answer is stated here instead of being assumed
+  -- from the old "connections may always message" rule.
+  if to_regclass('public.holup_whisper_permissions') is not null then
+    insert into public.holup_whisper_permissions(conversation_id, requester_id, recipient_id, state, decided_at)
+      values (conv_id, least(daniel_id, marcus_id), greatest(daniel_id, marcus_id), 'accepted', public.now_ms())
+      on conflict (conversation_id) do update set state = 'accepted', decided_at = public.now_ms();
+  end if;
+    sent := public.send_message(conv_id, 'text', 'delivery, please', null, '{}'::jsonb);
   msg_id := (sent ->> 'id')::bigint;
 
   -- ------------------------------------------------ 1 · delivered, once
@@ -132,6 +140,15 @@ begin
   insert into public.blocks (blocker_id, blocked_id) values (marcus_id, daniel_id) on conflict do nothing;
   assert not public.can_join_whisper('whisper:' || conv_id), 'a cut-off pair has no channel';
   delete from public.blocks where blocker_id = marcus_id and blocked_id = daniel_id;
+  -- Unblocking does not resurrect the Whisper: a block ends a connection for
+  -- good, so the pair has to ask again. The suite needs a working thread, so it
+  -- states the new answer instead of assuming the old one came back.
+  if to_regclass('public.holup_whisper_permissions') is not null then
+    update public.holup_whisper_permissions
+       set state = 'accepted', decided_at = public.now_ms()
+     where conversation_id = conv_id;
+  end if;
+  update public.conversations set closed = false where id = conv_id;
 
   -- ------------------------------------------------ 5 · activity vs online
   presence := public.peer_presence(conv_id);

@@ -85,6 +85,10 @@ begin
  insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
  values(me,p_target,case when needs_approval then 'pending' else 'active' end,public.now_ms(),case when needs_approval then null else public.now_ms() end)
  on conflict(follower_id,followed_id) do update set status=excluded.status,created_at=excluded.created_at,decided_at=excluded.decided_at returning * into r;
+ -- An Add Up is announced, once. `notify_to` collapses a repeat into the unread
+ -- row that is already there, and the member's own "Add Ups" switch can silence
+ -- it without touching anything else.
+ perform public.notify_to(p_target,'keep',me,null,'');
  return jsonb_build_object('status',r.status,'changed',true);
 end $$;
 

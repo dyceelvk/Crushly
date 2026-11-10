@@ -12,6 +12,7 @@
 --      and still says nothing when you Crush your own.
 do $$
 declare
+  follow_new boolean;
   author_uuid uuid;
   actor_uuid  uuid;
   viewer_uuid uuid;
@@ -26,6 +27,10 @@ declare
   row_ref     bigint;
   row_kind    text;
 begin
+  -- Add Ups replaced Keep Close; the new routine exists once the relationship
+  -- candidate is applied. This suite is about notifications, not about which
+  -- verb the client calls, so it follows through whichever one the schema has.
+  follow_new := to_regprocedure('public.holup_follow(bigint)') is not null;
   select id into author_uuid from auth.users where email = 'daniel@crushly.app';
   select id into actor_uuid  from auth.users where email = 'marcus@crushly.app';
   select id into viewer_uuid from auth.users where email = 'tobi@crushly.app';
@@ -51,7 +56,15 @@ begin
     on conflict (user_a, user_b) do update set closed = false
     returning id into conv;
 
-  perform set_config('request.jwt.claim.sub', actor_uuid::text, false);
+  -- A Whisper needs an answer, not just a connection. This suite is about
+  -- where a Whisper shows up, so the answer is stated here instead of being assumed
+  -- from the old "connections may always message" rule.
+  if to_regclass('public.holup_whisper_permissions') is not null then
+    insert into public.holup_whisper_permissions(conversation_id, requester_id, recipient_id, state, decided_at)
+      values (conv, least(author_pid, actor_pid), greatest(author_pid, actor_pid), 'accepted', public.now_ms())
+      on conflict (conversation_id) do update set state = 'accepted', decided_at = public.now_ms();
+  end if;
+    perform set_config('request.jwt.claim.sub', actor_uuid::text, false);
   set local role authenticated;
   perform public.send_message(conv, 'text', 'hey, what is up?', null, '{}'::jsonb);
   reset role;
@@ -62,13 +75,22 @@ begin
   end if;
   assert (select body='' and ref_id=conv from public.notifications where user_id=author_pid and kind='message' limit 1), 'message notification has no private text and opens the thread';
 
-  -- ------------------------------------------------------ 2. keeping close
+  -- ------------------------------------------------------------ 2. Add Ups
+
+  -- Historic one-way Keeps arrive converted into Add Ups, so this pair may
+  -- already be followed. Clear it: the notification asserted below has to be a
+  -- genuinely new Add Up, not one that was already sitting there.
+  if to_regclass('public.holup_follows') is not null then
+    delete from public.holup_follows
+     where follower_id in (author_pid, actor_pid)
+       and followed_id in (author_pid, actor_pid);
+  end if;
 
   delete from public.notifications where user_id = author_pid;
 
   perform set_config('request.jwt.claim.sub', actor_uuid::text, false);
   set local role authenticated;
-  perform public.keep_close(author_pid);
+  if follow_new then perform public.holup_follow(author_pid); else perform public.keep_close(author_pid); end if;
   reset role;
 
   select kind into row_kind from public.notifications
@@ -80,8 +102,8 @@ begin
   -- Re-following after letting go is allowed, and is not a second event.
   perform set_config('request.jwt.claim.sub', actor_uuid::text, false);
   set local role authenticated;
-  perform public.let_go(author_pid);
-  perform public.keep_close(author_pid);
+  if follow_new then perform public.holup_unfollow(author_pid); else perform public.let_go(author_pid); end if;
+  if follow_new then perform public.holup_follow(author_pid); else perform public.keep_close(author_pid); end if;
   reset role;
   select count(*) into n from public.notifications where user_id = author_pid and kind = 'keep';
   if n <> 1 then
@@ -93,8 +115,8 @@ begin
   delete from public.notifications where user_id = author_pid;
   perform set_config('request.jwt.claim.sub', actor_uuid::text, false);
   set local role authenticated;
-  perform public.let_go(author_pid);
-  perform public.keep_close(author_pid);
+  if follow_new then perform public.holup_unfollow(author_pid); else perform public.let_go(author_pid); end if;
+  if follow_new then perform public.holup_follow(author_pid); else perform public.keep_close(author_pid); end if;
   reset role;
   select count(*) into n from public.notifications where user_id = author_pid and kind = 'keep';
   if n <> 0 then

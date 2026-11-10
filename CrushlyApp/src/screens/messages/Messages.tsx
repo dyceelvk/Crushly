@@ -18,6 +18,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { messagePreview } from '../../lib/messages';
+import { whisperRowLabel } from '../../lib/whisperRequest';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { CloseOnesPane } from '../circles/CloseOnes';
 
@@ -228,13 +229,14 @@ export function MessagesScreen() {
 const ConversationRow = React.memo(function ConversationRow({ conv, onPress }: { conv: ConversationSummary; onPress: () => void }) {
   const { colors } = useTheme();
   const unread = conv.unread > 0;
+  const request = whisperRowLabel(conv.whisper);
   const preview = messagePreview(conv.lastMessage, conv.peer.name);
   const when = conv.lastMessage ? timeAgo(conv.lastMessage.createdAt) : '';
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${conv.peer.name}${unread ? `, ${conv.unread} unread` : ''}. ${preview}. ${when}`}
+      accessibilityLabel={`${conv.peer.name}${unread ? `, ${conv.unread} unread` : ''}${request ? `, ${request}` : ''}. ${preview}. ${when}`}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}
     >
       <Avatar uri={conv.peer.photo} name={conv.peer.name} size={56} online={!!conv.peer.online} />
@@ -249,6 +251,13 @@ const ConversationRow = React.memo(function ConversationRow({ conv, onPress }: {
             {when}
           </Txt>
         </View>
+        {/* A waiting Whisper says so in the list, before it is opened. */}
+        {request ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.gold }} />
+            <Txt variant="caption" color="gold" numberOfLines={1}>{request}</Txt>
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
           {conv.lastMessage?.mine ? (
             <Ionicons name={conv.lastMessage.readAt ? 'checkmark-done' : 'checkmark'} size={14} color={conv.lastMessage.readAt ? colors.gold : colors.textMuted} />

@@ -17,8 +17,9 @@ import { CrushIcon } from '../../components/Logo';
 import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
 import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLayout } from '../../components/Layout';
-import { useChat, useConversation, useCrushes, useMe, useAppSettings } from '../../api/hooks';
+import { useChat, useConversation, useConversations, useCrushes, useMe, useAppSettings } from '../../api/hooks';
 import type { Message, ReplyQuote } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -32,7 +33,8 @@ import { CallSheet } from '../../components/CallSheet';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import { CallManager, type CallState } from '../../lib/call';
 import { supabase, toApiError } from '../../api/client';
-import { whisperMomentTarget } from '../../api/service';
+import { acceptWhisper, declineWhisper, whisperMomentTarget } from '../../api/service';
+import { whisperView } from '../../lib/whisperRequest';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -242,6 +244,29 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const peer = conv?.peer;
   const canSend = conv ? conv.canSend && !conv.closed : false;
+
+  /**
+   * A Whisper begins as a request. The banner above the composer says which side
+   * of it we are on — the asker counting down two messages, or the recipient
+   * being asked to accept or decline without leaving the thread.
+   */
+  const whisper = whisperView(conv?.whisper, peer?.name ?? '');
+  const canCompose = canSend && whisper.canCompose;
+  const qc = useQueryClient();
+  const answer = useMutation({
+    mutationFn: (decision: 'accept' | 'decline') =>
+      decision === 'accept' ? acceptWhisper(conversationId) : declineWhisper(conversationId),
+    onSuccess: (_ok, decision) => {
+      void refetchConv();
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+      toast({
+        kind: 'success',
+        title: decision === 'accept' ? `You and ${peer?.name ?? 'they'} can Whisper now` : 'Request declined',
+        message: decision === 'accept' ? undefined : 'They won’t be told. The thread stays closed.',
+      });
+    },
+    onError: (e) => toast({ kind: 'error', title: 'Couldn’t answer', message: (e as Error).message }),
+  });
 
   // Re-check permissions periodically (e.g. the other person blocks or unmatches).
   useEffect(() => {
@@ -565,8 +590,56 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           />
         )}
 
+        {/* The request, answered where it was read. */}
+        {conv && whisper.kind !== 'none' ? (
+          <View
+            style={{
+              marginHorizontal: space.md,
+              marginBottom: space.sm,
+              padding: space.md,
+              borderRadius: radius.md,
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: whisper.kind === 'decision' ? colors.gold : colors.border,
+              gap: 6,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons
+                name={whisper.kind === 'decision' ? 'chatbubble-ellipses-outline' : whisper.kind === 'waiting' ? 'hourglass-outline' : 'lock-closed-outline'}
+                size={16}
+                color={whisper.kind === 'decision' ? colors.gold : colors.textSecondary}
+              />
+              <Txt variant="bodyStrong" style={{ flex: 1 }}>{whisper.title}</Txt>
+            </View>
+            <Txt variant="small" color="textSecondary">{whisper.body}</Txt>
+            {whisper.showDecision ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Accept ${peer?.name ?? 'their'} Whisper request`}
+                  disabled={answer.isPending}
+                  onPress={() => answer.mutate('accept')}
+                  style={{ paddingHorizontal: 16, paddingVertical: 9, borderRadius: radius.md, backgroundColor: colors.gold, opacity: answer.isPending ? 0.6 : 1 }}
+                >
+                  <Txt variant="smallStrong" style={{ color: colors.onGold }}>{answer.isPending ? 'Accepting…' : 'Accept'}</Txt>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Decline ${peer?.name ?? 'their'} Whisper request`}
+                  disabled={answer.isPending}
+                  onPress={() => answer.mutate('decline')}
+                  style={{ paddingHorizontal: 16, paddingVertical: 9, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, opacity: answer.isPending ? 0.6 : 1 }}
+                >
+                  <Txt variant="smallStrong" color="textSecondary">Decline</Txt>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Composer */}
-        {conv && !canSend ? (
+        {conv && !canCompose ? (
           <View style={{ padding: space.md, paddingBottom: Math.max(insets.bottom, space.md), borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>

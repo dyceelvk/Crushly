@@ -1,3 +1,5 @@
+import type { WhisperState } from '../lib/whisperRequest';
+export type { WhisperState };
 import type { LiveEdit } from '../lib/videoEdit';
 
 export type Photo = { id: number; url: string };
@@ -564,6 +566,8 @@ export type ConversationSummary = {
   lastMessage: Message | null;
   unread: number;
   updatedAt: number;
+  /** Present when the backend has the Whisper request model. */
+  whisper?: WhisperState | null;
 };
 
 export type ConversationDetail = {
@@ -572,6 +576,12 @@ export type ConversationDetail = {
   peer: Peer;
   canSend: boolean;
   blockReason: string | null;
+  /**
+   * A Whisper starts as a request: two messages, then the other person answers
+   * inside the thread. Absent on a backend without the request model, where
+   * the old behaviour stands.
+   */
+  whisper?: WhisperState | null;
 };
 
 export type MomentStyle = 'noir' | 'champagne' | 'crimson' | 'midnight' | 'emerald';

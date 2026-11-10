@@ -277,11 +277,63 @@ install. The honest state is unchanged: the pipeline is configured and fail-clos
 secure build needs your keystore, and the debug→secure transition stays a warned one-time
 reinstall with a drafts export first.
 
+## The cutover candidate now passes every suite in the repository
+
+Last measured on a disposable PostgreSQL 17 cluster, one fresh database per
+suite (`scripts/validate-cutover.sh each` — 28 suites, 28 pass, 0 fail):
+
+```
+pass=28 fail=0
+```
+
+Two things made that possible, and both are real product changes rather than
+test edits:
+
+1. **The old contract was rewritten, not excused.** `add_up_requests.sql` used
+   to drive `crush_member` / `accept_connection_request` / `keep_close`. Those
+   routines are closed now, so the file became a contract test *for the
+   closure*: all eight legacy verbs must refuse with
+   `409 relationship_upgrade_required`, and a snapshot of `crushes`,
+   `connections`, `keeps`, `holup_follows`, `holup_homie_requests` and
+   `notifications` must be byte-identical before and after. The behaviour that
+   replaced them is covered by `02_follow_test.sql`, `05_homies_test.sql` and
+   `12_whisper_request_thread.sql`. `smoke.sql` and `notifications_social.sql`
+   now drive `holup_follow` / `holup_respond_homie` / `holup_homie_status`, and
+   `post_private`, `whisper_live` and `notifications_social` state a Whisper
+   answer in their fixtures instead of inheriting one from "connected people may
+   always message".
+2. **Three gaps the suites exposed, fixed in the candidate:**
+   - `messaging_block_reason` still refused strangers, so a Whisper request was
+     impossible to send. It now refuses only a block (and messaging yourself);
+     the two-message limit, the decline and the open-messaging preference are
+     enforced when a message is written.
+   - `holup_follow` recorded an Add Up silently. It now calls
+     `notify_to(target,'keep',…)`, which collapses a repeat into the unread row
+     that is already there and honours the member's own switch.
+   - `reply_to_moment` inserted a message with no request behind it, which the
+     insert guard refused. A Moment reply is now itself a Whisper request: it
+     counts as the first of the two messages, and the owner accepts or declines
+     it inside the thread the reply lands in.
+
+A test-harness bug was found and fixed at the same time: `validate-cutover.sh
+each` declared its loop variable inside a shell function without `local`, so the
+caller ran the last migration instead of the test file and every suite reported
+`ok`. It now prints `pass=N fail=N`, and the honest count above is what it
+prints. Treat any "all green" number older than this note as unverified.
+
+**Client side of the same release:** `CrushlyApp/src/lib/whisperRequest.ts`
+(banner copy, composer rules, row label) is now wired into `Chat.tsx` (in-thread
+`Accept` / `Decline` / `Reply`, two-message counter, composer gated on
+`canCompose`) and `Messages.tsx` (row label "Wants to Whisper" / "Request sent ·
+n/2"). `openConversation` returns the request state, and `acceptWhisper`,
+`declineWhisper` and `setWhisperOpen` wrap the new RPCs. Type-checked, and the
+10 new unit tests bring the app suite to **333 passing**.
+
 ## What is still BLOCKED
 
 | Blocker | Why | What unblocks it |
 | --- | --- | --- |
-| Relationship cutover (Add Ups / Homies / Whispers) | The database half is now validated (above), but it is still not shippable alone: legacy `ensure_conversation` can reopen closed threads, `remove_connection` can close a Whisper via `disconnect_pair`, `messages_pair` RLS has no block predicate, `can_view_media` has no Whisper-consent state, `can_join_whisper` admits unblocked participants, and Realtime knows only membership. The candidates add state that no legacy API, notification, call, media or Realtime path reads yet. Your own rule — never ship the relationship migration independently of a compatible client — is what still blocks it. | The remaining build: rewire `send_message`/`open_conversation`/media/calls/Realtime/notifications onto the new state, gate legacy writes, ship the matching client, then apply the migration in the same release. The database validation that used to gate this is done. |
+| Relationship cutover (Add Ups / Homies / Whispers) | Nothing about the database is unproven any more: the candidate applies in one transaction and all 28 suites pass on fresh databases. What still blocks it is **one coordinated deploy that has not happened**: applying `10_cutover_candidate.sql` to the hosted project and shipping the v2 client in the same window, because the migration closes the eight legacy relationship verbs and an un-updated install would receive `409 relationship_upgrade_required` on Add Up / Homie actions. Your own rule — never ship the relationship migration independently of a compatible client — is the only thing holding it. | An explicit go-ahead to run the migration (hosted `create_migration`, one transaction) and deploy the client build in the same window. Everything needed is in the repository and validated; nothing further needs to be designed. |
 | Secure Android release | Needs `HOLUP_ANDROID_RELEASE_KEYSTORE_B` and `HOLUP_ANDROID_RELEASE_KEY_PASSWORD`, the EAS/keystore identity, a signed APK/AAB, a streamed SHA-256 in the update metadata, a secure-to-secure upgrade on a physical device, and a reviewed one-time reinstall path from the old debug signer that does not destroy app-private drafts. | The keystore secrets and a device. `build-secure-android.yml` is `workflow_dispatch` only and uses exactly those two secrets plus the two public Supabase build values. |
 
 ## Deliberate, documented gaps
@@ -307,6 +359,28 @@ npm run build:web                     # export + SEO head stamp
 **Database:** migrations live in `supabase/migrations/`, versions must match what production records (see `supabase/migrations/README.md`). `20261109225634_minimum_age_16` is already applied and its file matches the recorded version, so `db push` stays idempotent.
 
 **Android (secure):** `workflow_dispatch` on `build-secure-android.yml`. Requires `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `HOLUP_ANDROID_RELEASE_KEYSTORE_B`, `HOLUP_ANDROID_RELEASE_KEY_PASSWORD`. The old public debug signer must never be used again, and a debug-signed install cannot update in place — that transition stays a reviewed, warned, one-time reinstall.
+
+## Applying the cutover, when you say go
+
+It is one transaction and one command. Nothing below has been run against the
+hosted project.
+
+1. `scripts/validate-cutover.sh each` one last time on a clean machine → 28/28.
+2. Copy `supabase/follow-redesign-work/10_cutover_candidate.sql` into
+   `supabase/migrations/<timestamp>_relationship_cutover.sql`. It starts with
+   `begin;` and ends with `commit;`, so it applies atomically: either every rule
+   and every closed verb lands, or nothing does.
+3. Apply it (`db push`, or the Supabase migration tool) in the same release
+   window as the client build. **Do not** apply it before the client: the eight
+   legacy verbs start returning `409 relationship_upgrade_required` the moment it
+   commits, and an un-updated install would hit that on Add Up and Homie actions.
+4. Post-apply smoke, as a signed-in member: open a chat with a stranger → the
+   thread opens with "…wants to Whisper" and a 2-message counter; the recipient
+   accepts inside the thread; Add Up and Homie still work; an old client calling
+   `crush_member` gets the update prompt.
+5. Rollback is `rollback` only if it is still inside the transaction; once
+   committed, the reversal is a new migration that re-opens the eight verbs and
+   drops the two tables — write it before applying, not after.
 
 ## Order of release
 

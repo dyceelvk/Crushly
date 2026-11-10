@@ -90,6 +90,10 @@ begin
  insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
  values(me,p_target,case when needs_approval then 'pending' else 'active' end,public.now_ms(),case when needs_approval then null else public.now_ms() end)
  on conflict(follower_id,followed_id) do update set status=excluded.status,created_at=excluded.created_at,decided_at=excluded.decided_at returning * into r;
+ -- An Add Up is announced, once. `notify_to` collapses a repeat into the unread
+ -- row that is already there, and the member's own "Add Ups" switch can silence
+ -- it without touching anything else.
+ perform public.notify_to(p_target,'keep',me,null,'');
  return jsonb_build_object('status',r.status,'changed',true);
 end $$;
 
@@ -617,5 +621,216 @@ end $$;
 -- The old read endpoints stay open and keep reading the tables the migration
 -- filled, so an un-updated client shows the state as of the cutover instead of
 -- an empty Space. Read-only and stale is survivable; divergence is not.
+
+/* --------------------------------------------------------------------------
+   Answering a Moment is asking for a Whisper.
+
+   A Moment reply used to slip straight into a thread because a connection was
+   assumed. It is a message from someone the owner may not know, so it opens a
+   request like any other: the reply counts as the first of the two, and the
+   owner accepts or declines it in the thread the reply lands in.
+   -------------------------------------------------------------------------- */
+create or replace function public.reply_to_moment(p_moment_id bigint, p_body text) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); m public.moments; reason text; conv_id bigint; clean_body text:=coalesce(p_body,'');
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into m from public.moments where id=p_moment_id;
+  if not found or m.expires_at<=public.now_ms() or not public.can_view_moment(m,me) then
+    perform public.crushly_fail(404,'','This Moment isn’t available.'); end if;
+  if m.user_id=me then perform public.crushly_fail(400,'','You can’t reply to your own Moment.'); end if;
+  if btrim(clean_body)='' then perform public.crushly_fail(400,'','Write a reply first.'); end if;
+  clean_body:=left(clean_body,1000);
+  reason:=public.messaging_block_reason(me,m.user_id);
+  if reason is not null then perform public.crushly_fail(403,'messaging_restricted',reason); end if;
+  conv_id:=public.ensure_conversation(me,m.user_id);
+  -- The request is recorded before the message, so the insert guard has an
+  -- answer to count against. Declined and blocked requests stay dead.
+  if not exists(select 1 from public.holup_whisper_permissions where conversation_id=conv_id) then
+    insert into public.holup_whisper_permissions(conversation_id,requester_id,recipient_id,state)
+      values(conv_id,me,m.user_id,'pending');
+  elsif exists(select 1 from public.holup_whisper_permissions
+                where conversation_id=conv_id and state in ('declined','blocked')) then
+    perform public.crushly_fail(404,'','Whisper unavailable.');
+  end if;
+  insert into public.messages(conversation_id,sender_id,kind,body,meta)
+    values(conv_id,me,'moment_reply',clean_body,jsonb_build_object('momentId',m.id));
+  update public.conversations set last_message_at=public.now_ms() where id=conv_id;
+  perform public.notify_to(m.user_id,'moment_reply',me,conv_id,'');
+  return jsonb_build_object('conversationId',conv_id);
+end $$;
+
+/* --------------------------------------------------------------------------
+   Who may be written to at all.
+
+   The deployed rule was "messages only from crushes / Mutual Crushes", which is
+   the rule the Whisper request replaces: you ask, they answer. Keeping the old
+   refusal would make the request impossible to send — the request itself is the
+   permission to write two messages. What still refuses is a block, or writing
+   to yourself; everything else is decided by the request rules in the trigger.
+   -------------------------------------------------------------------------- */
+create or replace function public.messaging_block_reason(p_viewer bigint, p_target bigint) returns text
+language plpgsql stable security definer set search_path=public as $$
+declare member_name text;
+begin
+  if p_viewer = p_target then
+    return 'You can''t message yourself.';
+  end if;
+  if public.is_blocked_pair(p_viewer, p_target) then
+    return 'This member is no longer available.';
+  end if;
+  -- Asking is allowed; answering is the other person's. The two-message limit,
+  -- the decline and the open-messaging preference are enforced when a message
+  -- is actually written, not here.
+  select coalesce(p.name, 'This member') into member_name from profiles p where p.id = p_target;
+  if member_name is null then return 'This member is no longer available.'; end if;
+  return null;
+end $$;
+
+/* --------------------------------------------------------------------------
+   The Whisper request, as the chat shows it.
+
+   A Whisper starts as a request, not as an open line. Asking for one opens the
+   conversation so both people are looking at the same thread: the sender writes
+   (two messages, no more), and the recipient decides inside that thread —
+   accept or decline, without leaving the chat. Nothing about this touches
+   Add Ups or Homies; a Homie does not get to skip the request, and an Add Up
+   grants nothing here.
+   -------------------------------------------------------------------------- */
+create or replace function public.holup_whisper_state(p_conversation_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  c public.conversations;
+  perm public.holup_whisper_permissions;
+  peer bigint;
+  open_now boolean;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into c from public.conversations where id=p_conversation_id;
+  if not found or me not in (c.user_a,c.user_b) then
+    perform public.crushly_fail(404,'','Conversation not found.'); end if;
+  peer := case when c.user_a=me then c.user_b else c.user_a end;
+  select * into perm from public.holup_whisper_permissions where conversation_id=c.id;
+  if not found then
+    -- No permission row: a thread that predates the request model. It is open,
+    -- which is how it was, and it stays open until somebody closes it or blocks.
+    return jsonb_build_object('state','accepted','sent',0,'requester',false,
+      'remaining',null,'canSend',not c.closed,'needsDecision',false);
+  end if;
+  select holup_whisper_open into open_now from public.privacy where user_id=perm.recipient_id;
+  return jsonb_build_object(
+    'state', perm.state,
+    'sent', perm.request_messages,
+    -- Whose request this is, from the caller's side.
+    'requester', perm.requester_id=me,
+    -- How many more they may write before the other person answers.
+    'remaining', case when perm.state='pending' and perm.requester_id=me
+                      then greatest(0, 2-perm.request_messages) else null end,
+    'canSend', not c.closed and perm.state not in ('declined','blocked')
+      and (perm.state='accepted'
+           -- The sender gets two messages to make their case.
+           or (perm.requester_id=me and perm.request_messages<2)
+           -- The recipient replying is itself an answer; the guard accepts it.
+           or (perm.recipient_id=me and perm.request_messages>0)),
+    -- The recipient has something to answer, and can answer it in the thread.
+    'needsDecision', perm.state='pending' and perm.recipient_id=me and perm.request_messages>0,
+    -- Shown to the sender so "they may reply when they like" is not a mystery.
+    'peerOpen', coalesce(open_now,false)
+  );
+end $$;
+revoke all on function public.holup_whisper_state(bigint) from public,anon,authenticated;
+grant execute on function public.holup_whisper_state(bigint) to authenticated,service_role;
+
+-- Asking for a Whisper is what creates the pending request. Opening a Space's
+-- chat therefore cannot quietly open a line to somebody who never agreed:
+-- trading messages needs an answer, whichever page the request began on.
+create or replace function public.open_conversation(p_target_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  conv_id bigint;
+  perm public.holup_whisper_permissions;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if p_target_id is null or p_target_id <= 0 then
+    perform public.crushly_fail(400,'','Who would you like to message?'); end if;
+  if p_target_id = me then perform public.crushly_fail(400,'','That is your own Space.'); end if;
+  -- `who_can_message` is deliberately not consulted. Under the request model the
+  -- way to reach someone is to ask, and they answer; a setting that pre-refused
+  -- the ask made "request a Whisper" impossible for everyone who had not already
+  -- connected. Blocking still refuses, and so does a Space that is not visible.
+  if public.is_blocked_pair(me,p_target_id) then
+    perform public.crushly_fail(404,'','This Space isn’t available.'); end if;
+  if public.relationship_list_profile(me,p_target_id) is null then
+    perform public.crushly_fail(404,'','This Space isn’t available.'); end if;
+
+  perform public.holup_follow_pair_lock(me,p_target_id);
+  conv_id := public.ensure_conversation(me,p_target_id);
+  insert into public.holup_whisper_permissions(conversation_id,requester_id,recipient_id,state)
+    values(conv_id,me,p_target_id,'pending')
+  on conflict (conversation_id) do nothing;
+  select * into perm from public.holup_whisper_permissions where conversation_id=conv_id;
+  if perm.state in ('declined','blocked') then
+    perform public.crushly_fail(404,'','Whisper unavailable.'); end if;
+  return jsonb_build_object('id',conv_id,'whisper',public.holup_whisper_state(conv_id));
+end $$;
+
+create or replace function public.load_conversation(p_conversation_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  reason text;
+  w jsonb;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into conv from conversations c where c.id=p_conversation_id;
+  if not found or (conv.user_a<>me and conv.user_b<>me) then
+    perform public.crushly_fail(404,'','Conversation not found.'); end if;
+  peer := case when conv.user_a=me then conv.user_b else conv.user_a end;
+  if public.is_blocked_pair(me,peer) then
+    perform public.crushly_fail(404,'','Conversation not found.'); end if;
+  reason := public.messaging_block_reason(me,peer);
+  w := public.holup_whisper_state(conv.id);
+  return jsonb_build_object(
+    'id',conv.id,
+    'closed',conv.closed,
+    'peer',public.peer_summary(peer,me),
+    -- The request decides whether the composer opens, not the connection alone.
+    'canSend',(w->>'canSend')::boolean and not conv.closed and reason is null,
+    'blockReason',case when conv.closed then 'This connection has ended.' else reason end,
+    'whisper',w
+  );
+end $$;
+
+create or replace function public.list_conversations() returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',c.id,
+    'peer',public.peer_summary(case when c.user_a=me then c.user_b else c.user_a end,me),
+    'lastMessage',(
+      select public.serialize_message(m,me,false) from messages m
+       where m.conversation_id=c.id order by m.id desc limit 1
+    ),
+    'unread',(
+      select count(*)::int from messages m
+       where m.conversation_id=c.id and m.sender_id<>me and m.read_at is null
+    ),
+    'updatedAt',coalesce(c.last_message_at,c.created_at),
+    'whisper',public.holup_whisper_state(c.id)
+  ) order by coalesce(c.last_message_at,c.created_at) desc),'[]'::jsonb)
+  into items
+  from conversations c
+  where (c.user_a=me or c.user_b=me) and not c.closed
+    and not public.is_blocked_pair(me,case when c.user_a=me then c.user_b else c.user_a end);
+  return jsonb_build_object('items',items);
+end $$;
 
 commit;

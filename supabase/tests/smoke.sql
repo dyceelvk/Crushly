@@ -63,12 +63,13 @@ begin
     select 1 from jsonb_array_elements(j -> 'items') it where it ->> 'name' = 'Kelechi'
   ), 'Kelechi should appear (crushing me, unresolved)';
 
-  -- ----------------------------------------------------------- crush → mutual
-  j := public.crush_member(marcus_id, false, null);
-  assert (j ->> 'mutual')::boolean, 'crushing Marcus back should create a Mutual Crush';
-  assert (j ->> 'isNew')::boolean, 'and it is new';
-  assert (public.load_profile(marcus_id) -> 'crush' ->> 'mutual')::boolean,
-    'connection row should exist';
+  -- ------------------------------------------------ Homies: answered, not assumed
+  -- This pair is Homies in the seed. What matters here is that the relationship
+  -- is read through the Homie surface — a connection nobody agreed to would not
+  -- show up — and that nothing is left pending behind it.
+  j := public.holup_homie_status(marcus_id);
+  assert (j ->> 'homies')::boolean, 'the seeded pair are Homies';
+  assert (j ->> 'outgoingPending')::boolean = false, 'and nothing is half-asked';
 
   -- ----------------------------------------------------------- conversations
   j := public.open_conversation(marcus_id);
@@ -86,6 +87,13 @@ begin
   j := public.send_message(conv_id, 'text'::text, 'Hey Marcus — great taste in vinyl.'::text, null::text, '{}'::jsonb);
   assert (j ->> 'mine')::boolean, 'sent message is mine';
   msg_id := (j ->> 'id')::bigint;
+
+  -- A Whisper carries two messages until the other person answers it. This
+  -- suite is about everything else a conversation does, so Marcus answers here
+  -- and the rest of the thread is ordinary, accepted conversation.
+  perform set_config('request.jwt.claim.sub', marcus::text, false);
+  perform public.holup_accept_whisper(conv_id);
+  perform set_config('request.jwt.claim.sub', daniel::text, false);
 
   j := public.send_message(conv_id, 'sticker'::text, ''::text, null::text, '{"sticker":"wave"}'::jsonb);
   assert j ->> 'kind' = 'sticker', 'sticker message';
@@ -105,6 +113,11 @@ begin
     if sqlerrm like '%without media should fail%' then raise; end if;
   end;
 
+  -- Calls are a switch an administrator owns; this suite is about what a call
+  -- does once it is on, so it turns the switch on for itself.
+  reset role;
+  update public.holup_features set enabled = true where key = 'calls';
+  set local role authenticated;
   call_channel := public.register_call_room(conv_id);
   assert call_channel ~ '^call-[a-f0-9]{32}$', 'server-generated call token';
   assert public.can_join_call(call_channel), 'caller can join';
@@ -196,15 +209,17 @@ begin
   select count(*) into n from public.list_notifications();
   assert n > 0, 'demo notifications should exist';
 
-  -- -------------------------------------------------------- messaging rules
-  assert public.load_profile(jayden_id) ->> 'messageBlockReason' is not null,
-    'messaging strangers is blocked by default';
-  begin
-    perform public.open_conversation(jayden_id);
-    raise exception 'open_conversation should have been refused';
-  exception when others then
-    if sqlerrm like '%should have been refused%' then raise; end if;
-  end;
+  -- -------------------------------------------------------- Whisper requests
+  -- Asking is open; answering is not. A stranger is not refused a request — that
+  -- would make the request impossible to send — and what they get is two
+  -- messages, not a conversation.
+  assert public.load_profile(jayden_id) ->> 'messageBlockReason' is null,
+    'a stranger can be asked, so there is nothing to block';
+  j := public.open_conversation(jayden_id);
+  assert (j -> 'whisper' ->> 'state') = 'pending', 'opening a chat asks for a Whisper';
+  assert (j -> 'whisper' ->> 'requester')::boolean, 'and it is my request';
+  assert (j -> 'whisper' ->> 'remaining') = '2', 'with two messages to make the case';
+  assert (j -> 'whisper' ->> 'needsDecision')::boolean = false, 'the answer is theirs to give';
 
   -- --------------------------------------------------------------- block flow
   perform public.block_member(tobi_id);
@@ -434,29 +449,41 @@ begin
   set role authenticated;
   perform set_config('request.jwt.claim.sub', daniel::text, false);
 
-  -- Keep Close is one-way and private: Marcus cannot read Daniel's list, and
-  -- cutting somebody off severs the keeping in both directions.
+  -- An Add Up is one-way, quiet and private: Marcus cannot enumerate Daniel's
+  -- list, and cutting somebody off severs it in both directions.
   begin
-    perform public.let_go(marcus_id);
-    perform public.let_go(jayden_id);
-    j := public.keep_close(marcus_id);
-    assert (j ->> 'keeps')::boolean, 'keeping somebody close is recorded';
+    perform public.holup_unfollow(marcus_id);
+    perform public.holup_unfollow(jayden_id);
+    j := public.holup_follow(marcus_id);
+    assert (j ->> 'status') in ('active', 'pending'), 'an Add Up is recorded';
+    assert (j ->> 'changed')::boolean, 'and it counts as a change';
 
+    -- The table is not readable by anybody — not even the owner — so the list
+    -- is the only way to see an Add Up, and it is the member's own list.
     perform set_config('request.jwt.claim.sub', marcus::text, false);
-    assert (public.keep_state(me) ->> 'keepsYou')::boolean, 'the kept member is told only that';
-    assert (select count(*) from public.keeps) = 0, 'nobody may read another member’s Close Ones';
+    begin
+      perform 1 from public.holup_follows;
+      raise exception 'the Add Up table must not be readable';
+    exception when insufficient_privilege then null;
+    end;
+    assert (public.holup_follow_status(me) ->> 'status') is not null,
+      'but the member added up is told that they were';
     perform set_config('request.jwt.claim.sub', daniel::text, false);
-    assert (select count(*) from public.keeps where keeper_id = me) = 1, 'but your own list is yours';
+    assert (public.holup_follow_status(marcus_id) ->> 'status') is not null,
+      'your own Add Up is visible to you';
 
-    -- Cut off: the keeping goes both ways, immediately.
+    -- Cut off: the Add Up goes both ways, immediately.
     perform set_config('request.jwt.claim.sub', marcus::text, false);
-    perform public.keep_close(me);
+    perform public.holup_follow(me);
     perform set_config('request.jwt.claim.sub', daniel::text, false);
     insert into public.blocks (blocker_id, blocked_id) values (me, marcus_id);
+    reset role;
     assert not exists (
-      select 1 from public.keeps where (keeper_id = me and kept_id = marcus_id)
-         or (keeper_id = marcus_id and kept_id = me)
-    ), 'cutting someone off severs the keeping in both directions';
+      select 1 from public.holup_follows
+       where (follower_id = me and followed_id = marcus_id)
+          or (follower_id = marcus_id and followed_id = me)
+    ), 'cutting someone off severs the Add Up in both directions';
+    set local role authenticated;
     delete from public.blocks where blocker_id = me and blocked_id = marcus_id;
   end;
 

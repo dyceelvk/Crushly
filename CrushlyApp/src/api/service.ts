@@ -12,6 +12,7 @@ import { clampMemberAge, isMemberAgeEligible, MINIMUM_MEMBER_AGE } from '../lib/
 import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import { profileShape } from '../lib/profileShape';
 import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
+import type { WhisperState } from '../lib/whisperRequest';
 import type { ViewerPage } from './types';
 import {
   INTENTIONS as catalogIntentions,
@@ -1508,9 +1509,32 @@ export async function conversation(id: number): Promise<ConversationDetail> {
   return rpc<ConversationDetail>('load_conversation', { p_conversation_id: id });
 }
 
-export async function openConversation(userId: number): Promise<{ id: number }> {
-  const res = await rpc<{ id: number }>('open_conversation', { p_target_id: userId });
-  return { id: res.id };
+/**
+ * Opening a chat asks for a Whisper. The request — not the tap — is what the
+ * backend records, so the thread opens with the sender allowed two messages and
+ * the recipient holding accept/decline. The returned state says which side of
+ * that the caller is on, so the screen does not have to guess.
+ */
+export async function openConversation(userId: number): Promise<{ id: number; whisper?: WhisperState | null }> {
+  const res = await rpc<{ id: number; whisper?: WhisperState | null }>('open_conversation', { p_target_id: userId });
+  return { id: res.id, whisper: res.whisper ?? null };
+}
+
+/** Answer a waiting Whisper request from inside the thread. */
+export async function acceptWhisper(conversationId: number): Promise<boolean> {
+  return rpc<boolean>('holup_accept_whisper', { p_conversation_id: conversationId });
+}
+
+export async function declineWhisper(conversationId: number): Promise<boolean> {
+  return rpc<boolean>('holup_decline_whisper', { p_conversation_id: conversationId });
+}
+
+/**
+ * Let anyone who can reach your Space whisper you without waiting for a tap.
+ * It changes who may start a conversation; it never opens one on its own.
+ */
+export async function setWhisperOpen(open: boolean): Promise<boolean> {
+  return rpc<boolean>('holup_set_whisper_open', { p_open: open });
 }
 
 export async function getMessages(

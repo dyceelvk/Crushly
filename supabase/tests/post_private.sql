@@ -14,11 +14,21 @@ begin
   delete from blocks where (blocker_id=vid and blocked_id=aid) or (blocker_id=aid and blocked_id=vid);
   insert into connections(user_a,user_b) values(least(aid,vid),greatest(aid,vid)) on conflict do nothing;
   insert into conversations(user_a,user_b) values(least(aid,vid),greatest(aid,vid)) on conflict (user_a,user_b) do update set closed=false returning id into cid;
+  -- A Whisper needs an answer, not just a connection. This suite is about
+  -- a private post that must never reach the wrong people, so the answer is stated here instead of being assumed
+  -- from the old "connections may always message" rule.
+  if to_regclass('public.holup_whisper_permissions') is not null then
+    insert into public.holup_whisper_permissions(conversation_id, requester_id, recipient_id, state, decided_at)
+      values (cid, least(aid, vid), greatest(aid, vid), 'accepted', public.now_ms())
+      on conflict (conversation_id) do update set state = 'accepted', decided_at = public.now_ms();
+  end if;
   path:='posts/'||aid||'/private-test.jpg';
   url:='https://crushly-media.dyceelvk.workers.dev/m/'||path;
   insert into posts(author_id,body,media_url,audience) values(aid,'privatefixtureword',url,'everyone') returning id into pid;
   insert into post_saves(user_id,post_id) values(vid,pid);
-  -- Old versions of the app stored snapshots in Whisper message rows.
+  -- Old versions of the app stored snapshots in Whisper message rows. Written
+  -- as the member they belong to, because the guard now reads the caller.
+  perform set_config('request.jwt.claim.sub',au::text,true);
   insert into messages(conversation_id,sender_id,kind,body,meta)
     values(cid,aid,'post','privatefixtureword',jsonb_build_object('postId',pid,'body','privatefixtureword','mediaUrl',url,'name','Secret')) returning id into msgid;
   perform set_config('request.jwt.claim.sub',au::text,true);
