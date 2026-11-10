@@ -9,6 +9,13 @@
 --
 -- An Add Up needs nobody's approval. Only a Homie does.
 --
+-- APPLIED in production (yzcssyebozfkmojqqdhc) and recorded in
+-- supabase_migrations.schema_migrations as 20261110092915_add_up_needs_no_approval.
+-- Verified on the live database afterwards: pending Add Ups 1 -> 0, active
+-- 2 -> 3, every Keep now an active follow, approval_required gone, the status
+-- check is (active|declined), and the three routines answer approvalRequired
+-- false.
+--
 -- The first cut of this feature let a member switch on "require my approval"
 -- before anybody could Add them Up. That is not the product: adding somebody up
 -- is immediate and one-way, and the only relationship that has to be agreed to is

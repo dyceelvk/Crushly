@@ -438,6 +438,30 @@ Homie, so it becomes an unanswered Homie request instead — and the Homie reque
 the first backfill manufactured from Keeps are removed, because their senders
 never asked.
 
+### Applied to production
+
+`20261110092915_add_up_needs_no_approval` is live on `yzcssyebozfkmojqqdhc`
+(applied through the Supabase API, recorded in the migration history). Measured
+before and after, on production rows:
+
+| | before | after |
+| --- | --- | --- |
+| Add Ups waiting for approval | 1 | **0** |
+| Active Add Ups | 2 | **3** |
+| Keeps without an active Add Up | 1 | **0** |
+| `approval_required` column | present | **dropped** |
+| `holup_follows` status check | included `pending` | `active` \| `declined` only |
+| Homie requests waiting | 2 | 2 (unchanged — see note) |
+
+The one pending Crush in production (`3 -> 24`) already had a Homie request, so
+the insert skipped it on conflict rather than duplicating: it was already where
+it belonged.
+
+The deployed web bundle is still the previous one. It sends `p_approval` when it
+saves settings and shows an Approval switch that no longer does anything; the
+function still accepts the argument and ignores it, so nothing breaks. The 🫂
+button ships with the next web deploy — **the client change is not live yet**.
+
 ## Applying the cutover, when you say go
 
 It is one transaction and one command. Nothing below has been run against the
