@@ -11,6 +11,7 @@ const me = (over: Partial<Me['profile']> = {}, lifestyle: Record<string, unknown
     status: 'active',
     createdAt: 0,
     onboarded: true,
+    needsBirthdate: false,
     profile: {
       name: 'Ada',
       username: 'ada',

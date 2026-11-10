@@ -157,6 +157,9 @@ export async function getMe(): Promise<Me> {
     status: p.status,
     createdAt: p.created_at,
     onboarded: !!p.onboarded,
+    // A birthday the member has never given: the age gate cannot judge it, so the
+    // app asks rather than guessing.
+    needsBirthdate: !!p.onboarded && !p.birthdate,
     profile: {
       name: p.name,
       username: p.username ?? '',
@@ -305,6 +308,21 @@ let detected: RelationshipBackend | null = null;
  * or the client would silently downgrade itself while the v2 backend is live.
  */
 const missingFunction = (e: unknown) => e instanceof ApiError && isMissingFunctionError(e);
+
+/**
+ * The token a share link is built from.
+ *
+ * Ids are sequential, so a shared Space cannot be addressed by one: `/s/41`
+ * would let anyone walk the member list. The database mints a token for the
+ * Space being shared, which is what the landing page exchanges for a name card.
+ */
+export async function spaceShareToken(id: number): Promise<string> {
+  const token = await rpc<string>('holup_space_share_token', { p_target: id });
+  if (typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)) {
+    throw new ApiError(500, 'share_unavailable', 'Sharing is unavailable right now.');
+  }
+  return token;
+}
 
 /**
  * Ask the database which relationship contract it speaks, once per session.

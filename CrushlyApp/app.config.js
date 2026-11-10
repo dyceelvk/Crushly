@@ -11,7 +11,12 @@ module.exports = () => {
     android: {
       ...base.android,
       package: 'app.holup.mobile',
-      intentFilters: [{ action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'], data: [{ scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/v/' }] }],
+      intentFilters: [{ action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'],
+        // Both public landing pages open the app: a shared post (/v/) and a shared
+        // Space (/s/). The Space page links on to ?space=<id> for anyone the app
+        // cannot open for, so an old install still lands somewhere real.
+        data: [{ scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/v/' },
+               { scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/s/' }] }],
     },
     plugins: [...base.plugins, './plugins/withSecureAndroidSigning'],
   };

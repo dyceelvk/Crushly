@@ -8,7 +8,8 @@ import { keys } from '../api/hooks';
 import { getMe, webOrigin } from '../api/service';
 import type { Me } from '../api/types';
 
-export type AuthStatus = 'restoring' | 'signedOut' | 'onboarding' | 'resetting' | 'ready';
+import { authStatus, type AuthStatus } from '../lib/authGate';
+export type { AuthStatus };
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -269,7 +270,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [qc]);
 
-  const status: AuthStatus = restoring ? 'restoring' : !signedIn ? 'signedOut' : mustSetPassword ? 'resetting' : me && !me.onboarded ? 'onboarding' : 'ready';
+  const status = authStatus({ restoring, signedIn, mustSetPassword, me });
 
   const value = useMemo(
     () => ({ status, me, signIn, signInWithGoogle, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget }),

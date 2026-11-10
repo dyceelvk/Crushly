@@ -476,6 +476,13 @@ export type Me = {
   status: 'active' | 'paused';
   createdAt: number;
   onboarded: boolean;
+  /**
+   * Set when a profile is onboarded but has never given a birthdate. One such row
+   * predates the age gate; the gate cannot judge an age nobody stated, so the app
+   * asks instead of assuming one. It is not the same as `!onboarded`: the member
+   * filled everything else in, and only the birthday question is owed.
+   */
+  needsBirthdate: boolean;
   profile: {
     name: string;
     username: string;

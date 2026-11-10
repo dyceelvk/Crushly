@@ -7,6 +7,10 @@
     {
       "source": "/v/:id",
       "destination": "/api/post-share?id=:id"
+    },
+    {
+      "source": "/s/:id",
+      "destination": "/api/space-share?id=:id"
     }
   ]
 }
