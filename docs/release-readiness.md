@@ -360,6 +360,41 @@ npm run build:web                     # export + SEO head stamp
 
 **Android (secure):** `workflow_dispatch` on `build-secure-android.yml`. Requires `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `HOLUP_ANDROID_RELEASE_KEYSTORE_B`, `HOLUP_ANDROID_RELEASE_KEY_PASSWORD`. The old public debug signer must never be used again, and a debug-signed install cannot update in place — that transition stays a reviewed, warned, one-time reinstall.
 
+## APPLIED to production — 2026-11-07
+
+The relationship cutover is live on `yzcssyebozfkmojqqdhc`.
+
+| | |
+|---|---|
+| Migration recorded | `20261110080000_relationship_cutover` (statements column holds the exact SQL that ran, 55,855 bytes) |
+| Objects | 13 `holup_*` tables, 44 `holup_*` functions, 5 triggers |
+| Legacy verbs | all 8 now refuse; `crush_member` was checked live and returns `409 relationship_upgrade_required` |
+| Existing data | 1 open conversation preserved as an accepted Whisper; 2 Add Ups backfilled from accepted/pending Crushes; 3 conversations untouched |
+| Verified live | `holup_follow_status`, `holup_homie_status`, `holup_whisper_state`, `list_conversations`, `holup_app_settings` all answer for a real signed-in member |
+
+How it was applied, and why it was not `create_migration`: the SQL had to reach
+the database as bytes, and re-typing 55 KB of `security definer` functions is
+exactly the kind of transcription that breaks a release. Instead the file was
+fetched from the repository at a pinned commit (`136034d`) with the `http`
+extension, split and executed inside a single `do` block — one transaction, so
+either all of it committed or none of it did — and the migration history row was
+written with that same text. The `http` extension was dropped immediately after;
+the project is back to the five extensions it had (plus nothing).
+
+**What this means for installed clients:** the app probes `holup_follow_status`
+on first relationship action and switches to the v2 contract by itself
+(`relationshipBackend()` in `service.ts`). Builds that predate that probe will
+receive the 409 update prompt on Add Up / Homie actions — the honest outcome, and
+the reason the client copy in the store must be refreshed.
+
+**Still outstanding, and it is a product decision, not a bug:** production runs
+`20261110023805_restore_adult_gate_until_teen_protections`, which replaced the
+16+ gate with **18+**. That contradicts the stated requirement (16+, not 18+),
+and it is why `minimum_age.sql` fails on a replay of the deployed schema
+(27/28). Re-applying 16+ is a one-line threshold change plus the preference
+floor; it has not been made, because reversing a deliberate safeguarding
+decision is the owner's call, not a deploy step.
+
 ## Applying the cutover, when you say go
 
 It is one transaction and one command. Nothing below has been run against the
