@@ -844,6 +844,17 @@ and appends the splash. Two properties matter and both are deliberate:
 
 ### The download
 
+It lives in the **share sheet**, under Copy link and Share outside Holup, because
+all three answer the same question: how does this leave the app. Not in the
+action rail — the rail is for what you do *to* a post inside Holup, and a save
+sitting among Crush, Comments and Pick reads as one more thing about the post
+rather than a copy going out into the world.
+
+The row says **"Save clip to device · with the Holup mark"** and appears only for
+a clip that has a marked copy. A post without one gets no row at all rather than a
+disabled one, because a greyed control invites the question "why not?" and the
+answer would be a server limitation nobody should have to learn.
+
 `src/lib/clipSaveRules.ts` decides; `src/lib/downloadClip.ts` does the work —
 `expo-file-system` into the cache, `MediaLibrary.Asset.create` into the gallery,
 then the cache copy is deleted. On web the same marked file goes to the browser's
@@ -853,6 +864,10 @@ The rule the tests enforce is the one that matters: **a download is offered only
 when a marked copy exists.** `canSaveClip` is false for a photo, false for a clip
 with no `downloadUrl`, and there is no fallback to the original — falling back
 would hand out somebody's work with no name on it.
+
+Two browser tests now hold that in place: the share sheet shows Copy link and
+Share outside with no save row for an unmarked clip, and shows all three — in that
+block, with the mark named in the wording — once a marked copy exists.
 
 A stray download arrow was found on the way: `FeedRail` drew a download glyph for
 Pick, which is a bookmark. `FeedRail` is not rendered anywhere — `PostCard` has

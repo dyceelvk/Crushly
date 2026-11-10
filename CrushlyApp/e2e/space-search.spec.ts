@@ -11,7 +11,7 @@ const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated',
 const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', bio: 'My site https://example.com/about', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
-async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false, railClips = false, room = false, notificationFixtures: unknown[] = []) {
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false, railClips = false, room = false, notificationFixtures: unknown[] = [], markedCopy = false) {
   let banner: string | null = null;
   let followed = false;
   let homiePending = false;
@@ -53,14 +53,14 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/public_post_preview') body = { id: 11, body: onePost.body, author: person.name };
     else if (path === '/rest/v1/rpc/record_post_view') { viewCalls.push(Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id)); body = { recorded: true }; }
     else if (path === '/rest/v1/rpc/post_viewers') body = { items: [{ profile: person, viewedAt: Date.now() }] };
-    else if (path === '/rest/v1/rpc/load_post') { const id = Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id); body = { ...onePost, id, body: ranked ? `Pager item ${id}` : onePost.body, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, edit: null, circleId: null, mine: id === 12, likeCount: 0, liked: false, commentCount: 1, saved: false, viewCount: 2 }; }
+    else if (path === '/rest/v1/rpc/load_post') { const id = Number((route.request().postDataJSON() as {p_post_id: number}).p_post_id); body = { ...onePost, id, body: ranked ? `Pager item ${id}` : onePost.body, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, downloadUrl: markedCopy && video ? `${MEDIA}/m/posts/${id}-marked.mp4` : null, edit: null, circleId: null, mine: id === 12, likeCount: 0, liked: false, commentCount: 1, saved: false, viewCount: 2 }; }
     else if (path === '/rest/v1/rpc/edit_post') { const args = route.request().postDataJSON() as Record<string, unknown>; commentCalls.push(args); body = { ...onePost, id: 12, audience: args.p_audience, body: args.p_body, mediaUrl: null, mediaKind: null, edit: null, circleId: null, mine: true, likeCount: 0, liked: false, commentCount: 1, viewCount: 2 }; }
     else if (path === '/rest/v1/rpc/post_comment_settings') body = true;
     else if (path === '/rest/v1/rpc/post_likers') body = { items: [] };
     else if (path === '/rest/v1/rpc/post_comments_feed') body = { items: [{ id: 45, body: 'Hello there', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }, { id: 47, body: 'See https://example.com/comment.', createdAt: Date.now(), mine: false, author: person, parentId: null, liked: false, likeCount: 0 }] };
     else if (path === '/rest/v1/rpc/comment_on_post') { commentCalls.push(route.request().postDataJSON() as Record<string, unknown>); body = { id: 46 }; }
     else if (path === '/rest/v1/rpc/badges') body = { notifications: 0, whispers: 0, crushes: 0, moments: 0 };
-    else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: feedVideo ? `${MEDIA}/m/posts/11.webm` : null, mediaKind: feedVideo ? 'video' : null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
+    else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [{ ...onePost, mediaUrl: feedVideo ? `${MEDIA}/m/posts/11.webm` : null, mediaKind: feedVideo ? 'video' : null, downloadUrl: markedCopy && feedVideo ? `${MEDIA}/m/posts/11-marked.mp4` : null, edit: null, circleId: null, mine: false, likeCount: 0, liked: false, commentCount: 1, saved: false }], nextCursor: null };
     else if (path === '/rest/v1/rpc/visible_moments') body = ownMoment ? [0, 1, 2].map(i => ({ id: 77+i, userId: 1, kind: i === 0 ? 'video' : i === 1 ? 'text' : 'photo', body: i === 0 ? 'First Moment' : i === 1 ? 'Second Moment' : 'Third Moment', mediaUrl: i === 0 ? `${MEDIA}/m/posts/11.webm` : i === 2 ? `${MEDIA}/m/posts/12.jpg` : null, edit: null, durationMs: 30000, style: 'noir', audience: 'everyone', createdAt: Date.now(), expiresAt: Date.now()+86400000, seen: false, myReaction: null, viewCount: 1, reactions: [{kind:'crush', userId:2, name:'Ada'}], author: {id:1, name: 'Offline test', verified: false, photo: null, mutual:false} })) : [];
     else if (path === '/rest/v1/rpc/moment_viewers') body = { count: 1, items: [{profile: person, viewedAt: Date.now()}] };
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [onePost] };
@@ -80,7 +80,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/holup_set_follow_settings') { const args = route.request().postDataJSON(); calls.push(args); if (args.p_outgoing_visibility != null) outgoingVisibility=args.p_outgoing_visibility; if (args.p_approval != null) approvalRequired=args.p_approval; body=true; }
     else if (path === '/rest/v1/rpc/holup_pending_follow_requests') body = {items:[],hasMore:false};
     else if (path === '/rest/v1/rpc/holup_follow_people' || path === '/rest/v1/rpc/space_relationship_people') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {items: [person], hasMore: false}; }
-    else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
+    else if (path === '/rest/v1/rpc/flow_feed' || path === '/rest/v1/rpc/flow_ranked_feed') body = { items: ranked ? [11, 12, 13].map((id) => ({ ...onePost, id, body: `Pager item ${id}`, mediaUrl: video ? `${MEDIA}/m/posts/${id}.webm` : null, mediaKind: video ? 'video' : null, downloadUrl: markedCopy && video ? `${MEDIA}/m/posts/${id}-marked.mp4` : null, mine: id === 12, likeCount: 0, liked: false, commentCount: 0, viewCount: 2 })) : [], nextCursor: null };
     else if (path === '/rest/v1/rpc/my_circles') body = { items: room ? [{id: 5, name: 'Offline room', about: 'Test', myRole:'owner', ownerId:1, memberCount:1, createdAt:Date.now(), muted:false, coverUrl:null, unreadCount:0, lastMessageAt:null}] : [] };
     else if (path === '/rest/v1/rpc/circle_space' && room) body = { circle: {id:5, name:'Offline room', about:'Test', myRole:'owner', ownerId:1, memberCount:1, createdAt:Date.now(), muted:false, coverUrl:null}, members: [{ member: {...person, id:1}, role:'owner', joinedAt:Date.now() }] };
     else if ((path === '/rest/v1/rpc/circle_feed' || path === '/rest/v1/rpc/circle_messages') && room) body = {items:[]};
@@ -661,4 +661,32 @@ test('Homies tab shows accepted people and requests without a remove button', as
  await expect(page.getByRole('button',{name:'Let go'})).toHaveCount(0);
  await page.getByRole('button',{name:'Decline',exact:true}).click();
  await expect.poll(()=>calls.some(c=>c.homie==='respond' && c.p_accept===false)).toBe(true);
+});
+
+// Saving a clip lives in the share sheet, with Copy link and Share outside,
+// because all three answer "how does this leave the app". It must appear only
+// when a marked copy exists: offering it otherwise would hand out somebody's
+// work with no name on it, which is the one thing this feature must never do.
+test('the share sheet offers Save clip only when the clip has a marked copy', async ({ page }) => {
+  // A clip with no marked copy: the row is absent, not disabled.
+  await offline(page, [], [], false, false, [], true); await page.goto('/?post=11');
+  await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Copy post link' })).toBeVisible();
+  expect(await page.getByRole('button', { name: 'Save this clip to your device' }).count()).toBe(0);
+});
+
+test('the share sheet offers Save clip for a clip that has one', async ({ page }) => {
+  // video, and the harness answers with a marked copy as well as the original.
+  await offline(page, [], [], false, false, [], /*video*/ true, /*feedVideo*/ true,
+    /*ownMoment*/ false, /*denyLists*/ false, /*railClips*/ false, /*room*/ false,
+    /*notifications*/ [], /*markedCopy*/ true);
+  await page.goto('/?post=11');
+  await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
+  const save = page.getByRole('button', { name: 'Save this clip to your device' });
+  await expect(save).toBeVisible();
+  // The wording has to say the copy is marked, or the row is a surprise later.
+  await expect(page.getByText('with the Holup mark')).toBeVisible();
+  // It sits in the same block as the other two ways out of the app.
+  await expect(page.getByRole('button', { name: 'Copy post link' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Share outside Holup' })).toBeVisible();
 });

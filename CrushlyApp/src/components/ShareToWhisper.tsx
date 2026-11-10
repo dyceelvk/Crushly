@@ -15,6 +15,8 @@ import type { ConversationSummary, Post } from '../api/types';
 import { timeAgo } from '../lib/format';
 import { haptic } from '../lib/haptics';
 import { postShareUrl } from '../lib/postShare';
+import { canSaveClip } from '../lib/clipSaveRules';
+import { saveClipToDevice } from '../lib/downloadClip';
 import { publicPostPreview } from '../api/service';
 
 /**
@@ -43,6 +45,7 @@ export function ShareToWhisper({
   const send = useSendMessage();
   const [query, setQuery] = useState('');
   const [sentTo, setSentTo] = useState<Record<number, true>>({});
+  const [saving, setSaving] = useState(false);
 
   const people: ConversationSummary[] = useMemo(() => {
     const items: ConversationSummary[] = list.data ?? [];
@@ -81,6 +84,36 @@ export function ShareToWhisper({
     if (!url) return;
     try { await Share.share({ message: url }); } catch { /* dismissed */ }
   };
+  /**
+   * Save the marked copy of a clip to this device.
+   *
+   * It sits here, with Copy link and Share outside, because all three answer the
+   * same question: how does this leave the app. It is offered only when the
+   * pipeline has produced a marked copy — see `canSaveClip` — so a tap can never
+   * hand out somebody's work with no name on it.
+   */
+  const save = async () => {
+    if (!post || saving) return;
+    setSaving(true);
+    haptic.tap();
+    try {
+      const outcome = await saveClipToDevice({ id: post.id, mediaKind: post.mediaKind, downloadUrl: post.downloadUrl });
+      if (outcome === 'saved') {
+        toast({ kind: 'success', title: 'Saved to your device', message: 'This copy carries the Holup mark and the creator’s handle.' });
+      } else if (outcome === 'downloaded') {
+        toast({ kind: 'success', title: 'Clip downloaded', message: 'This copy carries the Holup mark and the creator’s handle.' });
+      } else if (outcome === 'denied') {
+        toast({ kind: 'error', title: 'Photos and videos are off', message: 'Allow photo access in your phone settings, then tap Save again.' });
+      } else {
+        toast({ kind: 'info', title: 'No downloadable copy', message: 'This post has no marked copy to save yet.' });
+      }
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t save the clip', message: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const copy = async () => {
     const url = await prepareLink();
     if (!url) return;
@@ -159,6 +192,25 @@ export function ShareToWhisper({
       </ScrollView>
 
       <View style={{ padding: space.md, borderTopWidth: 1, borderTopColor: colors.border }}>
+        {canSaveClip(post ?? {}) ? (
+          <Pressable
+            onPress={save}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel="Save this clip to your device"
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingVertical: 12,
+              opacity: saving ? 0.6 : pressed ? 0.7 : 1,
+            })}
+          >
+            <Ionicons name={saving ? 'hourglass-outline' : 'download-outline'} size={20} color={colors.textSecondary} />
+            <Txt variant="body">{saving ? 'Saving…' : 'Save clip to device'}</Txt>
+            <Txt variant="caption" color="textMuted">· with the Holup mark</Txt>
+          </Pressable>
+        ) : null}
         <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel="Copy post link" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>
           <Ionicons name="link-outline" size={20} color={colors.textSecondary} />
           <Txt variant="body">Copy link</Txt>
