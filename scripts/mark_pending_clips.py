@@ -171,7 +171,11 @@ def marked_key(key: str) -> str:
 
 
 def handle_for(author_id: int) -> str:
-    row = psql(f"select coalesce(nullif(handle, ''), name, 'Holup') from profiles where id = {int(author_id)};")
+    # `username` is the column; `handle` does not exist on profiles.
+    row = psql(
+        "select coalesce(nullif(username, ''), nullif(name, ''), 'Holup') "
+        f"from profiles where id = {int(author_id)};"
+    )
     return row or "Holup"
 
 

@@ -20,7 +20,6 @@ ROOT = Path('/home/user')
 LOGO = ROOT / 'uploads/file_00000000d67c82118b57d679067a5118.png'
 SILENT = ROOT / 'holup-end-splash-6s-silent.mp4'
 OUT = ROOT / 'holup-end-splash-6s-1080x1920.mp4'
-CREATOR = '@Sativva'
 CORAL, PINK, WHITE = (255, 135, 142), (240, 53, 180), (250, 247, 250)
 DEEP = (18, 6, 16)
 
@@ -84,10 +83,12 @@ for i in range(round(FPS * SECONDS)):
     # Attribution is deliberately quiet: the handle and the address sit below the
     # rule, small, and share the fade with the lockup.
     fd = ImageDraw.Draw(frame)
-    fd.text((W / 2, 1250), CREATOR, anchor='ma', font=font_handle,
-            fill=WHITE + (int(215 * alpha),))
-    fd.text((W / 2, 1305), 'HOLUP ORIGINAL', anchor='ma', font=font_micro,
-            fill=(255, 255, 255, int(120 * alpha)))
+    # No handle here, on purpose. The splash is one shared file appended to every
+    # export; the creator's handle belongs on the mark, which is drawn per clip
+    # from the post's author. A handle burned into a shared asset would credit
+    # whoever happened to be first.
+    fd.text((W / 2, 1270), 'HOLUP ORIGINAL', anchor='ma', font=font_micro,
+            fill=(255, 255, 255, int(130 * alpha)))
     fd.text((W / 2, 1790), 'holupapp.vercel.app', anchor='ma', font=font_micro,
             fill=(255, 255, 255, int(88 * alpha)))
 

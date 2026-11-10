@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_MARK = HERE.parent / "assets/share/holup-watermark.png"
+DEFAULT_MARK = HERE.parent / "assets/share/holup-mark-base.png"
 DEFAULT_SPLASH = HERE.parent / "assets/share/holup-end-splash-6s.mp4"
 
 # Where the mark sits: horizontal centre, a little above the bottom, which is
@@ -34,6 +34,34 @@ DRIFT_PX = 14
 DRIFT_PERIOD = 6
 
 
+def build_mark(base: Path, handle: str | None) -> Path:
+    """The mark for one creator: the shared logo lockup, plus their handle.
+
+    The handle is drawn here rather than baked into the artwork, because the
+    artwork is shared by every export. A handle in the asset would credit whoever
+    it was made for on everybody's clip.
+    """
+    if not handle:
+        return base
+    from PIL import Image, ImageDraw, ImageFont
+
+    mark = Image.open(base).convert("RGBA")
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+    text = handle if handle.startswith("@") else f"@{handle}"
+    # The base carries ~20 px of empty margin under the lockup for its own soft
+    # shadow, so the handle starts below that rather than on top of it: an
+    # overlap there reads as a smear, not a shadow.
+    top = mark.height + 16
+    taller = Image.new("RGBA", (mark.width, top + 40), (0, 0, 0, 0))
+    taller.alpha_composite(mark)
+    draw = ImageDraw.Draw(taller)
+    draw.text((taller.width / 2 + 1, top + 3), text, anchor="ma", font=font, fill=(0, 0, 0, 160))
+    draw.text((taller.width / 2, top + 1), text, anchor="ma", font=font, fill=(255, 255, 255, 255))
+    out = base.parent / "._holup-mark-tmp.png"
+    taller.save(out)
+    return out
+
+
 def probe_duration(path: Path) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
@@ -43,6 +71,7 @@ def probe_duration(path: Path) -> float:
 
 def build(inp: Path, out: Path, mark: Path, splash: Path | None, handle: str | None) -> None:
     duration = probe_duration(inp)
+    mark = build_mark(mark, handle)
     filters = [
         # Normalise first so a vertical 720p clip and a 1080p one both land on
         # the same canvas the splash is cut for.
@@ -71,7 +100,7 @@ def build(inp: Path, out: Path, mark: Path, splash: Path | None, handle: str | N
     subprocess.run(cmd, check=True)
     print(f"{out.name}: {duration:.1f}s clip + "
           f"{(probe_duration(splash) if splash else 0):.1f}s splash, "
-          f"{out.stat().st_size / 1e6:.2f} MB, handle {handle or 'burned in the asset'}")
+          f"{out.stat().st_size / 1e6:.2f} MB, handle {handle or 'none'}")
 
 
 def main() -> int:
