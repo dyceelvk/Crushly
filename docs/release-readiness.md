@@ -145,6 +145,63 @@ Gates: typecheck clean, 323 JS tests green (311 + 5 + 7).
   the app attaches the member's token. Not a fault, but it makes a copied media
   link look broken outside the app.
 
+
+## The new relationship rules: why they are not live yet
+
+The owner asked, directly, why the new Add Ups / Homies / Whisper rules are not in the
+database. Here is the measured answer, not the summary one.
+
+### They apply, and they pass
+
+On a local PostgreSQL 17 built from `supabase/migrations/` + `seed.sql` (the same
+migrations production records), applied in the order the redesign work specifies
+(`04a` fixture → `01` → `04` → `07`):
+
+| Suite | Result |
+| --- | --- |
+| `02_follow_test.sql` | **passed** — Add Ups, approval, list visibility, no connection, no Whisper |
+| `05_homies_test.sql` | **passed** — grandfathered Close Ones become Homies, Keeps become pending requests, reciprocity is not consent |
+| `08_whisper_test.sql` | **passed** — two messages before acceptance, reply/accept, block safety, independent of Add Ups |
+
+So "not added" is not a technical impossibility. It is that the rules are a **new
+contract**, and half the app still speaks the old one.
+
+### The blocker, in numbers
+
+`10_cutover_candidate.sql` (new, 621 lines) is the whole change as one transaction: the
+three rule sets plus a guard that closes the eight legacy relationship write endpoints
+(`crush_member`, `uncrush_member`, `accept/decline/cancel_connection_request`,
+`keep_close`, `let_go`, `remove_connection`). Rows in `crushes`/`keeps`/`connections`
+are not directly writable — their only policies are SELECT — so closing those eight
+routines closes legacy relationship writes completely.
+
+With that candidate applied, run **per test on its own fresh database** (so state
+bleed is not mistaken for breakage):
+
+- **22 of 28 legacy suites still pass.**
+- **6 fail, each for a reason that is the new rule working:**
+  - `add_up_requests.sql`, `smoke.sql` — call a closed legacy write endpoint: `409 relationship_upgrade_required`.
+  - `post_private.sql`, `shared_post.sql`, `notifications_social.sql` — `404 Whisper unavailable`: a Whisper between two members no longer opens on demand.
+  - `whisper_live.sql` — `403 This connection has ended`, same cause.
+
+### What that means for the release
+
+The old contract is not merely out of date, it is *wrong under the new rules*: those
+six suites assert things the product no longer promises (that any pair can Whisper, that
+a crush is a connection). Shipping means rewriting them against the new contract and
+wiring the client to the new Whisper states — not flipping a switch. That is the work
+still outstanding, and it is now a list of six files rather than an unknown.
+
+### Also established
+
+- **Supabase database branching is not available on this project's plan** (`402
+  entitlement_required`, "Branching is supported only on the Pro plan or above"). There
+  is no hosted staging copy, so validation has to happen on a local PostgreSQL replay —
+  which is what the numbers above are.
+- The candidate is deliberately **not** in `supabase/migrations/`: that directory is
+  applied by CI on push, and this change needs its tests and client wiring to land with
+  it.
+
 ## What is LIVE
 
 | Item | Evidence |
