@@ -9,7 +9,7 @@ const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated',
 const profile = { id: 1, email: user.email, name: 'Offline test', username: 'offline', bio: 'My site https://example.com/about', onboarded: true, status: 'active', birthdate: '1995-01-01', verification: 'none', created_at: Date.now(), intentions: [], interests: [], languages: [], lifestyle: {} };
 const person = { id: 2, name: 'Ada', username: 'ada', verified: false, photos: [], city: 'Lagos' };
 const onePost = { id: 11, body: 'hello #holiday', mediaUrl: 'https://example.test/p.jpg', mediaKind: 'photo', audience: 'everyone', createdAt: Date.now(), author: person };
-async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false, railClips = false, room = false, notificationFixtures: unknown[] = []) {
+async function offline(page: Page, calls: Record<string, unknown>[], commentCalls: Record<string, unknown>[] = [], isAdmin = false, ranked = false, viewCalls: number[] = [], video = false, feedVideo = false, ownMoment = false, denyLists = false, railClips = false, room = false, notificationFixtures: unknown[] = [], legacy = false) {
   let banner: string | null = null;
   let followed = false;
   let homiePending = false;
@@ -26,6 +26,14 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
   await page.route(`${API}/**`, async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown = [];
+    if (legacy && path === '/rest/v1/rpc/holup_follow_status') {
+      calls.push({ legacyProbe: true });
+      return route.fulfill({status: 404, contentType: 'application/json', headers: {'access-control-allow-origin':'*','access-control-expose-headers':'*'}, body: JSON.stringify({code:'PGRST202', message:'Could not find the function public.holup_follow_status(p_target) in the schema cache'})});
+    }
+    if (legacy && path === '/rest/v1/rpc/space_relationship_stats') {
+      calls.push({ legacyStats: true });
+      return route.fulfill({status: 200, contentType: 'application/json', headers: {'access-control-allow-origin':'*'}, body: JSON.stringify({addUps:3,keptClose:2,postLikes:7,canViewAddUps:true,canViewKeptClose:true,addUpVisibility:'private'})});
+    }
     if (path === '/auth/v1/user') body = user;
     else if (path === '/rest/v1/profiles') body = profile;
     else if (path === '/rest/v1/preferences') body = { age_min: 18, age_max: 99, intentions: [], interests: [] };
@@ -657,4 +665,22 @@ test('Homies tab shows accepted people and requests without a remove button', as
  await expect(page.getByRole('button',{name:'Let go'})).toHaveCount(0);
  await page.getByRole('button',{name:'Decline',exact:true}).click();
  await expect.poll(()=>calls.some(c=>c.homie==='respond' && c.p_accept===false)).toBe(true);
+});
+
+
+test('legacy backend missing-function response loads counts without conflating new relationships', async ({page}) => {
+  const calls: Record<string, unknown>[] = [];
+  await offline(page, calls, [], false, false, [], false, false, false, false, false, false, [], true);
+  await page.goto('/');
+  await page.getByText('Space',{exact:true}).last().click({timeout:30000});
+  await expect(page.getByRole('button',{name:'3 Add Ups. View people'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'2 Homies. View people'})).toBeVisible();
+  expect(calls.some(c=>c.legacyProbe)).toBe(true);
+  expect(calls.some(c=>c.legacyStats)).toBe(true);
+  await page.getByRole('button',{name:'3 Add Ups. View people'}).click();
+  await page.getByRole('button',{name:'Open Ada’s Space'}).click();
+  await expect(page.getByText('Add Up unavailable for now').last()).toBeVisible();
+  await expect(page.getByText('Homie requests unavailable for now').last()).toBeVisible();
+  await expect(page.getByRole('button',{name:'Add Up Ada'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Add a Homie: Ada'})).toHaveCount(0);
 });

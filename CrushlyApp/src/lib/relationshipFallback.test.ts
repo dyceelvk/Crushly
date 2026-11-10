@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { backendFromProbe, isMissingFunctionError } from './relationshipFallback';
+import { backendFromProbe, isMissingFunctionError, relationshipBackendFromResponse } from './relationshipFallback';
 
 /**
  * The regression this guards: production answered `PGRST202` for
@@ -28,7 +28,7 @@ test('a routine that answered 404 for its own reasons is not "missing"', () => {
   }
 });
 
-test('refusals, blocks and network faults all keep the v2 contract', () => {
+test('refusals, blocks and network faults are not missing-function errors', () => {
   assert.equal(isMissingFunctionError({ code: '42501', message: 'permission denied for function holup_follow_status' }), false);
   assert.equal(isMissingFunctionError({ code: 'P0001', message: 'blocked' }), false);
   assert.equal(isMissingFunctionError({ status: 0, message: 'Network request failed' }), false);
@@ -39,4 +39,17 @@ test('refusals, blocks and network faults all keep the v2 contract', () => {
 test('only a confirmed absence selects the legacy contract', () => {
   assert.equal(backendFromProbe({ missing: true }), 'legacy');
   assert.equal(backendFromProbe({ missing: false }), 'v2');
+});
+
+
+test('real Supabase resolved error response selects deployed legacy contract', () => {
+  assert.equal(relationshipBackendFromResponse({code:'PGRST202', message:'Could not find the function public.holup_follow_status(p_target)'}), 'legacy');
+  assert.equal(relationshipBackendFromResponse(null), 'v2');
+  assert.equal(relationshipBackendFromResponse({code:'P0001', message:'__CRUSHLY__404____Space not available.'}), 'v2');
+});
+test('authentication and network failures are not cached as either backend', () => {
+  const permission={code:'42501', message:'permission denied'};
+  const network={message:'TypeError: Failed to fetch'};
+  assert.throws(() => relationshipBackendFromResponse(permission), (error) => error === permission);
+  assert.throws(() => relationshipBackendFromResponse(network), (error) => error === network);
 });

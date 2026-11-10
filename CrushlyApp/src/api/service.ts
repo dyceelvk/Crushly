@@ -4,7 +4,7 @@ import { updateVersionPath } from '../lib/updateChannel';
 import { browserLocation } from '../lib/browser';
 import { profileCompletion } from '../lib/completion';
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
-import { backendFromProbe, isMissingFunctionError } from '../lib/relationshipFallback';
+import { relationshipBackendFromResponse } from '../lib/relationshipFallback';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
@@ -271,14 +271,8 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export type AddUpListVisibility = 'everyone' | 'close' | 'private';
-/**
- * The relationship contract this build talks to.
- *
- * `v2` is the coordinated Add Ups / Homies / Whispers backend. `legacy` is the
- * deployed one — crushes, keeps and connections — and every value below is then
- * read from it rather than invented. The client never shows a count or a button
- * it cannot back, and it never claims consent it did not get.
- */
+/** The coordinated relationship backend is not yet deployed. Legacy reads use
+ * the existing privacy-filtered counts; new relationship mutations remain off. */
 export type RelationshipBackend = 'v2' | 'legacy';
 export type SpaceRelationshipStats = {
   addUps: number;
@@ -302,70 +296,19 @@ let detected: RelationshipBackend | null = null;
  * ("Space not available", "This list is private") must not be mistaken for one,
  * or the client would silently downgrade itself while the v2 backend is live.
  */
-const missingFunction = (e: unknown) => e instanceof ApiError && isMissingFunctionError(e);
-
-/**
- * Ask the database which relationship contract it speaks, once per session.
- *
- * A missing function is the signal: production today answers PGRST202 for the
- * v2 routines, so this build falls back to crushes/keeps/connections instead of
- * painting "Retry" over a Space. Probing a real routine means a deploy of the
- * v2 backend switches this over with no client change.
- */
+/** Supabase resolves RPC errors in its response. Only cache a confirmed contract. */
 export async function relationshipBackend(): Promise<RelationshipBackend> {
   if (detected) return detected;
   try {
-    await supabase.rpc('holup_follow_status', { p_target: 0 });
-    detected = 'v2';
-  } catch (e) {
-    detected = backendFromProbe({ missing: missingFunction(e) });
+    const { error } = await supabase.rpc('holup_follow_status', { p_target: 0 });
+    detected = relationshipBackendFromResponse(error);
+    return detected;
+  } catch (error) {
+    throw toApiError(error);
   }
-  return detected;
 }
 /** Reset the cached probe — only the tests need this. */
 export function resetRelationshipBackend() { detected = null; }
-
-/** My own outgoing crush row is readable (RLS: from_id = me), and is the legacy status. */
-async function legacyCrushStatus(id: number): Promise<'active' | 'pending' | null> {
-  const me = await meId();
-  const { data } = await supabase.from('crushes').select('status').eq('from_id', me).eq('to_id', id).maybeSingle();
-  const status = (data as { status?: string } | null)?.status;
-  return status === 'accepted' ? 'active' : status === 'pending' ? 'pending' : null;
-}
-
-/**
- * Whether the pair is already connected on the deployed backend.
- *
- * `is_connected_pair` looks like the obvious way to ask, but the deployed
- * database never granted it to signed-in members — calling it answers
- * `42501 permission denied`, which is what keeps painting "Retry" on a Space.
- * The `connections` row is readable by either party at the row level
- * (`connections_pair`), so the client asks for the row itself instead.
- */
-async function legacyConnectedPair(id: number): Promise<boolean> {
-  const me = await meId();
-  const { data, error } = await supabase
-    .from('connections')
-    .select('user_a')
-    .or(`user_a.eq.${me},user_b.eq.${me}`)
-    .or(`user_a.eq.${id},user_b.eq.${id}`)
-    .limit(1);
-  if (error) throw toApiError(error);
-  return (data?.length ?? 0) > 0;
-}
-
-/**
- * The deployed Add Up: `crush_member`. It answers `request`, not a boolean —
- * `connected` when a connection already existed, `accepted` when this tap
- * answered the other person's waiting Add Up, `pending` when they must answer.
- * Reading a field that isn't there would turn every answered Add Up into a
- * pending one, so the mapping lives here in one place.
- */
-async function legacyAddUp(id: number): Promise<{ status: 'accepted' | 'pending'; changed: boolean }> {
-  const result = await rpc<{ request?: string; isNew?: boolean; mutual?: boolean }>('crush_member', { p_target_id: id });
-  const accepted = result?.mutual === true || result?.request === 'accepted' || result?.request === 'connected';
-  return { status: accepted ? 'accepted' : 'pending', changed: result?.isNew !== false };
-}
 
 export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
   if (await relationshipBackend() === 'v2') {
@@ -391,7 +334,7 @@ export async function spaceRelationshipStats(id: number): Promise<SpaceRelations
     addUpVisibility: me === id ? base.addUpVisibility : null,
     outgoingVisibility: null,
     approvalRequired: null,
-    myStatus: me === id ? null : await legacyCrushStatus(id),
+    myStatus: null, // Legacy requests are not directional Add Ups.
     backend: 'legacy',
   };
 }
@@ -408,39 +351,28 @@ export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'adde
   return { ...page, items: (page.items ?? []).map(profileShape) };
 }
 
-export type HomieStatus = { homies: boolean; incomingPending: boolean; outgoingPending: boolean };
+export type HomieStatus = { homies: boolean; incomingPending: boolean; outgoingPending: boolean; available?: boolean };
 
 export const homieStatus = async (id: number): Promise<HomieStatus> => {
   if (await relationshipBackend() === 'v2') return rpc<HomieStatus>('holup_homie_status', { p_target: id });
-  // Legacy: an accepted Close One is a connection; a waiting crush is a request.
-  const me = await meId();
-  const connected = await legacyConnectedPair(id);
-  const { data: theirs } = await supabase.from('crushes').select('status').eq('from_id', id).eq('to_id', me).maybeSingle();
-  const { data: mine } = await supabase.from('crushes').select('status').eq('from_id', me).eq('to_id', id).maybeSingle();
-  const statusOf = (row: unknown) => (row as { status?: string } | null)?.status ?? null;
-  return {
-    homies: connected,
-    incomingPending: !connected && statusOf(theirs) === 'pending',
-    outgoingPending: !connected && statusOf(mine) === 'pending',
-  };
+  // Legacy crush requests are not Homie consent, and newer connections were not
+  // grandfathered. Never present either as an accepted Homie or a request.
+  return { homies: false, incomingPending: false, outgoingPending: false, available: false };
 };
 
 export async function requestHomie(id: number): Promise<{ status: 'accepted' | 'pending'; changed: boolean }> {
   if (await relationshipBackend() === 'v2') return rpc('holup_request_homie', { p_target: id });
-  return legacyAddUp(id);
+  throw new ApiError(503, 'Homie requests are not available until the relationship update is ready.');
 }
 
 export async function withdrawHomie(id: number): Promise<boolean> {
   if (await relationshipBackend() === 'v2') return rpc('holup_withdraw_homie', { p_target: id });
-  await rpc('cancel_connection_request', { p_to_id: id });
-  return true;
+  throw new ApiError(503, 'Homie requests are not available until the relationship update is ready.');
 }
 
 export async function respondHomie(id: number, accept: boolean): Promise<{ status: 'accepted' | 'declined' }> {
   if (await relationshipBackend() === 'v2') return rpc('holup_respond_homie', { p_sender: id, p_accept: accept });
-  if (accept) { await rpc('accept_connection_request', { p_from_id: id }); return { status: 'accepted' }; }
-  await rpc('decline_connection_request', { p_from_id: id });
-  return { status: 'declined' };
+  throw new ApiError(503, 'Homie requests are not available until the relationship update is ready.');
 }
 
 export async function homieStats(id: number): Promise<{ count: number; canView: boolean }> {
@@ -458,38 +390,31 @@ export async function homiePeople(id: number, offset = 0): Promise<{ items: Prof
   return { ...page, items: (page.items ?? []).map(profileShape) };
 }
 
-export async function homieRequests(offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
+export async function homieRequests(offset = 0): Promise<{ items: Profile[]; hasMore: boolean; unavailable?: boolean }> {
   if (await relationshipBackend() === 'v2') {
     const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_homie_requests_inbox', { p_offset: offset, p_limit: 40 });
     return { ...page, items: (page.items ?? []).map(profileShape) };
   }
-  // Legacy has no Homie inbox; nobody is told there is one.
-  return { items: [], hasMore: false };
+  // Legacy crush requests cannot honestly be presented as Homie invitations.
+  return { items: [], hasMore: false, unavailable: true };
 }
 
-/**
- * A directional Add Up, plus whether the pair is already connected. A connected
- * pair has nothing left to Add Up — the Space offers "Remove connection"
- * instead — so the caller can hide the button rather than offer an action the
- * deployed backend refuses with `400 already connected`.
- */
-export type FollowStatus = { status: 'active' | 'pending' | null; connected?: boolean };
+/** A directional Add Up is available only with the coordinated backend. */
+export type FollowStatus = { status: 'active' | 'pending' | null; connected?: boolean; available?: boolean };
 
 export async function followStatus(id: number): Promise<FollowStatus> {
   if (await relationshipBackend() === 'v2') return rpc<FollowStatus>('holup_follow_status', { p_target: id });
-  const [status, connected] = await Promise.all([legacyCrushStatus(id), legacyConnectedPair(id)]);
-  return { status, connected };
+  return { status: null, available: false };
 }
 
 export async function followMember(id: number): Promise<{ status: 'active' | 'pending'; changed: boolean }> {
   if (await relationshipBackend() === 'v2') return rpc('holup_follow', { p_target: id });
-  const { status, changed } = await legacyAddUp(id);
-  return { status: status === 'accepted' ? 'active' : 'pending', changed };
+  throw new ApiError(503, 'Add Up is not available until the relationship update is ready.');
 }
 
 export async function unfollowMember(id: number): Promise<void> {
   if (await relationshipBackend() === 'v2') { await rpc('holup_unfollow', { p_target: id }); return; }
-  await rpc('uncrush_member', { p_target_id: id });
+  throw new ApiError(503, 'Add Up is not available until the relationship update is ready.');
 }
 
 export async function setFollowSettings(approvalRequired: boolean | null, visibility: AddUpListVisibility | null): Promise<void> {
@@ -511,7 +436,7 @@ export async function pendingFollowRequests(offset = 0): Promise<{ items: Profil
 
 export async function respondToFollow(id: number, accept: boolean): Promise<void> {
   if (await relationshipBackend() === 'v2') { await rpc('holup_respond_follow', { p_follower: id, p_accept: accept }); return; }
-  await (accept ? rpc('accept_connection_request', { p_from_id: id }) : rpc('decline_connection_request', { p_from_id: id }));
+  throw new ApiError(503, 'Add Up requests are not available until the relationship update is ready.');
 }
 
 export async function setAddUpListVisibility(visibility: AddUpListVisibility): Promise<void> {

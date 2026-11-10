@@ -37,3 +37,14 @@ export function isMissingFunctionError(e: Errorish | null | undefined): boolean 
 export function backendFromProbe(outcome: { missing: boolean }): 'v2' | 'legacy' {
   return outcome.missing ? 'legacy' : 'v2';
 }
+
+/** Supabase resolves HTTP errors in `error`; it does not throw by default.
+ * A business 404 from the known invalid probe target proves v2 exists. Other
+ * failures must propagate, not poison the per-session backend cache.
+ */
+export function relationshipBackendFromResponse(error: Errorish | null): 'v2' | 'legacy' {
+  if (!error) return 'v2';
+  if (isMissingFunctionError(error)) return 'legacy';
+  if (/^__CRUSHLY__404__/.test(error.message ?? '')) return 'v2';
+  throw error;
+}

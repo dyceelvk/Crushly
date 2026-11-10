@@ -28,6 +28,7 @@ export function FollowButton({ id, name, compact = false }: {id: number; name: s
     onError: (error) => toast({kind: 'error', title: 'Couldn’t update Add Up', message: (error as Error).message}),
   });
   if (!me.data?.id || me.data.id === id) return null;
+  if (stats.data?.available === false) return <Txt variant="small" color="textSecondary">Add Up unavailable for now</Txt>;
   // Already Homies: the deployed backend refuses another Add Up here, and the
   // Space carries the connection controls. Nothing to offer, so offer nothing.
   if (stats.data?.connected) return null;

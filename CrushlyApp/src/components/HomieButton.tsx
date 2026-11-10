@@ -35,6 +35,7 @@ export function HomieButton({id,name}:{id:number;name:string}) {
   if (!me.data?.id || me.data.id===id) return null;
   if (state.isError) return <Pressable accessibilityRole="button" onPress={()=>void state.refetch()}><Txt variant="small" color="gold">Retry Homies</Txt></Pressable>;
   const status=state.data;
+  if (status?.available === false) return <Txt variant="small" color="textSecondary">Homie requests unavailable for now</Txt>;
   if (status?.homies) return <View accessibilityLabel={`You and ${name} are Homies`} style={{flexDirection:'row',alignItems:'center',gap:5}}><CrushIcon size={15} color={colors.gold}/><Txt variant="smallStrong" color="gold">Homies</Txt></View>;
   if (status?.incomingPending) return <View style={{flexDirection:'row',alignItems:'center',gap:8}}><Txt variant="small" color="textSecondary">Homie request</Txt><Pressable accessibilityRole="button" accessibilityLabel={`Accept ${name} as a Homie`} disabled={mutate.isPending} onPress={()=>mutate.mutate('accept')}><Txt variant="smallStrong" color="gold">Accept</Txt></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Decline ${name} as a Homie`} disabled={mutate.isPending} onPress={()=>mutate.mutate('decline')}><Txt variant="small" color="textSecondary">Decline</Txt></Pressable></View>;
   const pending=!!status?.outgoingPending;
