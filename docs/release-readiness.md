@@ -393,10 +393,13 @@ on first relationship action and switches to the v2 contract by itself
 receive the 409 update prompt on Add Up / Homie actions — the honest outcome, and
 the reason the client copy in the store must be refreshed.
 
-**The 16+ rule is restored** by `20261110090000_restore_minimum_age_16` (see
-below), which replaced the 18+ gate that `20261110023805` had put in its place.
-With it, every suite in the repository passes on a replay of the deployed schema:
-**28/28**.
+**The 16+ rule is restored, in production** — `20261110090000_restore_minimum_age_16`,
+applied 2026-11-07 and recorded in the migration history with its exact SQL. Verified
+live: `age_min` default `16`, the range constraint is `16..99`, the gate function
+reads `16 years` and raises `minimum_age`, and the trigger is present and enabled —
+and a real write of a 15-year-old birthdate is refused with
+`__CRUSHLY__403__minimum_age`. With it, every suite in the repository passes on a
+replay of the deployed schema: **28/28**.
 
 The migration deliberately does *not* lower anyone's saved age filters. Members
 whose `age_min` was raised to 18 now see an 18 floor; the migration only changes
