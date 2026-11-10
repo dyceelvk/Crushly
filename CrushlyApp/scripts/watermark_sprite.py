@@ -27,11 +27,22 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 SHARE = HERE.parent / "assets/share"
 
-ICON_W = 86             # px wide at 1080x1920 — a signature, not a bumper
-HANDLE_SIZE = 24
-HANDLE_GAP = 9          # px between icon and handle
-ICON_ALPHA = 0.20       # white skeleton
-COLOUR_ALPHA = 0.26     # colour needs a touch more to read at the same weight
+# The mark's width as a share of the frame, not a fixed number of pixels.
+#
+# It was 86 px at 1080 wide — 8% of the frame — and the owner asked for it a
+# little larger. "+2%" is read as two percentage points of the frame rather than
+# two percent of the icon, because two percent of 86 px is half a pixel and
+# would change nothing anybody could see. 10% of 1080 is 108 px.
+ICON_W_PCT = 0.10
+FRAME_W = 1080          # the canvas every marked clip is drawn at
+ICON_W = round(FRAME_W * ICON_W_PCT)   # 108 px — a signature, not a bumper
+HANDLE_SIZE = 26
+HANDLE_GAP = 10         # px between icon and handle
+# Transparency was the other complaint. Still a signature — the point is that it
+# is noticed, not that it is faint — so this is a modest lift, not a jump to
+# something opaque.
+ICON_ALPHA = 0.27       # white skeleton
+COLOUR_ALPHA = 0.34     # colour needs a touch more to read at the same weight
 DWELL = 7.0             # seconds in one spot
 LOAD = 2.0              # seconds of the dwell spent taking colour
 FADE_IN = 0.12          # it lands, it does not glide

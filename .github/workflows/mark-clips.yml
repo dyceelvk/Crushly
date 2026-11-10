@@ -7,9 +7,20 @@
 # is never touched, and the marked copy is only ever handed out through
 # `post_download`, which applies `can_view_post`.
 #
-# Manual, on purpose. Marking every clip the moment it is uploaded would put an
-# ffmpeg transcode in the upload path and make a member wait for it; a batch that
-# runs on demand keeps uploads instant and lets a backlog be cleared in one go.
+# Never in the upload path. Marking a clip means a full ffmpeg transcode, and
+# doing that while somebody is uploading would make them wait for it. So the work
+# happens here — but it can no longer wait for a human.
+#
+# It used to be dispatch-only, and that had a consequence nobody had written
+# down: post a clip, open the share sheet, and there was **no Save row at all**,
+# because the row is only offered when a marked copy exists. The owner reported
+# exactly that. The batch now also runs on a schedule and picks up whatever is
+# missing, so a freshly posted clip has its marked copy within the hour without
+# anybody remembering to press anything.
+#
+# The schedule is cheap: the first job only asks the database whether anything is
+# waiting, and the expensive one (ffmpeg, imageio, the voice) never starts when
+# the answer is no.
 #
 # Secrets used: SUPABASE_DB_URL, B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET.
 # Nothing sensitive is committed and nothing is echoed.
@@ -17,6 +28,10 @@
 name: Mark clips for download
 
 on:
+  # Every half hour. Capped deliberately: a private repository is billed for
+  # these minutes, and the gate below keeps an idle run to well under a minute.
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       limit:
@@ -33,8 +48,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Is there anything to do? One psql call, no ffmpeg, no Python packages.
+  waiting:
+    name: anything waiting?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      count: ${{ steps.check.outputs.count }}
+    steps:
+      - name: Ask the database
+        id: check
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y -qq postgresql-client
+          count=$(psql "$SUPABASE_DB_URL" -tAc "select jsonb_array_length(public.posts_needing_download(50));" | tr -d '[:space:]')
+          # A named dispatch is a human saying "these ones", so it is never
+          # short-circuited by the queue being empty.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.post_ids }}" ]; then
+            count=${{ inputs.limit || 20 }}
+          fi
+          echo "count=${count:-0}" >> "$GITHUB_OUTPUT"
+          echo "waiting: ${count:-0}"
+
   mark:
     name: mark and upload
+    needs: waiting
+    if: needs.waiting.outputs.count != '0'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -63,7 +103,7 @@ jobs:
           B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
-          LIMIT: ${{ inputs.limit }}
+          LIMIT: ${{ inputs.limit || '20' }}
           POST_IDS: ${{ inputs.post_ids }}
         run: |
           python scripts/mark_pending_clips.py

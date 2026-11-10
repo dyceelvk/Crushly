@@ -16,7 +16,7 @@ import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
 import { useCrushesFeed } from '../../api/hooks';
 import { shownPosts } from '../../lib/features';
-import { space } from '../../theme/tokens';
+import { space, stroke } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -127,7 +127,11 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       contentContainerStyle={{
         width: contentWidth,
         alignSelf: 'center',
-        gap: space.md,
+        /* No gap. The posts are one column now, joined by a hairline in each row:
+           a stack of floating cards with 16 dp of air between them is the shape
+           every feed had five years ago, and it wastes a third of a phone's
+           height on nothing. */
+        gap: 0,
         paddingTop: top,
         paddingBottom: space.xxxl,
         flexGrow: 1,
@@ -138,18 +142,35 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
          itself when nothing is live, so this costs an empty feed nothing. */
       ListHeaderComponent={
         <View style={{ marginHorizontal: -space.md }}>
-          <MomentCircles />
+          {/* Smaller than a profile row's 74 dp: this is a strip of faces above a
+              column of posts, not the posts' equal. See MomentCircle. */}
+          <MomentCircles size={58} />
         </View>
       }
       renderItem={({ item, index }) => (
         <Measured index={index} id={item.id} onReport={focus.report}>
-          {/* A clip is the card; a photograph and a written post keep the card
-              they were designed for. See CrushClipCard. */}
-          {item.mediaKind === 'video' && item.mediaUrl ? (
-            <CrushClipCard post={item} active={item.id === focus.activeId} />
-          ) : (
-            <PostCard post={item} active={item.id === focus.activeId} />
-          )}
+          {/*
+            One column, and a rule between posts instead of a box around each.
+
+            The first post has no rule above it — a divider under the Moments row
+            would be a line drawn to separate a row from a post that already
+            separates itself — and the clip keeps its own surface, because a clip
+            is a picture and a picture is framed by its own edge.
+          */}
+          <View
+            style={{
+              borderTopWidth: index === 0 ? 0 : stroke.hairline,
+              borderTopColor: colors.border,
+              paddingTop: index === 0 ? 0 : space.sm,
+              paddingBottom: space.sm,
+            }}
+          >
+            {item.mediaKind === 'video' && item.mediaUrl ? (
+              <CrushClipCard post={item} active={item.id === focus.activeId} />
+            ) : (
+              <PostCard post={item} active={item.id === focus.activeId} flat />
+            )}
+          </View>
         </Measured>
       )}
       /* The next page is fetched as the end approaches, and the footer says so

@@ -38,9 +38,13 @@ WORDMARK = SHARE / "holup-wordmark.png"
 SOUND = SHARE / "holup-end-sound.wav"
 FONT_HANDLE = SHARE / "fonts/Manrope_600SemiBold.ttf"
 
-CARD_W = 300            # the name, above the mark
-ICON_W = 190            # the mark, under the name
-HANDLE_SIZE = 34
+# The owner asked for the card a little smaller. Everything on it is scaled
+# together rather than one element alone, or the name would stop sitting on the
+# mark the way it was composed to: 8% off each piece, which reads as quieter
+# without becoming small.
+CARD_W = 276            # the name, above the mark
+ICON_W = 175            # the mark, under the name
+HANDLE_SIZE = 31
 
 APPEAR = 0.22           # the skeleton is there by here, fading in just before
 APPEAR_FADE = 0.28

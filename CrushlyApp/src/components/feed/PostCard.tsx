@@ -46,8 +46,19 @@ export function PostCard({
   secondPerson = true,
   expanded = false,
   onOpen,
+  flat = false,
 }: {
   post: Post;
+  /**
+   * Draw this post as part of a continuous column rather than as a card.
+   *
+   * Off everywhere it already looks right — a Space, a Circle, what you kept: a
+   * card is a thing you can pick out of a list. On the Crushes feed the posts now
+   * sit edge to edge with a hairline between them, so the feed reads as one
+   * column rather than a stack of boxes. Nothing inside changes; only the
+   * surface, the corners and the shadow go.
+   */
+  flat?: boolean;
   /**
    * Whether this card's clip plays.
    *
@@ -113,14 +124,18 @@ export function PostCard({
 
   return (
     <View
-      style={{
-        backgroundColor: colors.card,
-        borderRadius: radius.lg,
-        borderWidth: stroke.hairline,
-        borderColor: colors.border,
-        overflow: 'hidden',
-        ...elevation.soft,
-      }}
+      style={
+        flat
+          ? { overflow: 'hidden' }
+          : {
+              backgroundColor: colors.card,
+              borderRadius: radius.lg,
+              borderWidth: stroke.hairline,
+              borderColor: colors.border,
+              overflow: 'hidden',
+              ...elevation.soft,
+            }
+      }
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingTop: space.sm }}>
         <Pressable

@@ -976,6 +976,69 @@ The offline test grew a real PNG as its fixture (an empty body is indistinguisha
 from a broken image, which is how this passed review the first time) and now
 asserts that a decoded image is actually on the screen.
 
+## A sleeker feed, and a mark you can actually see (2026-11-07)
+
+Four changes from the same round of notes.
+
+### The pale line across the top
+
+The tab header's backing was a translucent slab — `rgba(0,0,0,0.22)` in dark, 86%
+white in light — that ran 24 dp **past** the bottom of the strip. Over a dark page
+that is a light band, and it landed across the Moments row and the top of the
+first post, so it read as a stray white line belonging to the layout. It is now a
+solid block the colour of the page, ending exactly at the strip: invisible against
+the page, still enough to hide a clip scrolling under it. Nothing translucent is
+left in that header.
+
+### Moments are smaller
+
+58 dp in the Crushes ring, down from 74. A strip of faces above a column of posts
+should not be the posts' equal; 74 was a profile-row size in the wrong place.
+
+### Posts are a column, not a stack of boxes
+
+On the Crushes feed a post no longer draws a card — no fill, no corners, no
+shadow, no 16 dp of air between posts. It is separated by a hairline rule and a
+little vertical padding, so the feed reads as one continuous thing. The first post
+has no rule above it, and a clip keeps its own surface, because a clip is a
+picture and a picture is framed by its own edge.
+
+`PostCard` takes a `flat` prop for this. Everything else that lists posts — a
+Space, a Circle, what you kept — keeps the card, because a card is what lets you
+pick one out of a list.
+
+### The watermark: +2% larger, and less transparent
+
+Read as two percentage points of the frame, not two percent of the icon: two
+percent of 86 px is half a pixel and would have changed nothing. So the mark went
+from 86 px to **108 px** at 1080 wide (8% → 10% of the frame), the handle from 24
+to 26 px, and the two alphas from 0.20/0.26 to **0.27/0.34**. Still a signature,
+still well under anything that competes with the clip.
+
+The end card went the other way: every element 8% smaller together — wordmark
+300 → 276, mark 190 → 175, handle 34 → 31 — so the composition still sits as it
+was drawn.
+
+Both are build-time constants in `watermark_sprite.py` and `make-end-splash.py`,
+and they only reach a clip when it is **marked**, so the copies already on the
+server were re-marked in the same round.
+
+### A posted clip had no Save button, and that was not a UI bug
+
+The Save row in the share sheet is offered only when a marked copy exists —
+correct, since an unmarked copy must never leave the app. But the marking job was
+`workflow_dispatch`-only, so a clip posted between runs had no copy, and the sheet
+offered nothing at all. That is what was reported: "I posted a video and it got no
+download button."
+
+The job now also runs on a 30-minute schedule, behind a cheap gate: the first job
+asks the database whether anything is waiting (`posts_needing_download`) and the
+expensive one — ffmpeg, imageio, the voice — never starts when the answer is no.
+The share sheet also says so now instead of showing nothing: a clip awaiting its
+copy reads "The marked copy is on its way", with the reason. It is deliberately a
+line and not a disabled button, because a control that can never become enabled
+while the sheet is open is its own small lie.
+
 ## Saving a clip to a device, and the 7-second end card (2026-11-07)
 
 Two things were asked for: a Tik-Tok-shaped ending for exported video, and a

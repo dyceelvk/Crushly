@@ -78,8 +78,17 @@ export function FeedTabs({
       }}
       pointerEvents="box-none"
     >
-      {/* A short scrim rather than a bar: the tabs must stay readable over a
-          bright clip without putting a slab across the video. */}
+      {/*
+        The header is the page's own colour, exactly as tall as the header.
+        
+        It used to be a translucent slab (`rgba(0,0,0,0.22)`) that ran 24 dp past
+        the strip, so it painted a faint pale band across the top of whatever came
+        next — the Moments row, and the first card under it. On a dark page that
+        band reads as a stray white line that appears to be part of the layout,
+        which is how it was reported. Nothing translucent here: a solid block the
+        colour of the page is invisible against the page, and it still hides a
+        clip scrolling underneath.
+      */}
       <View
         pointerEvents="none"
         style={{
@@ -87,8 +96,8 @@ export function FeedTabs({
           top: -top,
           left: 0,
           right: 0,
-          height: top + 46 + 24,
-          backgroundColor: colors.scheme === 'light' ? 'rgba(255,255,255,0.86)' : 'rgba(0,0,0,0.22)',
+          height: top + 46,
+          backgroundColor: colors.bg,
         }}
       />
       <View {...swipe.panHandlers} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
