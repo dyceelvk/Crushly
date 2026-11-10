@@ -9,11 +9,21 @@
 
 export const palettes = {
   dark: {
+    /*
+     * Dark is black first, plum second.
+     *
+     * It used to be plum all the way down (#2A0F2B), which put colour behind
+     * every photograph and every clip and made the whole app feel dyed. The
+     * surfaces are now near-black with only a trace of the brand in them — 4%
+     * plum at the base, a shade lighter for a card, lighter again for anything
+     * that floats — so the pictures and the accent carry the colour instead of
+     * the page. Light is untouched: it is already right.
+     */
     scheme: 'dark' as const,
-    bg: '#2A0F2B',
-    bgSecondary: '#35143A',
-    card: '#35143A',
-    elevated: '#461A48',
+    bg: '#0B070C',
+    bgSecondary: '#120D13',
+    card: '#141016',
+    elevated: '#1C1720',
     text: '#FFF8F8',
     textSecondary: '#E0CBD4',
     textMuted: '#AD8D9D',
@@ -44,12 +54,12 @@ export const palettes = {
     dangerSoft: 'rgba(255,92,103,0.14)',
     border: 'rgba(255,255,255,0.08)',
     borderStrong: 'rgba(255,255,255,0.16)',
-    glass: 'rgba(42,15,43,0.82)',
-    scrim: 'rgba(24,8,28,0.66)',
-    photoScrim: ['rgba(42,15,43,0)', 'rgba(42,15,43,0.55)', 'rgba(42,15,43,0.94)'] as const,
-    skeleton: '#421A45',
-    skeletonHighlight: '#572259',
-    shadow: '#18081C',
+    glass: 'rgba(11,7,12,0.82)',
+    scrim: 'rgba(0,0,0,0.66)',
+    photoScrim: ['rgba(11,7,12,0)', 'rgba(11,7,12,0.55)', 'rgba(11,7,12,0.94)'] as const,
+    skeleton: '#181319',
+    skeletonHighlight: '#241D26',
+    shadow: '#000000',
   },
   light: {
     scheme: 'light' as const,

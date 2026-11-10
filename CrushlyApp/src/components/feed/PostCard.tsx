@@ -46,19 +46,8 @@ export function PostCard({
   secondPerson = true,
   expanded = false,
   onOpen,
-  flat = false,
 }: {
   post: Post;
-  /**
-   * Draw this post as part of a continuous column rather than as a card.
-   *
-   * Off everywhere it already looks right — a Space, a Circle, what you kept: a
-   * card is a thing you can pick out of a list. On the Crushes feed the posts now
-   * sit edge to edge with a hairline between them, so the feed reads as one
-   * column rather than a stack of boxes. Nothing inside changes; only the
-   * surface, the corners and the shadow go.
-   */
-  flat?: boolean;
   /**
    * Whether this card's clip plays.
    *
@@ -124,18 +113,14 @@ export function PostCard({
 
   return (
     <View
-      style={
-        flat
-          ? { overflow: 'hidden' }
-          : {
-              backgroundColor: colors.card,
-              borderRadius: radius.lg,
-              borderWidth: stroke.hairline,
-              borderColor: colors.border,
-              overflow: 'hidden',
-              ...elevation.soft,
-            }
-      }
+      style={{
+        backgroundColor: colors.card,
+        borderRadius: radius.lg,
+        borderWidth: stroke.hairline,
+        borderColor: colors.border,
+        overflow: 'hidden',
+        ...elevation.soft,
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingTop: space.sm }}>
         <Pressable
@@ -214,7 +199,15 @@ export function PostCard({
 
       {/* Post body + media: tap to open the full post view */}
       <Pressable
-        onPress={onOpen ?? (() => navigation.navigate('PostViewer', { postId: p.id }))}
+        /*
+         * A post with no picture goes to the page built for words; anything with
+         * a picture goes to the pager, where the picture owns the screen. A card
+         * is the same card either way — only the door changes.
+         */
+        onPress={
+          onOpen ??
+          (() => navigation.navigate(p.mediaUrl ? 'PostViewer' : 'TextPost', { postId: p.id }))
+        }
         accessibilityRole="button"
         accessibilityLabel={`Open ${authorName}’s post`}
         style={{ marginTop: space.sm }}

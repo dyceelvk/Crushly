@@ -36,6 +36,7 @@ import { ChatScreen } from '../screens/messages/Chat';
 import { MomentsScreen } from '../screens/moments/Moments';
 import { MomentViewerScreen } from '../screens/moments/MomentViewer';
 import { PostViewerScreen } from '../screens/flow/PostViewer';
+import { TextPostScreen } from '../screens/flow/TextPost';
 import { SavedPostsScreen } from '../screens/flow/SavedPosts';
 import { SoundScreen } from '../screens/flow/SoundScreen';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
@@ -195,6 +196,8 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade' }} />
           <Stack.Screen name="WebPreview" component={WebPreviewScreen} options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
         <Stack.Screen name="PostViewer" component={PostViewerScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+        {/* Words get their own page; see TextPost. */}
+        <Stack.Screen name="TextPost" component={TextPostScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="CrushList" component={CrushesScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Sound" component={SoundScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />

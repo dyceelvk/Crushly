@@ -1039,6 +1039,63 @@ copy reads "The marked copy is on its way", with the reason. It is deliberately 
 line and not a disabled button, because a control that can never become enabled
 while the sheet is open is its own small lie.
 
+## Words get their own page, and dark goes black (2026-11-07)
+
+### The cards are back on the Crushes feed
+
+The hairline column lasted one round. Posts are cards again, with the gap
+between them; `PostCard`'s `flat` prop is gone rather than left behind, because a
+surface nobody uses is a branch that drifts.
+
+### Dark is near-black now
+
+`#2A0F2B` behind every photograph and every clip tinted the whole app. The dark
+ladder is now `#0B070C / #120D13 / #141016 / #1C1720` — page, secondary, card,
+floating — with the coral and pink accents unchanged. A test asserts every rung
+is under 12% luminance, so a future tweak cannot quietly put the dye back. Light
+is untouched: it was already right.
+
+### A written post is a conversation, not a page of a pager
+
+A post with no picture used to open in the full-screen pager — a paragraph on
+black, comments behind a sheet, nowhere to answer. It has its own screen now,
+built to the shape the owner drew:
+
+    back · their face · their name · ⋯
+    the words, at 19/28 rather than a caption's 15
+    ❤ n   💬 n   share                          pick
+    ─────────────────────────────────────────────
+    the first six comments
+    a field at the bottom, above the keyboard
+
+`TextPost` (`screens/flow/TextPost.tsx`) is a route of its own, and `PostCard`
+sends a picture post to the pager and a text post here. The pager no longer
+carries text at all: it filters to posts with a `mediaUrl`, so `PostViewer` can
+keep being the room where a picture owns the screen.
+
+### One flick, one page
+
+The pager used `pagingEnabled`, which lets a hard flick carry its own momentum
+past two or three pages — "one scroll scrolls up to 3 videos once". It is a snap
+interval the height of the page now, with `disableIntervalMomentum`, so a page
+advance happens once per gesture however hard the finger went, and
+`decelerationRate="fast"` makes the settle read as deliberate rather than as a
+drift.
+
+### The Save row, again
+
+Two corrections, both from the owner. The wait is no longer described in the app
+at all — a member is never told a copy is "on its way", because a copy should not
+be missing in the first place. The marking job now runs **every five minutes**
+(GitHub's shortest interval) behind a gate that keeps an idle run to one `psql`
+call.
+
+A copy existing *at the instant of posting* is not something a scheduled job can
+promise, and saying otherwise would be the same kind of lie as a green deploy
+that proves nothing. The two designs that would make it true — gating visibility
+until the copy exists, or transcoding on publish — are written down at the bottom
+of `.github/workflows/mark-clips.yml`, with their trade-offs.
+
 ## Saving a clip to a device, and the 7-second end card (2026-11-07)
 
 Two things were asked for: a Tik-Tok-shaped ending for exported video, and a

@@ -225,27 +225,6 @@ export function ShareToWhisper({
             <Txt variant="body">{saving ? 'Saving…' : 'Save clip to device'}</Txt>
             <Txt variant="caption" color="textMuted">· with the holUpp mark</Txt>
           </Pressable>
-        ) : post?.mediaKind === 'video' ? (
-          /*
-           * A clip with no marked copy yet.
-           *
-           * The Save row is offered only when a marked copy exists, so a clip
-           * that was just posted simply had no row — and that reads as a bug,
-           * which is how it was reported. The copy is made by a job that runs
-           * within the hour; saying so is better than a sheet that silently
-           * lacks a button. It is deliberately not a button: there is nothing
-           * to tap yet, and a disabled control that never becomes enabled while
-           * the sheet is open is its own kind of lie.
-           */
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>
-            <Ionicons name="hourglass-outline" size={20} color={colors.textMuted} />
-            <View style={{ flex: 1 }}>
-              <Txt variant="body" color="textSecondary">The marked copy is on its way</Txt>
-              <Txt variant="caption" color="textMuted">
-                Every clip is marked with the holUpp logo and your handle before it can be saved. Check back a little later.
-              </Txt>
-            </View>
-          </View>
         ) : null}
         <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel="Copy post link" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>
           <Ionicons name="link-outline" size={20} color={colors.textSecondary} />

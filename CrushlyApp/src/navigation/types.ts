@@ -74,6 +74,8 @@ export type RootStackParamList = {
   /** A sound: its owner, how many clips are on it, and the clips. */
   Sound: { soundId: number };
   PostViewer: { postId: number };
+  /** A post with no picture: words, their comments, and a field to answer in. */
+  TextPost: { postId: number };
   /** What you kept, newest first. Private: nobody else can read this list. */
   SavedPosts: undefined;
   /** The people side of Crushes: who crushed you, and who you crushed. */

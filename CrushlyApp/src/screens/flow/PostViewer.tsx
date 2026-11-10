@@ -106,17 +106,42 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const focused = useIsFocused();
   const [activeId, setActiveId] = useState(initialId);
   // Keep the selected post first even when the ranked feed arrives later.
-  const ids = useMemo(() => [initialId, ...flow.posts.map((p) => p.id).filter((id) => id !== initialId)], [initialId, flow.posts]);
+  /*
+   * A post with no picture is not a page in a full-screen pager.
+   *
+   * It used to be: a paragraph marooned on a black page, its comments behind a
+   * sheet, with no field to answer in. Words have their own screen now —
+   * `TextPost` — and this pager carries only what is meant to own a whole
+   * screen: a clip, or a photograph.
+   */
+  const ids = useMemo(
+    () =>
+      [initialId, ...flow.posts.filter((p) => !!p.mediaUrl).map((p) => p.id).filter((id) => id !== initialId)],
+    [initialId, flow.posts],
+  );
   const byId = useMemo(() => new Map(flow.posts.map((p) => [p.id, p])), [flow.posts]);
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((item) => item.isViewable && typeof item.item === 'number');
     if (first) setActiveId(first.item as number);
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 65 }).current;
+  /*
+   * One gesture, one page.
+   *
+   * `pagingEnabled` alone is not that: a hard flick carries its own momentum and
+   * can land two or three pages further on, which is what "one scroll scrolls up
+   * to three videos" was. The page height is known exactly, so it is a snap
+   * interval instead, and `disableIntervalMomentum` stops the list at the very
+   * next interval no matter how hard the finger went. Fast deceleration makes
+   * the settle read as deliberate rather than as a slide that keeps drifting —
+   * soft, but immediate.
+   */
   return <FlatList
     data={ids}
     keyExtractor={(id) => String(id)}
-    pagingEnabled
+    snapToInterval={height}
+    snapToAlignment="start"
+    disableIntervalMomentum
     decelerationRate="fast"
     showsVerticalScrollIndicator={false}
     windowSize={3}

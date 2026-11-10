@@ -14,13 +14,20 @@
 # It used to be dispatch-only, and that had a consequence nobody had written
 # down: post a clip, open the share sheet, and there was **no Save row at all**,
 # because the row is only offered when a marked copy exists. The owner reported
-# exactly that. The batch now also runs on a schedule and picks up whatever is
-# missing, so a freshly posted clip has its marked copy within the hour without
-# anybody remembering to press anything.
+# exactly that, twice: once as a missing button, and once as a note saying the
+# copy was "on its way", which is not something a member should ever be shown.
+#
+# So the batch runs on a timer and picks up whatever is missing. Five minutes,
+# not thirty: the gap between posting a clip and the copy existing is exactly the
+# window in which the share sheet has nothing to offer, and five minutes is the
+# shortest interval GitHub Actions will honour.
 #
 # The schedule is cheap: the first job only asks the database whether anything is
 # waiting, and the expensive one (ffmpeg, imageio, the voice) never starts when
-# the answer is no.
+# the answer is no. An idle run costs one psql call.
+#
+# What this does NOT do is guarantee a copy at the instant of posting. That needs
+# a transcoder on the publish path — see the note at the bottom of this file.
 #
 # Secrets used: SUPABASE_DB_URL, B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET.
 # Nothing sensitive is committed and nothing is echoed.
@@ -28,10 +35,10 @@
 name: Mark clips for download
 
 on:
-  # Every half hour. Capped deliberately: a private repository is billed for
-  # these minutes, and the gate below keeps an idle run to well under a minute.
+  # Every five minutes — the shortest interval Actions allows. The gate below
+  # keeps an idle run to one psql call, so the cost of asking is ~15 seconds.
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       limit:
@@ -111,3 +118,25 @@ jobs:
       - name: Summary
         if: always()
         run: echo "Finished. See the log above for per-post results."
+
+# ---------------------------------------------------------------------------
+# If a marked copy must exist *before* a clip goes live
+#
+# The honest limit of this file: GitHub Actions cannot be woken by a single
+# upload, so a clip posted at 10:02 has its copy somewhere before 10:05. Two ways
+# to close that gap, in order of how much they cost to build:
+#
+#   1. Gate the post, don't gate the button. `can_view_post` refuses a clip with
+#      no `post_downloads` row, so a clip appears in the feed only once its copy
+#      exists. Free, and the wait becomes invisible — but the post is genuinely
+#      late by up to five minutes, which is the wrong trade for a drop that
+#      thousands of people are waiting for.
+#
+#   2. Transcode on publish. A small service (Cloudflare Container, Fly, a VPS)
+#      that watches for new clips and runs ffmpeg, so marking takes seconds and
+#      happens inside the upload flow instead of behind a timer. This is the only
+#      design where "it is ready the moment it posts" is true rather than nearly
+#      true.
+#
+# Until one of those exists, the app does not mention the wait at all: the Save
+# row is simply absent, and appears when the copy does.
