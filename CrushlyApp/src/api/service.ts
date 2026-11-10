@@ -314,18 +314,39 @@ const missingFunction = (e: unknown) => e instanceof ApiError && isMissingFuncti
  * painting "Retry" over a Space. Probing a real routine means a deploy of the
  * v2 backend switches this over with no client change.
  */
+let probing: Promise<RelationshipBackend> | null = null;
+
 export async function relationshipBackend(): Promise<RelationshipBackend> {
   if (detected) return detected;
-  try {
-    await supabase.rpc('holup_follow_status', { p_target: 0 });
-    detected = 'v2';
-  } catch (e) {
-    detected = backendFromProbe({ missing: missingFunction(e) });
+  // Two surfaces mounting together both used to ask, so the probe went out
+  // twice and left two refusals in the network log. The in-flight promise is
+  // shared, so a session probes once whichever screen gets there first.
+  if (!probing) {
+    probing = (async () => {
+      try {
+        /**
+         * The probe used to be `holup_follow_status(0)` — a real routine with a
+         * deliberately impossible target, which is how it produced a red 400 on
+         * every page load. That was noise nobody could act on, and it made an
+         * ordinary Space look broken to anyone reading the console.
+         *
+         * This asks a v2-only routine that needs nothing from anybody else: my
+         * own Homie inbox. A signed-in member always gets 200 from it, so the
+         * only way to fail here is the function not existing, which is exactly
+         * the question being asked.
+         */
+        await supabase.rpc('holup_homie_requests_inbox', { p_offset: 0, p_limit: 1 });
+        detected = 'v2';
+      } catch (e) {
+        detected = backendFromProbe({ missing: missingFunction(e) });
+      }
+      return detected;
+    })();
   }
-  return detected;
+  return probing;
 }
 /** Reset the cached probe — only the tests need this. */
-export function resetRelationshipBackend() { detected = null; }
+export function resetRelationshipBackend() { detected = null; probing = null; }
 
 /** My own outgoing crush row is readable (RLS: from_id = me), and is the legacy status. */
 async function legacyCrushStatus(id: number): Promise<'active' | 'pending' | null> {
