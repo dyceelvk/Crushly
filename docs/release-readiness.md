@@ -1,6 +1,6 @@
 # Holup — release readiness
 
-**Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `63f1a6c`
+**Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `3c6083f`
 **Production web:** `holupapp.vercel.app`, deployed from **`build/holup-follow-draft`**, not `main`
 **Production database:** `yzcssyebozfkmojqqdhc` (healthy)
 
@@ -31,6 +31,59 @@ Three states are used throughout, and they are not interchangeable:
 `04210834`" was wrong: `main` is the older commit and is not what members are served. If the
 intent is for production to track `main`, that is a separate decision — right now a draft
 branch is the live site.
+
+
+## Relationship regression, fixed and deployed 2026-11-07
+
+**Symptom the owner reported:** the Add Ups / Homies rules "not working again" — Space
+pages showing retry chips instead of counts.
+
+**Cause, measured against production, not guessed:** the web bundle called the v2
+routines (`holup_follow_status`, `holup_follow_stats`, `holup_follow_people`,
+`holup_homie_*`, `holup_pending_follow_requests`). Production
+`yzcssyebozfkmojqqdhc` has 231 public functions and **none** of them: PostgREST
+answers `PGRST202`, the client maps that to an `ApiError`, and every count and
+button degrades to "Retry". Only 14 of the 129 RPCs the app names were missing —
+all 14 are relationship routines, which is why the rest of the app looked fine.
+
+**Fix, per the no-independent-relationship-deploy rule:** the client now asks which
+contract the deployed database speaks (`relationshipBackend()`, once per session,
+probed with a real call) and dispatches all fourteen relationship calls to it.
+
+| Call | v2 (`holup_*`) | legacy, actually deployed |
+| --- | --- | --- |
+| counts | `holup_follow_stats` | `space_relationship_stats(p_target_id)` |
+| lists | `holup_follow_people` | `space_relationship_people(p_target_id, p_kind, p_offset, p_limit)` |
+| Add Up | `holup_follow` | `crush_member(p_target_id)` → `request`/`mutual` |
+| remove Add Up | `holup_unfollow` | `uncrush_member(p_target_id)` |
+| Homie request | `holup_request_homie` | `crush_member` |
+| accept / decline | `holup_respond_homie` | `accept_connection_request` / `decline_connection_request (p_from_id)` |
+| withdraw | `holup_withdraw_homie` | `cancel_connection_request(p_to_id)` |
+| Homie status | `holup_homie_status` | `is_connected_pair(a,b)` + my own crush row (RLS-readable) |
+| Homie inbox | `holup_homie_requests_inbox` | none exists — returns empty, nothing is claimed |
+| Add Up settings | `holup_set_follow_settings` | not on this backend — answers `501` |
+| outgoing status | `holup_follow_status` | `is_connected_pair`, then my crush row |
+
+Detection is deliberately narrow: only `PGRST202` / "function … does not exist"
+selects legacy. A refusal, a block or a network fault keeps v2, so a live v2
+backend can never be silently downgraded (`relationshipFallback.test.ts`, 5 cases).
+
+Nothing is invented on the legacy path. `addedUp` is `null`, so the Added Up chip and
+its list are **hidden**; the Homie inbox is empty; the Add Up approval and Added Up
+privacy menus are not rendered. The one lock that exists on this backend (Add Up list
+privacy) stays. When the v2 backend ships, every one of these returns with no client
+change.
+
+**Deployed:** Vercel `dpl_85i4Yh3uYpYu53UjHqXAX3adrMNV`, `READY`, `PROMOTED`,
+aliased to `holupapp.vercel.app`, commit `3c6083f`. The live bundle was fetched from
+the alias and inspected: it contains both contracts (`holup_follow_status`,
+`space_relationship_stats`, `space_relationship_people`, `crush_member`,
+`is_connected_pair`). Local gates before deploy: `npm run typecheck` clean,
+313 JS tests green (308 + 5 + 7).
+
+**Still to be confirmed by the owner on a device:** counts loading on a real Space,
+one Add Up round trip, and the Homie request path. I can verify the bundle and the
+database contract from here; I cannot sign in as a member without an account.
 
 ## What is LIVE
 
