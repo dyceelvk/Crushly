@@ -328,12 +328,30 @@ export function resetRelationshipBackend() { detected = null; }
 /** My own outgoing crush row is readable (RLS: from_id = me), and is the legacy status. */
 async function legacyCrushStatus(id: number): Promise<'active' | 'pending' | null> {
   const me = await meId();
-  // A pair connected before this build (a historic Close One) has no accepted
-  // crush row, and offering them "Add Up" again would read as a stranger.
-  if (await rpc<boolean>('is_connected_pair', { a: me, b: id })) return 'active';
   const { data } = await supabase.from('crushes').select('status').eq('from_id', me).eq('to_id', id).maybeSingle();
   const status = (data as { status?: string } | null)?.status;
   return status === 'accepted' ? 'active' : status === 'pending' ? 'pending' : null;
+}
+
+/**
+ * Whether the pair is already connected on the deployed backend.
+ *
+ * `is_connected_pair` looks like the obvious way to ask, but the deployed
+ * database never granted it to signed-in members — calling it answers
+ * `42501 permission denied`, which is what keeps painting "Retry" on a Space.
+ * The `connections` row is readable by either party at the row level
+ * (`connections_pair`), so the client asks for the row itself instead.
+ */
+async function legacyConnectedPair(id: number): Promise<boolean> {
+  const me = await meId();
+  const { data, error } = await supabase
+    .from('connections')
+    .select('user_a')
+    .or(`user_a.eq.${me},user_b.eq.${me}`)
+    .or(`user_a.eq.${id},user_b.eq.${id}`)
+    .limit(1);
+  if (error) throw toApiError(error);
+  return (data?.length ?? 0) > 0;
 }
 
 /**
@@ -395,8 +413,8 @@ export type HomieStatus = { homies: boolean; incomingPending: boolean; outgoingP
 export const homieStatus = async (id: number): Promise<HomieStatus> => {
   if (await relationshipBackend() === 'v2') return rpc<HomieStatus>('holup_homie_status', { p_target: id });
   // Legacy: an accepted Close One is a connection; a waiting crush is a request.
-  const connected = await rpc<boolean>('is_connected_pair', { a: await meId(), b: id });
   const me = await meId();
+  const connected = await legacyConnectedPair(id);
   const { data: theirs } = await supabase.from('crushes').select('status').eq('from_id', id).eq('to_id', me).maybeSingle();
   const { data: mine } = await supabase.from('crushes').select('status').eq('from_id', me).eq('to_id', id).maybeSingle();
   const statusOf = (row: unknown) => (row as { status?: string } | null)?.status ?? null;
@@ -449,9 +467,18 @@ export async function homieRequests(offset = 0): Promise<{ items: Profile[]; has
   return { items: [], hasMore: false };
 }
 
-export async function followStatus(id: number): Promise<{ status: 'active' | 'pending' | null }> {
-  if (await relationshipBackend() === 'v2') return rpc('holup_follow_status', { p_target: id });
-  return { status: await legacyCrushStatus(id) };
+/**
+ * A directional Add Up, plus whether the pair is already connected. A connected
+ * pair has nothing left to Add Up — the Space offers "Remove connection"
+ * instead — so the caller can hide the button rather than offer an action the
+ * deployed backend refuses with `400 already connected`.
+ */
+export type FollowStatus = { status: 'active' | 'pending' | null; connected?: boolean };
+
+export async function followStatus(id: number): Promise<FollowStatus> {
+  if (await relationshipBackend() === 'v2') return rpc<FollowStatus>('holup_follow_status', { p_target: id });
+  const [status, connected] = await Promise.all([legacyCrushStatus(id), legacyConnectedPair(id)]);
+  return { status, connected };
 }
 
 export async function followMember(id: number): Promise<{ status: 'active' | 'pending'; changed: boolean }> {

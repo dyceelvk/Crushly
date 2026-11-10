@@ -28,6 +28,9 @@ export function FollowButton({ id, name, compact = false }: {id: number; name: s
     onError: (error) => toast({kind: 'error', title: 'Couldn’t update Add Up', message: (error as Error).message}),
   });
   if (!me.data?.id || me.data.id === id) return null;
+  // Already Homies: the deployed backend refuses another Add Up here, and the
+  // Space carries the connection controls. Nothing to offer, so offer nothing.
+  if (stats.data?.connected) return null;
   const label = stats.isError ? 'Retry Add Up' : status === 'active' ? 'Added Up' : status === 'pending' ? 'Request sent' : 'Add Up';
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${name}`} disabled={stats.isLoading || change.isPending}
     onPress={() => stats.isError ? void stats.refetch() : change.mutate()}
