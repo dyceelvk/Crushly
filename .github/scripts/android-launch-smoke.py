@@ -31,7 +31,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-PACKAGE = 'app.crushly'
+PACKAGE = os.environ.get('HOLUP_TEST_PACKAGE') or 'app.crushly'
 SCREEN = [0, 0]  # filled in from `wm size`; dump bounds are in the same pixels
 LAUNCHER = [PACKAGE + '/.MainActivity']  # resolved from the package, not assumed
 OUT = pathlib.Path(os.environ.get('CRUSHLY_WALK_OUT') or 'walk')
