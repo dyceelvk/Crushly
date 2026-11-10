@@ -449,6 +449,8 @@ export type Privacy = {
   discoverable: boolean;
   profileVisibility: 'everyone' | 'connections';
   whoCanMessage: 'everyone' | 'crushes' | 'mutual';
+  /** Present only when the independent Whisper backend is available. */
+  whisperOpen?: boolean;
   whoCanCrush: 'everyone' | 'verified';
   showAge: boolean;
   showCity: boolean;
@@ -566,12 +568,15 @@ export type ConversationSummary = {
   updatedAt: number;
 };
 
+export type WhisperConsent = { state: 'pending' | 'accepted'; requester: boolean; sent: number; canAccept: boolean };
+
 export type ConversationDetail = {
   id: number;
   closed: boolean;
   peer: Peer;
   canSend: boolean;
   blockReason: string | null;
+  whisperConsent?: WhisperConsent;
 };
 
 export type MomentStyle = 'noir' | 'champagne' | 'crimson' | 'midnight' | 'emerald';

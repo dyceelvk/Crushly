@@ -32,7 +32,7 @@ import { CallSheet } from '../../components/CallSheet';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import { CallManager, type CallState } from '../../lib/call';
 import { supabase, toApiError } from '../../api/client';
-import { whisperMomentTarget } from '../../api/service';
+import { acceptWhisper, whisperMomentTarget } from '../../api/service';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -133,6 +133,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const chat = useChat(conversationId);
   const { openActions } = useMemberActions();
   const [text, setText] = useState('');
+  const [accepting, setAccepting] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [flashId, setFlashId] = useState<number | null>(null);
   const listRef = useRef<FlatList<Row>>(null);
@@ -188,7 +189,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const startCall = async () => {
     setTray(false);
-    if (!callsEnabled || !canSend || recording || callState !== 'idle') return;
+    if (!callsEnabled || !canCall || recording || callState !== 'idle') return;
     let channel: string;
     try {
       const { data, error } = await supabase.rpc('register_call_room', { p_conversation_id: conversationId });
@@ -242,6 +243,19 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const peer = conv?.peer;
   const canSend = conv ? conv.canSend && !conv.closed : false;
+  const consent = conv?.whisperConsent;
+  const canCall = canSend && (!consent || consent.state === 'accepted');
+  const acceptRequest = async () => {
+    if (accepting) return;
+    setAccepting(true);
+    try { await acceptWhisper(conversationId); await refetchConv(); }
+    catch (e) { toast({ kind: 'error', title: 'Couldn’t accept Whisper', message: (e as Error).message }); }
+    finally { setAccepting(false); }
+  };
+
+  // A reply can accept a pending request. Refresh status when the message list
+  // changes, rather than leaving the sender blocked until the next poll.
+  useEffect(() => { void refetchConv(); }, [chat.messages.length, refetchConv]);
 
   // Re-check permissions periodically (e.g. the other person blocks or unmatches).
   useEffect(() => {
@@ -295,10 +309,10 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       const withReply = replyTo ? { ...draft, replyTo: replyTo.id, replyQuote: quoteOf(replyTo) } : draft;
       const res = await chat.send(withReply);
       if (!res.ok) toast({ kind: 'error', title: 'Whisper not sent', message: res.error });
-      else setReplyTo(null);
+      else { setReplyTo(null); void refetchConv(); }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chat, toast, replyTo, peer?.name],
+    [chat, toast, replyTo, peer?.name, refetchConv],
   );
 
   /** Tapping a quote goes back to the original and briefly lights it up. */
@@ -454,7 +468,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               />
             </View>
           </Pressable>
-          {callsEnabled ? <IconButton icon="call-outline" variant="gold" label="Start voice call" onPress={startCall} disabled={!canSend || recording || callState !== 'idle'} /> : null}
+          {callsEnabled ? <IconButton icon="call-outline" variant="gold" label="Start voice call" onPress={startCall} disabled={!canCall || recording || callState !== 'idle'} /> : null}
           <IconButton
             icon="ellipsis-horizontal"
             variant="plain"
@@ -465,6 +479,22 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1, paddingBottom: keyboard.overlap }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {consent?.state === 'pending' ? (
+          <View style={{ padding: space.md, backgroundColor: colors.card, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>
+              {consent.requester
+                ? `You can send two Whispers before they accept. ${Math.max(0, 2 - consent.sent)} left.`
+                : 'Replying accepts this Whisper, or accept it now.'}
+            </Txt>
+            {consent.canAccept ? (
+              <Pressable onPress={() => void acceptRequest()} disabled={accepting} accessibilityRole="button"
+                accessibilityLabel="Accept Whisper" accessibilityState={{ disabled: accepting }}
+                style={{ backgroundColor: colors.gold, paddingHorizontal: 14, paddingVertical: 9, borderRadius: radius.pill }}>
+                <Txt variant="smallStrong" style={{ color: colors.onGold }}>{accepting ? 'Accepting…' : 'Accept'}</Txt>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         {chat.loading ? (
           <LoadingBlock label="Loading conversation" />
         ) : chat.error ? (
@@ -597,7 +627,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
-                  {callsEnabled ? <TrayButton icon="call-outline" label="Call" onPress={startCall} /> : null}
+                  {callsEnabled && canCall ? <TrayButton icon="call-outline" label="Call" onPress={startCall} /> : null}
                   <TrayButton icon="person-circle-outline" label="Share Space" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
                 <Txt variant="label" color="textMuted" style={{ marginBottom: 6 }}>

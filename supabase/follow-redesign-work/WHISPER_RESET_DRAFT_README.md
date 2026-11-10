@@ -1,0 +1,11 @@
+# Whisper reset — experimental draft, do not deploy or merge
+
+These files are only for a disposable Postgres database. The user has allowed old Whispers to be reset, but this is **not** authorization to delete unrelated data or phone-only drafts. No production reset has happened. A correct release needs a coordinated integration and verified cutover; these files do not provide one.
+
+- 12 and 13 are reset and legacy-RPC prototypes. 14–18 are destructive synthetic tests — never run them on production.
+- An existing legacy `who_can_message='everyone'` did not authorize automatic acceptance; the new switch defaults off. Legacy writes must not silently turn it on. Older clients need an honest compatibility/cutover strategy because their legacy setting cannot represent the new consent model.
+- Draft UI shows a two-message status, recipient Accept button, open setting, and call gating. It is not browser/device tested and is not merge-ready.
+- In a fresh disposable baseline, real-RPC quota races (20) and block/send and block/accept races (25 each) passed. A separate disposable reset-scope fixture verified cascades and unchanged profiles, old privacy fields, posts, Moments, connections, follows, Homies, and unrelated notifications. This does not prove all live production relationships, object storage or hosted-service behavior.
+- Production presence RPC has a separately deployed targeted privacy guard at migration 20261110072702 (source on branch `fix/holup-whisper-presence-privacy`, commit 5028ba5). It does not revoke already cached Realtime channel permissions; do not claim block-time socket privacy is solved.
+
+Release blockers include old authenticated clients and caches, Realtime authorization revocation, full media/delete/notification cleanup, race behavior across actual hosted services, UI and real-device tests, and the still-incomplete independent Add Up/Homie migrations. Never release this by piecemeal migration. `mark_messages_delivered`, `get_messages`, reaction policies, `can_view_media`, delete-for-me/everyone, push and Moment targets all require an end-to-end security review. Preserve phone drafts through any Android signer change. Do not merge any Android build-workflow substitutions from test branches.

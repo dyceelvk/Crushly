@@ -190,6 +190,7 @@ export async function getMe(): Promise<Me> {
       discoverable: !!privacy.discoverable,
       profileVisibility: privacy.profile_visibility,
       whoCanMessage: privacy.who_can_message,
+      whisperOpen: typeof privacy.holup_whisper_open === 'boolean' ? privacy.holup_whisper_open : undefined,
       whoCanCrush: privacy.who_can_crush,
       showAge: !!privacy.show_age,
       showCity: !!privacy.show_city,
@@ -1423,6 +1424,15 @@ export async function listBlocks(): Promise<BlockedMember[]> {
 }
 
 /* ---------------------------------------------------------------- messages */
+
+/** Independent Whisper controls, available only with the coordinated backend. */
+export async function acceptWhisper(conversationId: number): Promise<void> {
+  await rpc('holup_accept_whisper', { p_conversation_id: conversationId });
+}
+export async function setWhisperOpen(open: boolean): Promise<Me> {
+  await rpc('holup_set_whisper_open', { p_open: open });
+  return getMe();
+}
 
 export async function conversations(): Promise<ConversationSummary[]> {
   const res = await rpc<{ items: ConversationSummary[] }>('list_conversations');

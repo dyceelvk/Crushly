@@ -1,13 +1,15 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Screen, Header } from '../../components/Layout';
 import { Txt } from '../../components/Txt';
 import { ListRow, Group } from '../../components/ListRow';
 import { Segmented } from '../../components/Segmented';
 import { LoadingBlock } from '../../components/States';
 import { useToast } from '../../components/Toast';
-import { useMe, useUpdatePrivacy } from '../../api/hooks';
+import { keys, useMe, useUpdatePrivacy } from '../../api/hooks';
+import { setWhisperOpen } from '../../api/service';
 import type { Privacy } from '../../api/types';
 import { ApiError } from '../../api/client';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -99,6 +101,9 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
   const { data: me } = useMe();
   const update = useUpdatePrivacy();
   const toast = useToast();
+  const qc = useQueryClient();
+  const whisperOpen = useMutation({ mutationFn: setWhisperOpen, onSuccess: (next) => qc.setQueryData(keys.me, next),
+    onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
   if (!me) return <LoadingBlock />;
   const p = me.privacy;
 
@@ -146,17 +151,24 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         ]}
         footer={p.profileVisibility === 'connections' ? 'Others see your main photo and name only until you’re connected.' : undefined}
       />
-      <Choice
-        title="Who can Whisper me"
-        value={p.whoCanMessage}
-        onChange={(v) => set({ whoCanMessage: v })}
-        options={[
-          { value: 'mutual', label: 'People who added back' },
-          { value: 'crushes', label: 'My crushes' },
-          { value: 'everyone', label: 'Everyone' },
-        ]}
-        footer={{ mutual: 'Only people who added back.', crushes: 'People you’ve added up with can Whisper you first.', everyone: 'Anyone who can see your Space can start a Whisper.' }[p.whoCanMessage]}
-      />
+      {p.whisperOpen === undefined ? (
+        <Choice
+          title="Who can Whisper me"
+          value={p.whoCanMessage}
+          onChange={(v) => set({ whoCanMessage: v })}
+          options={[
+            { value: 'mutual', label: 'People who added back' },
+            { value: 'crushes', label: 'My crushes' },
+            { value: 'everyone', label: 'Everyone' },
+          ]}
+          footer={{ mutual: 'Only people who added back.', crushes: 'People you’ve added up with can Whisper you first.', everyone: 'Anyone who can see your Space can start a Whisper.' }[p.whoCanMessage]}
+        />
+      ) : (
+        <Group title="Whisper requests" footer="When off, people can send up to two Whispers until you accept or reply. Conversations started while this is on stay open if you turn it off.">
+          <ListRow title="Allow eligible people without accepting" subtitle="Blocking and Space privacy still apply" icon="chatbubble-outline"
+            toggle={{ value: p.whisperOpen, onChange: (v) => whisperOpen.mutate(v), disabled: whisperOpen.isPending }} last />
+        </Group>
+      )}
       <Choice
         title="Who can Crush on me"
         value={p.whoCanCrush}
