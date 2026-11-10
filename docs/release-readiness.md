@@ -925,6 +925,11 @@ even learn whether a marked copy exists for a post they cannot see.
 | 86 | 3 | `posts/3/1794240963220-…-marked.mp4` | 18.2 MB |
 | 87 | 41 | `posts/41/1794267630223-…-marked.mp4` | 8.8 MB |
 
+**These two still carry the previous look** — the old 6 s card with the address on
+it and the larger mark. Re-run `Mark clips for download` with `post_ids=86,87`
+after this commit is pushed; `register_post_download` replaces the row and the
+`-marked` object, so the same two posts come back addressed by the new card.
+
 Produced by `Mark clips for download` (run `42860307625`): pull the original from
 B2 → burn in the mark with **that author's** handle → append the 7-second end card →
 upload under a `-marked` key → record it. The original in `posts.media_url` is
