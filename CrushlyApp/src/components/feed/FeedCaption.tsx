@@ -15,7 +15,7 @@ import type { Post } from '../../api/types';
  * extra-bold, caption 13/18 clamped to three lines, and a provenance chip above
  * the author — in TikTok that chip says which template made the clip; here it
  * says which Circle the post was written into, which is the same question
- * ("where did this come from") answered with something Holup actually has.
+ * ("where did this come from") answered with something holUpp actually has.
  */
 export function FeedCaption({
   post,

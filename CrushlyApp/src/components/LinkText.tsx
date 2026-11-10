@@ -36,7 +36,7 @@ export function prettyUrl(raw: string): string {
 }
 
 /**
- * Text that may hold links — and links that stay inside Holup.
+ * Text that may hold links — and links that stay inside holUpp.
  *
  * A link somebody put in a Flow or a Moment opens in our own preview
  * sheet. It never hands the member straight to Chrome, and nothing navigates
@@ -110,7 +110,7 @@ export function LinkText({
               else open();
             }}
             accessibilityRole="link"
-            accessibilityLabel={`Open link to ${prettyUrl(m.text)} inside Holup`}
+            accessibilityLabel={`Open link to ${prettyUrl(m.text)} inside holUpp`}
           >
             {prettyUrl(m.text)}
           </Txt>,

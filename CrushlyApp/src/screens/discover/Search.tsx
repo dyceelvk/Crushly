@@ -108,7 +108,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   return <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
       <IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />
-      <View style={{ flex: 1 }}><Input value={text} onChangeText={(value) => { setSelectedPlace(''); searchInput.onChangeText(value); }} onSelectionChange={searchInput.onSelectionChange} onSubmitEditing={() => { if (asked) remember(words); }} placeholder="Search Holup" icon="search" autoFocus returnKeyType="search" autoCorrect={false} maxLength={120} accessibilityLabel="Search" /></View>
+      <View style={{ flex: 1 }}><Input value={text} onChangeText={(value) => { setSelectedPlace(''); searchInput.onChangeText(value); }} onSelectionChange={searchInput.onSelectionChange} onSubmitEditing={() => { if (asked) remember(words); }} placeholder="Search holUpp" icon="search" autoFocus returnKeyType="search" autoCorrect={false} maxLength={120} accessibilityLabel="Search" /></View>
       {text ? <IconButton icon="close" label="Clear search" onPress={() => { setText(''); setQuery(''); setSelectedPlace(''); setTab('top'); }} /> : null}
       <IconButton icon="ellipsis-horizontal" label="Search options" onPress={() => setMenu(true)} />
     </View>
@@ -133,7 +133,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
             <Txt variant="caption" color="textMuted">{trend.postCount} posts</Txt>
           </Row>)}
         </View> : trends.isError ? <Txt color="textSecondary" style={{ marginTop: space.md }}>Trends couldn’t load. You can still search.</Txt> : null}
-        {!trends.data?.length ? <EmptyState icon="search-outline" title="Search Holup" message="Find people, posts, Moments, sounds, places and hashtags." /> : null}
+        {!trends.data?.length ? <EmptyState icon="search-outline" title="Search holUpp" message="Find people, posts, Moments, sounds, places and hashtags." /> : null}
       </> : results.isLoading ? <View style={{ gap: space.sm, marginTop: space.md }}><Skeleton style={{ height: 56, borderRadius: radius.md }} /><Skeleton style={{ height: 56, borderRadius: radius.md }} /><Skeleton style={{ height: 56, borderRadius: radius.md }} /></View>
       : results.isError ? <ErrorState error={results.error} message="Search didn’t load." onRetry={results.refetch} />
       : total === 0 ? <EmptyState icon="search-outline" title={`Nothing for “${words}”`} message="Try another word or change your filters." />
@@ -162,7 +162,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
     </ScrollView>
     <ActionSheet visible={menu} onClose={() => setMenu(false)} title="Search options" actions={[
       { label: 'Filters', icon: <Ionicons name="options-outline" size={21} color={colors.text} />, onPress: openFilters },
-      { label: 'Share feedback', icon: <Ionicons name="chatbubble-outline" size={21} color={colors.text} />, onPress: () => { Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Holup search feedback')}`).catch(() => toast({ kind: 'error', title: 'Couldn’t open email', message: `Email us at ${SUPPORT_EMAIL}.` })); } },
+      { label: 'Share feedback', icon: <Ionicons name="chatbubble-outline" size={21} color={colors.text} />, onPress: () => { Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('holUpp search feedback')}`).catch(() => toast({ kind: 'error', title: 'Couldn’t open email', message: `Email us at ${SUPPORT_EMAIL}.` })); } },
     ]} />
     <BottomSheet visible={filterOpen} onClose={() => setFilterOpen(false)} title="Search filters" subtitle="Date and author apply to posts, Moments, sounds and hashtags. Content type applies to Top. Places stay alphabetical." footer={<Button title="Apply filters" onPress={() => { const days = { any: 0, day: 1, week: 7, month: 30 }[draft.period]; setSince(days ? Date.now() - days * 86400000 : 0); setApplied({ ...draft, author: draft.author.trim() }); setFilterOpen(false); }} />}>
       <Txt variant="smallStrong" style={{ marginBottom: 8 }}>Sort by</Txt><ChipGroup>{([['relevance','Relevance'],['newest','Newest']] as const).map(([id,label]) => <Chip key={id} label={label} selected={draft.sort === id} onPress={() => setDraft({ ...draft, sort: id })} />)}</ChipGroup>

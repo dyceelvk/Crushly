@@ -4,11 +4,11 @@ import Svg, { Circle } from 'react-native-svg';
 import { Txt } from './Txt';
 import { useTheme } from '../theme/ThemeProvider';
 
-// Official Holup artwork supplied by the product owner. Keep these local so
+// Official holUpp artwork supplied by the product owner. Keep these local so
 // the brand is visible before the network has loaded and in native builds.
 const markArtwork = require('../../assets/brand/holup-mark.png');
 /**
- * Official Holup mark: two overlapping conversation circles. The coloured
+ * Official holUpp mark: two overlapping conversation circles. The coloured
  * image is used for the primary brand lockup; a single-colour SVG equivalent is
  * reserved for tiny interactive controls, where the surrounding UI supplies the
  * contrast colour.
@@ -48,13 +48,15 @@ export function CrushIcon({ size = 22, color, filled }: { size?: number; color: 
 export function Wordmark({ size = 28, color }: { size?: number; color?: string }) {
   const { colors } = useTheme();
   return <Txt variant="display" accessibilityRole="header" style={{
-    fontSize: size, lineHeight: size * 1.22, letterSpacing: 1.1, fontFamily: 'Manrope_800ExtraBold',
-    textTransform: 'uppercase', color: color ?? colors.text,
-  }}>Holup</Txt>;
+    fontSize: size, lineHeight: size * 1.22, letterSpacing: 0.6, fontFamily: 'Manrope_800ExtraBold',
+    // No textTransform: the name is holUpp, and upper-casing it would flatten
+    // the only part of it that is not a plain word.
+    color: color ?? colors.text,
+  }}>holUpp</Txt>;
 }
 
 export function Logo({ size = 40, stacked = false, color }: { size?: number; stacked?: boolean; color?: string }) {
-  return <View accessible accessibilityLabel="Holup" style={{ flexDirection: stacked ? 'column' : 'row', alignItems: 'center', gap: stacked ? size * 0.16 : size * 0.16 }}>
+  return <View accessible accessibilityLabel="holUpp" style={{ flexDirection: stacked ? 'column' : 'row', alignItems: 'center', gap: stacked ? size * 0.16 : size * 0.16 }}>
     <CrushlyMark size={size} />
     <Wordmark size={size * 0.62} color={color} />
   </View>;

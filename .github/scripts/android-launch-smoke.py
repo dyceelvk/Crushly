@@ -265,7 +265,7 @@ def sign_in():
     # "I already have an account" was this door's copy until the opening was
     # rewritten; both are tried so the walk survives the next rewording too.
     if not (tap('I already have an account', tries=1)
-            or tap("I'm already on Holup", tries=2)
+            or tap("I'm already on holUpp", tries=2)
             or tap('Sign in', tries=1)):
         # Some builds land straight on the form; only fail if the form is absent too.
         if not find(nodes() or [], 'Welcome back'):
@@ -415,7 +415,7 @@ def assert_strip(seen):
     # the bell next to search rather than in the corner the hamburger left, and
     # the drawer it used to open is gone — so the corner must hold nothing that
     # opens a menu.
-    magnifier = find(seen, 'Search Holup')
+    magnifier = find(seen, 'Search holUpp')
     if magnifier is None:
         fail('the strip has no magnifier; search belongs beside the bell')
     bell = find(seen, 'Notifications')
@@ -497,7 +497,7 @@ def assert_discover(seen):
     rail = find(seen, 'Top Crushes This Week')
     if rail is not None:
         log('discover: clips rail is on the page; checked')
-    magnifier = find(seen, 'Search Holup')
+    magnifier = find(seen, 'Search holUpp')
     if magnifier is None:
         fail('Discover has no magnifier; search lives here')
     if abs(magnifier['y'] - title['y']) > 40:
@@ -834,7 +834,7 @@ def walk():
     if tap('Discovery'):
         seen = shot('07-discover')
         assert_discover(seen)
-        if tap('Search Holup'):
+        if tap('Search holUpp'):
             shot('08-discover-search')
         return_to_tabs()
 
@@ -949,7 +949,7 @@ def walk():
             fail('Settings: installed Android app still offers an APK download')
         # This build is newer than the currently published version during the walk.
         # An unavailable network check is allowed, but never offer an older build.
-        if find(settings_seen, 'Update Holup'):
+        if find(settings_seen, 'Update holUpp'):
             fail('Settings: update offered even though the running build is newer')
         if not any(find(settings_seen, label) for label in ('You’re up to date', 'Checking for updates', 'Couldn’t check for updates')):
             fail('Settings: update status is missing')
@@ -959,7 +959,7 @@ def walk():
                           ('Appearance', 'appearance'),
                           ('Privacy & visibility', 'privacy'),
                           ('Discover preferences', 'filters'),
-                          ('Holup Plus', 'plus'),
+                          ('holUpp Plus', 'plus'),
                           ('Verification', 'verification')):
             tap('Space')
             if not tap('Settings', tries=2):
@@ -975,13 +975,13 @@ def walk():
     if tap('Notifications', tries=2):
         seen = shot('{:02d}-notifications-sheet'.format(n))
         n += 1
-        if find(seen, 'From Holup'):
-            log('notifications: sheet with Yours and From Holup')
-            if tap('From Holup', tries=2):
+        if find(seen, 'From holUpp'):
+            log('notifications: sheet with Yours and From holUpp')
+            if tap('From holUpp', tries=2):
                 shot('{:02d}-notifications-from-crushly'.format(n))
                 n += 1
         else:
-            fail('the notification sheet has no "From Holup" tab')
+            fail('the notification sheet has no "From holUpp" tab')
         # Back out of the sheet the way a person would.
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(1.5)
@@ -991,7 +991,7 @@ def walk():
     # screen, and the results are the part people use.
     tap('Home', required=True)
     tap('Discovery', required=True)
-    if tap('Search Holup', required=True):
+    if tap('Search holUpp', required=True):
         if not type_into(0, 'spencer'): fail('search input is missing')
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(2.5)
@@ -1068,7 +1068,7 @@ def main():
         #      the sentence, which says "Tap anywhere to begin" and means it;
         #      then Welcome, which offers two named doors.
         #    The tap is right; the wait that followed it was not — it looked
-        #    for "Welcome to Holup" and "Get Started", copy that has been
+        #    for "Welcome to holUpp" and "Get Started", copy that has been
         #    retired, so a good release failed here and no APK was published.
         #    Tap where the screen tells you to, then expect the doors it draws.
         if not tap('Tap anywhere to begin', tries=2):
@@ -1077,7 +1077,7 @@ def main():
             adb('shell', 'input', 'tap', str(w // 2), str(h // 2))
         time.sleep(2)
 
-        if not wait_for(['Start with a feeling', "I'm already on Holup"], 60,
+        if not wait_for(['Start with a feeling', "I'm already on holUpp"], 60,
                         'process exited after the opening screen'):
             fail('tapping the opening did not reach Welcome')
         time.sleep(2)

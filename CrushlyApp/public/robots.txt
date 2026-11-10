@@ -1,4 +1,4 @@
-# Holup — https://holupapp.vercel.app
+# holUpp — https://holupapp.vercel.app
 # Everything the site serves is public-facing shell markup. Member content sits
 # behind sign-in and is never in the HTML, so crawlers are welcome to the pages
 # and cannot reach anything private by being allowed in.

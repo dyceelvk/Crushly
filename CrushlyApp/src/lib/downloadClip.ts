@@ -2,7 +2,7 @@
  * Saving a clip to the device.
  *
  * The rule this module exists to keep: a copy that leaves the app carries the
- * Holup mark and the creator's handle, and a copy inside the app does not. The
+ * holUpp mark and the creator's handle, and a copy inside the app does not. The
  * mark is not drawn here — it is burnt into the file once by the media pipeline
  * (`scripts/mark-clip.py`) and served as a separate variant. Burning it on the
  * device would mean shipping a video encoder to every phone, and re-encoding a

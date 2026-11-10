@@ -129,7 +129,7 @@ function CircleScreenContent({ navigation, route }: ScreenProps<'Circle'>) {
             </Txt>
           </View>
           {/* The owner's desk, one press from the room it is about. People-shaped,
-              not a gear: a gear in Holup always means Settings. */}
+              not a gear: a gear in holUpp always means Settings. */}
           {circle.myRole === 'owner' ? (
             <IconButton icon="people-outline" label="Manage this Circle" onPress={() => navigation.navigate('CircleManage', { circleId })} />
           ) : null}

@@ -28,7 +28,7 @@ type Lens = 'yours' | 'crushly';
  * backdrop, on a downward drag or on Android's back — the three ways people
  * already dismiss things.
  *
- * Two tabs, one interface. `From Holup` is the product talking to you
+ * Two tabs, one interface. `From holUpp` is the product talking to you
  * (verification results, announcements); `Yours` is other members — Crushes,
  * Whispers, and what came back to a Moment. The split is by notification kind,
  * not by a second endpoint: there is one list of notifications and two ways to
@@ -125,7 +125,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
           <Pressable
             onPress={() => markRead.mutate({ kinds: Array.from(new Set(shown.map((n) => n.kind))) })}
             accessibilityRole="button"
-            accessibilityLabel={`Mark ${lens === 'yours' ? 'your notifications' : 'Holup’s notifications'} read`}
+            accessibilityLabel={`Mark ${lens === 'yours' ? 'your notifications' : 'holUpp’s notifications'} read`}
             hitSlop={8}
             style={{ paddingHorizontal: space.sm, paddingVertical: 4 }}
           >
@@ -140,7 +140,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
       <View {...swipe.panHandlers} style={{ flexDirection: 'row', gap: space.lg, paddingHorizontal: space.md, borderBottomWidth: stroke.hairline, borderBottomColor: colors.border }}>
         {([
           ['yours', 'Yours'],
-          ['crushly', 'From Holup'],
+          ['crushly', 'From holUpp'],
         ] as [Lens, string][]).map(([key, label]) => {
           const on = lens === key;
           const count = (key === 'yours' ? yours : fromCrushly).filter((n) => !n.read).length;
@@ -190,11 +190,11 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
       ) : shown.length === 0 ? (
         <EmptyState
           icon={lens === 'yours' ? 'notifications-outline' : 'megaphone-outline'}
-          title={lens === 'yours' ? 'Nothing yet' : 'Nothing from Holup'}
+          title={lens === 'yours' ? 'Nothing yet' : 'Nothing from holUpp'}
           message={
             lens === 'yours'
               ? 'Crushes, Whispers and replies to your Moments will land here.'
-              : 'Account and verification news from Holup will land here.'
+              : 'Account and verification news from holUpp will land here.'
           }
         />
       ) : (
@@ -222,7 +222,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
                 key={n.id}
                 onPress={() => open(n)}
                 accessibilityRole="button"
-                accessibilityLabel={`${n.actor?.name ?? 'Holup'}: ${line}${n.read ? '' : ', unread'}`}
+                accessibilityLabel={`${n.actor?.name ?? 'holUpp'}: ${line}${n.read ? '' : ', unread'}`}
                 style={({ pressed }) => ({
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -254,7 +254,7 @@ export function NotificationsSheet({ visible, onClose }: { visible: boolean; onC
                     accessibilityRole="button"
                     accessibilityLabel={n.actor ? `Open ${n.actor.name}` : undefined}
                   >
-                    <Avatar uri={n.actor?.photo ?? null} name={n.actor?.name ?? 'Holup'} size={40} />
+                    <Avatar uri={n.actor?.photo ?? null} name={n.actor?.name ?? 'holUpp'} size={40} />
                     {/* Which kind of Circle news this is, without a second word. */}
                     {CIRCLE_GLYPH[n.kind] ? (
                       <View

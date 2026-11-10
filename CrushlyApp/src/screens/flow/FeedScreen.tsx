@@ -48,7 +48,7 @@ const STRIP = 46;
  *   Connections  the people and Circles you are connected to, newest first.
  *
  * Flow is not one of them any more. Flow was the clip surface — a full-screen
- * pager scored for you, with a sound row under every page — and Holup does not
+ * pager scored for you, with a sound row under every page — and holUpp does not
  * show clips in this build: a member can post a photo or a few words, and no
  * video is drawn anywhere. A tab whose whole reason for existing is video is a
  * tab that opens an empty room, so it is gone from the strip rather than left

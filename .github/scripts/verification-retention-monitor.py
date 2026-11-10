@@ -56,7 +56,7 @@ def api(method, path, payload=None):
         raise RuntimeError('Maintenance notification unavailable')
     req = urllib.request.Request('https://api.github.com/repos/' + repo + path,
         method=method, headers={'Authorization': 'Bearer ' + token,
-        'Accept': 'application/vnd.github+json', 'User-Agent': 'Holup-maintenance-monitor',
+        'Accept': 'application/vnd.github+json', 'User-Agent': 'holUpp-maintenance-monitor',
         'Content-Type': 'application/json'},
         data=None if payload is None else json.dumps(payload).encode())
     try:
@@ -67,7 +67,7 @@ def api(method, path, payload=None):
 
 
 def issue(test=False):
-    title = 'Holup maintenance notification test' if test else 'Holup maintenance check requires attention'
+    title = 'holUpp maintenance notification test' if test else 'holUpp maintenance check requires attention'
     # No health flags or member data go into the public issue.
     if not test:
         for page in range(1, 21):

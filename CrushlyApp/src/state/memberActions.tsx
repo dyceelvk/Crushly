@@ -113,7 +113,7 @@ export function MemberActionsProvider({ children }: { children: React.ReactNode 
       <ConfirmSheet
         visible={sheet === 'block'}
         title={`Cut off ${member?.name}?`}
-        message="You won’t see each other anywhere on Holup, and your Whisper will close. He won’t be notified. You can let him back in later in Settings."
+        message="You won’t see each other anywhere on holUpp, and your Whisper will close. He won’t be notified. You can let him back in later in Settings."
         confirmLabel="Cut Off"
         destructive
         loading={block.isPending}

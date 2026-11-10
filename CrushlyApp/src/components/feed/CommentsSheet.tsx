@@ -47,7 +47,7 @@ import type { Post, PostComment } from '../../api/types';
  *
  * Three things were copied from the reference because they are right:
  *
- *   * the sheet follows the member's Holup light or dark appearance;
+ *   * the sheet follows the member's holUpp light or dark appearance;
  *   * the counts live in the tab strip, so you can see how much conversation
  *     there is without scrolling to the end of it;
  *   * a comment carries who its author is *to this post* — the person who wrote

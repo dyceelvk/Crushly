@@ -81,7 +81,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   return (
     <Screen>
       <Header title="Settings" back />
-      {isAdmin ? <Group title="Administration"><ListRow title="Holup admin" subtitle="Features and announcements" icon="settings-outline" onPress={() => navigation.navigate('Admin')} last /></Group> : null}
+      {isAdmin ? <Group title="Administration"><ListRow title="holUpp admin" subtitle="Features and announcements" icon="settings-outline" onPress={() => navigation.navigate('Admin')} last /></Group> : null}
       <Group title="Account">
         <ListRow title="Account & security" subtitle={me?.email} icon="person-circle-outline" onPress={() => navigation.navigate('Account')} />
         <ListRow
@@ -91,7 +91,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           iconTone="gold"
           onPress={() => navigation.navigate('Verification')}
         />
-        <ListRow title="Holup Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
+        <ListRow title="holUpp Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
       </Group>
 
       <Group title="Discovery & privacy">
@@ -120,7 +120,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         {Platform.OS === 'web' ? (
           <ListRow
             title="Download the app"
-            subtitle={update.data?.version ? `Holup for Android · APK ${update.data.version}` : 'Holup for Android · APK'}
+            subtitle={update.data?.version ? `holUpp for Android · APK ${update.data.version}` : 'holUpp for Android · APK'}
             value={update.data?.apkUrl ? 'APK' : undefined}
             icon="download-outline"
             iconTone="gold"
@@ -131,7 +131,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           <ListRow title="Secure updates are being prepared" subtitle="The old test-app download is not compatible with this version." icon="shield-checkmark-outline" last />
         ) : Platform.OS === 'android' && updateStatus === 'available' ? (
           <ListRow
-            title="Update Holup"
+            title="Update holUpp"
             subtitle={update.data?.notes || `Version ${update.data?.version} is ready to install.`}
             value={update.data?.version}
             icon="download-outline"
@@ -139,7 +139,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
             last
           />
         ) : Platform.OS === 'android' && updateStatus === 'current' ? (
-          <ListRow title="You’re up to date" subtitle="Holup checks every few hours." icon="checkmark-circle-outline" last />
+          <ListRow title="You’re up to date" subtitle="holUpp checks every few hours." icon="checkmark-circle-outline" last />
         ) : Platform.OS === 'android' && updateStatus === 'checking' ? (
           <ListRow title="Checking for updates…" icon="refresh-outline" last />
         ) : Platform.OS === 'android' ? (
@@ -165,7 +165,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
 
       <ConfirmSheet
         visible={confirmOut}
-        title="Sign out of Holup?"
+        title="Sign out of holUpp?"
         message="Your Space stays exactly as it is. Sign back in anytime."
         confirmLabel="Sign out"
         loading={busy}

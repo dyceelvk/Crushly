@@ -1,5 +1,5 @@
 /**
- * Updating Holup from inside Holup.
+ * Updating holUpp from inside holUpp.
  *
  * Android's installer is intentionally a separate app. We can download a
  * package and show its installer sheet, but it is always the member who taps

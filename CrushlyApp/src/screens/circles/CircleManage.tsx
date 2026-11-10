@@ -414,7 +414,7 @@ export function CircleManageScreen() {
                     {c.member.name}
                   </Txt>
                   <Txt variant="caption" color="textMuted" numberOfLines={1}>
-                    {c.connected ? 'You’ve clicked with them' : c.member.username ? `@${c.member.username}` : 'On Holup'}
+                    {c.connected ? 'You’ve clicked with them' : c.member.username ? `@${c.member.username}` : 'On holUpp'}
                   </Txt>
                 </View>
                 <Button
@@ -460,7 +460,7 @@ export function CircleManageScreen() {
             ))
           ) : (
             <Txt variant="small" color="textMuted">
-              Nobody to show. People only appear here if they are on Holup and have discovery turned on.
+              Nobody to show. People only appear here if they are on holUpp and have discovery turned on.
             </Txt>
           )}
         </View>

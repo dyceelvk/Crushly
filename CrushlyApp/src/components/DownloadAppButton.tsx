@@ -12,7 +12,7 @@ import { useAppUpdate } from '../api/hooks';
  * watch a Moment — and then has no way to put the thing on their phone, because
  * the download only ever lived inside the Android app they do not have yet.
  * This is that door, and it opens the same file the in-app updater opens, so
- * there is one build of Holup for Android and not two.
+ * there is one build of holUpp for Android and not two.
  *
  * When no file is published the button says so instead of doing nothing: a
  * download control that silently does nothing is a lie about the product.
@@ -38,7 +38,7 @@ export function DownloadAppButton({
         title: 'No build published yet',
         message: isFetching
           ? 'Still asking the update server. Try again in a moment.'
-          : 'Holup for Android isn’t on the update server yet.',
+          : 'holUpp for Android isn’t on the update server yet.',
       });
       return;
     }
@@ -59,8 +59,8 @@ export function DownloadAppButton({
       icon="download-outline"
       onPress={open}
       full={false}
-      accessibilityLabel="Download the Holup app for Android"
-      accessibilityHint="Opens the latest Holup APK"
+      accessibilityLabel="Download the holUpp app for Android"
+      accessibilityHint="Opens the latest holUpp APK"
     />
   );
 }

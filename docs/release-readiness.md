@@ -1,4 +1,4 @@
-# Holup — release readiness
+# holUpp — release readiness
 
 **Date:** 2026-11-07 · **Branch:** `build/holup-follow-draft` @ `ccad7cb`
 **Production web:** `holupapp.vercel.app`, deployed from **`build/holup-follow-draft`**, not `main`
@@ -237,7 +237,7 @@ two validation blockers are gone.
 | Relationship candidates unverified | Candidates applied on top of the full legacy baseline and all their tests pass | `01_follow`, `04_homies`, `07_whisper` applied after `04a` fixture; `02`, `05`, `08` pass |
 | Concurrency races unverified | Races run on a real server with real locks | 25 follow/block, 25 request/block, 25 accept/block, 20 two-message quota races — all passed |
 | Browser QA could not start | System Chromium 156 driven by Playwright | **43/43** browser tests pass: 37 space-search (including every swipe/gesture case), 4 circles, 2 paging |
-| "Chromium 156 swipe regression" | **Not a Holup bug** | See below |
+| "Chromium 156 swipe regression" | **Not a holUpp bug** | See below |
 
 ### The swipe "regression" was the browser, not the app
 
@@ -642,7 +642,7 @@ Verified live against production:
 
 | Check | Result |
 | --- | --- |
-| `/s/<valid token>` | `200`, `<title>Spencer on Holup</title>`, `og:description` "@alfie · Enugu. See their Space on Holup." |
+| `/s/<valid token>` | `200`, `<title>Spencer on holUpp</title>`, `og:description` "@alfie · Enugu. See their Space on holUpp." |
 | `/s/41` (id shape) | `404` — the enumerable form does not exist |
 | `/s/<32 f's>` | `404` |
 | Token revoked, then requested | `404` |
@@ -789,7 +789,7 @@ inconsistent" are the same symptom and deserve the same urgency.
 
 ## Candidate APK built (2026-11-07)
 
-`Build secure Holup Android candidate` run `42836501075` on `f5d322f` succeeded
+`Build secure holUpp Android candidate` run `42836501075` on `f5d322f` succeeded
 end to end — typecheck, the 339 unit tests, `expo prebuild`, the release build,
 and the signing assertion. Read back from the artifact itself rather than from
 the build log:
@@ -812,45 +812,61 @@ verification passes on a real device (needs a browser-free tap on a
 `https://holupapp.vercel.app/s/...` link), and that the update channel answers
 `/secure/version` for this package rather than the public `/version`.
 
-## Saving a clip to a device, and the 6-second end splash (2026-11-07)
+## Saving a clip to a device, and the 7-second end card (2026-11-07)
 
 Two things were asked for: a Tik-Tok-shaped ending for exported video, and a
 download that marks what leaves the app.
 
-### The splash
+### The end card
 
-`assets/share/holup-end-splash-6s.mp4` — 1080×1920, 30 fps, exactly 6.000 s, with
+`assets/share/holup-end-splash-7s.mp4` — 1080×1920, 30 fps, exactly 7.000 s, with
 a silent audio track so it can be appended to a clip that already has music
-without cutting the music. Mark, wordmark, handle, `HOLUP ORIGINAL`, and the
-address small enough to read only if you look for it. It settles in over 700 ms
-and then holds; a splash that moves is a splash people skip.
+without cutting the music. It is the owner's breathing-path design: a blink out
+of the clip's own last frame, then the signature travels the screen writing a
+pink path with trace ghosts behind it, breathing as it goes, and comes to rest on
+a card holding the mark, the `holUpp` wordmark, the creator's handle and a
+`holUpp ORIGINAL` micro-label.
 
-Regenerate it with `scripts/make-end-splash.py`; the artwork is the supplied
-logo, so no platform UI is reproduced anywhere in it.
+**No address on it.** The earlier card printed `holupapp.vercel.app`; a video that
+has been reposted three times does not need a URL rotting on the last frame, and
+the name is the thing being remembered.
+
+Regenerate it with `scripts/make-end-splash.py`; the artwork is the supplied logo,
+so no platform UI is reproduced anywhere in it.
 
 ### The mark
 
-`assets/share/holup-watermark.png` — mark, wordmark and handle, with a soft
-shadow so it stays legible over pale and dark footage alike.
+`assets/share/holup-mark-lockup.png` — the supplied symbol plus the wordmark, with
+room underneath for the handle and a soft shadow so it stays legible over pale and
+dark footage alike. Built by `scripts/make-mark-lockup.py` from `holup-symbol.png`
+and `holup-wordmark.png`; the wordmark itself is drawn by
+`scripts/make-brand-wordmark.py`, because the supplied artwork spells the name in
+all caps and the product is `holUpp`. Both scripts run on the vendored Manrope in
+`assets/share/fonts` (SIL OFL), so a build machine's font list is not a variable.
 
 `scripts/mark-clip.py in.mp4 out.mp4 --handle @Sativva` burns the mark into a clip
-and appends the splash. Two properties matter and both are deliberate:
+and appends the end card. Three properties matter and all are deliberate:
 
-- **the mark drifts** ±14 px over a six-second cycle. A stamp pinned to one pixel
-  is trivial to crop out; one that moves is not;
+- **the mark is small** — 42 % of the lockup, ~60 % of the size it started at. It
+  is a signature, not a bumper;
+- **it does not sit still.** It tours the four corners — top-left, top-right,
+  bottom-right, bottom-left — 3 s each, 0.9 s easing between them, 12 s to a
+  full loop. A stamp pinned to one pixel is trivial to crop out; one that keeps
+  moving is not, and the corners are exactly the four a crop cannot take without
+  losing the picture;
 - **the marked copy is a separate file.** The app plays the original, untouched.
   Drawing a stamp on the device would mean shipping a video encoder to every
   phone and re-encoding a clip the creator already uploaded.
 
 ### The download
 
-It lives in the **share sheet**, under Copy link and Share outside Holup, because
+It lives in the **share sheet**, under Copy link and Share outside holUpp, because
 all three answer the same question: how does this leave the app. Not in the
-action rail — the rail is for what you do *to* a post inside Holup, and a save
+action rail — the rail is for what you do *to* a post inside holUpp, and a save
 sitting among Crush, Comments and Pick reads as one more thing about the post
 rather than a copy going out into the world.
 
-The row says **"Save clip to device · with the Holup mark"** and appears only for
+The row says **"Save clip to device · with the holUpp mark"** and appears only for
 a clip that has a marked copy. A post without one gets no row at all rather than a
 disabled one, because a greyed control invites the question "why not?" and the
 answer would be a server limitation nobody should have to learn.
@@ -910,9 +926,9 @@ even learn whether a marked copy exists for a post they cannot see.
 | 87 | 41 | `posts/41/1794267630223-…-marked.mp4` | 8.8 MB |
 
 Produced by `Mark clips for download` (run `42860307625`): pull the original from
-B2 → burn in the mark with **that author's** handle → append the 6-second splash →
+B2 → burn in the mark with **that author's** handle → append the 7-second end card →
 upload under a `-marked` key → record it. The original in `posts.media_url` is
-never touched, so playback inside Holup is unchanged.
+never touched, so playback inside holUpp is unchanged.
 
 Batch rather than upload-time on purpose: an ffmpeg re-encode in the upload path
 would make a member wait for it, and a backlog clears in one run.
@@ -923,11 +939,11 @@ Neither would have shown up in a test:
 
 1. **`profiles` has no `handle` column** — it is `username`. Every clip failed
    before encoding.
-2. **The handle was baked into the shared assets.** `holup-watermark.png` and the
+2. **The handle was baked into the shared assets.** The old watermark and the
    splash both said `@Sativva`, so every clip in the app would have credited
-   whoever those files were made for. The mark is now a handle-free base lockup
-   and the handle is drawn per clip from `posts.author_id`; the splash carries no
-   handle at all.
+   whoever those files were made for. The mark is now a handle-free lockup and
+   the handle is drawn per clip from `posts.author_id` into a temp directory, so
+   one creator's handle can never be left behind in the committed assets.
 
 Also worth keeping: the job's first failure was a 401 from Backblaze that looked
 like bad credentials and was a stray newline in a secret. The Worker trims its

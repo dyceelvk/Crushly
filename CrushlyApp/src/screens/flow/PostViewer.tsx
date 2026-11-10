@@ -256,7 +256,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
     if (!post) return;
     try {
       const Clipboard = await import('expo-clipboard');
-      await Clipboard.setStringAsync(post.body || `${authorName} on Holup`);
+      await Clipboard.setStringAsync(post.body || `${authorName} on holUpp`);
       toast({ kind: 'success', title: 'Copied', message: 'The words are on your clipboard.' });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t copy', message: (e as Error).message });
@@ -663,7 +663,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
           ) : null}
           <SheetRow
             icon="share-social-outline"
-            label="Share outside Holup"
+            label="Share outside holUpp"
             onPress={() => {
               setMoreOpen(false);
               setShareOpen(true);

@@ -2,9 +2,9 @@
 #
 # This is the server half of "save clip to device". The app never re-encodes
 # anything: a job downloads the original from the private bucket, burns in the
-# Holup mark and the creator's handle, appends the 6-second end splash, uploads
-# the result and records where it went. The copy that plays inside Holup is never
-# touched, and the marked copy is only ever handed out through `post_download`,
+# holUpp mark and the creator's handle, appends the 7-second breathing-path
+# end card, uploads the result and records where it went. The copy that plays
+# inside holUpp is never touched, and the marked copy is only ever handed out through `post_download`,
 # which applies `can_view_post`.
 #
 # Manual, on purpose. Marking every clip the moment it is uploaded would put an
@@ -50,6 +50,9 @@ jobs:
           sudo apt-get install -y -qq ffmpeg postgresql-client
           python -m pip install --quiet pillow imageio imageio-ffmpeg
           ffmpeg -version | head -1
+
+      - name: Make sure the watermark lockup exists
+        run: test -f assets/share/holup-mark-lockup.png || python scripts/make-mark-lockup.py
 
       - name: Mark the clips
         env:

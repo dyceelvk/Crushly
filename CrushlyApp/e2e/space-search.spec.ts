@@ -92,8 +92,8 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
 }
 test('search categories, filters and result routes work on a phone-sized web screen', async ({ page }) => {
   const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
-  await page.getByRole('button', { name: 'Search Holup' }).first().click({ timeout: 30000 });
-  await page.getByPlaceholder('Search Holup').fill('holiday');
+  await page.getByRole('button', { name: 'Search holUpp' }).first().click({ timeout: 30000 });
+  await page.getByPlaceholder('Search holUpp').fill('holiday');
   for (const label of ['Top', 'Clips', 'Photos', 'People', 'Sounds', 'Places', 'Hashtags', 'Moments']) {
     const tab = page.getByRole('tab', { name: label, exact: true }); await expect(tab).toBeVisible(); await tab.click();
     await expect.poll(() => calls.at(-1)?.p_category).toBe(label.toLowerCase());
@@ -101,7 +101,7 @@ test('search categories, filters and result routes work on a phone-sized web scr
   await page.getByRole('tab', { name: 'Places', exact: true }).click();
   await page.getByRole('button', { name: 'People in Lagos' }).click();
   await expect.poll(() => calls.at(-1)?.p_place).toBe('Lagos');
-  await page.getByPlaceholder('Search Holup').fill('holiday');
+  await page.getByPlaceholder('Search holUpp').fill('holiday');
   await page.getByRole('tab', { name: 'Hashtags', exact: true }).click();
   await page.getByRole('button', { name: 'Search hashtag holiday' }).click();
   await expect.poll(() => calls.at(-1)?.p_hashtag).toBe(true);
@@ -133,7 +133,7 @@ test('banner chooser uploads and removes a separate banner without changing prof
 test('filters keep the Apply control on a short phone', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
   await offline(page, []); await page.goto('/');
-  await page.getByRole('button', { name: 'Search Holup' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Search holUpp' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Search options' }).click();
   await page.getByRole('button', { name: 'Filters', exact: true }).click();
   await page.waitForTimeout(500);
@@ -167,7 +167,7 @@ test('comments remain text-only with replies, emoji and mentions', async ({ page
 
 test('trends from comments lead to real searches', async ({ page }) => {
   const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
-  await page.getByRole('button', { name: 'Search Holup' }).first().click({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Search holUpp' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Search #commentfixture' }).click();
   await expect.poll(() => calls.at(-1)?.p_query).toBe('commentfixture');
   expect(calls.at(-1)?.p_hashtag).toBe(true);
@@ -192,7 +192,7 @@ test('verified admin can access the server-backed feature controls', async ({ pa
   await offline(page, [], [], true); await page.goto('/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Settings' }).click();
-  await page.getByText('Holup admin', { exact: true }).click();
+  await page.getByText('holUpp admin', { exact: true }).click();
   await expect(page.getByText('Operations and controls')).toBeVisible();
   await expect(page.getByText('Seen in last 7 days')).toBeVisible();
   await page.getByRole('tab', { name: 'Action board', exact: true }).click();
@@ -248,7 +248,7 @@ test('ordinary members do not see an admin entry', async ({ page }) => {
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByText('Account & security')).toBeVisible();
-  await expect(page.getByText('Holup admin', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('holUpp admin', { exact: true })).toHaveCount(0);
 });
 
 
@@ -263,14 +263,14 @@ test('active Flow video plays and stops when moving to the next page', async ({ 
 });
 
 
-test('Space bio link opens inside Holup and own Space link copies from three dots', async ({ page, context }) => {
+test('Space bio link opens inside holUpp and own Space link copies from three dots', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await offline(page, []); await page.goto('/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
-  const bioLink = page.getByRole('link', { name: /Open link to example.com\/about inside Holup/ }).first();
+  const bioLink = page.getByRole('link', { name: /Open link to example.com\/about inside holUpp/ }).first();
   await expect(bioLink).toBeVisible({ timeout: 30000 });
   await bioLink.click();
-  await expect(page.getByText('Inside Holup', { exact: true })).toBeVisible();
+  await expect(page.getByText('Inside holUpp', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close preview' }).click();
   await page.getByRole('button', { name: 'More Space options' }).click();
   await page.getByRole('button', { name: 'Copy Space link' }).click();
@@ -279,12 +279,12 @@ test('Space bio link opens inside Holup and own Space link copies from three dot
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`https://holupapp.vercel.app/s/${SHARE_TOKEN}`);
 });
 
-test('comment link closes sheet and opens inside Holup without punctuation', async ({ page }) => {
+test('comment link closes sheet and opens inside holUpp without punctuation', async ({ page }) => {
   await offline(page, []); await page.goto('/');
   await page.getByText('Crushes', { exact: true }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: /Comments, 1 comment/ }).first().click();
-  await page.getByRole('link', { name: 'Open link to example.com/comment inside Holup' }).click();
-  await expect(page.getByText('Inside Holup', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Open link to example.com/comment inside holUpp' }).click();
+  await expect(page.getByText('Inside holUpp', { exact: true })).toBeVisible();
   await expect(page.locator('iframe[title="Link preview"]')).toHaveAttribute('src', 'https://example.com/comment');
 });
 
@@ -514,7 +514,7 @@ test('touch swipes switch notification and comment tabs without closing the shee
   const yours = await page.getByRole('tab', {name:'Yours', exact:true}).boundingBox();
   if (!yours) throw Error('Notification tabs missing');
   await dragTouch(page, 230, yours.y + 10, 40, yours.y + 10);
-  await expect(page.getByText('No other updates from Holup')).toBeVisible();
+  await expect(page.getByText('No other updates from holUpp')).toBeVisible();
   await dragTouch(page, 70, 430, 300, 430);
   await expect(page.getByText('All quiet for now')).toBeVisible();
   await page.getByRole('button', {name:'Go back'}).click();
@@ -530,8 +530,8 @@ test('touch swipes switch notification and comment tabs without closing the shee
 
 test('search and Space navigation tabs support touch swipes without changing settings', async ({page}) => {
   const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
-  await page.getByRole('button', {name:'Search Holup'}).first().click({timeout:30000});
-  await page.getByPlaceholder('Search Holup').fill('holiday');
+  await page.getByRole('button', {name:'Search holUpp'}).first().click({timeout:30000});
+  await page.getByPlaceholder('Search holUpp').fill('holiday');
   await expect(page.getByRole('tab', {name:'Top', exact:true})).toBeVisible();
   await dragTouch(page, 300, 430, 70, 430);
   await expect.poll(() => calls.at(-1)?.p_category).toBe('clips');
@@ -687,8 +687,8 @@ test('the share sheet offers Save clip for a clip that has one', async ({ page }
   const save = page.getByRole('button', { name: 'Save this clip to your device' });
   await expect(save).toBeVisible();
   // The wording has to say the copy is marked, or the row is a surprise later.
-  await expect(page.getByText('with the Holup mark')).toBeVisible();
+  await expect(page.getByText('with the holUpp mark')).toBeVisible();
   // It sits in the same block as the other two ways out of the app.
   await expect(page.getByRole('button', { name: 'Copy post link' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Share outside Holup' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Share outside holUpp' })).toBeVisible();
 });

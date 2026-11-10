@@ -21,7 +21,7 @@ function hostOf(raw: string): string {
 }
 
 /**
- * A link, opened inside Holup.
+ * A link, opened inside holUpp.
  *
  * Nothing in this app navigates outwards on its own. A member taps a link that
  * somebody put in a Flow or a Moment and it opens here — in our own
@@ -60,10 +60,10 @@ export function WebPreviewScreen({ route, navigation }: ScreenProps<'WebPreview'
 
   const engineNote =
     Platform.OS === 'android'
-      ? 'Shown with Chromium inside Holup. We haven’t checked this page — it isn’t ours.'
+      ? 'Shown with Chromium inside holUpp. We haven’t checked this page — it isn’t ours.'
       : Platform.OS === 'web'
-        ? 'Shown inside Holup, in your browser. We haven’t checked this page — it isn’t ours.'
-        : 'Shown inside Holup. We haven’t checked this page — it isn’t ours.';
+        ? 'Shown inside holUpp, in your browser. We haven’t checked this page — it isn’t ours.'
+        : 'Shown inside holUpp. We haven’t checked this page — it isn’t ours.';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -82,7 +82,7 @@ export function WebPreviewScreen({ route, navigation }: ScreenProps<'WebPreview'
         <IconButton icon="close" label="Close preview" onPress={() => navigation.goBack()} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Txt variant="caption" color="textSecondary" numberOfLines={1}>
-            Inside Holup
+            Inside holUpp
           </Txt>
           <Txt variant="smallStrong" numberOfLines={1}>
             {hostOf(current)}

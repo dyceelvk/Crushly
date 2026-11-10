@@ -1,4 +1,4 @@
-# Holup relationship cutover — production audit and compatibility contract
+# holUpp relationship cutover — production audit and compatibility contract
 
 **Status:** review artifact only. This is not a deployment approval and contains no production migration.
 
@@ -16,11 +16,11 @@ No production DDL, DML, RLS, Realtime policy, bucket configuration, release conf
 
 ## Minimum-age product decision
 
-Holup is a single **16+** product: a person younger than 16 must not be granted access. This is not an adult-only product and does not require a second Supabase project, teen account type, or teen-mode account class.
+holUpp is a single **16+** product: a person younger than 16 must not be granted access. This is not an adult-only product and does not require a second Supabase project, teen account type, or teen-mode account class.
 
 **Applied:** migration `20261109225634_minimum_age_16` (source: `supabase/migrations/20261109225634_minimum_age_16.sql`) replaced the 18+ threshold in production on 2026-11-07. It reuses the existing `experimental_check_adult_profile` trigger and `experimental_adult_profile_gate` trigger definition, so it adds no new gate surface:
 
-- the gate now refuses anyone whose birthdate is later than `current_date - 16 years`, with `403 minimum_age` and the message "Holup is for people aged 16 and over.";
+- the gate now refuses anyone whose birthdate is later than `current_date - 16 years`, with `403 minimum_age` and the message "holUpp is for people aged 16 and over.";
 - exactly 16 today is eligible;
 - `preferences.age_min` defaults to 16 and a `preferences_age_range_check` constraint keeps both bounds inside 16..99 with `age_min <= age_max`;
 - preflight confirmed 0 of 13 stored preference rows fell outside the new range, so no user data was rewritten.

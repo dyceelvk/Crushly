@@ -153,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // The native path needs a deep link back into the app bundle, which is a
       // separate piece of work (expo-auth-session + a custom scheme). Rather than
       // fail in a way nobody can read, say what to do.
-      throw new ApiError(400, 'Google sign-in is web-only for now — use email, or open Holup in a browser.');
+      throw new ApiError(400, 'Google sign-in is web-only for now — use email, or open holUpp in a browser.');
     }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

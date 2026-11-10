@@ -6,7 +6,7 @@ import { defineConfig } from '@playwright/test';
 const launchOptions = {
   // Chromium's own swipe-to-navigate gesture swallows a horizontal touch drag:
   // the page is replaced by about:blank and the app receives nothing. That is
-  // the browser navigating, not a Holup bug, so it is switched off for the run.
+  // the browser navigating, not a holUpp bug, so it is switched off for the run.
   args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
     '--disable-features=OverscrollHistoryNavigation,TouchpadOverscrollHistoryNavigation'],
   ...(process.env.CHROMIUM_EXECUTABLE ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : {}),

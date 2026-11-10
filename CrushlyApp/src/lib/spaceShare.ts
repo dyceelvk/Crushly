@@ -14,7 +14,7 @@ export function spaceShareUrl(token: string): string {
 }
 
 /**
- * Where a Holup link is asking to go. Three shapes are accepted:
+ * Where a holUpp link is asking to go. Three shapes are accepted:
  *
  *   ?space=<id>      the legacy web shape, still in circulation in old shares
  *   /s/<token>       the current share shape; the landing page hands over the id

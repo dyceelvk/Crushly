@@ -9,7 +9,7 @@ module.exports = (config) => withAppBuildGradle(config, (result) => {
         holupRelease {
             def path = System.getenv('HOLUP_ANDROID_KEYSTORE_PATH')
             def password = System.getenv('HOLUP_ANDROID_RELEASE_KEY_PASSWORD')
-            if (!path || !password) throw new GradleException('Missing Holup release signing credentials')
+            if (!path || !password) throw new GradleException('Missing holUpp release signing credentials')
             storeFile file(path)
             storePassword password
             keyAlias 'holup-release'

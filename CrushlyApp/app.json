@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Holup",
+    "name": "holUpp",
     "slug": "crushly",
     "scheme": "crushly",
     "version": "1.0.95",
@@ -9,15 +9,15 @@
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "Holup — follow the feelings. A social space for real connection.",
+    "description": "holUpp — follow the feelings. A social space for real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
       "infoPlist": {
-        "NSCameraUsageDescription": "Holup uses your camera for profile photos, Moments and verification selfies.",
-        "NSPhotoLibraryUsageDescription": "Holup lets you choose photos for your profile, Moments and messages.",
-        "NSMicrophoneUsageDescription": "Holup uses your microphone for voice calls and voice messages.",
-        "NSLocationWhenInUseUsageDescription": "Holup uses your approximate location to show distance. Your exact location is never shared."
+        "NSCameraUsageDescription": "holUpp uses your camera for profile photos, Moments and verification selfies.",
+        "NSPhotoLibraryUsageDescription": "holUpp lets you choose photos for your profile, Moments and messages.",
+        "NSMicrophoneUsageDescription": "holUpp uses your microphone for voice calls and voice messages.",
+        "NSLocationWhenInUseUsageDescription": "holUpp uses your approximate location to show distance. Your exact location is never shared."
       }
     },
     "android": {
@@ -43,8 +43,8 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "Holup",
-      "shortName": "Holup",
+      "name": "holUpp",
+      "shortName": "holUpp",
       "themeColor": "#2A0F2B",
       "backgroundColor": "#2A0F2B",
       "bundler": "metro",
@@ -56,7 +56,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Holup uses your microphone for voice calls and voice messages."
+          "microphonePermission": "holUpp uses your microphone for voice calls and voice messages."
         }
       ],
       "expo-font",
@@ -71,21 +71,21 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Holup lets you choose photos for your profile, Moments and messages.",
-          "cameraPermission": "Holup uses your camera for profile photos, Moments and verification selfies."
+          "photosPermission": "holUpp lets you choose photos for your profile, Moments and messages.",
+          "cameraPermission": "holUpp uses your camera for profile photos, Moments and verification selfies."
         }
       ],
       [
         "expo-media-library",
         {
-          "savePhotosPermission": "Holup saves clips you choose to keep to this phone's gallery.",
+          "savePhotosPermission": "holUpp saves clips you choose to keep to this phone's gallery.",
           "granularPermissions": ["video"]
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Holup uses your approximate location to show distance. Your exact location is never shared."
+          "locationWhenInUsePermission": "holUpp uses your approximate location to show distance. Your exact location is never shared."
         }
       ],
       "./plugins/withCall",

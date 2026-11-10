@@ -75,7 +75,7 @@ export function ShareToWhisper({
     if (!post) return null;
     try {
       if (!await publicPostPreview(post.id)) {
-        toast({ kind: 'info', title: 'Not a public post', message: 'Only publicly available posts can be shared outside Holup.' });
+        toast({ kind: 'info', title: 'Not a public post', message: 'Only publicly available posts can be shared outside holUpp.' });
         return null;
       }
       return postShareUrl(post.id);
@@ -114,9 +114,9 @@ export function ShareToWhisper({
     try {
       const outcome = await saveClipToDevice({ id: post.id, mediaKind: post.mediaKind, downloadUrl });
       if (outcome === 'saved') {
-        toast({ kind: 'success', title: 'Saved to your device', message: 'This copy carries the Holup mark and the creator’s handle.' });
+        toast({ kind: 'success', title: 'Saved to your device', message: 'This copy carries the holUpp mark and the creator’s handle.' });
       } else if (outcome === 'downloaded') {
-        toast({ kind: 'success', title: 'Clip downloaded', message: 'This copy carries the Holup mark and the creator’s handle.' });
+        toast({ kind: 'success', title: 'Clip downloaded', message: 'This copy carries the holUpp mark and the creator’s handle.' });
       } else if (outcome === 'denied') {
         toast({ kind: 'error', title: 'Photos and videos are off', message: 'Allow photo access in your phone settings, then tap Save again.' });
       } else {
@@ -161,8 +161,8 @@ export function ShareToWhisper({
             title={query ? 'Nobody by that name' : 'No Whispers yet'}
             message={
               query
-                ? 'Try another name, or send it outside Holup below.'
-                : 'A Whisper opens when you and somebody both Crush. Until then, send it outside Holup below.'
+                ? 'Try another name, or send it outside holUpp below.'
+                : 'A Whisper opens when you and somebody both Crush. Until then, send it outside holUpp below.'
             }
           />
         ) : (
@@ -223,7 +223,7 @@ export function ShareToWhisper({
           >
             <Ionicons name={saving ? 'hourglass-outline' : 'download-outline'} size={20} color={colors.textSecondary} />
             <Txt variant="body">{saving ? 'Saving…' : 'Save clip to device'}</Txt>
-            <Txt variant="caption" color="textMuted">· with the Holup mark</Txt>
+            <Txt variant="caption" color="textMuted">· with the holUpp mark</Txt>
           </Pressable>
         ) : null}
         <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel="Copy post link" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>
@@ -233,7 +233,7 @@ export function ShareToWhisper({
         <Pressable
           onPress={outside}
           accessibilityRole="button"
-          accessibilityLabel="Share outside Holup"
+          accessibilityLabel="Share outside holUpp"
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
@@ -243,7 +243,7 @@ export function ShareToWhisper({
           })}
         >
           <Ionicons name={Platform.OS === 'ios' ? 'share-outline' : 'share-social-outline'} size={20} color={colors.textSecondary} />
-          <Txt variant="body">Share outside Holup</Txt>
+          <Txt variant="body">Share outside holUpp</Txt>
         </Pressable>
       </View>
     </BottomSheet>

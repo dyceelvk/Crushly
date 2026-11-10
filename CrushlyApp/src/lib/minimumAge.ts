@@ -1,5 +1,5 @@
 /**
- * Holup is one 16+ product. This value is duplicated by the database trigger
+ * holUpp is one 16+ product. This value is duplicated by the database trigger
  * in the reviewed release migration; it is intentionally not an account type
  * or a client-only access check.
  */

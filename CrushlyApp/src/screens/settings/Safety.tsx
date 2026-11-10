@@ -106,7 +106,7 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
     update.mutate(patch, {
       onError: (e) => {
         if (e instanceof ApiError && e.code === 'plus_required') {
-          toast({ kind: 'info', title: 'Part of Holup Plus', message: e.message, onPress: () => navigation.navigate('Plus', { feature: 'Incognito' }), duration: 5000 });
+          toast({ kind: 'info', title: 'Part of holUpp Plus', message: e.message, onPress: () => navigation.navigate('Plus', { feature: 'Incognito' }), duration: 5000 });
         } else toast({ kind: 'error', title: 'Not saved', message: (e as Error).message });
       },
     });

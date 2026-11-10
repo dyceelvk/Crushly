@@ -7,7 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 /**
  * Keep Close, seen from the other side.
  *
- * Keep Close is Holup's follow: it says "this one, I want to keep seeing". A
+ * Keep Close is holUpp's follow: it says "this one, I want to keep seeing". A
  * follow that only exists inside one person's Space is a follow nobody can act
  * on, so wherever somebody's words appear in public they carry the mark — the
  * feed, a Circle, a comment, a Moment. Small enough to sit inside a byline, and

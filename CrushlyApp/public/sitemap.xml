@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  One entry on purpose. Holup's web export is a single-page app: every screen
+  One entry on purpose. holUpp's web export is a single-page app: every screen
   after the landing shell is client-rendered and most of it is behind sign-in.
   Listing routes a crawler cannot render as separate pages would be a sitemap
   full of soft 404s, which is worse than a short honest one.

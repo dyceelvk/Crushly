@@ -57,7 +57,7 @@ export type Profile = {
    * earned; 'diamond' belongs to the company's own account and to nothing else.
    */
   badgeTier?: BadgeTier;
-  /** Keep Close — Holup's follow. True when they keep *you* close. */
+  /** Keep Close — holUpp's follow. True when they keep *you* close. */
   keepsYou?: boolean;
   distance: string | null;
   online: boolean | null;
@@ -94,7 +94,7 @@ export type Post = {
   /** Whether the media is a photo or a clip. Null when the post has no media. */
   mediaKind: 'photo' | 'video' | null;
   /**
-   * The marked copy of a clip: same footage, with the Holup mark and the
+   * The marked copy of a clip: same footage, with the holUpp mark and the
    * creator's handle burnt in. Only what is saved to a device uses this; the
    * app always plays `mediaUrl`. Null when the pipeline has not produced one
    * yet, and then no download is offered at all.

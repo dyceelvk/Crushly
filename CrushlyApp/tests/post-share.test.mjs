@@ -13,7 +13,7 @@ test('escapes user content and includes copyable canonical and OG tags', () => {
   assert.ok(html.includes('property="og:description"'));
   assert.ok(html.includes('name="twitter:card"'));
   // A messenger renders a card, not a page: every field one needs is present.
-  assert.ok(html.includes('property="og:site_name" content="Holup"'));
+  assert.ok(html.includes('property="og:site_name" content="holUpp"'));
   assert.ok(html.includes('property="og:image:width" content="1200"'));
   assert.ok(html.includes('property="og:image:height" content="630"'));
   assert.ok(html.includes('property="og:image:alt"'));

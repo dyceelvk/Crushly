@@ -185,7 +185,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
           <IconButton icon="settings-outline" variant="plain" label="Notification settings" onPress={() => navigation.navigate('NotificationSettings')} />
         </View>
         <View {...swipe.panHandlers} style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl, paddingVertical: space.sm }}>
-          {([['yours', 'Yours'], ['holup', 'From Holup']] as const).map(([id, label]) => <Pressable key={id} onPress={() => setTab(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: tab === id }} style={{ paddingVertical: 8 }}><Txt variant="bodyStrong" color={tab === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
+          {([['yours', 'Yours'], ['holup', 'From holUpp']] as const).map(([id, label]) => <Pressable key={id} onPress={() => setTab(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: tab === id }} style={{ paddingVertical: 8 }}><Txt variant="bodyStrong" color={tab === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
         </View>
         {tab === 'yours' ? <ScrollView ref={categoryRail} horizontal onLayout={e => setCategoryRailWidth(e.nativeEvent.layout.width)} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: space.sm }}>
           {NOTIFICATION_CATEGORIES.map(({id, label}) => <Pressable key={id} onLayout={e => { const {x, width} = e.nativeEvent.layout; categoryPositions.current[id] = {x, width}; }} onPress={() => setCategory(id)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: category === id }} style={{ backgroundColor: category === id ? colors.goldSoft : colors.card, borderWidth: 1, borderColor: category === id ? colors.goldLine : colors.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }}><Txt variant="small" color={category === id ? 'gold' : 'textSecondary'}>{label}</Txt></Pressable>)}
@@ -251,7 +251,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
             ) : (
               <EmptyState
                 icon="notifications-outline"
-                title={tab === 'holup' ? 'No other updates from Holup' : 'All quiet for now'}
+                title={tab === 'holup' ? 'No other updates from holUpp' : 'All quiet for now'}
                 message={tab === 'holup' ? 'Verification updates and active announcements appear here.' : 'Activity in this category will appear here.'}
               />
             )

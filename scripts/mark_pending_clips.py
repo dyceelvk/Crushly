@@ -14,7 +14,7 @@ For each post with no copy yet:
   4. put the marked file next to the original, under a `-marked` key;
   5. record the key (`register_post_download`).
 
-Nothing here touches `posts.media_url`. The clip that plays inside Holup is never
+Nothing here touches `posts.media_url`. The clip that plays inside holUpp is never
 re-encoded, and the marked copy is only ever served through the Worker's
 `/d/<post id>` route, which asks the database whether this member may see the
 post.
@@ -173,10 +173,10 @@ def marked_key(key: str) -> str:
 def handle_for(author_id: int) -> str:
     # `username` is the column; `handle` does not exist on profiles.
     row = psql(
-        "select coalesce(nullif(username, ''), nullif(name, ''), 'Holup') "
+        "select coalesce(nullif(username, ''), nullif(name, ''), 'holUpp') "
         f"from profiles where id = {int(author_id)};"
     )
-    return row or "Holup"
+    return row or "holUpp"
 
 
 def main() -> int:

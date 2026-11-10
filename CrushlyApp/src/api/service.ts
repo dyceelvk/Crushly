@@ -24,7 +24,7 @@ import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleLi
   CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
 
 /**
- * The Holup data layer — a 1:1 port of the retired Express API onto Supabase.
+ * The holUpp data layer — a 1:1 port of the retired Express API onto Supabase.
  * Simple things are plain table reads/writes on the member's own
  * rows (RLS-protected); everything cross-member runs through the RPCs defined
  * in supabase/migrations/20261008000002_functions.sql.
@@ -205,7 +205,7 @@ export async function getMe(): Promise<Me> {
       moments: !!notif.moments,
       recommendations: !!notif.recommendations,
     },
-    // Holup Plus isn't for sale yet — entitlements are wired so features can light up later.
+    // holUpp Plus isn't for sale yet — entitlements are wired so features can light up later.
     plus: {
       active: false,
       interested: !!p.plus_interest,
@@ -224,7 +224,7 @@ export async function updateProfile(patch: Record<string, unknown>): Promise<Me>
     const birthdate = str(patch.birthdate, 'Birthday', { required: true, max: 10 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) throw new ApiError(400, 'Please check your birthday.');
     const age = ageFromBirthdate(birthdate);
-    if (age != null && !isMemberAgeEligible(age)) throw new ApiError(400, `Holup is for people aged ${MINIMUM_MEMBER_AGE} and over.`);
+    if (age != null && !isMemberAgeEligible(age)) throw new ApiError(400, `holUpp is for people aged ${MINIMUM_MEMBER_AGE} and over.`);
     if (age != null && age > 99) throw new ApiError(400, 'Please check your birthday.');
     next.birthdate = birthdate;
   }
@@ -1309,7 +1309,7 @@ export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
   if (patch.incognito) {
     throw new ApiError(
       402,
-      'Incognito is part of Holup Plus, which isn’t available yet. Hide your Space from Discover instead — it’s free.',
+      'Incognito is part of holUpp Plus, which isn’t available yet. Hide your Space from Discover instead — it’s free.',
       'plus_required',
     );
   }

@@ -55,7 +55,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['admin-state'] }); void qc.invalidateQueries({ queryKey: ['app-settings'] }); };
   const feature = useMutation({ mutationFn: ({ key, enabled }: { key: 'calls' | 'public_post_sharing'; enabled: boolean }) => service.adminSetFeature(key, enabled), onSuccess: refresh, onError: (e) => toast({ kind: 'error', title: 'Not changed', message: (e as Error).message }) });
   const announcement = useMutation({ mutationFn: () => service.adminSetAnnouncement(title, body, active), onSuccess: () => { dirty.current = false; refresh(); toast({ kind: 'success', title: 'Announcement saved' }); }, onError: (e) => toast({ kind: 'error', title: 'Not saved', message: (e as Error).message }) });
-  return <Screen><Header title="Holup admin" subtitle="Operations and controls" back />
+  return <Screen><Header title="holUpp admin" subtitle="Operations and controls" back />
     {data.isLoading ? <LoadingBlock label="Loading admin controls" /> : data.isError || !data.data ? <ErrorState error={data.error} message="Admin controls are unavailable." onRetry={() => void data.refetch()} /> : <View style={{ flexDirection: wide ? 'row' : 'column', gap: space.lg, paddingBottom: space.xl }}>
       <View {...sectionSwipe.panHandlers} accessibilityRole="tablist" style={{ width: wide ? 180 : undefined, flexDirection: wide ? 'column' : 'row', flexWrap: 'wrap', gap: space.xs }}>
         {([['dashboard', 'Dashboard'], ['controls', 'Action board'], ['reports', 'Reports'], ['accounts', 'Accounts'], ['audit', 'Admin activity']] as const).map(([value, label]) => (
@@ -68,7 +68,7 @@ export function AdminScreen(_props: ScreenProps<'Admin'>) {
       <View {...sectionSwipe.panHandlers} style={{ flex: 1, minWidth: 0, gap: space.lg }}>
       {section === 'dashboard' ? <View style={{ gap: space.md }}>
         <Txt variant="heading">Dashboard</Txt>
-        <Txt variant="small" color="textSecondary">Live totals from Holup. Activity is the last 7 days; message contents are not shown.</Txt>
+        <Txt variant="small" color="textSecondary">Live totals from holUpp. Activity is the last 7 days; message contents are not shown.</Txt>
         {analytics.isLoading ? <LoadingBlock label="Loading analytics" /> : analytics.isError || !analytics.data ? <ErrorState error={analytics.error} message="Analytics are unavailable." onRetry={() => void analytics.refetch()} /> : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
           {([
             ['Members', analytics.data.members], ['Seen in last 7 days', analytics.data.seenLast7Days],
