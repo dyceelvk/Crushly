@@ -819,44 +819,45 @@ download that marks what leaves the app.
 
 ### The end card
 
-`assets/share/holup-end-splash-7s.mp4` — 1080×1920, 30 fps, exactly 7.000 s, with
-a silent audio track so it can be appended to a clip that already has music
-without cutting the music. It is the owner's breathing-path design: a blink out
-of the clip's own last frame, then the signature travels the screen writing a
-pink path with trace ghosts behind it, breathing as it goes, and comes to rest on
-a card holding the mark, the `holUpp` wordmark, the creator's handle and a
-`holUpp ORIGINAL` micro-label.
+`assets/share/holup-end-splash-7s.mp4` — 1080×1920, 30 fps, exactly 7.000 s. It
+opens in darkness on one second of sound: a drop, and a voice saying `holup` so
+low it is half understood. Then the skeleton mark arrives, bouncing gently like a
+ball on a floor; it takes its colour left to right over two and a half seconds;
+and it stays that way, still bouncing, until the end. The name sits above the
+mark, the creator's handle below it. No address, no product strings.
 
-**No address on it.** The earlier card printed `holupapp.vercel.app`; a video that
-has been reposted three times does not need a URL rotting on the last frame, and
-the name is the thing being remembered.
-
-Regenerate it with `scripts/make-end-splash.py`; the artwork is the supplied logo,
-so no platform UI is reproduced anywhere in it.
+The sound is dry on purpose — no reverb, no delay, and nothing after the envelope
+closes. `scripts/make-end-sound.py` builds it from a formant read of `hoh lup`,
+pitched down ~11 semitones, low-passed at 900 Hz, saturated for the bass and
+floored with a 52 Hz sub; the generated WAV is committed so a build without
+`espeak-ng` still produces the same card.
 
 ### The mark
 
-`assets/share/holup-mark-lockup.png` — the supplied symbol plus the wordmark, with
-room underneath for the handle and a soft shadow so it stays legible over pale and
-dark footage alike. Built by `scripts/make-mark-lockup.py` from `holup-symbol.png`
-and `holup-wordmark.png`; the wordmark itself is drawn by
-`scripts/make-brand-wordmark.py`, because the supplied artwork spells the name in
-all caps and the product is `holUpp`. Both scripts run on the vendored Manrope in
-`assets/share/fonts` (SIL OFL), so a build machine's font list is not a variable.
+`assets/share/holup-skeleton-white.png` and `holup-skeleton-colour.png` — the
+logo as an outline, not a filled blob. `scripts/make-watermark.py` measures the
+real circles off `holup-symbol.png` (two centres, two radii, the hole) and strokes
+them, so the icon is the logo's own geometry rather than an approximation.
 
 `scripts/mark-clip.py in.mp4 out.mp4 --handle @Sativva` burns the mark into a clip
-and appends the end card. Three properties matter and all are deliberate:
+and appends the end card. Four properties matter and all are deliberate:
 
-- **the mark is small** — 42 % of the lockup, ~60 % of the size it started at. It
-  is a signature, not a bumper;
-- **it does not sit still.** It tours the four corners — top-left, top-right,
-  bottom-right, bottom-left — 3 s each, 0.9 s easing between them, 12 s to a
-  full loop. A stamp pinned to one pixel is trivial to crop out; one that keeps
-  moving is not, and the corners are exactly the four a crop cannot take without
-  losing the picture;
+- **it is small and see-through.** 86 px of a 1080-wide frame, white at 20 %
+  opacity, the handle at 24 px just under it. Legible if you look, invisible if
+  you are watching;
+- **it does not travel — it teleports.** Three places: upper left, middle right,
+  lower left. Seven seconds in each, then it is simply somewhere else, with a
+  120 ms fade at each end. There is no glide to follow;
+- **the colour is the seventh second.** It arrives white, holds white for five
+  seconds, and takes its brand colour over the last two — so the mark that
+  vanishes is always the coloured one and the one that arrives is always plain;
 - **the marked copy is a separate file.** The app plays the original, untouched.
   Drawing a stamp on the device would mean shipping a video encoder to every
   phone and re-encoding a clip the creator already uploaded.
+
+A clip shorter than seven seconds keeps the mark in the place it first appeared,
+for the whole clip, and never gets a second stop or a faster rhythm. The end card
+after it is always the full seven seconds.
 
 ### The download
 

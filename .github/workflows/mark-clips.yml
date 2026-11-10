@@ -2,10 +2,10 @@
 #
 # This is the server half of "save clip to device". The app never re-encodes
 # anything: a job downloads the original from the private bucket, burns in the
-# holUpp mark and the creator's handle, appends the 7-second breathing-path
-# end card, uploads the result and records where it went. The copy that plays
-# inside holUpp is never touched, and the marked copy is only ever handed out through `post_download`,
-# which applies `can_view_post`.
+# holUpp skeleton mark and the creator's handle, appends the 7-second end card,
+# uploads the result and records where it went. The copy that plays inside holUpp
+# is never touched, and the marked copy is only ever handed out through
+# `post_download`, which applies `can_view_post`.
 #
 # Manual, on purpose. Marking every clip the moment it is uploaded would put an
 # ffmpeg transcode in the upload path and make a member wait for it; a batch that
@@ -44,15 +44,18 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install ffmpeg and the drawing library
+      - name: Install ffmpeg, the drawing library and the voice
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg postgresql-client
-          python -m pip install --quiet pillow imageio imageio-ffmpeg
+          sudo apt-get install -y -qq ffmpeg postgresql-client espeak-ng
+          python -m pip install --quiet pillow imageio imageio-ffmpeg numpy scipy
           ffmpeg -version | head -1
 
-      - name: Make sure the watermark lockup exists
-        run: test -f assets/share/holup-mark-lockup.png || python scripts/make-mark-lockup.py
+      - name: Rebuild the brand pieces if they are missing
+        working-directory: CrushlyApp
+        run: |
+          test -f assets/share/holup-skeleton-white.png || python scripts/make-watermark.py
+          test -f assets/share/holup-end-sound.wav || python scripts/make-end-sound.py
 
       - name: Mark the clips
         env:

@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
-"""The end card: a seven-second breathing, travelling signature.
+"""The end card: darkness, a drop, the name, and a logo that fills in.
 
-Based on the owner's `create_holup_breathing_path_outro.py`, which is the real
-design — this file keeps its motion exactly and changes only the parts that
-cannot be shared between creators:
+Seven seconds after every clip:
 
-  * the handle is passed in, not baked in. The card is appended to every export,
-    so a handle in the file would credit whoever it was made for on everybody's
-    clip;
-  * the background is the clip's own last frame, so the card feels like the video
-    exhaling rather than a slide pasted on the end;
-  * no address anywhere on it. A URL on an end card is noise on somebody else's
-    timeline.
+    0.0s  darkness, and one second of sound — a drop, and a voice saying
+          `holup` so low it is half understood
+    0.2s  the mark arrives as a skeleton, bouncing gently, like a ball
+    1.0s  it starts taking colour, left to right, over two and a half seconds
+    3.5s  fully coloured, still bouncing, and it stays that way until the end
 
-    make-end-splash.py out.mp4 --handle @Amara [--background last-frame.png]
+The name sits above the mark and the creator's handle below it. No address, no
+product strings, nothing else: the card is the last thing somebody sees of a clip
+that has already left the app.
 
-Requires ffmpeg on PATH.
+    make-end-splash.py out.mp4 --handle @Sativva
+
+Sound is `make-end-sound.py`; the skeleton is `make-watermark.py`.
 """
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,199 +27,162 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-W, H, FPS, SECONDS = 1080, 1920, 30, 7.0
 HERE = Path(__file__).resolve().parent
 SHARE = HERE.parent / "assets/share"
-SYMBOL = SHARE / "holup-symbol.png"
+
+W, H, FPS, SECONDS = 1080, 1920, 30, 7.0
+
+SYMBOL = SHARE / "holup-skeleton-white.png"
+SYMBOL_COLOUR = SHARE / "holup-skeleton-colour.png"
 WORDMARK = SHARE / "holup-wordmark.png"
-CORAL, PINK, WHITE = (255, 135, 142), (240, 53, 180), (250, 247, 250)
+SOUND = SHARE / "holup-end-sound.wav"
+FONT_HANDLE = SHARE / "fonts/Manrope_600SemiBold.ttf"
+
+CARD_W = 300            # the name, above the mark
+ICON_W = 190            # the mark, under the name
+HANDLE_SIZE = 34
+
+APPEAR = 0.22           # the skeleton is there by here, fading in just before
+APPEAR_FADE = 0.28
+COLOUR_START = 1.00
+COLOUR_LOAD = 2.50      # the brief: two to three seconds
+BOUNCE = 12.0           # px. A ball on a floor, not a trampoline
+BOUNCE_PERIOD = 0.88
 
 
-def clamp(x): return max(0.0, min(1.0, x))
-def smooth(x): x = clamp(x); return x * x * (3 - 2 * x)
-def ease(x): return 1 - (1 - clamp(x)) ** 4
-def lerp(a, b, p): return a + (b - a) * p
+def smooth(value: float) -> float:
+    value = max(0.0, min(1.0, value))
+    return value * value * (3 - 2 * value)
 
 
-def cover(im, size):
-    s = max(size[0] / im.width, size[1] / im.height)
-    im = im.resize((round(im.width * s), round(im.height * s)), Image.Resampling.LANCZOS)
-    x = (im.width - size[0]) // 2
-    y = (im.height - size[1]) // 2
-    return im.crop((x, y, x + size[0], y + size[1]))
+def darkness() -> Image.Image:
+    """Near-black, with the faintest glow behind where the mark will be.
 
-
-def paste_center(canvas, asset, x, y, alpha=1, scale=1):
-    if scale != 1:
-        asset = asset.resize((max(1, round(asset.width * scale)), max(1, round(asset.height * scale))),
-                             Image.Resampling.LANCZOS)
-    if alpha < 1:
-        asset = asset.copy()
-        asset.putalpha(asset.getchannel("A").point(lambda a: int(a * clamp(alpha))))
-    canvas.alpha_composite(asset, (round(x - asset.width / 2), round(y - asset.height / 2)))
-
-
-# The signature's route through the screen: down-left -> centre -> top ->
-# top-right -> right-centre -> down-left -> down-right. Unchanged from the
-# owner's design.
-STOPS = [
-    (.28, (220, 1640)),
-    (1.30, (540, 985)),
-    (2.22, (540, 340)),
-    (3.14, (848, 375)),
-    (4.06, (850, 990)),
-    (4.98, (220, 1650)),
-    (5.92, (850, 1650)),
-]
-
-
-def signature_position(t):
-    if t <= STOPS[0][0]:
-        return STOPS[0][1]
-    for (ta, a), (tb, b) in zip(STOPS, STOPS[1:]):
-        if t <= tb:
-            p = ease((t - ta) / (tb - ta))
-            return lerp(a[0], b[0], p), lerp(a[1], b[1], p)
-    return STOPS[-1][1]
-
-
-def logo_pieces(symbol_w=106, word_w=246):
-    """The mark and the wordmark as separate pieces, on one baseline.
-
-    They are two assets because they are drawn at different sizes relative to
-    each other than the supplied lockup: the card puts them side by side at a
-    fixed gap, so scaling the pair as one image would leave a gap that depends on
-    the size. The wordmark keeps its `p` tails, so it is placed by its ascender —
-    line the name up by its box and it floats above the mark beside it.
+    Not a background: the brief says the card opens in darkness, and a plate with
+    a visible gradient in it is not darkness.
     """
-    symbol = Image.open(SYMBOL).convert("RGBA")
-    word = Image.open(WORDMARK).convert("RGBA")
-    ascender = json.loads(WORDMARK.with_suffix(".json").read_text())["ascender"]
-    symbol = symbol.resize((symbol_w, round(symbol.height * symbol_w / symbol.width)), Image.Resampling.LANCZOS)
-    # Measure the line off the source width: after the resize every width is the
-    # one that was asked for, and the ascender would come back at full height.
-    word_line = round(ascender * word_w / word.width)
-    word = word.resize((word_w, round(word.height * word_w / word.width)), Image.Resampling.LANCZOS)
-    return symbol, word, word_line
-
-
-def background_frame(path: Path | None) -> Image.Image:
-    """The clip's own last frame, or a plain deep plate when there is none."""
-    if path and path.exists():
-        return cover(Image.open(path).convert("RGB"), (W, H)).convert("RGBA")
-    plate = Image.new("RGBA", (W, H), (18, 6, 16, 255))
+    plate = Image.new("RGBA", (W, H), (6, 4, 10, 255))
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((W / 2 - 430, 790, W / 2 + 430, 1650), fill=PINK + (46,))
-    return Image.alpha_composite(plate, glow.filter(ImageFilter.GaussianBlur(150)))
+    ImageDraw.Draw(glow).ellipse((W / 2 - 330, H / 2 - 330, W / 2 + 330, H / 2 + 330),
+                                 fill=(96, 26, 84, 26))
+    return Image.alpha_composite(plate, glow.filter(ImageFilter.GaussianBlur(170)))
 
 
-def build(out: Path, handle: str | None, background: Path | None) -> None:
-    final_frame = background_frame(background)
-    blink_blur = final_frame.filter(ImageFilter.GaussianBlur(2.4))
-    symbol, wordmark, word_line = logo_pieces()
-    font = ImageFont.truetype(str(SHARE / "fonts/Manrope_600SemiBold.ttf"), 30)
-    font_micro = ImageFont.truetype(str(SHARE / "fonts/Manrope_800ExtraBold.ttf"), 13)
+def pieces() -> tuple[Image.Image, Image.Image, Image.Image, Image.Image]:
+    symbol = Image.open(SYMBOL).convert("RGBA")
+    symbol = symbol.resize((ICON_W, round(symbol.height * ICON_W / symbol.width)),
+                           Image.Resampling.LANCZOS)
+    colour = Image.open(SYMBOL_COLOUR).convert("RGBA").resize(symbol.size, Image.Resampling.LANCZOS)
+    word = Image.open(WORDMARK).convert("RGBA")
+    word = word.resize((CARD_W, round(word.height * CARD_W / word.width)), Image.Resampling.LANCZOS)
+    return symbol, colour, word, word
+
+
+def fade(piece: Image.Image, amount: float) -> Image.Image:
+    out = piece.copy()
+    out.putalpha(piece.split()[3].point(lambda value: int(value * amount)))
+    return out
+
+
+def colour_mask(size: tuple[int, int], progress: float) -> Image.Image:
+    """Left-to-right fill with a soft edge, so the colour arrives, not cuts."""
+    width, height = size
+    edge = width * 0.22
+    reach = progress * (width + edge)
+    columns = np.arange(width, dtype=np.float32)[None, :]
+    row = np.clip((reach - columns) / edge, 0, 1)
+    ramp = np.repeat(row, height, axis=0)      # one row broadcast to the height
+    return Image.fromarray((ramp * 255).astype(np.uint8), mode="L")
+
+
+def build(out: Path, handle: str | None) -> None:
+    plate = darkness()
+    symbol, colour, word, _ = pieces()
     tag = (handle or "").strip()
     if tag and not tag.startswith("@"):
         tag = "@" + tag
 
+    handle_font = ImageFont.truetype(str(FONT_HANDLE), HANDLE_SIZE)
+    handle_layer = None
+    handle_y = 0
+    if tag:
+        handle_layer = Image.new("RGBA", (W, HANDLE_SIZE + 12), (0, 0, 0, 0))
+        ImageDraw.Draw(handle_layer).text((W / 2, 0), tag, anchor="ma",
+                                          font=handle_font, fill=(255, 255, 255, 150))
+
+    word_y = H // 2 - 186
+    icon_y = H // 2 - 34
+    handle_y = icon_y + symbol.height + 26
+
     with tempfile.TemporaryDirectory() as tmp:
-        silent = Path(tmp) / "silent.mp4"
+        silent = Path(tmp) / "card.mp4"
         import imageio.v2 as imageio
         writer = imageio.get_writer(str(silent), format="FFMPEG", fps=FPS, codec="libx264",
                                     pixelformat="yuv420p", macro_block_size=1, quality=8,
                                     ffmpeg_log_level="warning")
         for index in range(round(FPS * SECONDS)):
             t = index / FPS
-            # It starts and ends on the creator's own picture.
-            blur = smooth((t - .10) / .12) * (1 - smooth((t - 6.50) / .35))
-            frame = Image.blend(final_frame, blink_blur, blur * .58)
-            if .10 <= t < .27:
-                p = (t - .10) / .17
-                close = 1 - abs(2 * p - 1)
-                lid = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                d = ImageDraw.Draw(lid)
-                amount = int(H * .34 * close)
-                d.rectangle((0, 0, W, amount), fill=(0, 0, 0, int(225 * close)))
-                d.rectangle((0, H - amount, W, H), fill=(0, 0, 0, int(225 * close)))
-                frame.alpha_composite(lid.filter(ImageFilter.GaussianBlur(22)))
-                if .145 < t < .205:
-                    flash = 1 - abs(t - .175) / .03
-                    beam = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                    ImageDraw.Draw(beam).line((115, 960, 965, 960), fill=(255, 245, 252, int(210 * flash)), width=2)
-                    frame.alpha_composite(beam.filter(ImageFilter.GaussianBlur(1)))
+            frame = plate.copy()
 
-            if t >= .25:
-                appear = smooth((t - .25) / .16)
-                vanish = 1 - smooth((t - 6.32) / .48)
-                alpha = appear * vanish
-                cx, cy = signature_position(t)
-                breath = .5 + .5 * np.sin(2 * np.pi * (t - .25) / 1.30)
-                scale = 1 + .042 * breath
+            appear = smooth((t - APPEAR) / APPEAR_FADE)
+            if appear > 0:
+                colour_progress = smooth((t - COLOUR_START) / COLOUR_LOAD)
+                # Bounce: a raised cosine, rectified, so the mark leaves the floor
+                # fast, hangs at the top and lands — the shape of a ball.
+                beat = (t % BOUNCE_PERIOD) / BOUNCE_PERIOD
+                lift = abs(np.sin(np.pi * beat)) ** 0.85 * BOUNCE
+                lift *= min(1.0, appear)  # it settles in with the bounce
+                rise = round(-lift)
 
-                path_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                pd = ImageDraw.Draw(path_layer)
-                for stamp, (sx, sy) in STOPS:
-                    if stamp + .12 < t < stamp + .58:
-                        q = (t - stamp - .12) / .46
-                        pd.ellipse((sx - 26 - q * 46, sy - 8 - q * 12, sx + 26 + q * 46, sy + 8 + q * 12),
-                                   outline=PINK + (int(30 * (1 - q) * alpha),), width=2)
-                frame.alpha_composite(path_layer)
+                lockup = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+                lockup.alpha_composite(fade(word, appear), ((W - word.width) // 2, word_y + rise))
 
-                card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                cd = ImageDraw.Draw(card)
-                card_alpha = int((104 + 28 * breath) * alpha)
-                cd.rounded_rectangle((cx - 218, cy - 109, cx + 218, cy + 109), radius=35, fill=(7, 5, 10, card_alpha))
-                cd.line((cx - 130, cy - 83, cx, cy - 83), fill=CORAL + (int(235 * alpha),), width=3)
-                cd.line((cx, cy - 83, cx + 130, cy - 83), fill=PINK + (int(235 * alpha),), width=3)
-                frame.alpha_composite(card.filter(ImageFilter.GaussianBlur(.22)))
+                mark = fade(symbol, appear)
+                if colour_progress > 0:
+                    tinted = colour.copy()
+                    tinted.putalpha(Image.composite(tinted.split()[3], Image.new("L", tinted.size, 0),
+                                                    colour_mask(tinted.size, colour_progress)))
+                    tinted = fade(tinted, appear)
+                    plate_mark = mark.copy()
+                    plate_mark.alpha_composite(tinted)
+                    mark = plate_mark
+                lockup.alpha_composite(mark, ((W - symbol.width) // 2, icon_y + rise))
 
-                # One lockup: mark, then wordmark, with a fixed gap between them.
-                gap = 18
-                total = symbol.width + gap + wordmark.width
-                left = cx - total / 2
-                art_top = cy - 31 - symbol.height / 2
-                paste_center(frame, symbol, left + symbol.width / 2, art_top + symbol.height / 2, alpha, scale)
-                paste_center(frame, wordmark, left + symbol.width + gap + wordmark.width / 2,
-                             art_top + (symbol.height - word_line) + wordmark.height / 2, alpha, scale)
-
-                labels = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                ld = ImageDraw.Draw(labels)
-                if tag:
-                    box = ld.textbbox((0, 0), tag, font=font)
-                    ld.text((cx - (box[2] - box[0]) / 2, cy + 40), tag, font=font, fill=WHITE + (int(225 * alpha),))
-                ld.text((cx, cy + 80), 'holUpp ORIGINAL', anchor='ma', font=font_micro,
-                        fill=(255, 255, 255, int(105 * alpha)))
-                frame.alpha_composite(labels)
-
-                halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                hd = ImageDraw.Draw(halo)
-                r = 54 + 25 * breath
-                hd.ellipse((cx - 117 - r, cy - 31 - r * .18, cx - 117 + r, cy - 31 + r * .18),
-                           outline=PINK + (int(35 * (.4 + .6 * breath) * alpha),), width=2)
-                frame.alpha_composite(halo)
+                if handle_layer is not None:
+                    lockup.alpha_composite(fade(handle_layer, appear),
+                                           (0, handle_y + round(-lift * 0.35)))
+                frame = Image.alpha_composite(frame, lockup)
             writer.append_data(np.asarray(frame.convert("RGB")))
         writer.close()
 
-        # Silent track, so this can follow a clip that already has music.
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error", "-i", str(silent),
-            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-            "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-            "-movflags", "+faststart", str(out),
-        ], check=True)
+        # The one second of sound, then six of nothing: the card opens on a noise
+        # and holds in silence, which is what makes the noise land.
+        audio = Path(tmp) / "card.wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(SOUND),
+             "-af", f"apad=whole_dur={SECONDS}", "-ar", "48000", "-ac", "2", str(audio)],
+            check=True,
+        ) if SOUND.exists() else None
+
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent)]
+        cmd += ["-i", str(audio)] if audio.exists() else [
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+        cmd += ["-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                "-shortest", "-movflags", "+faststart", str(out)]
+        subprocess.run(cmd, check=True)
+
+    print(f"end card: {out} ({SECONDS:.0f}s, handle {handle or 'none'})")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Build the holUpp end card.")
     ap.add_argument("output", type=Path)
-    ap.add_argument("--handle", default=None, help="the post author's handle, drawn on the card")
-    ap.add_argument("--background", type=Path, default=None, help="the clip's last frame")
+    ap.add_argument("--handle", default=None, help="the creator's @username")
+    ap.add_argument("--background", type=Path, default=None,
+                    help="accepted for older callers; the card opens in darkness now")
     args = ap.parse_args()
-    build(args.output, args.handle, args.background)
-    print(f"end card: {args.output} ({SECONDS:.0f}s, handle {args.handle or 'none'})")
-    return 0
+    build(args.output, args.handle)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
