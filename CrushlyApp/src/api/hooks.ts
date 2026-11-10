@@ -724,6 +724,61 @@ export function useLikePostComment(postId: number) {
   });
 }
 
+/**
+ * Give a comment one of the seven reactions.
+ *
+ * Optimistic in the same shape as the old like: the row redraws on the tap, and
+ * a failure puts the previous values back. The difference is that this one
+ * carries a kind, so replacing a reaction and taking one back are the same call
+ * with a different answer from the server.
+ */
+export function useReactToComment(postId: number) {
+  const qc = useQueryClient();
+  const key = keys.postComments(postId);
+  type Vars = { commentId: number; kind: ReactionKind };
+  return useMutation({
+    mutationFn: ({ commentId, kind }: Vars) => service.reactToComment(commentId, kind),
+    onMutate: ({ commentId, kind }: Vars) => {
+      const before = qc.getQueryData<{ items: PostComment[] }>(key);
+      if (before?.items) {
+        qc.setQueryData(key, {
+          ...before,
+          items: before.items.map((c) => {
+            if (c.id !== commentId) return c;
+            // Same kind again is an undo; a different one replaces, and the
+            // count only moves when the row was empty or is going away.
+            const clearing = c.myReaction === kind;
+            const gain = c.myReaction ? (clearing ? -1 : 0) : 1;
+            return {
+              ...c,
+              myReaction: clearing ? null : kind,
+              liked: !clearing,
+              likeCount: Math.max(0, (c.likeCount ?? 0) + gain),
+            };
+          }),
+        });
+      }
+      return { before };
+    },
+    onError: (_e: unknown, _v: Vars, ctx?: { before?: { items: PostComment[] } }) => {
+      if (ctx?.before) qc.setQueryData(key, ctx.before);
+    },
+    onSuccess: (result: { myReaction: ReactionKind | null; likeCount: number }, vars: Vars) => {
+      const current = qc.getQueryData<{ items: PostComment[] }>(key);
+      if (current?.items) {
+        qc.setQueryData(key, {
+          ...current,
+          items: current.items.map((c) =>
+            c.id === vars.commentId
+              ? { ...c, myReaction: result.myReaction, liked: !!result.myReaction, likeCount: result.likeCount }
+              : c,
+          ),
+        });
+      }
+    },
+  });
+}
+
 /** One post, fetched directly so a post view never depends on the post
  * still sitting in the current feed page. */
 export function usePost(postId: number | null) {

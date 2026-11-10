@@ -905,6 +905,24 @@ export async function savePost(postId: number, saved = true): Promise<{ saved: b
   return { saved: r?.saved ?? saved };
 }
 
+/**
+ * Give a comment one of the seven reactions, or take yours back.
+ *
+ * A separate call from `likePostComment` because the server has a separate
+ * function (`react_to_comment`); that one is kept so nothing already in flight
+ * breaks, and nothing new calls it.
+ */
+export async function reactToComment(
+  commentId: number,
+  kind: ReactionKind,
+): Promise<{ myReaction: ReactionKind | null; likeCount: number }> {
+  const r = await rpc<{ myReaction: ReactionKind | null; likeCount: number }>('react_to_comment', {
+    p_comment_id: commentId,
+    p_kind: kind,
+  });
+  return { myReaction: r?.myReaction ?? null, likeCount: r?.likeCount ?? 0 };
+}
+
 /** Say you liked a comment — the table existed, nothing wrote to it. */
 export async function likePostComment(
   commentId: number,

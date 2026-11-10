@@ -129,6 +129,16 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
         alignSelf: 'center',
         gap: space.md,
         paddingTop: top,
+        /*
+         * The cards are inset from the edges of the phone, and that inset is the
+         * feed's default layout. It went missing when the Moments row arrived:
+         * the row is full-bleed, so the padding was removed and the row was given
+         * a negative margin to escape it — but that took the cards with it, and
+         * posts ran edge to edge. The padding is back; the row's own negative
+         * margin still cancels it, so the row stays full-bleed and the cards do
+         * not. This is what "not back to the default" was.
+         */
+        paddingHorizontal: space.md,
         paddingBottom: space.xxxl,
         flexGrow: 1,
       }}

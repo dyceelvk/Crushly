@@ -81,9 +81,9 @@ export type PostAudience = 'connections' | 'everyone' | 'circle' | 'private';
  * What you can say about a post. The same five words a Moment accepts, so the
  * product has one reaction vocabulary instead of two.
  */
-export type ReactionKind = 'crush' | 'fire' | 'laugh' | 'wow' | 'clap';
+export type ReactionKind = 'crush' | 'fire' | 'laugh' | 'wow' | 'sad' | 'angry' | 'tired' | 'clap';
 
-export const REACTION_KINDS: ReactionKind[] = ['crush', 'fire', 'laugh', 'wow', 'clap'];
+export const REACTION_KINDS: ReactionKind[] = ['crush', 'fire', 'laugh', 'wow', 'sad', 'angry', 'tired', 'clap'];
 
 export type Post = {
   id: number;
@@ -141,6 +141,8 @@ export type PostComment = {
   hidden?: boolean;
   likeCount?: number;
   liked?: boolean;
+  /** Which of the seven this member gave this comment, if any. */
+  myReaction?: ReactionKind | null;
   replyCount?: number;
   /** Yours to remove, or the post is yours and the comment was left on it. */
   canDelete?: boolean;

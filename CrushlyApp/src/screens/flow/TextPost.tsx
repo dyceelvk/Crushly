@@ -17,6 +17,7 @@ import { VerifiedBadge } from '../../components/Badges';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { EmptyState, LoadingBlock } from '../../components/States';
+import { ReactionButton, reactionLook } from '../../components/feed/Reactions';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { useTrackPostView } from '../../lib/useTrackPostView';
 import { useMemberActions } from '../../state/memberActions';
@@ -28,6 +29,7 @@ import {
   usePost,
   usePostComments,
   usePostCommentSettings,
+  useReactToComment,
   useReactToPost,
   useSavePost,
 } from '../../api/hooks';
@@ -36,6 +38,7 @@ import { radius, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { formatCount } from '../../lib/counts';
 import type { PostComment } from '../../api/types';
+import type { ShownReaction } from '../../components/feed/Reactions';
 import type { ScreenProps } from '../../navigation/types';
 
 /**
@@ -77,6 +80,7 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
   const settings = usePostCommentSettings(postId);
   const canComment = settings.data !== false;
   const send = useCommentOnPost(postId);
+  const reactComment = useReactToComment(postId);
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -87,10 +91,14 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
   const authorName = post?.mine ? 'You' : post?.author.name ?? '';
   const preview = (comments.data?.items ?? []).slice(0, 6);
 
-  const like = useCallback(async () => {
+  /**
+   * The server treats "the same kind again" as taking it back, so the button does
+   * not need to know whether this is a first reaction or an undo.
+   */
+  const reactWith = useCallback(async (kind: ShownReaction) => {
     if (!post) return;
     try {
-      await react.mutateAsync({ postId: post.id, liked: !post.liked, kind: 'crush' });
+      await react.mutateAsync({ postId: post.id, liked: true, kind });
     } catch (e) {
       toast({ kind: 'error', title: 'Reaction not sent', message: (e as Error).message });
     }
@@ -225,6 +233,17 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
         </Txt>
 
         {/* ------------------------------------------------------------ actions */}
+        {/*
+          Three things, not four.
+
+          The comment control was here and it was redundant: the comments are the
+          rest of this page and the field is at the bottom of it, so a button that
+          jumped you to a sheet of what you were already looking at was a fourth
+          door into the same room. It went.
+
+          The heart is a hold now: tap gives your reaction (a crush if you have
+          none), hold opens all seven. See Reactions.
+        */}
         <View
           style={{
             flexDirection: 'row',
@@ -234,18 +253,11 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
             paddingBottom: space.md,
           }}
         >
-          <Action
-            icon={post.liked ? 'heart' : 'heart-outline'}
-            tint={post.liked ? colors.crush : colors.textSecondary}
+          <ReactionButton
+            myReaction={post.myReaction}
             count={post.likeCount}
-            label={post.liked ? 'Take back the crush' : 'Crush this post'}
-            onPress={() => void like()}
-          />
-          <Action
-            icon="chatbubble-outline"
-            count={post.commentCount}
-            label="Comments"
-            onPress={() => input.current?.focus()}
+            onReact={(kind) => void reactWith(kind)}
+            size={24}
           />
           <Action
             icon="paper-plane-outline"
@@ -270,7 +282,12 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
           ) : preview.length ? (
             <>
               {preview.map((c) => (
-                <CommentLine key={c.id} comment={c} onOpenAuthor={openProfile} />
+                <CommentLine
+                  key={c.id}
+                  comment={c}
+                  onOpenAuthor={openProfile}
+                  onReact={(kind) => reactComment.mutate({ commentId: c.id, kind })}
+                />
               ))}
               {(comments.data?.items.length ?? 0) > preview.length ? (
                 <Pressable
@@ -417,9 +434,11 @@ function Action({
 function CommentLine({
   comment,
   onOpenAuthor,
+  onReact,
 }: {
   comment: PostComment;
   onOpenAuthor: (id: number) => void;
+  onReact: (kind: ShownReaction) => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -446,6 +465,17 @@ function CommentLine({
         >
           {comment.hidden ? 'This comment was removed.' : <LinkText text={comment.body} bare />}
         </Txt>
+        {/* A comment can be reacted to as well as a post — same seven, same hold. */}
+        {!comment.hidden ? (
+          <View style={{ marginTop: 4, alignSelf: 'flex-start' }}>
+            <ReactionButton
+              myReaction={comment.myReaction}
+              count={comment.likeCount}
+              onReact={onReact}
+              size={16}
+            />
+          </View>
+        ) : null}
       </View>
     </View>
   );

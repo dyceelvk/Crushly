@@ -20,6 +20,7 @@ import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
+import { ReactionButton } from './Reactions';
 import { HIT, elevation, radius, space, stroke } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { momentRing } from '../../lib/momentRings';
@@ -273,14 +274,16 @@ export function PostCard({
           comment sheet's handle so the card does not change height when the
           sheet opens, and the counts are the same numbers the sheet shows. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xs, paddingVertical: 2 }}>
-        <PostAction
-          icon={p.liked ? 'heart' : 'heart-outline'}
-          count={p.likeCount}
-          label={p.liked ? 'Take back your Crush' : 'Crush this post'}
-          noun="Crushes"
-          active={p.liked}
-          onPress={() => like.mutate({ postId: p.id, liked: !p.liked })}
-        />
+        {/* Tap gives your reaction; hold opens all seven. Same control as the
+            text post and the comment under it — see feed/Reactions. */}
+        <View style={{ marginHorizontal: space.sm, paddingVertical: 2 }}>
+          <ReactionButton
+            myReaction={p.myReaction}
+            count={p.likeCount}
+            onReact={(kind) => like.mutate({ postId: p.id, liked: true, kind })}
+            size={22}
+          />
+        </View>
         <PostAction
           icon="chatbubble-outline"
           count={p.commentCount}

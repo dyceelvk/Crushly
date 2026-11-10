@@ -1096,6 +1096,59 @@ that proves nothing. The two designs that would make it true — gating visibili
 until the copy exists, or transcoding on publish — are written down at the bottom
 of `.github/workflows/mark-clips.yml`, with their trade-offs.
 
+## Three things that were reported and were all true (2026-11-07)
+
+### The Crushes feed was not back to its default, because I broke it
+
+Restoring the cards was not enough: the moment the Moments row arrived, the
+list's `paddingHorizontal: space.md` was deleted so the row could be full-bleed,
+and the row was given a negative margin to escape the padding that no longer
+existed. The visible result was posts running edge to edge, which is not the
+default layout and not what "put the cards back" produced. The padding is
+restored; the row's negative margin still cancels it, so the row stays
+full-bleed and the cards stay inset. Checked in a browser, not inferred.
+
+### Seven reactions, reached by holding
+
+A tap is one bit. Five kinds sat behind one tap, so the app only ever sent
+`crush` — the other four were unreachable. The control is a **press and hold**
+now: a tap gives your reaction (a crush if you have none), a hold opens the row,
+and holding is decided at 260 ms so the release does not also react.
+
+The row has seven: ❤️ crush, 😂 laugh, 😲 wow, 🔥 fire, 😢 sad, 😡 angry, 😓 tired.
+Each pops in on a spring a beat after the one before it, the chosen one flies up
+and fades, and the whole row is a modal placed from the control's measured window
+position — the first attempt drew it relative to the control and pushed four of
+the seven off the edge of the phone. It taps a real scrim to close.
+
+**Comments take the same treatment.** `post_comment_likes` grew a `kind` column
+(defaulting to `crush`, so every existing row still means what it meant), and
+`react_to_comment` replaces a reaction or takes it back. A new function name
+rather than an overload of `like_post_comment`: `(bigint, boolean)` plus
+`(bigint, text)` would make a two-argument call ambiguous, and PostgREST answers
+300 to an ambiguous call.
+
+`clap` is retired but still legal in both constraints. Rows already carry it, and
+a constraint that invalidates live data breaks the people who already reacted; it
+is simply not in the row any more, and it still draws as 👏.
+
+The pure part — the seven, their order, their emoji, and what an old row should
+draw — is `lib/reactions.ts` with four tests. It lives outside the component
+because the test runner has no renderer.
+
+### Flow now moves exactly one video per gesture
+
+`disableIntervalMomentum` does the job on a phone, and did nothing at all in the
+browser: react-native-web does not implement it, so the web build kept flying
+past two and three videos. The wheel is taken away from the scroller on the web
+— the first wheel event of a gesture animates exactly one page, everything the
+gesture sends afterwards is swallowed until the animation ends, and arrow keys
+do the same. That is what makes it behave like Instagram rather than like a page
+that happens to snap.
+
+The pager's other rule, from the previous round, still holds: it only carries
+posts with media, so a written post can never open a full-screen player.
+
 ## Saving a clip to a device, and the 7-second end card (2026-11-07)
 
 Two things were asked for: a Tik-Tok-shaped ending for exported video, and a

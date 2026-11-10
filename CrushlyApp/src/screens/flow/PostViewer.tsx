@@ -1,6 +1,7 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   FlatList,
@@ -67,34 +68,46 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 /** The palette's word for each reaction, so a like is the crush colour. */
 const REACTION_TINT: Record<ReactionKind, string> = {
   crush: '#FF4081',
-  fire: '#FF8A3D',
   laugh: '#FFC940',
   wow: '#A040FF',
+  fire: '#FF8A3D',
+  sad: '#4FA8FF',
+  angry: '#FF5C67',
+  tired: '#8FA0B8',
   clap: '#00C6FF',
 };
 
 /** The same five reactions, drawn in the app's icon set rather than as emoji. */
 const REACTION_ICON: Record<ReactionKind, keyof typeof Ionicons.glyphMap> = {
   crush: 'heart',
-  fire: 'flame',
   laugh: 'happy',
   wow: 'alert-circle',
+  fire: 'flame',
+  sad: 'sad',
+  angry: 'flame-outline',
+  tired: 'cloudy-outline',
   clap: 'hand-left',
 };
 
 const REACTION_GLYPH: Record<ReactionKind, string> = {
   crush: '❤️',
-  fire: '🔥',
   laugh: '😂',
-  wow: '😮',
+  wow: '😲',
+  fire: '🔥',
+  sad: '😢',
+  angry: '😡',
+  tired: '😓',
   clap: '👏',
 };
 
 const REACTION_NAME: Record<ReactionKind, string> = {
   crush: 'Crush',
-  fire: 'Fire',
   laugh: 'Laugh',
   wow: 'Wow',
+  fire: 'Fire',
+  sad: 'Sad',
+  angry: 'Angry',
+  tired: 'Tired',
   clap: 'Clap',
 };
 
@@ -126,19 +139,78 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 65 }).current;
   /*
-   * One gesture, one page.
+   * One gesture, one page — on a phone and in a browser.
    *
-   * `pagingEnabled` alone is not that: a hard flick carries its own momentum and
-   * can land two or three pages further on, which is what "one scroll scrolls up
-   * to three videos" was. The page height is known exactly, so it is a snap
-   * interval instead, and `disableIntervalMomentum` stops the list at the very
-   * next interval no matter how hard the finger went. Fast deceleration makes
-   * the settle read as deliberate rather than as a slide that keeps drifting —
-   * soft, but immediate.
+   * `pagingEnabled` is not that. It lets a hard flick carry its own momentum, so
+   * one swipe can travel two or three pages; that is the "one scroll scrolls up
+   * to three videos" the owner reported. Two mechanisms are needed because the
+   * two runtimes behave differently:
+   *
+   *  · **Native** — `snapToInterval` at exactly the page height plus
+   *    `disableIntervalMomentum`, which stops the list at the next interval
+   *    whatever the finger did. `decelerationRate="fast"` makes the settle quick
+   *    rather than a long glide.
+   *  · **Web** — react-native-web does not implement `disableIntervalMomentum`,
+   *    so momentum still flies past. The wheel is therefore taken away from the
+   *    scroller entirely: the first wheel event of a gesture animates exactly one
+   *    page and locks for the length of that animation, and everything the
+   *    gesture sends afterwards is swallowed. That is the only way to be sure,
+   *    and it is what Instagram does on the web.
    */
+  const listRef = useRef<FlatList<number>>(null);
+  const indexRef = useRef(0);
+  const lockRef = useRef(false);
+  const setIndex = useCallback((next: number) => {
+    indexRef.current = next;
+    const id = ids[next];
+    if (id != null) setActiveId(id);
+  }, [ids]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const list = listRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null;
+    const node = list?.getScrollableNode ? list.getScrollableNode() : null;
+    if (!node) return;
+
+    const go = (direction: 1 | -1) => {
+      const next = Math.min(Math.max(indexRef.current + direction, 0), ids.length - 1);
+      if (next === indexRef.current) return;
+      lockRef.current = true;
+      setIndex(next);
+      node.scrollTo({ top: next * height, behavior: 'smooth' });
+      // Long enough for a smooth scroll of one screen, short enough that the
+      // next deliberate flick is not swallowed.
+      window.setTimeout(() => { lockRef.current = false; }, 480);
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      // Only a vertical gesture belongs to the pager.
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (Math.abs(event.deltaY) < 3) return;
+      event.preventDefault();
+      if (lockRef.current) return;
+      go(event.deltaY > 0 ? 1 : -1);
+    };
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowDown' || event.key === 'PageDown') { event.preventDefault(); go(1); }
+      if (event.key === 'ArrowUp' || event.key === 'PageUp') { event.preventDefault(); go(-1); }
+    };
+
+    node.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('keydown', onKey);
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [height, ids.length, setIndex]);
+
   return <FlatList
+    ref={listRef}
     data={ids}
     keyExtractor={(id) => String(id)}
+    /* Native snapping. On the web these are inert, which is why the wheel
+       handler above exists. */
     snapToInterval={height}
     snapToAlignment="start"
     disableIntervalMomentum
@@ -148,6 +220,14 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     initialNumToRender={2}
     maxToRenderPerBatch={2}
     getItemLayout={(_data, index) => ({ length: height, offset: height * index, index })}
+    onScroll={(e) => {
+      // Keeps our index honest when the list was moved by something other than
+      // the wheel handler — a snap, a scrollbar drag, a restore.
+      if (lockRef.current) return;
+      const next = Math.round(e.nativeEvent.contentOffset.y / Math.max(height, 1));
+      if (next !== indexRef.current) setIndex(next);
+    }}
+    scrollEventThrottle={32}
     onEndReached={() => flow.loadOlder()}
     onEndReachedThreshold={0.6}
     onViewableItemsChanged={onViewableItemsChanged}
