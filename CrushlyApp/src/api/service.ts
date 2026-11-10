@@ -4,6 +4,7 @@ import { updateVersionPath } from '../lib/updateChannel';
 import { browserLocation } from '../lib/browser';
 import { profileCompletion } from '../lib/completion';
 import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import { backendFromProbe, isMissingFunctionError } from '../lib/relationshipFallback';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
@@ -270,45 +271,222 @@ export async function completeOnboarding(): Promise<Me> {
 }
 
 export type AddUpListVisibility = 'everyone' | 'close' | 'private';
-export type SpaceRelationshipStats = { addUps: number; addedUp: number; keptClose: number; postLikes: number; canViewAddUps: boolean; canViewAddedUp: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null; outgoingVisibility: AddUpListVisibility | null; approvalRequired: boolean | null; myStatus: 'active' | 'pending' | null };
-export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
-  return rpc('holup_follow_stats', { p_target: id });
+/**
+ * The relationship contract this build talks to.
+ *
+ * `v2` is the coordinated Add Ups / Homies / Whispers backend. `legacy` is the
+ * deployed one — crushes, keeps and connections — and every value below is then
+ * read from it rather than invented. The client never shows a count or a button
+ * it cannot back, and it never claims consent it did not get.
+ */
+export type RelationshipBackend = 'v2' | 'legacy';
+export type SpaceRelationshipStats = {
+  addUps: number;
+  /** Null when the deployed backend cannot answer honestly; the chip is hidden. */
+  addedUp: number | null;
+  keptClose: number;
+  postLikes: number;
+  canViewAddUps: boolean;
+  canViewAddedUp: boolean;
+  canViewKeptClose: boolean;
+  addUpVisibility: AddUpListVisibility | null;
+  outgoingVisibility: AddUpListVisibility | null;
+  approvalRequired: boolean | null;
+  myStatus: 'active' | 'pending' | null;
+  backend: RelationshipBackend;
+};
+
+let detected: RelationshipBackend | null = null;
+/**
+ * Only a genuinely absent routine counts. A 404 raised *by* an existing routine
+ * ("Space not available", "This list is private") must not be mistaken for one,
+ * or the client would silently downgrade itself while the v2 backend is live.
+ */
+const missingFunction = (e: unknown) => e instanceof ApiError && isMissingFunctionError(e);
+
+/**
+ * Ask the database which relationship contract it speaks, once per session.
+ *
+ * A missing function is the signal: production today answers PGRST202 for the
+ * v2 routines, so this build falls back to crushes/keeps/connections instead of
+ * painting "Retry" over a Space. Probing a real routine means a deploy of the
+ * v2 backend switches this over with no client change.
+ */
+export async function relationshipBackend(): Promise<RelationshipBackend> {
+  if (detected) return detected;
+  try {
+    await supabase.rpc('holup_follow_status', { p_target: 0 });
+    detected = 'v2';
+  } catch (e) {
+    detected = backendFromProbe({ missing: missingFunction(e) });
+  }
+  return detected;
 }
+/** Reset the cached probe — only the tests need this. */
+export function resetRelationshipBackend() { detected = null; }
+
+/** My own outgoing crush row is readable (RLS: from_id = me), and is the legacy status. */
+async function legacyCrushStatus(id: number): Promise<'active' | 'pending' | null> {
+  const me = await meId();
+  // A pair connected before this build (a historic Close One) has no accepted
+  // crush row, and offering them "Add Up" again would read as a stranger.
+  if (await rpc<boolean>('is_connected_pair', { a: me, b: id })) return 'active';
+  const { data } = await supabase.from('crushes').select('status').eq('from_id', me).eq('to_id', id).maybeSingle();
+  const status = (data as { status?: string } | null)?.status;
+  return status === 'accepted' ? 'active' : status === 'pending' ? 'pending' : null;
+}
+
+/**
+ * The deployed Add Up: `crush_member`. It answers `request`, not a boolean —
+ * `connected` when a connection already existed, `accepted` when this tap
+ * answered the other person's waiting Add Up, `pending` when they must answer.
+ * Reading a field that isn't there would turn every answered Add Up into a
+ * pending one, so the mapping lives here in one place.
+ */
+async function legacyAddUp(id: number): Promise<{ status: 'accepted' | 'pending'; changed: boolean }> {
+  const result = await rpc<{ request?: string; isNew?: boolean; mutual?: boolean }>('crush_member', { p_target_id: id });
+  const accepted = result?.mutual === true || result?.request === 'accepted' || result?.request === 'connected';
+  return { status: accepted ? 'accepted' : 'pending', changed: result?.isNew !== false };
+}
+
+export async function spaceRelationshipStats(id: number): Promise<SpaceRelationshipStats> {
+  if (await relationshipBackend() === 'v2') {
+    const stats = await rpc<Omit<SpaceRelationshipStats, 'backend'>>('holup_follow_stats', { p_target: id });
+    return { ...stats, addedUp: stats.addedUp ?? 0, backend: 'v2' };
+  }
+  // Legacy: the deployed RPC already counts crushes and accepted Close Ones.
+  // It has no outgoing count, so `addedUp` stays null and the chip is hidden
+  // rather than shown as a zero that would be a lie.
+  const base = await rpc<{
+    addUps: number; keptClose: number; postLikes: number;
+    canViewAddUps: boolean; canViewKeptClose: boolean; addUpVisibility: AddUpListVisibility | null;
+  }>('space_relationship_stats', { p_target_id: id });
+  const me = await meId();
+  return {
+    addUps: base.addUps,
+    addedUp: null,
+    keptClose: base.keptClose,
+    postLikes: base.postLikes,
+    canViewAddUps: base.canViewAddUps,
+    canViewAddedUp: false,
+    canViewKeptClose: base.canViewKeptClose,
+    addUpVisibility: me === id ? base.addUpVisibility : null,
+    outgoingVisibility: null,
+    approvalRequired: null,
+    myStatus: me === id ? null : await legacyCrushStatus(id),
+    backend: 'legacy',
+  };
+}
+
 export async function spaceRelationshipPeople(id: number, kind: 'addUps' | 'addedUp' | 'keptClose', offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
-  if (kind === 'keptClose') return homiePeople(id, offset);
-  const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_follow_people', { p_target: id, p_kind: kind, p_offset: offset, p_limit: 40 });
+  if (await relationshipBackend() === 'v2') {
+    if (kind === 'keptClose') return homiePeople(id, offset);
+    const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_follow_people', { p_target: id, p_kind: kind, p_offset: offset, p_limit: 40 });
+    return { ...page, items: (page.items ?? []).map(profileShape) };
+  }
+  // Legacy lists exist for exactly the two chips that are shown in legacy mode.
+  if (kind === 'addedUp') return { items: [], hasMore: false };
+  const page = await rpc<{ items: Profile[]; hasMore: boolean }>('space_relationship_people', { p_target_id: id, p_kind: kind, p_offset: offset, p_limit: 40 });
   return { ...page, items: (page.items ?? []).map(profileShape) };
 }
-// Candidate-only APIs: these require the unreleased consent-based Homies backend.
+
 export type HomieStatus = { homies: boolean; incomingPending: boolean; outgoingPending: boolean };
-export const homieStatus = (id: number) => rpc<HomieStatus>('holup_homie_status', {p_target: id});
-export const requestHomie = (id: number) => rpc<{status: 'accepted'|'pending'; changed: boolean}>('holup_request_homie', {p_target: id});
-export const withdrawHomie = (id: number) => rpc<boolean>('holup_withdraw_homie', {p_target: id});
-export const respondHomie = (id: number, accept: boolean) => rpc<{status: 'accepted'|'declined'}>('holup_respond_homie', {p_sender: id, p_accept: accept});
-export const homieStats = (id: number) => rpc<{count: number; canView: boolean}>('holup_homie_stats', {p_target: id});
-export async function homiePeople(id: number, offset = 0): Promise<{items: Profile[]; hasMore: boolean}> {
- const page = await rpc<{items: Profile[];hasMore:boolean}>('holup_homie_people',{p_target:id,p_offset:offset,p_limit:40});
- return {...page,items:(page.items ?? []).map(profileShape)};
+
+export const homieStatus = async (id: number): Promise<HomieStatus> => {
+  if (await relationshipBackend() === 'v2') return rpc<HomieStatus>('holup_homie_status', { p_target: id });
+  // Legacy: an accepted Close One is a connection; a waiting crush is a request.
+  const connected = await rpc<boolean>('is_connected_pair', { a: await meId(), b: id });
+  const me = await meId();
+  const { data: theirs } = await supabase.from('crushes').select('status').eq('from_id', id).eq('to_id', me).maybeSingle();
+  const { data: mine } = await supabase.from('crushes').select('status').eq('from_id', me).eq('to_id', id).maybeSingle();
+  const statusOf = (row: unknown) => (row as { status?: string } | null)?.status ?? null;
+  return {
+    homies: connected,
+    incomingPending: !connected && statusOf(theirs) === 'pending',
+    outgoingPending: !connected && statusOf(mine) === 'pending',
+  };
+};
+
+export async function requestHomie(id: number): Promise<{ status: 'accepted' | 'pending'; changed: boolean }> {
+  if (await relationshipBackend() === 'v2') return rpc('holup_request_homie', { p_target: id });
+  return legacyAddUp(id);
 }
-export async function homieRequests(offset = 0): Promise<{items: Profile[]; hasMore: boolean}> {
- const page = await rpc<{items: Profile[];hasMore:boolean}>('holup_homie_requests_inbox',{p_offset:offset,p_limit:40});
- return {...page,items:(page.items ?? []).map(profileShape)};
+
+export async function withdrawHomie(id: number): Promise<boolean> {
+  if (await relationshipBackend() === 'v2') return rpc('holup_withdraw_homie', { p_target: id });
+  await rpc('cancel_connection_request', { p_to_id: id });
+  return true;
 }
-export async function followStatus(id: number): Promise<{status: 'active' | 'pending' | null}> { return rpc('holup_follow_status', { p_target: id }); }
+
+export async function respondHomie(id: number, accept: boolean): Promise<{ status: 'accepted' | 'declined' }> {
+  if (await relationshipBackend() === 'v2') return rpc('holup_respond_homie', { p_sender: id, p_accept: accept });
+  if (accept) { await rpc('accept_connection_request', { p_from_id: id }); return { status: 'accepted' }; }
+  await rpc('decline_connection_request', { p_from_id: id });
+  return { status: 'declined' };
+}
+
+export async function homieStats(id: number): Promise<{ count: number; canView: boolean }> {
+  if (await relationshipBackend() === 'v2') return rpc('holup_homie_stats', { p_target: id });
+  const stats = await spaceRelationshipStats(id);
+  return { count: stats.keptClose, canView: stats.canViewKeptClose };
+}
+
+export async function homiePeople(id: number, offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
+  if (await relationshipBackend() === 'v2') {
+    const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_homie_people', { p_target: id, p_offset: offset, p_limit: 40 });
+    return { ...page, items: (page.items ?? []).map(profileShape) };
+  }
+  const page = await rpc<{ items: Profile[]; hasMore: boolean }>('space_relationship_people', { p_target_id: id, p_kind: 'keptClose', p_offset: offset, p_limit: 40 });
+  return { ...page, items: (page.items ?? []).map(profileShape) };
+}
+
+export async function homieRequests(offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
+  if (await relationshipBackend() === 'v2') {
+    const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_homie_requests_inbox', { p_offset: offset, p_limit: 40 });
+    return { ...page, items: (page.items ?? []).map(profileShape) };
+  }
+  // Legacy has no Homie inbox; nobody is told there is one.
+  return { items: [], hasMore: false };
+}
+
+export async function followStatus(id: number): Promise<{ status: 'active' | 'pending' | null }> {
+  if (await relationshipBackend() === 'v2') return rpc('holup_follow_status', { p_target: id });
+  return { status: await legacyCrushStatus(id) };
+}
+
 export async function followMember(id: number): Promise<{ status: 'active' | 'pending'; changed: boolean }> {
-  return rpc('holup_follow', { p_target: id });
+  if (await relationshipBackend() === 'v2') return rpc('holup_follow', { p_target: id });
+  const { status, changed } = await legacyAddUp(id);
+  return { status: status === 'accepted' ? 'active' : 'pending', changed };
 }
-export async function unfollowMember(id: number): Promise<void> { await rpc('holup_unfollow', { p_target: id }); }
+
+export async function unfollowMember(id: number): Promise<void> {
+  if (await relationshipBackend() === 'v2') { await rpc('holup_unfollow', { p_target: id }); return; }
+  await rpc('uncrush_member', { p_target_id: id });
+}
+
 export async function setFollowSettings(approvalRequired: boolean | null, visibility: AddUpListVisibility | null): Promise<void> {
-  await rpc('holup_set_follow_settings', { p_approval: approvalRequired, p_outgoing_visibility: visibility });
+  if (await relationshipBackend() === 'v2') {
+    await rpc('holup_set_follow_settings', { p_approval: approvalRequired, p_outgoing_visibility: visibility });
+    return;
+  }
+  // Neither setting exists on the deployed backend; say so instead of pretending.
+  throw new ApiError(501, 'Add Up approval and Added Up privacy arrive with the next release.');
 }
-export async function pendingFollowRequests(offset = 0): Promise<{items: Profile[]; hasMore: boolean}> {
-  const page = await rpc<{items: Profile[]; hasMore: boolean}>('holup_pending_follow_requests', {p_offset: offset, p_limit: 40});
-  return {...page, items: (page.items ?? []).map(profileShape)};
+
+export async function pendingFollowRequests(offset = 0): Promise<{ items: Profile[]; hasMore: boolean }> {
+  if (await relationshipBackend() === 'v2') {
+    const page = await rpc<{ items: Profile[]; hasMore: boolean }>('holup_pending_follow_requests', { p_offset: offset, p_limit: 40 });
+    return { ...page, items: (page.items ?? []).map(profileShape) };
+  }
+  return { items: [], hasMore: false };
 }
+
 export async function respondToFollow(id: number, accept: boolean): Promise<void> {
-  await rpc('holup_respond_follow', {p_follower: id, p_accept: accept});
+  if (await relationshipBackend() === 'v2') { await rpc('holup_respond_follow', { p_follower: id, p_accept: accept }); return; }
+  await (accept ? rpc('accept_connection_request', { p_from_id: id }) : rpc('decline_connection_request', { p_from_id: id }));
 }
+
 export async function setAddUpListVisibility(visibility: AddUpListVisibility): Promise<void> {
   await rpc('set_add_up_list_visibility', { p_visibility: visibility });
 }

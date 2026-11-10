@@ -478,16 +478,16 @@ export function SpaceScreen({
             </Txt>
             {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
               <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable>
-              <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addedUp)}</Txt> Added Up</Txt></Pressable>
+              {typeof relationship.data.addedUp === 'number' ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addedUp)}</Txt> Added Up</Txt></Pressable> : null}
               {homies.data ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${homies.data.count} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(homies.data.count)}</Txt> Homies</Txt></Pressable> : homies.isError ? <Pressable accessibilityRole="button" onPress={() => void homies.refetch()}><Txt variant="small" color="textSecondary">Retry Homies</Txt></Pressable> : null}
               {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
-              {mine ? <>
+              {mine && relationship.data.backend === 'v2' ? <>
                 <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Added Up list privacy" onPress={() => setOutgoingMenu(true)}><Txt variant="small" color="gold">Added Up privacy</Txt></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Add Up approval setting" onPress={() => setApprovalMenu(true)}><Txt variant="small" color="gold">Approval</Txt></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="View Homie requests" onPress={() => setHomieRequestsOpen(true)}><Txt variant="small" color="gold">Homie requests</Txt></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="View Add Up requests" onPress={() => setRequestsOpen(true)}><Txt variant="small" color="gold">Requests</Txt></Pressable>
-              </> : null}
+              </> : mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
             </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
             {p.bio ? <View style={{ marginTop: space.sm }}>
               <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
