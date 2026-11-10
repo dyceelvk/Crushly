@@ -1096,6 +1096,65 @@ that proves nothing. The two designs that would make it true — gating visibili
 until the copy exists, or transcoding on publish — are written down at the bottom
 of `.github/workflows/mark-clips.yml`, with their trade-offs.
 
+## The reactions were in the wrong place, and Flow was stepping over two videos (2026-11-07, later)
+
+### A pop-up, on the screen it belongs to, with nothing behind it
+
+The row was a `Modal`. On a phone a modal takes the top layer of the app, so the
+row could sit above a *different* screen or be caught sliding away after the page
+had already changed. It is a plain view inside the same wrapper as the control
+now, which binds it to that page by construction, and the offsets are clamped
+against the window so it cannot run off the edge.
+
+It also had a scrim — `rgba(0,0,0,0.18)` over the whole app — which was the only
+way to catch the tap that closes it. That is gone. Dismissal is caught on the
+document (web), by the next tap on any other control, and by a six-second idle
+timer; nothing is painted over the app to make any of that work. One row can be
+open at a time.
+
+The faces are 22 px in a 30 px slot instead of 26 px in 40 px. The pill is 200 px
+wide, anchored to the *left edge* of the control rather than centred on it —
+centred, it sat across the middle of the words and read as a bar; from the
+button's edge it reads as something that belongs to the button. Above the control
+where there is room, below it where there is not.
+
+**Same everywhere.** The feed card's heart is the same `ReactionButton` as the
+text post; the CommentsSheet comment likes moved off `likePostComment` onto
+`react_to_comment` with the same gesture; and Whispers replaced the `BottomSheet`
+titled "React" (five 60 px circles sliding up from the bottom of the screen) with
+the same seven faces appearing beside the bubble that was held, with Copy and Flag
+on the same floating card.
+
+### The pager: the previous fix did nothing, and I had not checked
+
+`disableIntervalMomentum` is inert in react-native-web. The first attempt at a
+web fix took the wheel event and called `scrollTo` on a node found by hand with
+`getScrollableNode()` — and that node was not the element that scrolls, so the
+wheel was swallowed and **the page did not move at all**. A browser probe showed
+`scrollTop` staying at 0 through two flicks. That is worse than the bug.
+
+It goes through the list's own `scrollToOffset` now, from a capture-phase wheel
+listener on the document, and a jump rather than a smooth scroll — a smooth
+scroll passes through every position between two pages, and halfway between two
+full-screen videos both are visible, which is the "two videos merged" look. One
+gesture, one page; a trackpad's burst of small wheel events is one gesture
+because the lock covers them. Measured in the browser: `scrollTop` 0 → 844 →
+1688 → 2532 for three gestures, on an 844 px page. Native keeps the interval snap,
+`disableIntervalMomentum`, and a `onMomentumScrollEnd` that corrects a rest a few
+pixels off.
+
+### Discover's Moments: the card is the Moment
+
+The card had a coloured ring around a round picture of the content, inside a
+card — content wrapped in two layers of chrome, which is the shape that keeps
+being rejected. The card *is* the Moment now: words in their own typeface on their
+own colour, edge to edge, with the person's name on a shade at the bottom the way
+it reads in the Moment itself. A photograph Moment is the photograph. Nothing is
+drawn on top but the name, and a count where somebody posted more than once today.
+The e2e test that asserted "a round picture inside" was asserting the rejected
+layout, so it asserts the opposite now: a written Moment's words reach the edges of
+their card.
+
 ## Three things that were reported and were all true (2026-11-07)
 
 ### The Crushes feed was not back to its default, because I broke it

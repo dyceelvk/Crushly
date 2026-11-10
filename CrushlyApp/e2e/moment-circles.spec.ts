@@ -154,7 +154,7 @@ test('Crushes opens on live Moments as circles, one per person', async ({ page }
   await expect(page.locator('text=Ada says 1').first()).toBeVisible();
 });
 
-test('Discover shows one Moment card per person, with a round picture inside', async ({ page }) => {
+test('Discover shows one Moment card per person, made of the Moment itself', async ({ page }) => {
   await signedIn(page);
   await page.getByText('Discovery', { exact: true }).first().click();
   await page.waitForTimeout(2000);
@@ -163,4 +163,24 @@ test('Discover shows one Moment card per person, with a round picture inside', a
   await expect(momentsCard).toBeVisible({ timeout: 20_000 });
   // One card for Ada, not four.
   await expect(page.locator('text=Ada says 1')).toHaveCount(1);
+  /*
+   * The card is the content, not content inside a frame.
+   *
+   * It spent a round with a round picture inside a coloured ring inside a card,
+   * which is decoration around a face — the thing the owner kept rejecting. A
+   * written Moment's words have to reach the edges of the card now, so the text
+   * is measured against the card it sits in rather than trusted to sit anywhere.
+   */
+  const fits = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('div')].find((d) => d.textContent === 'Ada says 1');
+    if (!label) return null;
+    const card = label.closest('div[role="button"]') ?? label.parentElement?.parentElement;
+    if (!card) return null;
+    const l = label.getBoundingClientRect();
+    const c = card.getBoundingClientRect();
+    return { inset: Math.round(l.left - c.left), cardW: Math.round(c.width) };
+  });
+  expect(fits).not.toBeNull();
+  // Inside the card's own padding, not tucked into a circle half its width.
+  expect(fits!.inset).toBeLessThan(fits!.cardW * 0.2);
 });

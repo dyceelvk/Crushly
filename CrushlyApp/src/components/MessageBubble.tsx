@@ -34,7 +34,11 @@ type Props = {
   /** Prints the clock time under this bubble. */
   showTime: boolean;
   peerName: string;
-  onLongPress: (m: Message) => void;
+  /**
+   * Held down. The point is passed through because the reaction pop-up opens
+   * beside the bubble the thumb is on, in screen coordinates.
+   */
+  onLongPress: (m: Message, at?: { x: number; y: number }) => void;
   onDoubleTap: (m: Message) => void;
   onOpenPhoto: (uri: string) => void;
   onOpenProfile: (id: number) => void;
@@ -101,7 +105,10 @@ export const MessageBubble = memo(function MessageBubble({ message: m, firstInGr
       {m.kind === 'moment_reply' ? <MomentQuote m={m} onOpen={onOpenMoment} /> : null}
       <Pressable
         onPress={onPress}
-        onLongPress={() => m.id > 0 && onLongPress(m)}
+        onLongPress={(event) => m.id > 0 && onLongPress(m, {
+          x: event?.nativeEvent?.pageX ?? 0,
+          y: event?.nativeEvent?.pageY ?? 0,
+        })}
         delayLongPress={320}
         accessibilityRole="button"
         accessibilityLabel={a11y}

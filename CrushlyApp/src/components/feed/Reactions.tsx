@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Modal, Platform, Pressable, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -34,12 +34,15 @@ export { REACTION_ROW, reactionLook } from '../../lib/reactions';
 const HOLD_MS = 260;
 
 /**
- * One reaction control.
+ * Only one row of reactions is open at a time.
  *
- * `myReaction` is what this member has given, if anything. Tapping reacts with
- * the same kind again to take it back — the server treats a repeat as an undo,
- * so the control has no separate "remove".
+ * Without a backdrop there is nothing stopping two posts from each holding an
+ * open row, and two rows of faces floating over a feed is not a pop-up, it is a
+ * mess. Opening one closes the last.
  */
+let closeOpenRow: (() => void) | null = null;
+
+/** One reaction control. */
 export function ReactionButton({
   myReaction,
   count,
@@ -58,31 +61,32 @@ export function ReactionButton({
   const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [flying, setFlying] = useState<{ kind: ShownReaction; id: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const held = useRef(false);
   const control = useRef<View>(null);
   const look = reactionLook(myReaction);
 
-  /**
-   * Where the control actually is.
-   *
-   * The row used to be positioned relative to the control and simply drawn to
-   * the left of it, which on a control near the edge of the phone put most of
-   * the row off-screen. It is a modal now, placed from the control's real
-   * window coordinates, so it opens where the thumb is and stays inside the
-   * screen wherever that is.
-   */
+  /** Where the control sits, in window coordinates — used to keep the row on screen. */
   const place = useCallback(() => {
-    const node = control.current as unknown as { measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void };
+    const node = control.current as unknown as {
+      measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void;
+    };
     if (!node?.measureInWindow) return setAnchor(null);
     node.measureInWindow((x, y, w, h) => setAnchor({ x, y, w, h }));
   }, []);
 
   const close = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (idle.current) { clearTimeout(idle.current); idle.current = null; }
     setOpen(false);
+    if (closeOpenRow === close) closeOpenRow = null;
   }, []);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+    if (idle.current) clearTimeout(idle.current);
+    if (closeOpenRow === close) closeOpenRow = null;
+  }, [close]);
 
   const start = () => {
     held.current = false;
@@ -92,7 +96,13 @@ export function ReactionButton({
       held.current = true;
       haptic.tap();
       place();
+      closeOpenRow?.();
+      closeOpenRow = close;
       setOpen(true);
+      // A row that appeared out of a hold should not sit there forever if the
+      // hand wanders off; it goes on its own.
+      if (idle.current) clearTimeout(idle.current);
+      idle.current = setTimeout(() => setOpen(false), 6000);
     }, HOLD_MS);
   };
 
@@ -107,13 +117,14 @@ export function ReactionButton({
 
   const choose = (kind: ShownReaction) => {
     setOpen(false);
+    if (idle.current) { clearTimeout(idle.current); idle.current = null; }
     haptic.tap();
     setFlying({ kind, id: Date.now() });
     onReact(kind);
   };
 
   return (
-    <View ref={control} style={{ alignItems: 'center' }} collapsable={false}>
+    <View ref={control} style={{ alignItems: 'center', overflow: 'visible' }} collapsable={false}>
       <Pressable
         onPressIn={start}
         onPressOut={end}
@@ -125,6 +136,7 @@ export function ReactionButton({
             : `React. Hold for seven reactions.`
         }
         hitSlop={10}
+        testID="reaction-control"
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
       >
         {look ? (
@@ -151,13 +163,142 @@ export function ReactionButton({
 }
 
 /**
- * The row itself.
+ * The row of faces: a pop-up beside the control, on the screen the control is on.
  *
- * A scrim behind it so a tap anywhere else closes it, and the row above the
- * control, where a thumb is not covering it. Each emoji springs in a beat after
- * the one before — that stagger is most of what makes it feel like the big apps
- * rather than like a menu appearing.
+ * Three rules in here, each of which was a complaint first:
+ *
+ *  · **It never leaves its own screen.** It used to be a `Modal`, and a modal on
+ *    a phone owns the whole app: the row could sit above a different screen or be
+ *    caught sliding away after the page had already changed. This is a plain view
+ *    inside the same wrapper as the control, so it is bound to that page by
+ *    construction — it cannot be on any other one.
+ *  · **No background.** No scrim, no dimming, no film over the app. The only
+ *    thing that appears is seven faces. A press anywhere else closes it (caught
+ *    at the document on web, and by a six-second idle timer everywhere), so
+ *    nothing has to be painted to make it dismissible.
+ *  · **Small.** Seven faces at 30 px with 40 px of padding each made a bar that
+ *    spanned the phone. 22 px in a 30 px slot is a pop-up you can see the screen
+ *    around.
  */
+const ROW_EMOJI = 22;
+const SLOT = 30;
+const PILL_PAD = 5;
+const ROW_H = ROW_EMOJI + PILL_PAD * 2 + 8;
+
+/** The seven faces, in a pill. Placement is the caller's problem. */
+function ReactionPill({
+  current,
+  onPick,
+}: {
+  current?: ReactionKind | null;
+  onPick: (kind: ShownReaction) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View
+      testID="reaction-row"
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: PILL_PAD,
+        paddingVertical: PILL_PAD,
+        borderRadius: 18,
+        backgroundColor: colors.elevated,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.borderStrong,
+        ...(Platform.OS === 'web' ? { boxShadow: '0 8px 20px rgba(0,0,0,0.42)' } : { elevation: 8 }),
+      }}
+    >
+      {REACTION_ROW.map((r, i) => (
+        <Pop
+          key={r.kind}
+          delay={i * 22}
+          active={current === r.kind}
+          onPress={() => onPick(r.kind)}
+          emoji={r.emoji}
+          word={r.word}
+          size={ROW_EMOJI}
+          slot={SLOT}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The same pill, as a screen-level pop-up at a point the caller supplies.
+ *
+ * Whispers use this: a long press on a Whisper opens the seven faces beside the
+ * bubble at the point that was pressed, not a sheet sliding up from the bottom of
+ * the screen. It carries no backdrop — the tap-catcher below is transparent, so
+ * nothing is painted over the conversation; the next tap anywhere simply closes
+ * the row.
+ */
+export function ReactionPopup({
+  visible,
+  at,
+  current,
+  onPick,
+  onDismiss,
+  children,
+}: {
+  visible: boolean;
+  at: { x: number; y: number } | null;
+  current?: ReactionKind | null;
+  onPick: (kind: ShownReaction) => void;
+  onDismiss: () => void;
+  /** Extra rows under the faces — copy, flag — on the same floating card. */
+  children?: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const ROW_W = REACTION_ROW.length * SLOT + PILL_PAD * 2;
+
+  useEffect(() => {
+    if (!visible || Platform.OS !== 'web') return;
+    const onDown = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('[data-testid="reaction-row"]')) return;
+      onDismiss();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [visible, onDismiss]);
+
+  if (!visible || !at) return null;
+
+  const left = Math.min(Math.max(at.x - ROW_W / 2, 6), Math.max(width - ROW_W - 6, 6));
+  const above = at.y - ROW_H - 12;
+  const top = above > 6 ? above : at.y + 12;
+
+  return (
+    <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex: 300 }]}>
+      {/* Invisible, and only there to close the row on the next tap. */}
+      <Pressable
+        onPress={onDismiss}
+        accessibilityRole="button"
+        accessibilityLabel="Close reactions"
+        style={StyleSheet.absoluteFill}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left,
+          top,
+          borderRadius: 18,
+          overflow: 'hidden',
+          backgroundColor: children ? colors.elevated : 'transparent',
+          ...(children && Platform.OS === 'web' ? { boxShadow: '0 8px 20px rgba(0,0,0,0.42)' } : null),
+        }}
+      >
+        <ReactionPill current={current} onPick={onPick} />
+        {children ? <View style={{ paddingVertical: 2 }}>{children}</View> : null}
+      </View>
+    </View>
+  );
+}
+
 function ReactionRow({
   visible,
   anchor,
@@ -171,56 +312,47 @@ function ReactionRow({
   onPick: (kind: ShownReaction) => void;
   onDismiss: () => void;
 }) {
-  const { colors } = useTheme();
   const { width } = useWindowDimensions();
+  const ROW_W = REACTION_ROW.length * SLOT + PILL_PAD * 2;
 
-  // Wide enough for seven emoji at 30 px plus their padding.
-  const ROW_W = 7 * 40 + 16;
+  /*
+   * Drawn inside the control's own wrapper, so its offsets are relative to the
+   * control — but clamped against window coordinates, which is the only way to
+   * know it will not run off the edge of the screen.
+   */
+  /*
+   * Anchored to the control's own left edge, not centred on it.
+   *
+   * Centred, the pill sat over the middle of the post and read as a bar laid
+   * across the words. Growing from the button's edge instead is what makes it
+   * read as a pop-up belonging to that button — and it leaves the words either
+   * side of it readable.
+   */
   const left = anchor
-    ? Math.min(Math.max(anchor.x + anchor.w / 2 - ROW_W / 2, 8), Math.max(width - ROW_W - 8, 8))
-    : Math.max((width - ROW_W) / 2, 8);
-  // Above the control, unless there is no room there — then below it.
-  const above = anchor ? anchor.y - 58 : 0;
-  const top = anchor ? (above > 40 ? above : anchor.y + anchor.h + 10) : 0;
+    ? Math.min(Math.max(anchor.x - 4, 6), Math.max(width - ROW_W - 6, 6)) - anchor.x
+    : -(ROW_W / 2);
+  const top = anchor && anchor.y < ROW_H + 30 ? anchor.h + 8 : -(ROW_H + 10);
+
+  useEffect(() => {
+    if (!visible || Platform.OS !== 'web') return;
+    const onDown = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('[data-testid="reaction-row"]')) return;
+      // A press on any reaction control is that control opening its own row.
+      if (target.closest('[data-testid="reaction-control"]')) return;
+      onDismiss();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [visible, onDismiss]);
+
+  if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onDismiss}>
-      {/* A real scrim: a tap anywhere closes the row, which is what a row of
-          reactions that appeared out of nowhere owes the person who opened it. */}
-      <Pressable
-        onPress={onDismiss}
-        accessibilityRole="button"
-        accessibilityLabel="Close reactions"
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.18)' }}
-      >
-        <View style={{ position: 'absolute', left, top }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: 8,
-              paddingVertical: 7,
-              borderRadius: 26,
-              backgroundColor: colors.elevated,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              ...(Platform.OS === 'web' ? { boxShadow: '0 14px 30px rgba(0,0,0,0.5)' } : { elevation: 12 }),
-            }}
-          >
-            {REACTION_ROW.map((r, i) => (
-              <Pop
-                key={r.kind}
-                delay={i * 26}
-                active={current === r.kind}
-                onPress={() => onPick(r.kind)}
-                emoji={r.emoji}
-                word={r.word}
-              />
-            ))}
-          </View>
-        </View>
-      </Pressable>
-    </Modal>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left, top, zIndex: 50 }}>
+      <ReactionPill current={current} onPick={onPick} />
+    </View>
   );
 }
 
@@ -231,12 +363,16 @@ function Pop({
   delay,
   active,
   onPress,
+  size,
+  slot,
 }: {
   emoji: string;
   word: string;
   delay: number;
   active: boolean;
   onPress: () => void;
+  size: number;
+  slot: number;
 }) {
   const scale = useRef(new Animated.Value(0.2)).current;
   const lift = useRef(new Animated.Value(10)).current;
@@ -256,13 +392,15 @@ function Pop({
         accessibilityLabel={word}
         hitSlop={4}
         style={({ pressed }) => ({
-          paddingHorizontal: 5,
-          paddingVertical: 2,
-          borderRadius: 18,
-          transform: [{ scale: pressed ? 1.25 : active ? 1.12 : 1 }],
+          width: slot,
+          height: slot,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: slot / 2,
+          transform: [{ scale: pressed ? 1.3 : active ? 1.12 : 1 }],
         })}
       >
-        <Txt style={{ fontSize: 26 }}>{emoji}</Txt>
+        <Txt style={{ fontSize: size }}>{emoji}</Txt>
       </Pressable>
     </Animated.View>
   );
@@ -305,7 +443,7 @@ function Fly({ emoji, onDone }: { emoji: string; onDone: () => void }) {
         transform: [{ translateY: rise }, { scale: grow }],
       }}
     >
-      <Txt style={{ fontSize: 24 }}>{emoji}</Txt>
+      <Txt style={{ fontSize: 22 }}>{emoji}</Txt>
     </Animated.View>
   );
 }

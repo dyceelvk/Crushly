@@ -11,16 +11,17 @@ import { TypingDots } from '../../components/TypingDots';
 import { RecordingWave } from '../../components/RecordingWave';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
-import { ActionSheet, BottomSheet } from '../../components/BottomSheet';
+import { ActionSheet } from '../../components/BottomSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
-import { MessageBubble, REACTIONS } from '../../components/MessageBubble';
+import { MessageBubble } from '../../components/MessageBubble';
+import { ReactionPopup } from '../../components/feed/Reactions';
 import { SwipeToReply } from '../../components/SwipeRow';
 import { useToast } from '../../components/Toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLayout } from '../../components/Layout';
 import { useChat, useConversation, useConversations, useCrushes, useMe, useAppSettings } from '../../api/hooks';
-import type { Message, ReplyQuote } from '../../api/types';
+import type { Message, ReactionKind, ReplyQuote } from '../../api/types';
 import { useMemberActions } from '../../state/memberActions';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, radius, space } from '../../theme/tokens';
@@ -141,6 +142,13 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [tray, setTray] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
+  /**
+   * Where the long press landed, in screen coordinates.
+   *
+   * Whispers react where the thumb is, the way every other surface in the app
+   * does, and a pop-up needs to know where that was.
+   */
+  const [pressAt, setPressAt] = useState<{ x: number; y: number } | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -574,7 +582,10 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       lastInGroup={item.last}
                       showTime={item.last}
                       peerName={peer?.name ?? ''}
-                      onLongPress={setActionFor}
+                      onLongPress={(m, at) => {
+                        setPressAt(at ?? null);
+                        setActionFor(m);
+                      }}
                       onDoubleTap={react}
                       onOpenPhoto={setViewer}
                       onOpenProfile={openProfile}
@@ -797,25 +808,29 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         />
       </KeyboardAvoidingView>
 
-      {/* Long-press actions */}
-      <BottomSheet visible={!!actionFor} onClose={() => setActionFor(null)} title="React">
-        <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: space.sm }}>
-          {REACTIONS.map((r) => {
-            const mine = actionFor?.reactions.some((x) => x.kind === r.key && x.userId === me?.id);
-            return (
-              <Pressable
-                key={r.key}
-                onPress={() => { const m = actionFor; setActionFor(null); if (m) react(m, r.key); }}
-                accessibilityRole="button"
-                accessibilityLabel={`${mine ? 'Remove' : 'React with'} ${r.label}`}
-                accessibilityState={{ selected: !!mine }}
-                style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: mine ? colors.crushSoft : colors.card, borderWidth: 1, borderColor: mine ? colors.crush : colors.border }}
-              >
-                {r.key === 'crush' ? <CrushIcon size={26} color={colors.crush} filled /> : <Txt style={{ fontSize: 28, lineHeight: 34 }}>{r.emoji}</Txt>}
-              </Pressable>
-            );
-          })}
-        </View>
+      {/*
+        The faces, beside the Whisper.
+
+        This was the top of a `BottomSheet` titled "React" — five 60 px circles
+        on a panel that slid up from the bottom of the screen, which is a menu,
+        not a reaction. It is the same pop-up now as the feed and the text post:
+        seven faces, at the bubble, with nothing painted behind them. Copy and
+        Flag stay where they were, one tap further on.
+      */}
+      <ReactionPopup
+        visible={!!actionFor}
+        at={pressAt}
+        current={(actionFor?.reactions ?? []).find((x) => x.userId === me?.id)?.kind as ReactionKind | undefined}
+        onPick={(kind) => {
+          const m = actionFor;
+          setActionFor(null);
+          if (m) react(m, kind);
+        }}
+        onDismiss={() => setActionFor(null)}
+      >
+        {/* The rest of the long-press actions, under the faces on the same
+            floating card — one gesture, one menu, and no sheet sliding up the
+            screen over the conversation. */}
         {actionFor?.kind === 'text' ? (
           <Pressable
             onPress={async () => {
@@ -830,25 +845,27 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               }
             }}
             accessibilityRole="button"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12 }}
           >
-            <Ionicons name="copy-outline" size={20} color={colors.textSecondary} />
+            <Ionicons name="copy-outline" size={18} color={colors.textSecondary} />
             <Txt variant="bodyStrong">Copy text</Txt>
           </Pressable>
         ) : null}
         {actionFor && !actionFor.mine ? (
           <Pressable
-            onPress={() => { setActionFor(null); if (peer) openActions({ id: peer.id, name: peer.name, connected: true, context: `message:${actionFor.id}`, onGone: () => navigation.goBack() }); }}
+            onPress={() => {
+              const m = actionFor;
+              setActionFor(null);
+              if (peer) openActions({ id: peer.id, name: peer.name, connected: true, context: `message:${m.id}`, onGone: () => navigation.goBack() });
+            }}
             accessibilityRole="button"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12 }}
           >
-            <Ionicons name="flag-outline" size={20} color={colors.danger} />
-            <Txt variant="bodyStrong" color="danger">
-              Flag this Whisper
-            </Txt>
+            <Ionicons name="flag-outline" size={18} color={colors.danger} />
+            <Txt variant="bodyStrong" color="danger">Flag this Whisper</Txt>
           </Pressable>
         ) : null}
-      </BottomSheet>
+      </ReactionPopup>
 
       {/* Share a profile */}
       <ActionSheet

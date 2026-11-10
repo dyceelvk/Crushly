@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Txt } from '../../components/Txt';
 import { Avatar } from '../../components/Photo';
 import { useMoments } from '../../api/hooks';
@@ -16,8 +17,8 @@ import { MomentPreview } from '../moments/Moments';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Card = { key: string; author: MomentAuthor; moment: Moment; mine: boolean; count: number; unread: boolean };
 
-const CARD_W = 128;
-const CIRCLE = 84;
+const CARD_W = 132;
+const CARD_H = 196;
 
 /**
  * Moments, as one row of Discover.
@@ -112,10 +113,24 @@ export function MomentsRow() {
   );
 }
 
+/**
+ * One person's Moment, as a block of the thing itself.
+ *
+ * This card has now been three things. It was a grid of tiles, one per Moment,
+ * which pushed people off the row. Then it was a card with a round picture
+ * inside a coloured ring — content wrapped in chrome, which is the shape the
+ * owner keeps rejecting: the ring was decoration around a face, and the card
+ * around that was a second layer of decoration.
+ *
+ * It is neither now. The card *is* the Moment: the words in its own typeface on
+ * its own colour, edge to edge, with the person's name along the bottom the way
+ * it reads in the Moment itself. A photograph Moment is the photograph. The only
+ * things drawn on top are the name and, where somebody posted more than once
+ * today, how many more there are.
+ */
 function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
   const { colors } = useTheme();
   const { author, moment, count, mine, unread } = card;
-  const ring = momentRingState(author.id, true, !unread);
 
   return (
     <Pressable
@@ -126,53 +141,51 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
       }`}
       style={({ pressed }) => ({
         width: CARD_W,
+        height: CARD_H,
         borderRadius: radius.lg,
+        overflow: 'hidden',
         backgroundColor: colors.card,
-        borderWidth: 1,
-        borderColor: unread ? colors.goldLine : colors.border,
-        padding: 10,
-        gap: 8,
-        opacity: pressed ? 0.88 : 1,
+        // No border, except the one thing worth marking: something here you have
+        // not watched yet.
+        borderWidth: unread ? 1 : 0,
+        borderColor: unread ? colors.goldLine : 'transparent',
+        transform: [{ scale: pressed ? 0.985 : 1 }],
       })}
     >
-      <View style={{ alignItems: 'center' }}>
-        <View
-          style={{
-            width: CIRCLE,
-            height: CIRCLE,
-            borderRadius: CIRCLE / 2,
-            borderWidth: 2.5,
-            borderColor: ring ?? colors.border,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <View style={{ width: CIRCLE - 11, height: CIRCLE - 11, borderRadius: (CIRCLE - 11) / 2, overflow: 'hidden', backgroundColor: colors.elevated }}>
-            <MomentPreview
-              moment={moment}
-              style={{ width: CIRCLE - 11, height: CIRCLE - 11 }}
-              textSize={10}
-              lines={3}
-              caption={false}
-            />
-          </View>
-        </View>
-        {count > 1 ? (
-          <View
-            style={{
-              position: 'absolute', right: 8, top: 62, minWidth: 22, height: 22, paddingHorizontal: 6,
-              borderRadius: 11, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <Txt variant="caption" color="onGold">{`+${count - 1}`}</Txt>
-          </View>
-        ) : null}
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <MomentPreview
+        moment={moment}
+        style={StyleSheet.absoluteFill}
+        textSize={13}
+        lines={4}
+        caption={false}
+      />
+      {/* The name sits on the content, on a shade deep enough to read on any
+          photograph and invisible on a dark one. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 64 }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: 9,
+          right: 9,
+          bottom: 8,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
         <Avatar uri={author.photo} name={author.name} size={18} ring={author.mutual ? 'crush' : undefined} />
-        <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ flexShrink: 1 }}>
+        <Txt variant="caption" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1, fontWeight: '600' }}>
           {mine ? 'You' : author.name}
         </Txt>
+        {count > 1 ? (
+          <View style={{ marginLeft: 'auto', paddingHorizontal: 5, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.45)' }}>
+            <Txt variant="caption" color="#FFFFFF">{`+${count - 1}`}</Txt>
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );

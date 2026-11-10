@@ -168,26 +168,33 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const list = listRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null;
-    const node = list?.getScrollableNode ? list.getScrollableNode() : null;
-    if (!node) return;
 
+    /*
+     * One wheel gesture, one page — through the list's own API.
+     *
+     * The first cut of this found the scroller by hand with `getScrollableNode`
+     * and called `scrollTo` on it. It did not scroll: the node it got back was
+     * not the element that actually scrolls, so the wheel was swallowed and the
+     * page stayed where it was — which is worse than the bug it was meant to fix.
+     * `scrollToOffset` is the list's own contract and needs no guessing, and a
+     * non-animated jump means the two pages are never on screen at once.
+     */
     const go = (direction: 1 | -1) => {
       const next = Math.min(Math.max(indexRef.current + direction, 0), ids.length - 1);
       if (next === indexRef.current) return;
       lockRef.current = true;
       setIndex(next);
-      node.scrollTo({ top: next * height, behavior: 'smooth' });
-      // Long enough for a smooth scroll of one screen, short enough that the
-      // next deliberate flick is not swallowed.
-      window.setTimeout(() => { lockRef.current = false; }, 480);
+      listRef.current?.scrollToOffset({ offset: next * height, animated: false });
+      window.setTimeout(() => { lockRef.current = false; }, 320);
     };
 
     const onWheel = (event: WheelEvent) => {
-      // Only a vertical gesture belongs to the pager.
+      // Only a vertical gesture belongs to the pager, and only if the pager is
+      // the thing on screen.
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
       if (Math.abs(event.deltaY) < 3) return;
       event.preventDefault();
+      event.stopPropagation();
       if (lockRef.current) return;
       go(event.deltaY > 0 ? 1 : -1);
     };
@@ -197,10 +204,12 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       if (event.key === 'ArrowUp' || event.key === 'PageUp') { event.preventDefault(); go(-1); }
     };
 
-    node.addEventListener('wheel', onWheel, { passive: false });
+    // Capture on the document: the wheel must not reach the scroller at all, or
+    // the browser's own momentum runs underneath the lock.
+    document.addEventListener('wheel', onWheel, { passive: false, capture: true });
     window.addEventListener('keydown', onKey);
     return () => {
-      node.removeEventListener('wheel', onWheel);
+      document.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions);
       window.removeEventListener('keydown', onKey);
     };
   }, [height, ids.length, setIndex]);
@@ -228,6 +237,16 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       if (next !== indexRef.current) setIndex(next);
     }}
     scrollEventThrottle={32}
+    /* A phone's snap can still rest a few pixels off if the list was dragged
+       slowly and let go. One page, exactly. */
+    onMomentumScrollEnd={(e) => {
+      const raw = e.nativeEvent.contentOffset.y / Math.max(height, 1);
+      const nearest = Math.min(Math.max(Math.round(raw), 0), ids.length - 1);
+      if (Math.abs(raw - nearest) > 0.01) {
+        listRef.current?.scrollToOffset({ offset: nearest * height, animated: false });
+      }
+      if (nearest !== indexRef.current) setIndex(nearest);
+    }}
     onEndReached={() => flow.loadOlder()}
     onEndReachedThreshold={0.6}
     onViewableItemsChanged={onViewableItemsChanged}

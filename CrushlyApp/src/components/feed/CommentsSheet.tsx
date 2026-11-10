@@ -25,7 +25,7 @@ import { ConfirmSheet } from '../BottomSheet';
 import {
   useCommentOnPost,
   useDeletePostComment,
-  useLikePostComment,
+  useReactToComment,
   useMe,
   usePostComments,
   usePostCommentSettings,
@@ -35,6 +35,7 @@ import { formatCount } from '../../lib/counts';
 import { timeAgo } from '../../lib/format';
 import { fonts, radius } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { ReactionButton, type ShownReaction } from './Reactions';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import type { Post, PostComment } from '../../api/types';
 
@@ -91,7 +92,7 @@ export function CommentsSheet({
   const canComment = settingsQuery.data === true;
   const likersQuery = usePostLikers(visible ? postId : null);
   const send = useCommentOnPost(postId ?? 0);
-  const likeComment = useLikePostComment(postId ?? 0);
+  const reactToComment = useReactToComment(postId ?? 0);
   const removeComment = useDeletePostComment(postId ?? 0);
 
   const [tab, setTab] = useState<Tab>('comments');
@@ -167,11 +168,12 @@ export function CommentsSheet({
     input.current?.focus();
   }, []);
 
+  // Comments carry the same seven reactions as posts, and the same gesture.
   const react = useCallback(
-    (comment: PostComment) => {
-      likeComment.mutate({ commentId: comment.id, liked: !comment.liked });
+    (comment: PostComment, kind: ShownReaction) => {
+      reactToComment.mutate({ commentId: comment.id, kind });
     },
-    [likeComment],
+    [reactToComment],
   );
 
   const role = useCallback(
@@ -251,24 +253,12 @@ export function CommentsSheet({
 
             <View style={{ flex: 1 }} />
 
-            <Pressable
-              onPress={() => react(comment)}
-              accessibilityRole="button"
-              accessibilityLabel={comment.liked ? 'Take back your Crush' : 'Crush this comment'}
-              hitSlop={10}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-            >
-              <Ionicons
-                name={comment.liked ? 'heart' : 'heart-outline'}
-                size={17}
-                color={comment.liked ? NOIR.crush : NOIR.muted}
-              />
-              {comment.likeCount ? (
-                <Txt style={{ fontSize: 12, color: comment.liked ? NOIR.crush : NOIR.muted }}>
-                  {formatCount(comment.likeCount)}
-                </Txt>
-              ) : null}
-            </Pressable>
+            <ReactionButton
+              myReaction={comment.myReaction ?? (comment.liked ? 'crush' : null)}
+              count={comment.likeCount}
+              size={17}
+              onReact={(kind) => react(comment, kind)}
+            />
           </View>
         </View>
       </Pressable>
