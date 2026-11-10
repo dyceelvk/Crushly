@@ -103,6 +103,8 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'internal_profile_serializer.sql'):
             return 1
+        if not run_file(ROOT / 'policy_helpers.sql'):
+            return 1
         # Comments are a conversation now: likes, one level of replies, and a
         # delete that cannot take somebody else's words with it.
         if not run_file(ROOT / 'comments.sql'):
