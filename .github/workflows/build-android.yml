@@ -1,93 +1,51 @@
-name: Test secure Holup 1.0.95 on Android 9
+name: Re-walk exact secure Android 1.0.95 emulator candidate
 on:
   workflow_dispatch:
 permissions:
+  actions: read
   contents: read
 jobs:
-  build:
+  walk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: CrushlyApp
-    env:
-      CI: '1'
-      HOLUP_SECURE_ANDROID: '1'
-      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: CrushlyApp/package-lock.json
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - run: npm ci --include=dev
-      - run: node scripts/check-public-build.mjs && npm run typecheck && npm test
-      - run: npx expo prebuild --platform android --no-install
-      - name: Prepare signing key
-        env:
-          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
-          HOLUP_ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.HOLUP_ANDROID_RELEASE_KEYSTORE_B64 }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$HOLUP_ANDROID_RELEASE_KEY_PASSWORD" && test -n "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64"
-          umask 077
-          printf %s "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/holup-release.p12"
-          echo "HOLUP_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/holup-release.p12" >> "$GITHUB_ENV"
-      - name: Build isolated candidate
-        env:
-          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
-        run: |
-          cd android
-          ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
-      - name: Verify signing identity and package
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk=android/app/build/outputs/apk/release/app-release.apk
-          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature.txt"
-          grep -qi 'certificate SHA-256 digest: 7ff4777b984e44d6e31e485a958086e07ed7cd621ef6a822489d0d9cbf271ac5' "$RUNNER_TEMP/signature.txt"
-          "$tools/aapt" dump badging "$apk" | grep -q "package: name='app.holup.mobile'"
-          sha256sum "$apk"
-      - uses: actions/upload-artifact@v4
+      - name: Download the exact previously built test APK
+        uses: actions/download-artifact@v4
         with:
           name: Holup-secure-x86-test-only
-          path: CrushlyApp/android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-          retention-days: 2
+          run-id: 42750519499
+          github-token: ${{ github.token }}
+          path: test-apk
+      - name: Verify test package and release signer
+        run: |
+          set -euo pipefail
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$tools/apksigner" verify --print-certs test-apk/app-release.apk > "$RUNNER_TEMP/signature.txt"
+          grep -qi 'certificate SHA-256 digest: 7ff4777b984e44d6e31e485a958086e07ed7cd621ef6a822489d0d9cbf271ac5' "$RUNNER_TEMP/signature.txt"
+          "$tools/aapt" dump badging test-apk/app-release.apk | grep -q "package: name='app.holup.mobile' versionCode='95' versionName='1.0.95'"
       - name: Enable emulator hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 9 signed-in walk
+      - name: Walk secure candidate on Android 9
         uses: reactivecircus/android-emulator-runner@v2
         env:
           HOLUP_TEST_PACKAGE: app.holup.mobile
           CRUSHLY_WALK_EMAIL: ${{ secrets.CRUSHLY_WALK_EMAIL }}
           CRUSHLY_WALK_PASSWORD: ${{ secrets.CRUSHLY_WALK_PASSWORD }}
-          CRUSHLY_WALK_OUT: ../walk
+          CRUSHLY_WALK_OUT: walk
         with:
           api-level: 28
           target: default
           arch: x86_64
-          working-directory: CrushlyApp
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: python3 ../.github/scripts/android-launch-smoke.py android/app/build/outputs/apk/release/app-release.apk
+          script: python3 .github/scripts/android-launch-smoke.py test-apk/app-release.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Holup-secure-android-walk
+          name: Holup-secure-android-rewalk
           path: walk/
           if-no-files-found: ignore
           retention-days: 2
-      - name: Remove signing key
-        if: always()
-        run: rm -f "$RUNNER_TEMP/holup-release.p12"

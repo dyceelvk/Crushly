@@ -951,9 +951,16 @@ def walk():
         # An unavailable network check is allowed, but never offer an older build.
         if find(settings_seen, 'Update Holup'):
             fail('Settings: update offered even though the running build is newer')
-        if not any(find(settings_seen, label) for label in ('You’re up to date', 'Checking for updates', 'Couldn’t check for updates')):
-            fail('Settings: update status is missing')
-        log('settings: installed app has no APK download or older-build update; checked')
+        if PACKAGE == 'app.holup.mobile':
+            # The secure channel is intentionally not enabled yet; do not
+            # misreport this as a functioning secure update check.
+            if not find(settings_seen, 'Secure updates are being prepared'):
+                fail('Settings: secure update unavailability is not disclosed')
+            log('settings: secure updates are explicitly unavailable; updater is NOT tested')
+        else:
+            if not any(find(settings_seen, label) for label in ('You’re up to date', 'Checking for updates', 'Couldn’t check for updates')):
+                fail('Settings: update status is missing')
+            log('settings: installed app has no APK download or older-build update; checked')
         return_to_tabs()
         for sub, slug in (('Account & security', 'account'),
                           ('Appearance', 'appearance'),
