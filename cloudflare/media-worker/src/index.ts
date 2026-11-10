@@ -617,6 +617,17 @@ export default {
       headers.set('Content-Disposition', `attachment; filename="holup-${postId}.mp4"`);
       headers.set('Cache-Control', 'private, no-store');
       headers.set('X-Content-Type-Options', 'nosniff');
+      /*
+       * CORS, because the app fetches this into a blob and saves that.
+       *
+       * Without these headers a browser refuses the fetch outright, and the only
+       * way to get the file was to navigate to it — which works, but opens a tab
+       * and cannot choose the filename. The upstream headers are replaced rather
+       * than merged, so Backblaze's own headers cannot leak an origin we did not
+       * choose.
+       */
+      for (const [key, value] of Object.entries(cors(origin))) headers.set(key, value);
+      headers.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
       return new Response(request.method === 'HEAD' ? null : upstream.body, { status: 200, headers });
     }
 

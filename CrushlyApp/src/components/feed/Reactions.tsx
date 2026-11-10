@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
 import { useTheme } from '../../theme/ThemeProvider';
 import { haptic } from '../../lib/haptics';
+import { CrushIcon } from '../Logo';
 import { formatCount } from '../../lib/counts';
 import type { ReactionKind } from '../../api/types';
 import { REACTION_ROW, reactionLook, type ShownReaction } from '../../lib/reactions';
@@ -139,7 +140,11 @@ export function ReactionButton({
         testID="reaction-control"
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
       >
-        {look ? (
+        {/* Given, the control wears holUpp's own mark in the Crush colour;
+            not yet, it is an outline heart, which is a shape and not a brand. */}
+        {look?.mark ? (
+          <CrushIcon size={size} color={look.tint} filled />
+        ) : look?.emoji ? (
           <Txt style={{ fontSize: size }}>{look.emoji}</Txt>
         ) : (
           <Ionicons name="heart-outline" size={size} color={colors.textSecondary} />
@@ -149,7 +154,7 @@ export function ReactionButton({
         ) : null}
       </Pressable>
 
-      {flying ? <Fly key={flying.id} emoji={reactionLook(flying.kind)?.emoji ?? '❤️'} onDone={() => setFlying(null)} /> : null}
+      {flying ? <Fly key={flying.id} kind={flying.kind} onDone={() => setFlying(null)} /> : null}
 
       <ReactionRow
         visible={open}
@@ -216,6 +221,8 @@ function ReactionPill({
           active={current === r.kind}
           onPress={() => onPick(r.kind)}
           emoji={r.emoji}
+          mark={r.mark}
+          tint={r.tint}
           word={r.word}
           size={ROW_EMOJI}
           slot={SLOT}
@@ -359,6 +366,8 @@ function ReactionRow({
 /** One emoji: springs up from nothing, a beat after the one before it. */
 function Pop({
   emoji,
+  mark,
+  tint,
   word,
   delay,
   active,
@@ -366,7 +375,9 @@ function Pop({
   size,
   slot,
 }: {
-  emoji: string;
+  emoji?: string;
+  mark?: true;
+  tint: string;
   word: string;
   delay: number;
   active: boolean;
@@ -400,7 +411,7 @@ function Pop({
           transform: [{ scale: pressed ? 1.3 : active ? 1.12 : 1 }],
         })}
       >
-        <Txt style={{ fontSize: size }}>{emoji}</Txt>
+        {mark ? <CrushIcon size={size} color={tint} filled /> : <Txt style={{ fontSize: size }}>{emoji}</Txt>}
       </Pressable>
     </Animated.View>
   );
@@ -413,7 +424,8 @@ function Pop({
  * control, grows slightly, and fades — then unmounts itself so nothing is left
  * animating behind a scroll.
  */
-function Fly({ emoji, onDone }: { emoji: string; onDone: () => void }) {
+function Fly({ kind, onDone }: { kind: ShownReaction; onDone: () => void }) {
+  const look = reactionLook(kind);
   const rise = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(0)).current;
   const grow = useRef(new Animated.Value(0.6)).current;
@@ -443,7 +455,7 @@ function Fly({ emoji, onDone }: { emoji: string; onDone: () => void }) {
         transform: [{ translateY: rise }, { scale: grow }],
       }}
     >
-      <Txt style={{ fontSize: 22 }}>{emoji}</Txt>
+      {look?.mark ? <CrushIcon size={22} color={look.tint} filled /> : <Txt style={{ fontSize: 22 }}>{look?.emoji}</Txt>}
     </Animated.View>
   );
 }

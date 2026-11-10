@@ -328,7 +328,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     if (!moment?.reactions?.length) return null;
     return moment.reactions
       .slice(0, 3)
-      .map((r) => `${r.kind === 'crush' ? '♥' : MOMENT_REACTIONS.find((x) => x.key === r.kind)?.emoji ?? ''} ${r.name}`)
+      .map((r) => `${r.kind === 'crush' ? 'Crush' : MOMENT_REACTIONS.find((x) => x.key === r.kind)?.emoji ?? ''} ${r.name}`)
       .join('   ');
   }, [moment]);
 

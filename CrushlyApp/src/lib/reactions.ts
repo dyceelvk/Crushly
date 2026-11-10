@@ -17,11 +17,19 @@ import type { ReactionKind } from '../api/types';
 /** Everything except `clap`, which can no longer be given. */
 export type ShownReaction = Exclude<ReactionKind, 'clap'>;
 
-export type ReactionSpec = { kind: ShownReaction; emoji: string; word: string; tint: string };
+/**
+ * A reaction as it is drawn.
+ *
+ * `mark` means: this one is not an emoji, it is holUpp's own two-circle mark.
+ * Crush is the app's own word and its own symbol — a red heart is somebody
+ * else's vocabulary, and the owner asked for the two circles instead. Everything
+ * else stays an emoji, because those are universal and the mark is not.
+ */
+export type ReactionSpec = { kind: ShownReaction; emoji?: string; mark?: true; word: string; tint: string };
 
 /** The row, in the order a hand reads it: warm, loud, surprised, then the rest. */
 export const REACTION_ROW: ReactionSpec[] = [
-  { kind: 'crush', emoji: '❤️', word: 'Crush', tint: '#FF4081' },
+  { kind: 'crush', mark: true, word: 'Crush', tint: '#FF4081' },
   { kind: 'laugh', emoji: '😂', word: 'Laugh', tint: '#FFC940' },
   { kind: 'wow', emoji: '😲', word: 'Wow', tint: '#A040FF' },
   { kind: 'fire', emoji: '🔥', word: 'Fire', tint: '#FF8A3D' },
@@ -38,7 +46,9 @@ const LEGACY: Record<string, { emoji: string; word: string; tint: string }> = {
 };
 
 /** The emoji, word and colour for a reaction — or null when there is none. */
-export function reactionLook(kind?: ReactionKind | null): { emoji: string; word: string; tint: string } | null {
+export type ReactionLook = { emoji?: string; mark?: true; word: string; tint: string };
+
+export function reactionLook(kind?: ReactionKind | null): ReactionLook | null {
   if (!kind) return null;
   return BY_KIND.get(kind as ShownReaction) ?? LEGACY[kind] ?? null;
 }

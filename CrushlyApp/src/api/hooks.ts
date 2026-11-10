@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
+import { pagesToItems } from '../lib/paging';
 import type { SendDraft } from './service';
 import { liveMomentUserIds } from '../lib/profileTap';
 import { openWhisperLive, type WhisperLive, type WhisperLiveStatus } from '../lib/whisperLive';
@@ -289,23 +290,21 @@ export const usePostCommentSettings = (postId: number | null) =>
 
 /** What a Circle has posted. Paginated like the Flow: older posts load on ask. */
 export function useCircleFeed(circleId: number, limit = 20) {
-  const [after, setAfter] = useState<number | null>(null);
-  const query = useQuery({
-    queryKey: [...keys.circleFeed(circleId), limit, after],
-    queryFn: () => service.circleFeed(circleId, limit, after),
+  // Same reason as `useFlow`: a page must be appended, not swapped in.
+  const query = useInfiniteQuery({
+    queryKey: [...keys.circleFeed(circleId), limit],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => service.circleFeed(circleId, limit, pageParam),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
-  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  const posts = useMemo<Post[]>(() => pagesToItems<Post>(query.data?.pages), [query.data]);
   return {
     ...query,
     posts,
     loadOlder: () => {
-      const oldest = posts[posts.length - 1];
-      if (oldest && !query.isFetching) setAfter(oldest.id);
+      if (!query.isFetchingNextPage && query.hasNextPage) void query.fetchNextPage();
     },
-    refresh: () => {
-      setAfter(null);
-      void query.refetch();
-    },
+    refresh: () => void query.refetch(),
   };
 }
 
@@ -341,7 +340,7 @@ export function useSpacePosts(memberId: number, enabled = true) {
     enabled: on,
     staleTime: 20_000,
   });
-  const posts = useMemo<Post[]>(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
+  const posts = useMemo<Post[]>(() => pagesToItems<Post>(query.data?.pages), [query.data]);
   return {
     ...query,
     posts,
@@ -427,23 +426,30 @@ export function useUpdatePreferences() {
  * than a countdown — and it is invalidated whenever anything is posted.
  */
 export function useFlow(limit = 20) {
-  const [after, setAfter] = useState<number | null>(null);
-  const query = useQuery({
-    queryKey: [...keys.flow, limit, after],
-    queryFn: () => service.flowFeed(limit, after),
+  /*
+   * An infinite query, not a query keyed on "after".
+   *
+   * It used to be a plain `useQuery` whose key included the cursor, which means
+   * loading the next page *replaced* the data with that page instead of adding to
+   * it: scroll down in Home and the list you were reading was swapped for older
+   * posts, which looks exactly like everything disappearing. The pages have to
+   * accumulate, and the cursor has to come from the server, so both are now the
+   * query's job rather than a piece of component state.
+   */
+  const query = useInfiniteQuery({
+    queryKey: [...keys.flow, 'timeline', limit],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => service.flowFeed(limit, pageParam),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
-  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  const posts = useMemo<Post[]>(() => pagesToItems<Post>(query.data?.pages), [query.data]);
   return {
     ...query,
     posts,
     loadOlder: () => {
-      const oldest = posts[posts.length - 1];
-      if (oldest && !query.isFetching) setAfter(oldest.id);
+      if (!query.isFetchingNextPage && query.hasNextPage) void query.fetchNextPage();
     },
-    refresh: () => {
-      setAfter(null);
-      void query.refetch();
-    },
+    refresh: () => void query.refetch(),
   };
 }
 
@@ -647,7 +653,7 @@ export function useCrushesFeed(limit = 20) {
     staleTime: 20_000,
     refetchInterval: 60_000,
   });
-  const posts = useMemo<Post[]>(() => (query.data?.pages ?? []).flatMap((p) => p.items), [query.data]);
+  const posts = useMemo<Post[]>(() => pagesToItems<Post>(query.data?.pages), [query.data]);
   return {
     ...query,
     posts,
@@ -659,23 +665,22 @@ export function useCrushesFeed(limit = 20) {
 }
 
 export function useSavedPosts(limit = 20) {
-  const [after, setAfter] = useState<number | null>(null);
-  const query = useQuery({
-    queryKey: [...keys.savedPosts, limit, after],
-    queryFn: () => service.savedPosts(limit, after),
+  // Picked had the same fault as Home: scrolling replaced the page, so a saved
+  // list emptied the moment you reached the bottom of it.
+  const query = useInfiniteQuery({
+    queryKey: [...keys.savedPosts, limit],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => service.savedPosts(limit, pageParam),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
-  const posts = useMemo(() => query.data?.items ?? [], [query.data]);
+  const posts = useMemo<Post[]>(() => pagesToItems<Post>(query.data?.pages), [query.data]);
   return {
     ...query,
     posts,
     loadOlder: () => {
-      const oldest = posts[posts.length - 1];
-      if (oldest && !query.isFetching) setAfter(oldest.id);
+      if (!query.isFetchingNextPage && query.hasNextPage) void query.fetchNextPage();
     },
-    refresh: () => {
-      setAfter(null);
-      return query.refetch();
-    },
+    refresh: () => void query.refetch(),
   };
 }
 

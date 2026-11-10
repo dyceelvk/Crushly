@@ -1096,6 +1096,70 @@ that proves nothing. The two designs that would make it true — gating visibili
 until the copy exists, or transcoding on publish — are written down at the bottom
 of `.github/workflows/mark-clips.yml`, with their trade-offs.
 
+## Six reports, and what was actually behind each (2026-11-07, latest)
+
+### "My saved posts disappear when I scroll down" — a page replaced, not appended
+
+`flow_feed`, `public_flow_feed`, `circle_feed` and `saved_posts` returned `items`
+and no cursor. The client paged on "after this post id" and had no way to know
+whether that post was the end, so those hooks were written as plain queries keyed
+on the cursor — and a query whose key changes *replaces* its data. Scroll to the
+bottom of Picked, the second page arrives, page one is gone. Nothing was deleted;
+it was overwritten on screen.
+
+The four functions return `nextCursor` now, the shape `crush_posts_feed` and
+`space_posts` already had, and `useFlow`, `useCircleFeed` and `useSavedPosts` are
+infinite queries that append. Flattening pages lives in `lib/paging.ts` with four
+tests, including the duplicate-boundary case: a post published mid-scroll shifts
+the boundary so one row arrives on both pages, and a duplicated key in a list both
+warns and draws twice.
+
+Connections shares `useFlow`, so it had the same fault from the same cause.
+
+Picked also had no horizontal padding at all — a card's body text is the first
+thing in it without internal padding, so the first character sat off screen and
+read as "icked 1". Fixed to the inset the Flow uses.
+
+### "The download button is broken" — two separate reasons, both real
+
+  · **It was usually not on the sheet at all.** The row rendered only when the
+    marked copy already existed, so for a clip still waiting on the marking job
+    there was no button — which reads as a feature that does not exist. It is
+    always there now for a clip, and says which of three states it is in:
+    checking, ready, or "still being prepared".
+  · **On the web, the download never happened.** `<a download href="…">` is
+    ignored for a cross-origin URL, and the media Worker is a different host to
+    the app, so every "save" navigated to the file and played it in a tab. The fix
+    is to fetch it into a blob — except the Worker's `/d/` response carried no
+    `Access-Control-Allow-Origin`, so that fetch was refused before a byte
+    arrived. Both halves are fixed: the Worker answers with CORS on `/d/`, and the
+    web save tries the blob first and falls back to a plain navigation, where the
+    server's own `Content-Disposition` names the file.
+  · On Android the save was handing the gallery whatever came back, including an
+    empty file from a 401, and reporting it as "try again". It checks the status
+    and the byte count now, falls back to `saveToLibraryAsync` if `Asset.create`
+    fails on a given media-library version, and says "your session expired" when
+    that is what happened.
+
+### Whispers take the seven
+
+The database's `message_reactions_kind_check` allowed four kinds. The app has
+offered seven since the reaction row landed, so sad, angry and tired failed on a
+Whisper while working on a post. The constraint takes all seven now.
+
+### The red heart is gone
+
+Crush is holUpp's own word and its own symbol. The two circles are drawn wherever
+a crush reaction appears — in the row, on the control once given, in the animation
+when it is chosen — and everywhere a reaction is summarised in text (viewers, the
+notifications line) it says "Crush" rather than a heart glyph. Everything else
+stays an emoji, because those are universal and the mark is not.
+
+### The pane is called All Crush Feed
+
+It is every Crush in the app, not a list of people you have crushed on.
+`label: 'All Crush Feed'`, the key is unchanged so saved navigation still lands.
+
 ## The reactions were in the wrong place, and Flow was stepping over two videos (2026-11-07, later)
 
 ### A pop-up, on the screen it belongs to, with nothing behind it

@@ -67,11 +67,20 @@ export function SavedPostsScreen() {
           refreshControl={
             <RefreshControl refreshing={saved.isRefetching} onRefresh={() => void saved.refresh()} tintColor={colors.text} />
           }
+          /*
+           * The same inset the Flow's cards have.
+           *
+           * Picked had no horizontal padding at all, so a card's own contents —
+           * the body text, which is the first thing in it with no internal
+           * padding — started at the screen's edge and the first character was
+           * cut off. It read "icked 1" instead of "Picked 1".
+           */
           contentContainerStyle={{
             width: contentWidth,
             alignSelf: 'center',
             gap: space.md,
             paddingTop: space.xs,
+            paddingHorizontal: space.md,
             paddingBottom: space.xl,
             flexGrow: 1,
           }}

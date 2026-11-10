@@ -666,7 +666,9 @@ const PRIVACY_FIELDS: Record<string, [string, 'bool' | readonly string[]]> = {
 
 export async function flowFeed(limit = 20, after?: number | null): Promise<FlowPage> {
   const page = await rpc<FlowPage>('flow_feed', { p_limit: limit, p_after: after ?? null });
-  return { items: page?.items ?? [] };
+  // The cursor comes back with the page; dropping it here is what forced the
+  // client to guess when the list ended.
+  return { items: page?.items ?? [], nextCursor: page?.nextCursor ?? null };
 }
 
 /**
@@ -792,7 +794,7 @@ export async function crushesFeed(limit = 20, after?: number | null): Promise<Fl
  */
 export async function savedPosts(limit = 20, after?: number | null): Promise<FlowPage> {
   const page = await rpc<FlowPage>('saved_posts', { p_limit: limit, p_after: after ?? null });
-  return { items: page?.items ?? [] };
+  return { items: page?.items ?? [], nextCursor: page?.nextCursor ?? null };
 }
 
 /** Shares a post. Photos and clips go to the object store like any other media. */
@@ -1255,7 +1257,7 @@ export async function leaveCircle(circleId: number): Promise<void> {
 
 export async function circleFeed(circleId: number, limit = 20, after?: number | null): Promise<FlowPage> {
   const page = await rpc<FlowPage>('circle_feed', { p_circle_id: circleId, p_limit: limit, p_after: after ?? null });
-  return { items: page?.items ?? [] };
+  return { items: page?.items ?? [], nextCursor: page?.nextCursor ?? null };
 }
 
 export async function circleMessages(

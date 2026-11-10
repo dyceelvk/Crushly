@@ -51,6 +51,15 @@ export function ShareToWhisper({
   // in every feed: it is needed on one screen, and a storage key has no business
   // travelling to every client.
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  /*
+   * Three states, not two.
+   *
+   * The row used to be hidden until the lookup came back, so on a clip with no
+   * marked copy — or on a slow lookup — Save simply was not on the sheet, which
+   * reads as a feature that does not exist. The row is always there for a clip
+   * now, and says which of the three it is: checking, ready, or not ready yet.
+   */
+  const [copyState, setCopyState] = useState<'checking' | 'ready' | 'none'>('checking');
 
   const people: ConversationSummary[] = useMemo(() => {
     const items: ConversationSummary[] = list.data ?? [];
@@ -100,10 +109,16 @@ export function ShareToWhisper({
   useEffect(() => {
     let live = true;
     setDownloadUrl(null);
-    if (!post || post.mediaKind !== 'video') return () => { live = false; };
+    setCopyState('checking');
+    if (!post || post.mediaKind !== 'video') { setCopyState('none'); return () => { live = false; }; }
     void postDownload(post.id)
-      .then((copy) => { if (live && copy) setDownloadUrl(postDownloadUrl(post.id)); })
-      .catch(() => { /* no row, rather than a row that fails on tap */ });
+      .then((copy) => {
+        if (!live) return;
+        const url = copy ? postDownloadUrl(post.id) : null;
+        setDownloadUrl(url);
+        setCopyState(url ? 'ready' : 'none');
+      })
+      .catch(() => { if (live) setCopyState('none'); });
     return () => { live = false; };
   }, [post]);
 
@@ -207,10 +222,10 @@ export function ShareToWhisper({
       </ScrollView>
 
       <View style={{ padding: space.md, borderTopWidth: 1, borderTopColor: colors.border }}>
-        {canSaveClip({ mediaKind: post?.mediaKind, downloadUrl }) ? (
+        {post?.mediaKind === 'video' ? (
           <Pressable
             onPress={save}
-            disabled={saving}
+            disabled={saving || !canSaveClip({ mediaKind: post.mediaKind, downloadUrl })}
             accessibilityRole="button"
             accessibilityLabel="Save this clip to your device"
             style={({ pressed }) => ({
@@ -218,12 +233,20 @@ export function ShareToWhisper({
               alignItems: 'center',
               gap: 10,
               paddingVertical: 12,
-              opacity: saving ? 0.6 : pressed ? 0.7 : 1,
+              opacity: saving || copyState !== 'ready' ? 0.6 : pressed ? 0.7 : 1,
             })}
           >
-            <Ionicons name={saving ? 'hourglass-outline' : 'download-outline'} size={20} color={colors.textSecondary} />
-            <Txt variant="body">{saving ? 'Saving…' : 'Save clip to device'}</Txt>
-            <Txt variant="caption" color="textMuted">· with the holUpp mark</Txt>
+            <Ionicons
+              name={saving ? 'hourglass-outline' : 'download-outline'}
+              size={20}
+              color={copyState === 'ready' ? colors.gold : colors.textSecondary}
+            />
+            <Txt variant="body">
+              {saving ? 'Saving…' : copyState === 'checking' ? 'Checking for a copy…' : copyState === 'ready' ? 'Save clip to device' : 'No saved copy yet'}
+            </Txt>
+            <Txt variant="caption" color="textMuted">
+              {copyState === 'ready' ? '· with the holUpp mark' : copyState === 'none' ? '· still being prepared' : ''}
+            </Txt>
           </Pressable>
         ) : null}
         <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel="Copy post link" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>

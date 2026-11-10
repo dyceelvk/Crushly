@@ -10,9 +10,20 @@ test('the row offers seven reactions', () => {
   );
 });
 
-test('every offered reaction has its own emoji and word', () => {
-  assert.equal(new Set(REACTION_ROW.map((r) => r.emoji)).size, 7);
+test('every offered reaction has its own face and its own word', () => {
+  // Six emoji, plus crush, which is drawn as holUpp's own mark rather than as
+  // somebody else's red heart.
+  const emoji = REACTION_ROW.filter((r) => !r.mark).map((r) => r.emoji);
+  assert.equal(emoji.length, 6);
+  assert.equal(new Set(emoji).size, 6);
   assert.equal(new Set(REACTION_ROW.map((r) => r.word)).size, 7);
+});
+
+test('crush is the holUpp mark, not an emoji', () => {
+  const crush = reactionLook('crush');
+  assert.equal(crush?.mark, true);
+  assert.equal(crush?.emoji, undefined);
+  assert.equal(crush?.word, 'Crush');
 });
 
 test('clap is retired but still drawn for rows that carry it', () => {

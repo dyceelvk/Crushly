@@ -299,8 +299,14 @@ export function FeedScreen() {
  * Declared once, outside the component, because a fresh array on every render
  * re-renders the row on every keystroke anywhere in the app.
  */
+/*
+ * "All Crush Feed", not "Crushes".
+ *
+ * The pane is every Crush in the app — yours and everybody's — and the old label
+ * read as a list of people you had crushed on. The word is the owner's.
+ */
 const TABS: FeedTab[] = [
-  { key: 'crushes', label: 'Crushes' },
+  { key: 'crushes', label: 'All Crush Feed' },
   { key: 'discovery', label: 'Discovery' },
 ];
 

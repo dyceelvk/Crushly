@@ -79,7 +79,7 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
     case 'moment_reply':
       return { title: `${name} replied to your Moment.`, detail: n.body || undefined };
     case 'moment_reaction': {
-      const emoji = n.body === 'crush' ? '♥' : MOMENT_REACTIONS.find((r) => r.key === n.body)?.emoji;
+      const emoji = n.body === 'crush' ? 'Crush' : MOMENT_REACTIONS.find((r) => r.key === n.body)?.emoji;
       return { title: `${name} reacted to your Moment${emoji ? ` ${emoji}` : ''}.` };
     }
     /* The body of a Circle notification is the room's name, so it reads as one. */
