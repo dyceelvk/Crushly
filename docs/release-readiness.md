@@ -743,3 +743,46 @@ signer.
 
 The keystore is the only irreplaceable file in this project. Back it up somewhere
 that is not this repository and not a chat window.
+
+## The repository could not rebuild production (fixed 2026-11-07)
+
+This was found by reading a failure that had been sitting in plain sight: the
+`Deploy web app` workflow fails on nearly every push, and it fails at
+`supabase db push`, which means the web-build job behind it never runs. The
+message was specific and had been dismissed as noise before:
+
+```
+Remote migration versions not found in local migrations directory.
+  20261110080000 20261110092915 20261110132705 20261110132728 20261110132752
+```
+
+Five migrations were applied to the live database and never committed. The
+biggest is the relationship cutover itself — the Add Ups, Homies and Whisper
+rules this whole release is about. So the live database was running a schema the
+repository could not produce, and every future `db push` was blocked, which is
+how a real migration problem looks like a CI annoyance for long enough to be
+ignored.
+
+Recovered from `supabase_migrations.schema_migrations`, which stores the exact
+statements it executed. Each recovered file's md5 was compared against the
+database after the write, so these are the statements production actually ran,
+not a reconstruction:
+
+| Version | Name | Size |
+| --- | --- | --- |
+| `20261110080000` | relationship_cutover | 55,875 b |
+| `20261110092915` | add_up_needs_no_approval | 7,314 b |
+| `20261110132705` | public_space_preview | 1,679 b |
+| `20261110132728` | space_share_token_preview | 4,352 b |
+| `20261110132752` | space_share_token_targets_space | 2,402 b |
+
+One correction came with it. The repo carried `20261110100000_add_up_needs_no_approval`;
+the database recorded the same statements as `20261110092915`. Identical SQL —
+verified line by line once comments were stripped — but two names for one
+migration, which is exactly the kind of drift that makes a CLI refuse to push.
+The file now uses the version the database recorded and keeps its explanation.
+
+`supabase db push` is green again for the first time since run `83140b2`. The
+lesson is the workflow ordering, not the SQL: a failing `db push` blocks the web
+deploy job behind it, so "the site didn't update" and "the migrations are
+inconsistent" are the same symptom and deserve the same urgency.
