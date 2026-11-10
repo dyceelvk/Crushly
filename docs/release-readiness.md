@@ -505,3 +505,101 @@ hosted project.
 3. Secure Android release — after the keystore, the integrity metadata and the physical upgrade test.
 
 Draft artefacts to review before anything ships: `docs/relationship-cutover-audit.md`, `docs/public-preview-audit.md`, `docs/release-readiness.md`, `/home/user/holup-public-preview-available.html`, `/home/user/holup-public-preview-unavailable.html`.
+
+## Walked as a member on production, 2026-11-07
+
+Everything above was checked from the outside — the migration on real rows, the
+bundle on the alias. None of it was one person tapping another person's Space.
+This is that, and it found two defects the outside view could not.
+
+**Setup.** Two throwaway Spaces were created through the ordinary signup route
+(`rielosinc+holupqa1@gmail.com` / `+holupqa2@gmail.com`), confirmed, onboarded as
+**QA Ada** and **QA Bode** (both born 2000, so the 16+ gate admits them), then
+driven with a real Chromium at 430×932 against `holupapp.vercel.app`. Both
+accounts were deleted afterwards; nothing below is a permanent resident.
+
+| Step | Result |
+| --- | --- |
+| Ada opens Bode's Space | `1 Add Ups · 0 Added Up · 0 Homies`, **Add Up** button, 🫂 **Homie** pill, `approvalRequired: false` |
+| Ada taps **Add Up** | `holup_follow` → `{"status":"active","changed":true}`; button flips to **Added Up**; count → 1. No pending state, at any point, in any read. |
+| Ada taps 🫂 **Homie** | `holup_request_homie` → `{"status":"pending","changed":true}`; pill reads **Requested** |
+| Bode opens Whispers → Homies | Requests: **QA Ada · Accept · Decline** |
+| Bode taps **Accept** | Request consumed (*"No requests right now."*), QA Ada appears under **Your Homies** |
+| Ada reopens Bode's Space | 🫂 pill now reads **Homies**, count `1 Homies` |
+
+**In the database afterwards:** Ada→Bode is one `active` follow; `pending` follows
+anywhere in the table: **0**; QA Homie requests still pending: **0**;
+`holup_homies` row for the pair: **1**; the Add Up notification to Bode arrived.
+`connections` was correctly left empty — accepting a Homie is not a legacy
+connection.
+
+So the rule holds in both directions and in the data: an Add Up is finished the
+moment it is tapped, and a Homie is the only thing that waits for an answer.
+
+### The two defects this found, and fixed
+
+1. **The relationship probe logged a red 400 on every page load.** It called
+   `holup_follow_status(0)` — a real routine with an impossible target — which is
+   a refusal, not a success. Nothing visibly broke, but any member reading a
+   console, and any error tracker, would see a failure on a healthy Space; after
+   the history of this feature that is exactly the wrong signal to emit. The probe
+   now calls `holup_homie_requests_inbox(0,1)`, which is v2-only, scoped to the
+   caller, and always `200` for a signed-in member — so the only way it fails is
+   the function not existing, which is the question it is asking.
+2. **The probe fired twice per load.** `detected` was cached but the in-flight
+   promise was not, so two surfaces mounting together each sent it. The promise is
+   shared now.
+
+Both were live in `dcb9beb`. Fixed in `01834cd` and deployed
+(`dpl_4b4L7BvJvTAM6eDJtMWxGsR7DV6Y`, `READY`, promoted to `holupapp.vercel.app`).
+Re-checked on a real member Space after the deploy: **zero** 4xx/5xx requests, the
+probe answers `200`, counts and the 🫂 pill render.
+
+### A data question this raised, and did not fully answer
+
+Cleaning up the throwaway accounts, the active-Add-Up count went from 3 to 1 —
+two rows involving members 3 and 41 disappeared. Every mechanism that can delete
+a follow row was checked and none of them was used:
+
+- `holup_unfollow` and `holup_remove_follows_on_block` are the only routines that
+  delete `holup_follows`. Nothing called the first; the second fires on **insert**
+  into `blocks`, and no block was created.
+- There is no delete trigger on `holup_follows`, `holup_homies`,
+  `holup_homie_requests`, `blocks` or `profiles` beyond that one, and
+  `auth.users` has only an insert trigger.
+- The Keeps and the accepted Crush that justify those two rows were still intact —
+  which is the opposite of what an unfollow leaves behind, since that path removes
+  the Keep too.
+
+The rows were restored from their source of truth with the same rule the migration
+uses (Keeps → active, accepted Crushes → active, `on conflict do nothing`), and the
+state is now exactly derivable: `3->41`, `23->3`, `41->3`, `0` pending, `0` Keeps
+without a follow, `0` accepted Crushes without a follow. The same cleanup run a
+second time, on a single account, dropped nothing.
+
+**The cause is unexplained and is recorded as an open question, not a closed one.**
+Run this before and after any production cleanup; it should always return zeroes:
+
+```sql
+select
+  (select count(*) from public.holup_follows where status = 'pending') as pending,
+  (select count(*) from public.keeps k where not exists (
+     select 1 from public.holup_follows f
+      where f.follower_id = k.keeper_id and f.followed_id = k.kept_id and f.status = 'active')) as keeps_without_add_up,
+  (select count(*) from public.crushes c where c.status = 'accepted' and not exists (
+     select 1 from public.holup_follows f
+      where f.follower_id = c.from_id and f.followed_id = c.to_id and f.status = 'active')) as crushes_without_add_up;
+```
+
+### What is left on web
+
+1. **A shared Space does not unfurl.** `/?space=<id>` serves the app shell, so it
+   previews as the generic card. Needs a visibility-safe public Space RPC — a
+   design decision before it is code.
+2. **One legacy profile is `onboarded` with no birthdate.** Asking that member for
+   a birthday is a product call.
+3. **Production deploys from `build/holup-follow-draft`, not `main`.** Fine as a
+   choice; it should be a deliberate one before APKs are cut from the same tree.
+4. **The Whisper flow has not been walked end to end** the way Add Up and Homie
+   now have: request → thread opens → two messages → Accept/Decline inside the
+   chat. Same method, not yet done.
