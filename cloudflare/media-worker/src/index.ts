@@ -18,6 +18,7 @@
 import release from './release.json';
 import { uploadContentType, publicRpcError } from './uploadType';
 import { mediaCacheControl } from './cacheControl';
+import { READ_ORDER, DELETE_STORES, isReleasePath } from './mediaStore';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -35,6 +36,12 @@ export interface Env {
    * still starts, and falls back to the B2 mirror.
    */
   RELEASES?: R2Bucket;
+  /**
+   * Member media: every photo, Moment and attachment. Separate from `RELEASES`
+   * so a bucket-wide retention rule on one can never expire a member's photo,
+   * and so the 97 MB APK is not sitting among them.
+   */
+  MEDIA?: R2Bucket;
   /** Optional. Without it /admin/lifecycle stays closed. */
   ADMIN_TOKEN?: string;
 }
@@ -50,6 +57,8 @@ export interface Env {
 export interface R2Bucket {
   head(key: string): Promise<R2Object | null>;
   get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectBody | null>;
+  put(key: string, value: ArrayBuffer | ReadableStream, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  delete(key: string): Promise<void>;
 }
 export interface R2Object {
   size: number;
@@ -57,6 +66,7 @@ export interface R2Object {
 }
 export interface R2ObjectBody extends R2Object {
   body: ReadableStream;
+  httpMetadata?: { contentType?: string };
 }
 
 /**
@@ -298,6 +308,38 @@ function b2Auth(env: Env): Promise<B2Auth> {
       b2 = null;
       throw e;
     });
+}
+
+/**
+ * The same three operations on R2, for media.
+ *
+ * `put` with an explicit content type and the same path the database recorded:
+ * the path is the identity here, so the two stores must agree on it exactly, or a
+ * file is written under one name and looked for under another.
+ */
+async function r2Put(env: Env, path: string, contentType: string, bytes: ArrayBuffer): Promise<boolean> {
+  const bucket = env.MEDIA;
+  if (!bucket) return false;
+  await bucket.put(path, bytes, { httpMetadata: { contentType } });
+  return true;
+}
+
+async function r2Get(env: Env, path: string): Promise<Response | null> {
+  const bucket = env.MEDIA;
+  if (!bucket) return null;
+  const object = await bucket.get(path);
+  if (!object || !object.body) return null;
+  const headers = new Headers();
+  if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
+  if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+  return new Response(object.body, { status: 200, headers });
+}
+
+async function r2Delete(env: Env, path: string): Promise<boolean> {
+  const bucket = env.MEDIA;
+  if (!bucket) return false;
+  await bucket.delete(path);
+  return true;
 }
 
 async function b2Upload(env: Env, path: string, contentType: string, bytes: ArrayBuffer) {
@@ -782,8 +824,17 @@ export default {
       });
       if (!ticket.ok) return fail(ticket.status, ticket.message, origin);
 
+      /*
+       * New media goes to R2, which has no egress bill. B2 is kept as the
+       * fallback for one specific reason: if the binding is ever missing from a
+       * deploy, an upload must still succeed rather than telling a member their
+       * photo failed. The path the database recorded is the same either way, and
+       * reads look in both stores, so where a file physically landed does not
+       * change how it is fetched.
+       */
       try {
-        await b2Upload(env, ticket.data.path, contentType, bytes);
+        const wroteToR2 = isReleasePath(ticket.data.path) ? false : await r2Put(env, ticket.data.path, contentType, bytes);
+        if (!wroteToR2) await b2Upload(env, ticket.data.path, contentType, bytes);
       } catch (e) {
         // Credentials and bucket details never reach the client.
         const message = (e as Error).message ?? '';
@@ -820,9 +871,23 @@ export default {
         if (hit) return withHeaders(hit, path, true);
       }
 
-      const auth = await b2Auth(env);
-      const upstream = await b2Download(env, auth, path);
-      if (!upstream.ok) return fail(404, 'That file isn’t available.', origin);
+      /*
+       * Look in R2 first, then B2. Not a preference — a migration: everything
+       * uploaded before media moved to R2 lives in B2, and those photos have to
+       * keep opening. Once the old keys age out, B2 simply stops answering and
+       * this loop gets one iteration shorter without a code change.
+       */
+      let upstream: Response | null = null;
+      for (const store of READ_ORDER) {
+        if (store === 'r2') upstream = await r2Get(env, path);
+        else {
+          const auth = await b2Auth(env);
+          const answer = await b2Download(env, auth, path);
+          upstream = answer.ok ? answer : null;
+        }
+        if (upstream) break;
+      }
+      if (!upstream) return fail(404, 'That file isn’t available.', origin);
 
       const response = withHeaders(new Response(upstream.body, upstream), path, verdict.data.cacheable === true);
       if (verdict.data.cacheable && mediaCacheControl(path, true) !== 'private, no-store') {
@@ -842,7 +907,13 @@ export default {
       if (!allowed.ok) return fail(allowed.status, allowed.message, origin);
       if (!allowed.data) return fail(404, 'That file isn’t yours to remove.', origin);
 
-      await b2Delete(env, path);
+      // Both stores, because a file may have been written before the move and
+      // deleted after it. Each delete is idempotent, so this is safe even when
+      // the key exists in only one of them.
+      for (const store of DELETE_STORES) {
+        if (store === 'r2') await r2Delete(env, path);
+        else await b2Delete(env, path);
+      }
       return json({ ok: true }, 200, origin);
     }
 

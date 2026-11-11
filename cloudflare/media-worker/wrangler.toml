@@ -25,6 +25,12 @@ compatibility_date = "2026-10-09"
 [[r2_buckets]]
 binding = "RELEASES"
 bucket_name = "holupp"
+# Member media, in its own bucket on purpose: a retention rule written for the
+# APK must never be able to expire somebody's photo, and 97 MB of app should not
+# be sitting among the pictures.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "holupp-media"
 
 # Served from the Worker's own *.workers.dev address today. Adding a custom
 # domain later needs no code change and no stored URL changes: the old address
