@@ -431,9 +431,29 @@ export type ReplyQuote = {
   preview: string | null;
 };
 
+/**
+ * The post a Moment is previewing, when the Moment is a shared post.
+ *
+ * `previewMs` is nine seconds and comes from the server, not the client: the
+ * length of a preview is a rule, and a rule that only lives in a UI can be
+ * changed by a UI.
+ */
+export type MomentPostPreview = {
+  id: number;
+  body: string;
+  mediaUrl: string | null;
+  mediaKind: 'video' | 'photo' | null;
+  authorId: number;
+  authorName: string;
+  username: string | null;
+  previewMs: number;
+};
+
 export type MomentSummary = {
   id: number;
-  kind: 'photo' | 'text' | 'video';
+  kind: 'photo' | 'text' | 'video' | 'post';
+  /** Present when `kind` is 'post': the card this Moment is a preview of. */
+  post?: MomentPostPreview | null;
   body: string;
   mediaUrl: string | null;
   style: MomentStyle;

@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { CrushIcon } from '../../components/Logo';
 import { LinkText } from '../../components/LinkText';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { useTrackPostView } from '../../lib/useTrackPostView';
@@ -90,7 +91,8 @@ const REACTION_ICON: Record<ReactionKind, keyof typeof Ionicons.glyphMap> = {
 };
 
 const REACTION_GLYPH: Record<ReactionKind, string> = {
-  crush: '❤️',
+  // Unused for crush — the mark is drawn instead — but kept so the map is total.
+  crush: '',
   laugh: '😂',
   wow: '😲',
   fire: '🔥',
@@ -745,7 +747,12 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
                   minWidth: 56,
                 }}
               >
-                <Txt style={{ fontSize: 26 }}>{REACTION_GLYPH[kind]}</Txt>
+                {/* Crush is holUpp's own mark, not a red heart. */}
+                {kind === 'crush' ? (
+                  <CrushIcon size={26} color={colors.crush} filled />
+                ) : (
+                  <Txt style={{ fontSize: 26 }}>{REACTION_GLYPH[kind]}</Txt>
+                )}
                 <Txt variant="caption" color={on ? 'crush' : 'textMuted'}>
                   {REACTION_NAME[kind]}
                 </Txt>

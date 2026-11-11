@@ -106,6 +106,7 @@ export function EditedClip({
   maxHeight,
   fallbackRatio = 4 / 5,
   muted = false,
+  maxMs,
   onDoubleTap,
   accessibilityLabel,
   cornerControl,
@@ -163,6 +164,15 @@ export function EditedClip({
    * web.
    */
   muted?: boolean;
+  /**
+   * Play at most this long, then go back to the start.
+   *
+   * A nine-second preview of a post is not the same thing as ninety seconds of
+   * somebody's clip: the card is a doorway, so it shows the beginning of the
+   * thing and starts again rather than playing the whole of it in a 9:16 box that
+   * was never meant to hold a whole clip.
+   */
+  maxMs?: number;
   /** Double tap, for players that keep the "double tap to react" gesture. */
   onDoubleTap?: () => void;
   accessibilityLabel?: string;
@@ -241,6 +251,25 @@ export function EditedClip({
   useEffect(() => {
     if (player) player.muted = muted;
   }, [player, muted]);
+
+  /**
+   * The preview cap.
+   *
+   * Checked on a slow timer rather than by watching `currentTime`, because the
+   * timer only has to be right to within a frame or two and a per-frame callback
+   * per card is a per-frame callback per card. Seeking to zero rather than
+   * pausing keeps a preview alive while the reader looks at it.
+   */
+  useEffect(() => {
+    if (!player || !maxMs) return;
+    const tick = setInterval(() => {
+      const seconds = player.currentTime ?? 0;
+      if (seconds * 1000 >= maxMs) {
+        try { player.currentTime = 0; } catch { /* not seekable yet */ }
+      }
+    }, 250);
+    return () => clearInterval(tick);
+  }, [player, maxMs]);
 
   useEffect(() => {
     if (musicPlayer && look.music) musicPlayer.volume = look.music.volume;

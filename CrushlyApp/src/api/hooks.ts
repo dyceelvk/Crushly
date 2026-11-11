@@ -94,6 +94,20 @@ export const useConversations = () =>
 export const useConversation = (id: number) =>
   useQuery({ queryKey: keys.conversation(id), queryFn: () => service.conversation(id) });
 
+/** Share a post to Moments: refreshes both surfaces that show Moments. */
+export function useSharePostToMoment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { postId: number; audience?: 'everyone' | 'connections'; body?: string }) =>
+      service.sharePostToMoment(input.postId, { audience: input.audience, body: input.body }),
+    onSuccess: () => {
+      for (const key of [keys.moments, keys.momentCircles, keys.publicFlow]) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
+}
+
 export const useMoments = () =>
   useQuery({ queryKey: keys.moments, queryFn: () => service.momentsFeed(), staleTime: 20_000 });
 

@@ -84,26 +84,26 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
             navigation.navigate(route.name, route.params);
           }
         }}
-        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 }}
+        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 42, gap: 2 }}
       >
         <View
           style={{
             // Centred by hand: an absolutely-positioned box with no offsets in RN starts
             // at the left edge, so the glow line drifted out of its own tab.
-            position: 'absolute', top: -8, left: '50%', marginLeft: -13, width: 26, height: 2, borderRadius: 1,
+            position: 'absolute', top: -6, left: '50%', marginLeft: -13, width: 24, height: 2, borderRadius: 1,
             backgroundColor: focused ? colors.gold : 'transparent',
             shadowColor: colors.gold, shadowOpacity: focused ? 0.9 : 0, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
           }}
         />
         <View>
           {icon === 'crush' ? (
-            <CrushIcon size={24} color={color} filled={focused} />
+            <CrushIcon size={21} color={color} filled={focused} />
           ) : (
-            <Ionicons name={focused ? icon[0] : icon[1]} size={24} color={color} />
+            <Ionicons name={focused ? icon[0] : icon[1]} size={21} color={color} />
           )}
           {count ? <CountBadge count={count} style={{ position: 'absolute', top: -6, right: -12 }} /> : null}
         </View>
-        <Txt variant="caption" color={focused ? 'text' : 'textMuted'} style={{ fontSize: 11 }} maxFontSizeMultiplier={1.2}>
+        <Txt variant="caption" color={focused ? 'text' : 'textMuted'} style={{ fontSize: 10 }} maxFontSizeMultiplier={1.2}>
           {label}
         </Txt>
       </Pressable>
@@ -119,7 +119,7 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
     <Container
       {...containerProps}
       style={{
-        flexDirection: 'row', paddingBottom: Math.max(insets.bottom, 10), paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border,
+        flexDirection: 'row', paddingBottom: Math.max(insets.bottom, 6), paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border,
         backgroundColor: Platform.OS === 'ios' ? colors.glass : colors.bgSecondary,
       }}
       accessibilityRole="tablist"
@@ -127,36 +127,33 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
       <View {...swipe.panHandlers} style={{ flexDirection: 'row', flex: 1, maxWidth: 640, alignSelf: 'center', marginHorizontal: 'auto' }}>
         {shownRoutes.slice(0, half).map(({route, index}) => tab(route, index))}
 
+        {/*
+          Create sits in the row like the other five, exactly as it does inside a
+          Space.
+
+          It used to be a 52 px circle lifted 18 px above the bar, ringed in the
+          page colour — a floating button in the middle of a phone that already
+          has a bar there. It covered whatever the thumb was scrolling and it made
+          the bar taller than the five tabs needed, for one action. The Space's
+          version — a glyph and a word in the row — is the one the owner asked
+          for, so this is that: same size as a tab, no lift, no ring.
+        */}
         {onCreate ? (
-          <View style={{ width: 68, alignItems: 'center', justifyContent: 'center' }}>
-            <Pressable
-              onPress={() => {
-                haptic.tap();
-                onCreate();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Create post"
-              hitSlop={10}
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                marginTop: -18,
-                backgroundColor: colors.primary,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 3,
-                borderColor: colors.bg,
-                shadowColor: colors.primaryDeep,
-                shadowOpacity: 0.45,
-                shadowRadius: 14,
-                shadowOffset: { width: 0, height: 6 },
-                elevation: 10,
-              }}
-            >
-              <Ionicons name="add" size={28} color="#FFFFFF" />
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={() => {
+              haptic.tap();
+              onCreate();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Create a post"
+            hitSlop={6}
+            style={{ flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', gap: 2 }}
+          >
+            <Ionicons name="add-circle" size={21} color={colors.primary} />
+            <Txt variant="caption" color="textMuted" style={{ fontSize: 10 }} maxFontSizeMultiplier={1.2} numberOfLines={1}>
+              Create
+            </Txt>
+          </Pressable>
         ) : null}
 
         {shownRoutes.slice(half).map(({route, index}) => tab(route, index))}

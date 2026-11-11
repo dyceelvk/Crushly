@@ -29,6 +29,17 @@ export function MomentPreview({
   moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true,
 }: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; keepPlayerMounted?: boolean; caption?: boolean; showText?: boolean }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
+  /*
+   * A Moment that is a shared post: the preview card.
+   *
+   * Nine seconds of the post, at 9:16, with the author's handle underneath — and
+   * the card is the thing you tap to open the post. A written post has no clip,
+   * so its card is the words in the post's own type on the Moment's own colour,
+   * which is what a preview of words looks like.
+   */
+  if (moment.kind === 'post') {
+    return <MomentPostCard moment={moment} style={style} textSize={textSize} lines={lines} />;
+  }
   if (moment.kind === 'video') {
     // A tile does not play. Mounting a player per tile costs a decoder each and
     // depends on the browser painting a first frame for a video nobody started —
@@ -84,6 +95,97 @@ export function MomentPreview({
     <LinearGradient colors={s.colors} style={[{ padding: 14, justifyContent: 'center' }, style]}>
       {showText ? <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}><LinkText text={moment.body} bare /></Txt> : null}
     </LinearGradient>
+  );
+}
+
+
+/**
+ * The preview card for a Moment that is a shared post.
+ *
+ * 9:16, nine seconds, the author's handle underneath — and that is the whole
+ * card. A tap anywhere on the clip opens the post; a tap on the handle opens the
+ * person who made it, which is not the person who shared it. Those two taps are
+ * different questions and they have different answers, so they are different
+ * targets rather than one target with two meanings.
+ *
+ * The clip is muted here. A preview that starts making noise while somebody is
+ * scrolling a row of them is the opposite of a preview.
+ */
+function MomentPostCard({
+  moment,
+  style,
+  textSize = 15,
+  lines = 6,
+}: {
+  moment: Moment;
+  style?: object;
+  textSize?: number;
+  lines?: number;
+}) {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const post = moment.post;
+  if (!post) {
+    // The post is no longer visible to this viewer. The Moment is still theirs,
+    // so it is drawn as an empty card rather than vanishing from the row.
+    return (
+      <View style={[{ backgroundColor: '#141418', alignItems: 'center', justifyContent: 'center', padding: 10 }, style]}>
+        <Txt variant="caption" color="#8A8A93" style={{ textAlign: 'center' }}>This post is no longer available.</Txt>
+      </View>
+    );
+  }
+  const s = MOMENT_STYLES[moment.style] || MOMENT_STYLES.noir;
+  return (
+    <View style={[{ alignItems: 'stretch' }, style]}>
+      {/*
+        9:16, exactly, in whatever box this card was given.
+        Height is the constraint and the width follows, so a tile and a
+        full-screen viewer draw the same shape instead of two crops of one.
+      */}
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ flex: 1, aspectRatio: 9 / 16, maxWidth: '100%' }}>
+          <Pressable
+            onPress={() => navigation.navigate(post.mediaUrl ? 'PostViewer' : 'TextPost', { postId: post.id })}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${post.authorName}’s post`}
+            style={{ flex: 1, overflow: 'hidden', borderRadius: 14, backgroundColor: '#000' }}
+          >
+            {post.mediaKind === 'video' && post.mediaUrl ? (
+              <EditedClip
+                uri={mediaSource(mediaUrl(post.mediaUrl))}
+                live={null}
+                style={{ width: '100%', height: '100%' }}
+                autoPlay
+                loop
+                muted
+                /* Nine seconds, then it starts again: a preview, not a showing. */
+                maxMs={post.previewMs}
+              />
+            ) : post.mediaUrl ? (
+              <Photo uri={post.mediaUrl} style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <LinearGradient colors={s.colors} style={{ flex: 1, padding: 12, justifyContent: 'center' }}>
+                <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
+                  <LinkText text={post.body} bare />
+                </Txt>
+              </LinearGradient>
+            )}
+          </Pressable>
+        </View>
+      </View>
+      {/* The handle, under the card — the person who made the post, not the
+          person who shared it. */}
+      <Pressable
+        onPress={() => navigation.navigate('UserProfile', { id: post.authorId })}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${post.authorName}’s Space`}
+        hitSlop={6}
+        style={({ pressed }) => ({ paddingTop: 6, paddingHorizontal: 2, opacity: pressed ? 0.6 : 1 })}
+      >
+        <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontWeight: '700' }}>
+          {post.username ? `@${post.username}` : post.authorName}
+        </Txt>
+      </Pressable>
+    </View>
   );
 }
 

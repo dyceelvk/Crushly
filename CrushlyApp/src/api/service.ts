@@ -1835,6 +1835,24 @@ export async function createMoment(input: {
   return moment;
 }
 
+/**
+ * Share a post to Moments as a nine-second preview.
+ *
+ * Nothing is uploaded and nothing is copied: the Moment points at the post, and
+ * the server applies `can_view_post` when the Moment is read — so a preview
+ * cannot outlive access to the thing it previews.
+ */
+export async function sharePostToMoment(
+  postId: number,
+  opts: { audience?: 'everyone' | 'connections'; body?: string } = {},
+): Promise<Moment> {
+  return rpc<Moment>('share_post_to_moment', {
+    p_post_id: postId,
+    p_audience: opts.audience ?? 'everyone',
+    p_body: opts.body ?? '',
+  });
+}
+
 export async function deleteMoment(id: number): Promise<void> {
   const me = await meId();
   const row = await supabase

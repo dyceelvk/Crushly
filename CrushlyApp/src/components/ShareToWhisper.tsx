@@ -10,7 +10,7 @@ import { LoadingBlock, EmptyState } from './States';
 import { useToast } from './Toast';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
-import { useConversations, useSendMessage } from '../api/hooks';
+import { useConversations, useSendMessage, useSharePostToMoment } from '../api/hooks';
 import type { ConversationSummary, Post } from '../api/types';
 import { timeAgo } from '../lib/format';
 import { haptic } from '../lib/haptics';
@@ -44,6 +44,8 @@ export function ShareToWhisper({
   const toast = useToast();
   const list = useConversations();
   const send = useSendMessage();
+  const toMoment = useSharePostToMoment();
+  const [sharedToMoment, setSharedToMoment] = useState(false);
   const [query, setQuery] = useState('');
   const [sentTo, setSentTo] = useState<Record<number, true>>({});
   const [saving, setSaving] = useState(false);
@@ -121,6 +123,24 @@ export function ShareToWhisper({
       .catch(() => { if (live) setCopyState('none'); });
     return () => { live = false; };
   }, [post]);
+
+  /**
+   * Share the post to Moments as a nine-second preview.
+   *
+   * The card is a doorway, not a copy: the post keeps its own audience, and
+   * whoever opens the card lands on the post itself.
+   */
+  const shareToMoment = async () => {
+    if (!post || toMoment.isPending) return;
+    haptic.tap();
+    try {
+      await toMoment.mutateAsync({ postId: post.id });
+      setSharedToMoment(true);
+      toast({ kind: 'success', title: 'In your Moment', message: 'A nine-second preview, with their name under it.' });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Couldn’t share it', message: (e as Error).message });
+    }
+  };
 
   const save = async () => {
     if (!post || saving || !downloadUrl) return;
@@ -249,6 +269,27 @@ export function ShareToWhisper({
             </Txt>
           </Pressable>
         ) : null}
+        <Pressable
+          onPress={shareToMoment}
+          disabled={toMoment.isPending}
+          accessibilityRole="button"
+          accessibilityLabel="Share this post to your Moment"
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            paddingVertical: 12,
+            opacity: toMoment.isPending ? 0.6 : pressed ? 0.7 : 1,
+          })}
+        >
+          <Ionicons
+            name={sharedToMoment ? 'checkmark-circle' : 'flash-outline'}
+            size={20}
+            color={sharedToMoment ? colors.gold : colors.textSecondary}
+          />
+          <Txt variant="body">{sharedToMoment ? 'Shared to your Moment' : 'Share to your Moment'}</Txt>
+          <Txt variant="caption" color="textMuted">· 9 second preview</Txt>
+        </Pressable>
         <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel="Copy post link" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }}>
           <Ionicons name="link-outline" size={20} color={colors.textSecondary} />
           <Txt variant="body">Copy link</Txt>

@@ -18,7 +18,15 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Card = { key: string; author: MomentAuthor; moment: Moment; mine: boolean; count: number; unread: boolean };
 
 const CARD_W = 132;
-const CARD_H = 196;
+/*
+ * Tall enough for a 9:16 preview and the handle under it.
+ *
+ * A shared post's card is nine-by-sixteen by definition, so a 196-tall card could
+ * only show it letterboxed or clipped — the handle was cut off by the card's own
+ * rounded corner. At this height the preview is exactly 9:16 at full width and
+ * the handle has its own line.
+ */
+const CARD_H = 266;
 
 /**
  * Moments, as one row of Discover.
@@ -154,7 +162,12 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
     >
       <MomentPreview
         moment={moment}
-        style={StyleSheet.absoluteFill}
+        style={
+          moment.kind === 'post'
+            // Left, right and top only: the handle lives in the bottom strip.
+            ? { position: 'absolute', left: 0, right: 0, top: 0, bottom: 34, alignItems: 'center', justifyContent: 'center' }
+            : StyleSheet.absoluteFill
+        }
         textSize={13}
         lines={4}
         caption={false}
@@ -166,6 +179,11 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
         colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 64 }}
       />
+      {/*
+        A shared post draws its own handle under its own preview, because the
+        name that matters there is the author of the post, not whoever shared it.
+        Two names stacked in the same corner is one name too many.
+      */}
       <View
         style={{
           position: 'absolute',
@@ -175,7 +193,9 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
           flexDirection: 'row',
           alignItems: 'center',
           gap: 6,
+          opacity: moment.kind === 'post' ? 0 : 1,
         }}
+        pointerEvents={moment.kind === 'post' ? 'none' : 'auto'}
       >
         <Avatar uri={author.photo} name={author.name} size={18} ring={author.mutual ? 'crush' : undefined} />
         <Txt variant="caption" color="#FFFFFF" numberOfLines={1} style={{ flexShrink: 1, fontWeight: '600' }}>

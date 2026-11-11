@@ -117,7 +117,8 @@ async function signedIn(page: Page) {
    * the loop presses whatever is in front of it and stops the moment the tabs
    * are on screen — a fixed sequence of clicks is what made this flaky.
    */
-  const home = page.getByText('Crushes', { exact: true });
+  // The pane is called All Crush Feed: it is every Crush, not a list of people.
+  const home = page.getByText('All Crush Feed', { exact: true });
   const door = page.getByText(/already on holUpp/);
   for (let attempt = 0; attempt < 10; attempt++) {
     if (await home.first().isVisible().catch(() => false)) break;
@@ -129,7 +130,7 @@ async function signedIn(page: Page) {
   await page.waitForTimeout(1500);
 }
 
-test('Crushes opens on live Moments as circles, one per person', async ({ page }) => {
+test('All Crush Feed opens on live Moments as circles, one per person', async ({ page }) => {
   await signedIn(page);
   await page.screenshot({ path: 'test-results/crushes-moment-circles.png' });
   // Ada has four live Moments. She is still one circle, and the badge is the

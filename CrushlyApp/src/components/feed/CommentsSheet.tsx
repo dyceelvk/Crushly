@@ -87,6 +87,16 @@ export function CommentsSheet({
   const toast = useToast();
 
   const postId = post?.id ?? null;
+  /*
+   * Reactions on a comment belong to written posts only.
+   *
+   * A video or a photo is a thing you react to; the comments under it are a
+   * conversation about that thing, and a row of faces on every reply turns the
+   * thread into a second scoreboard. Written posts have no picture to carry the
+   * reaction, so there the comment itself can be crushed — and that lives on the
+   * text post screen, in words, beside Reply.
+   */
+  const commentReactions = !!post && !post.mediaUrl;
   const commentsQuery = usePostComments(visible ? postId : null);
   const settingsQuery = usePostCommentSettings(visible ? postId : null);
   const canComment = settingsQuery.data === true;
@@ -253,12 +263,20 @@ export function CommentsSheet({
 
             <View style={{ flex: 1 }} />
 
-            <ReactionButton
-              myReaction={comment.myReaction ?? (comment.liked ? 'crush' : null)}
-              count={comment.likeCount}
-              size={17}
-              onReact={(kind) => react(comment, kind)}
-            />
+            {commentReactions ? (
+              <ReactionButton
+                myReaction={comment.myReaction ?? (comment.liked ? 'crush' : null)}
+                count={comment.likeCount}
+                size={17}
+                word
+                onReact={(kind) => react(comment, kind)}
+              />
+            ) : comment.likeCount ? (
+              /* The count stays: it is what other people said, and hiding it
+                 would quietly erase reactions that already exist. There is just
+                 no way to add another here. */
+              <Txt style={{ fontSize: 12, color: NOIR.muted }}>{formatCount(comment.likeCount)}</Txt>
+            ) : null}
           </View>
         </View>
       </Pressable>

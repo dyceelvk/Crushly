@@ -50,12 +50,21 @@ export function ReactionButton({
   onReact,
   size = 24,
   disabled = false,
+  word,
 }: {
   myReaction?: ReactionKind | null;
   count?: number;
   onReact: (kind: ShownReaction) => void;
   size?: number;
   disabled?: boolean;
+  /**
+   * Draw the control as the word "Crush" instead of a face.
+   *
+   * A comment's actions are words — Reply is a word — and a row of emoji beside
+   * it made the two things look like they came from different apps. The gesture
+   * is identical: tap is a crush, hold opens the seven.
+   */
+  word?: boolean;
 }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
@@ -142,7 +151,17 @@ export function ReactionButton({
       >
         {/* Given, the control wears holUpp's own mark in the Crush colour;
             not yet, it is an outline heart, which is a shape and not a brand. */}
-        {look?.mark ? (
+        {word ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            {look ? <CrushIcon size={Math.max(size - 4, 10)} color={look.tint} filled /> : null}
+            <Txt
+              variant="small"
+              style={{ fontWeight: '700', color: look ? look.tint : colors.textSecondary }}
+            >
+              Crush
+            </Txt>
+          </View>
+        ) : look?.mark ? (
           <CrushIcon size={size} color={look.tint} filled />
         ) : look?.emoji ? (
           <Txt style={{ fontSize: size }}>{look.emoji}</Txt>

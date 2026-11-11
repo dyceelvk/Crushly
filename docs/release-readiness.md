@@ -1096,6 +1096,58 @@ that proves nothing. The two designs that would make it true — gating visibili
 until the copy exists, or transcoding on publish — are written down at the bottom
 of `.github/workflows/mark-clips.yml`, with their trade-offs.
 
+## A shorter bar, comments in words, and a Moment that is a post (2026-11-07, late)
+
+### The bar, everywhere
+
+Home, Connections, Whispers and Space all shrink to the same numbers: 21 px
+glyphs, 10 px labels, a 42 px row, 4/6 px of padding. Space's version was already
+the smaller one; the app bar had drifted larger than it.
+
+**Create is a tab now.** It was a 52 px circle lifted 18 px above the bar and
+ringed in the page colour — a floating button in the middle of a phone that
+already has a bar there, covering what the thumb was scrolling. It is the Space
+button, in the row: an `add-circle` glyph and the word Create, the same size as
+the other five.
+
+### Comments: Crush and Reply, in words
+
+A comment's actions were an emoji with a count sitting above the line. They are
+`Crush` and `Reply` now, under the comment, side by side — tap Crush to give one,
+hold it for the other six, which is the same gesture as everywhere else with the
+word telling you what a tap will do. Reply actually replies: it sets the
+`parentId`, shows a "Replying to…" strip above the composer, and can be cancelled.
+Before this, Reply existed only in the sheet.
+
+**Reactions on a comment belong to written posts.** A video or a photo is a thing
+you react to; its comments are a conversation about that thing, and a row of faces
+on every reply turns the thread into a second scoreboard. In the sheet — which is
+where a photo's or a clip's comments live — there is no reaction control at all
+now. Existing counts stay, because hiding them would erase reactions people
+already gave. Written posts keep reactions, and they live on the text post screen.
+
+### The red heart is now the mark, everywhere including Flow
+
+`PostViewer`'s seven-reaction sheet still drew `❤️`. It draws `CrushIcon` now.
+That was the last red heart in the app.
+
+### Sharing a post to Moments is a nine-second preview card
+
+The card is a reference, not a copy. `moments.post_id` points at the post;
+`share_post_to_moment` writes it; `serialize_moment` returns a `post` block with
+the post's media, its author's handle and `previewMs: 9000`, and it applies
+`can_view_post` when the Moment is read — so a preview cannot outlive access to
+the thing it previews, which re-uploading could never guarantee.
+
+The card is 9:16, plays nine seconds (capped in `EditedClip` via `maxMs`, muted),
+and carries the **post author's** `@handle` under it. A tap on the clip opens the
+post; a tap on the handle opens the author's Space. Those are different questions,
+so they are different targets.
+
+The Moments card in Discover grew to 266 px so a 9:16 preview and its handle both
+fit; a shared post hides the row's own name strip, because two names in one corner
+is one too many.
+
 ## Six reports, and what was actually behind each (2026-11-07, latest)
 
 ### "My saved posts disappear when I scroll down" — a page replaced, not appended

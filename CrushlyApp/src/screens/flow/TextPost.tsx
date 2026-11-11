@@ -80,6 +80,14 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
   const settings = usePostCommentSettings(postId);
   const canComment = settings.data !== false;
   const send = useCommentOnPost(postId);
+  /**
+   * The comment being answered, if any.
+   *
+   * Reply lives under each comment now, beside Crush, so the composer needs to
+   * know whether it is starting a thread or answering one — and the answer has
+   * to be a real `parentId`, not a name printed above the field.
+   */
+  const [replyTo, setReplyTo] = useState<PostComment | null>(null);
   const reactComment = useReactToComment(postId);
 
   const [draft, setDraft] = useState('');
@@ -118,8 +126,9 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
     if (!body || !post || sending) return;
     setSending(true);
     try {
-      await send.mutateAsync({ body, parentId: null });
+      await send.mutateAsync({ body, parentId: replyTo?.id ?? null });
       setDraft('');
+      setReplyTo(null);
       // The list below is the point of this screen, so it is scrolled to the end
       // by the sheet's own refetch rather than by a scroll position we guess at.
     } catch (e) {
@@ -127,7 +136,7 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
     } finally {
       setSending(false);
     }
-  }, [draft, post, send, sending, toast]);
+  }, [draft, post, replyTo, send, sending, toast]);
 
   if (postQuery.isLoading) {
     return (
@@ -287,6 +296,10 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
                   comment={c}
                   onOpenAuthor={openProfile}
                   onReact={(kind) => reactComment.mutate({ commentId: c.id, kind })}
+                  onReply={() => {
+                    setReplyTo(c);
+                    input.current?.focus();
+                  }}
                 />
               ))}
               {(comments.data?.items.length ?? 0) > preview.length ? (
@@ -311,6 +324,30 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
       </ScrollView>
 
       {/* ------------------------------------------------------------- compose */}
+      {/* Who the next comment answers. Without this, a reply looks like a new
+          comment that happens to agree with the one above it. */}
+      {replyTo ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: space.sm,
+            paddingHorizontal: space.md,
+            paddingVertical: 6,
+            backgroundColor: colors.elevated,
+            borderTopWidth: stroke.hairline,
+            borderTopColor: colors.border,
+          }}
+        >
+          <Ionicons name="return-down-forward" size={13} color={colors.textMuted} />
+          <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ flex: 1 }}>
+            {`Replying to ${replyTo.mine ? 'your comment' : replyTo.author.name}`}
+          </Txt>
+          <Pressable onPress={() => setReplyTo(null)} accessibilityRole="button" accessibilityLabel="Cancel reply" hitSlop={8}>
+            <Ionicons name="close" size={15} color={colors.textMuted} />
+          </Pressable>
+        </View>
+      ) : null}
       <View
         style={{
           flexDirection: 'row',
@@ -435,10 +472,12 @@ function CommentLine({
   comment,
   onOpenAuthor,
   onReact,
+  onReply,
 }: {
   comment: PostComment;
   onOpenAuthor: (id: number) => void;
   onReact: (kind: ShownReaction) => void;
+  onReply: () => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -465,15 +504,34 @@ function CommentLine({
         >
           {comment.hidden ? 'This comment was removed.' : <LinkText text={comment.body} bare />}
         </Txt>
-        {/* A comment can be reacted to as well as a post — same seven, same hold. */}
+        {/*
+          Under the comment, in words, beside Reply.
+
+          It was an emoji with a count sitting above this line, which made a
+          comment's actions read as two different kinds of thing. Now it is what a
+          comment's actions are: Crush, and reply. Tap Crush to give one, hold it
+          for the other six — the same gesture as everywhere else, with the word
+          telling you what a tap will do.
+        */}
         {!comment.hidden ? (
-          <View style={{ marginTop: 4, alignSelf: 'flex-start' }}>
+          <View style={{ marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <ReactionButton
               myReaction={comment.myReaction}
               count={comment.likeCount}
               onReact={onReact}
               size={16}
+              word
             />
+            <Pressable
+              onPress={onReply}
+              accessibilityRole="button"
+              accessibilityLabel={`Reply to ${comment.mine ? 'your comment' : comment.author.name}`}
+              hitSlop={8}
+            >
+              <Txt variant="small" color="textSecondary" style={{ fontWeight: '700' }}>
+                Reply
+              </Txt>
+            </Pressable>
           </View>
         ) : null}
       </View>
