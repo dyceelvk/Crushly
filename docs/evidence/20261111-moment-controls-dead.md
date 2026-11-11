@@ -181,3 +181,30 @@ because a Worker bound to a bucket that does not exist fails to deploy *entirely
 | `/download` | **HTTP 200**, 97,042,324 bytes, correct SHA-256, `PK\x03\x04` |
 | signature | `7c1f8fc6…b6bb` — same as 1.0.87, so it installs in place |
 | cost | **$0** — no B2 egress, no R2 subscription, no Actions minutes |
+
+---
+
+## Storage: what R2 costs and where the 10 GB goes
+
+The 10 GB free tier is **per account, pooled across all buckets** — not per
+bucket. Two buckets share it; buckets themselves are free, the stored bytes are
+not. Measured 2026-11-11: `holupp` 97.0 MB (the APK) + `holupp-media` 0.0 MB =
+**1.0% of the free tier**.
+
+Paths are `<kind>/<userId>/<millis>-<hash>.<ext>`, kinds `photos | moments |
+messages | posts | circles`, so retention is a prefix rule rather than a guess.
+
+**`holupp-media` lifecycle, applied and read back:**
+
+| rule | prefix | effect |
+|---|---|---|
+| `expire-moments` | `moments/` | delete 1 day after upload (86400 s) |
+
+Without it, every expired Moment would sit in R2 forever — invisible in the app,
+permanent in the bill. The rule matches the promise the product already makes: a
+Moment lasts a day. Photos, posts, circles and messages are not expired by any
+rule; they go when a member deletes them.
+
+Written with the same care as the B2 rules: a bare `moments` prefix is what the
+dashboard's box accepts, and a rule with no prefix at all would delete every
+profile photo. The prefix is trailing-slashed.
