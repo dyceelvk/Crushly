@@ -79,6 +79,10 @@ def purge(paths: list[str]) -> dict:
         headers={
             "Authorization": f"Bearer {os.environ['ADMIN_TOKEN']}",
             "Content-Type": "application/json",
+            # Named on purpose: Cloudflare's bot protection rejects a request
+            # with an empty or generic User-Agent before it ever reaches the
+            # Worker, which reads as a 403 from the Worker when it is not.
+            "User-Agent": "holupp-drain/1.0 (+https://holupapp.vercel.app)",
         },
     )
     try:

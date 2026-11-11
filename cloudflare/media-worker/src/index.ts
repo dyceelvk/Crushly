@@ -45,6 +45,15 @@ export interface Env {
   MEDIA?: R2Bucket;
   /** Optional. Without it /admin/lifecycle stays closed. */
   ADMIN_TOKEN?: string;
+  /**
+   * The token /admin/purge answers to.
+   *
+   * A separate name from ADMIN_TOKEN on purpose. `deploy-worker.yml` passes
+   * ADMIN_TOKEN as a plain variable on every deploy, and a variable with a
+   * secret's name replaces the secret — so the purge token is kept under a name
+   * that deploy never mentions, and survives it.
+   */
+  PURGE_TOKEN?: string;
 }
 
 /**
@@ -714,6 +723,17 @@ async function apkBuild(url: URL, env: Env, origin: string | null, headOnly: boo
 }
 
 /**
+ * Which token unlocks the admin routes.
+ *
+ * PURGE_TOKEN wins, because that is the one the deploy process never rewrites.
+ * An empty token is never accepted, or a Worker deployed without one would be
+ * open to anybody who sends `Authorization: Bearer `.
+ */
+function adminToken(env: Env): string {
+  return env.PURGE_TOKEN || env.ADMIN_TOKEN || '';
+}
+
+/**
  * Empties the database's deletion queue.
  *
  * `DELETE /m/<path>` lets a member remove a file they own, and the app uses it —
@@ -735,7 +755,7 @@ async function apkBuild(url: URL, env: Env, origin: string | null, headOnly: boo
  *        https://crushly-media.dyceelvk.workers.dev/admin/purge
  */
 async function purgeMedia(request: Request, env: Env, origin: string | null): Promise<Response> {
-  if (!env.ADMIN_TOKEN) return fail(404, '', origin);
+  if (!adminToken(env)) return fail(404, '', origin);
 
   let paths: string[] = [];
   try {
@@ -779,12 +799,12 @@ export default {
     if (url.pathname === '/health') return health(env, origin);
     if (url.pathname === '/admin/purge') {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
-      if (bearerToken(request, null) !== (env.ADMIN_TOKEN ?? '')) return fail(404, '', origin);
+      if (bearerToken(request, null) !== adminToken(env)) return fail(404, '', origin);
       return purgeMedia(request, env, origin);
     }
     if (url.pathname === '/admin/lifecycle') {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
-      if (bearerToken(request, null) !== (env.ADMIN_TOKEN ?? '')) return fail(404, '', origin);
+      if (bearerToken(request, null) !== adminToken(env)) return fail(404, '', origin);
       return applyLifecycle(env, origin);
     }
 

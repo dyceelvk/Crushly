@@ -3,13 +3,13 @@
     "name": "holUpp",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.96",
+    "version": "1.0.98",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "holUpp — follow the feelings. A social space for real connection.",
+    "description": "holUpp \u2014 follow the feelings. A social space for real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 96
+      "versionCode": 98
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -79,7 +79,9 @@
         "expo-media-library",
         {
           "savePhotosPermission": "holUpp saves clips you choose to keep to this phone's gallery.",
-          "granularPermissions": ["video"]
+          "granularPermissions": [
+            "video"
+          ]
         }
       ],
       [
