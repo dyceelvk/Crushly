@@ -75,7 +75,14 @@ jobs:
           elif grep -qi 'created' /tmp/r2-create.log; then
             echo "::notice::Created the release bucket (holup-releases)."
           else
-            echo "::warning::Could not create the release bucket — the token may lack Workers R2 Storage: Edit. The Worker will still fall back to the B2 mirror, and /download may stay 503 while the B2 cap is exhausted."
+            echo "::error::Could not create the release bucket. The CLOUDFLARE_API_TOKEN most likely lacks 'Workers R2 Storage: Edit' — the APK cannot be served from R2 until it has it. Add that permission to the token (Cloudflare → My Profile → API Tokens), then re-run this workflow."
+            exit 1
+          fi
+          # The binding is unusable if the bucket is not really there, and
+          # wrangler's own error for that says nothing about what to fix.
+          if ! npx --yes wrangler@4 r2 bucket list 2>/dev/null | grep -q 'holup-releases'; then
+            echo "::error::The release bucket holup-releases is still not visible to this token. Check its 'Workers R2 Storage: Edit' permission, then re-run."
+            exit 1
           fi
 
       - uses: cloudflare/wrangler-action@v3
