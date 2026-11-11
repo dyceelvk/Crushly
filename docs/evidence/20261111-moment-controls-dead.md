@@ -67,3 +67,35 @@ the sweeps above reproduces a crash, and a render-time throw would be caught by
 either a native-module fault (media library, video encoder, updater) or an error
 thrown outside React. The MIUI dialog's *View summary* holds the stack, and that
 is what is needed to fix it rather than guess at it.
+
+---
+
+## The update channel, while all this was happening
+
+The 1.0.96 APK built and its emulator walk passed (run `43059618397`), and it is
+on the GitHub release `android-test-1.0.96` — 97,042,324 bytes, SHA-256
+`1633f024…`, signed with the same key as 1.0.87.
+
+But `/download` answers **503**. Not a code fault this time: the B2 account's
+**download cap is exhausted**, and B2 says so plainly —
+
+```
+{ "code": "download_cap_exceeded",
+  "message": "Cannot download file, download bandwidth or transaction (Class B)
+              cap exceeded. See the Caps & Alerts page to increase your cap.",
+  "status": 403 }
+```
+
+Every install of the app pulls ~97 MB *through the Worker from B2*, so a
+handful of installs in a day, plus the mirror's own readback and the checks that
+verified 1.0.95, is enough to hit a free-tier cap. Two consequences worth fixing
+properly, in order of how much they cost:
+
+1. **Raise the cap** (or set it to no limit) in the B2 console — Caps & Alerts.
+   That restores the channel without a code change.
+2. **Stop paying B2 egress for the APK at all.** It is 97 MB served from a
+   bucket whose egress is metered; Cloudflare R2 costs nothing to serve and the
+   Worker already lives on Cloudflare. That migration is the real fix.
+
+Until then the GitHub release page is the way in for anyone who can sign in to
+the repository.
