@@ -335,6 +335,11 @@ export async function uploadMediaFile(
 ): Promise<string> {
   requireConfig();
   const original = await uriToBlob(uri);
+  // Before a minute of encoding is spent on it: 300 MB is the most anybody may
+  // pick, and a file past that is a mistake worth naming straight away.
+  if (original.size > MAX_PICK_BYTES) {
+    throw new ApiError(413, 'That clip is over 300 MB. Trim it first, then post.');
+  }
 
   /*
    * A big clip is compressed, not refused.
@@ -349,11 +354,20 @@ export async function uploadMediaFile(
   if (isHeavyVideo(original, uri)) {
     // On a phone the encoder gets the file the picker already has; on the web
     // the blob is the file.
-    const smaller = await compressVideo(original, { sourceUri: Platform.OS === 'web' ? undefined : uri }).catch(() => null);
-    if (smaller) {
+    const sourceUri = Platform.OS === 'web' ? undefined : uri;
+    let target = TARGET_BYTES;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const smaller = await compressVideo(original, { targetBytes: target, sourceUri }).catch(() => null);
+      if (!smaller) break;
       blob = smaller.blob;
       contentType = smaller.mimeType;
       path = path.replace(/\.[^./]+$/, `.${extensionFor(smaller.mimeType, 'webm')}`);
+      if (blob.size <= UPLOAD_MAX_BYTES) break;
+      // The encoder aimed at 64 MB and produced something bigger — some
+      // encoders overshoot a bitrate hint on hard footage. One more pass at
+      // three-quarters of the ceiling, rather than failing at the last step on
+      // a file holUpp itself just made.
+      target = Math.round(UPLOAD_MAX_BYTES * 0.75);
     }
   }
 
@@ -367,9 +381,6 @@ export async function uploadMediaFile(
       413,
       `That file is ${Math.round(mb)} MB even after compressing, and holUpp takes up to ${limitMb} MB. Trim it, or pick something shorter.`,
     );
-  }
-  if (original.size > MAX_PICK_BYTES) {
-    throw new ApiError(413, 'That clip is over 300 MB. Trim it first, then post.');
   }
   const kind = bucket === 'media' ? mediaKind(path) : null;
   if (kind === 'banners' && !moved(kind)) throw new ApiError(503, 'Banner uploads are unavailable right now.');
