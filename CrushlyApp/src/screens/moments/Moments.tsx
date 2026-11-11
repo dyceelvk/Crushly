@@ -26,8 +26,29 @@ import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
 export function MomentPreview({
-  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true, tappable = true, onReveal,
-}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; keepPlayerMounted?: boolean; caption?: boolean; showText?: boolean; tappable?: boolean; onReveal?: (open: boolean) => void }) {
+  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true, tappable = true, showAuthor = false, onReveal,
+}: {
+  moment?: Moment;
+  style?: object;
+  textSize?: number;
+  lines?: number;
+  autoPlay?: boolean;
+  keepPlayerMounted?: boolean;
+  caption?: boolean;
+  showText?: boolean;
+  tappable?: boolean;
+  /**
+   * Whether the card may name the person who made a shared post, and let you
+   * open their Space from here.
+   *
+   * Off everywhere outside the Moment itself. A shared post in a grid is a
+   * Moment like any other: you should meet it, not be handed its author before
+   * you have even opened it. The handle is inside, where there is room to show
+   * who made the thing you are looking at.
+   */
+  showAuthor?: boolean;
+  onReveal?: (open: boolean) => void;
+}) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
   /*
    * A Moment that is a shared post: the preview card.
@@ -38,7 +59,17 @@ export function MomentPreview({
    * which is what a preview of words looks like.
    */
   if (moment.kind === 'post') {
-    return <MomentPostCard moment={moment} style={style} textSize={textSize} lines={lines} tappable={tappable} onReveal={onReveal} />;
+    return (
+      <MomentPostCard
+        moment={moment}
+        style={style}
+        textSize={textSize}
+        lines={lines}
+        tappable={tappable}
+        showAuthor={showAuthor}
+        onReveal={onReveal}
+      />
+    );
   }
   if (moment.kind === 'video') {
     // A tile does not play. Mounting a player per tile costs a decoder each and
@@ -124,6 +155,7 @@ function MomentPostCard({
   textSize = 15,
   lines = 6,
   tappable = true,
+  showAuthor = false,
   onReveal,
 }: {
   moment: Moment;
@@ -132,6 +164,8 @@ function MomentPostCard({
   lines?: number;
   /** Off in a tile: the tile has its own tap (open the Moment). */
   tappable?: boolean;
+  /** Off outside the Moment: the card is the thing, not a way to somebody else. */
+  showAuthor?: boolean;
   /** Told when the "View this post" line appears, so a timeline can hold still. */
   onReveal?: (open: boolean) => void;
 }) {
@@ -239,7 +273,11 @@ function MomentPostCard({
       </View>
 
       {/* The handle, under the card — the person who made the post, not the
-          person who shared it. */}
+          person who shared it — and only once the Moment is open. In a grid this
+          line was a name, a profile link and a "view this post" card rolled into
+          one, all before anybody had entered the Moment: that is what the owner
+          was seeing in the Moments tab. */}
+      {showAuthor ? (
       <Pressable
         onPress={() => navigation.navigate('UserProfile', { id: post.authorId })}
         accessibilityRole="button"
@@ -251,6 +289,7 @@ function MomentPostCard({
           {post.username ? `@${post.username}` : post.authorName}
         </Txt>
       </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -290,7 +329,12 @@ export function MomentsScreen() {
 
       {/* Your Moment */}
       <Pressable
-        onPress={() => (mine.length ? navigation.navigate('MomentViewer', { userId: data!.mine.user.id, mine: true }) : navigation.navigate('MomentComposer'))}
+        onPress={() =>
+          mine.length
+            // Opens the newest, which is the one this card draws.
+            ? navigation.navigate('MomentViewer', { userId: data!.mine.user.id, mine: true, momentId: mine[mine.length - 1].id })
+            : navigation.navigate('MomentComposer')
+        }
         accessibilityRole="button"
         accessibilityLabel={mine.length ? `Your Moment, ${mine.length} active. View` : 'Share your Moment'}
         style={({ pressed }) => ({
@@ -368,7 +412,15 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
   const h = width * 1.35;
   return (
     <Pressable
-      onPress={() => navigation.navigate('MomentViewer', { userId: group.user.id })}
+      /*
+       * The Moment under the finger, not the person's whole day.
+       *
+       * This used to pass the person and nothing else, so the viewer opened at
+       * their first Moment — the oldest one they had up — however recent the
+       * tile you tapped was. The tile draws the newest, so the newest is what a
+       * tap opens; the older ones are a swipe back, the way a story reads.
+       */
+      onPress={() => navigation.navigate('MomentViewer', { userId: group.user.id, momentId: latest.id })}
       accessibilityRole="button"
       accessibilityLabel={`${group.user.name}'s Moment${group.moments.length > 1 ? `s, ${group.moments.length}` : ''}, ${timeAgo(latest.createdAt)} ago${group.hasUnseen ? ', new' : ''}`}
       style={({ pressed }) => ({ width, opacity: pressed ? 0.85 : 1 })}

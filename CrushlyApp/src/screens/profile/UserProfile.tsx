@@ -618,7 +618,7 @@ export function SpaceScreen({
               <SpaceMoments
                 moments={p.moments}
                 name={p.name}
-                onOpen={() => navigation.navigate('MomentViewer', { userId: p.id, mine })}
+                onOpen={(momentId) => navigation.navigate('MomentViewer', { userId: p.id, mine, momentId })}
               />
             ) : null}
             {tab === 'circles' ? (
@@ -1130,7 +1130,7 @@ function SpaceCircleRow({
 }
 
 /** Their Moments, in the same pebble grid the Moments tab uses. */
-function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; name: string; onOpen: () => void }) {
+function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; name: string; onOpen: (momentId: number) => void }) {
   const { colors } = useTheme();
   const { contentWidth, gutter } = useLayout();
   const cols = 3;
@@ -1144,7 +1144,8 @@ function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; nam
       {moments.map((m) => (
         <Pressable
           key={m.id}
-          onPress={onOpen}
+          /* The pebble tapped is the Moment that opens. */
+          onPress={() => onOpen(m.id)}
           accessibilityRole="button"
           accessibilityLabel={`Play ${name}’s Moment${m.body ? `: ${m.body}` : ''}`}
           style={({ pressed }) => ({ width: w, opacity: pressed ? 0.85 : 1 })}
@@ -1157,6 +1158,9 @@ function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; nam
                 caption={m.kind !== 'photo'}
                 textSize={Math.max(9, w / 11)}
                 lines={3}
+                /* The pebble is the tap; a shared post inside it is a Moment
+                   here, not a way out to somebody else's post. */
+                tappable={false}
               />
             </View>
           </View>

@@ -40,3 +40,40 @@ export function initialMomentIndex(moments: readonly { id: number }[], targetId?
   const index = moments.findIndex((m) => m.id === targetId);
   return index < 0 ? null : index;
 }
+
+/** One person's live Moments. */
+export type MomentSequence = { user: MomentAuthor; moments: Moment[] };
+
+/**
+ * Which sequence the viewer opens, and where in the feed it begins.
+ *
+ * A viewer is opened two ways — at a person ("see their Moments") and at a
+ * Moment ("that tile, the one I tapped"). Only the second has an exact target,
+ * and getting it wrong is not a small wrong: the Moments tab draws a person's
+ * newest Moment and, without a target, the viewer opened at their **first**,
+ * which could be something they posted twenty hours ago. So the target is looked
+ * for across the whole feed, not assumed to be in the tapped person's group — a
+ * Moment posted a moment ago sits at the top of the feed and its group can move
+ * between the tap and the answer.
+ *
+ * Returns `[]` when the Moment asked for is not in the answer at all and the
+ * viewer has no business inventing a different one. My own Moments are the
+ * exception: "nothing of yours is live" would be a lie while they are on the
+ * screen behind the viewer, so the sequence stands.
+ */
+export function momentSequence(
+  groups: readonly MomentSequence[] | undefined,
+  { userId, mine, momentId }: { userId: number; mine?: boolean; momentId?: number },
+): MomentSequence[] {
+  const all = groups ?? [];
+  if (!all.length) return [];
+  let start = mine ? 0 : all.findIndex((g) => g.user.id === userId);
+  if (momentId != null) {
+    const found = all.findIndex((g) => g.moments.some((m) => m.id === momentId));
+    if (found >= 0) start = found;
+  }
+  if (start < 0) return [];
+  const source = all.slice(start);
+  if (momentId != null && !mine && !source[0]?.moments.some((m) => m.id === momentId)) return [];
+  return source;
+}

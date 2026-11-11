@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { groupMomentFeed, type FeedMoment } from './moments';
+import { groupMomentFeed, initialMomentIndex, momentSequence, type FeedMoment } from './moments';
 import type { MomentAuthor } from '../api/types';
 
 const me: MomentAuthor = { id: 1, name: 'Me', photo: null, verified: true, mutual: false };
@@ -91,4 +91,45 @@ test('a search target is resolved to the actual Moment, not the first one', asyn
   assert.equal(initialMomentIndex(items, 12), 1);
   assert.equal(initialMomentIndex(items, 99), null);
   assert.equal(initialMomentIndex(items), null);
+});
+
+/* ---------------------------------------------------------------- the sequence */
+
+const group = (user: MomentAuthor, ids: number[]) => ({ user, moments: ids.map((id) => moment({ id, userId: user.id })) });
+const feed = [group(me, [1, 2]), group(ada, [3, 4, 5]), group(ben, [6])];
+
+test('opening at a person starts with that person and carries on down the feed', () => {
+  assert.deepEqual(momentSequence(feed, { userId: ada.id }).map((g) => g.user.id), [ada.id, ben.id]);
+});
+
+test('opening at a Moment starts with the Moment that was tapped', () => {
+  // The Moments tab draws a person's newest Moment. Without a target the viewer
+  // opened at their first — this is the exact bug: tap the tile from an hour ago
+  // and get the one from twenty hours ago.
+  const source = momentSequence(feed, { userId: ada.id, momentId: 4 });
+  assert.equal(source[0].user.id, ada.id);
+  assert.equal(initialMomentIndex(source[0].moments, 4), 1);
+});
+
+test('a target is found even when its person has moved in the feed', () => {
+  // A just-posted Moment jumps to the top of the feed, so the group it belongs
+  // to is not the one the screen thought it was.
+  const moved = [group(ben, [9, 10]), ...feed];
+  const source = momentSequence(moved, { userId: ada.id, momentId: 10 });
+  assert.equal(source[0].user.id, ben.id);
+});
+
+test('a Moment that is gone opens nothing rather than somebody else', () => {
+  assert.deepEqual(momentSequence(feed, { userId: ada.id, momentId: 999 }), []);
+});
+
+test('my own sequence stands even when the target is missing', () => {
+  // "Nothing of yours is live" would be a lie while they are on the screen behind.
+  const source = momentSequence([group(me, [1, 2])], { userId: me.id, mine: true, momentId: 999 });
+  assert.equal(source.length, 1);
+});
+
+test('an unknown person, and an empty feed, open nothing', () => {
+  assert.deepEqual(momentSequence(feed, { userId: 77 }), []);
+  assert.deepEqual(momentSequence(undefined, { userId: ada.id }), []);
 });

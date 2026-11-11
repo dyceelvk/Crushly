@@ -113,7 +113,7 @@ export function MomentsRow() {
           <MomentCard
             key={c.key}
             card={c}
-            onPress={() => navigation.navigate('MomentViewer', { userId: c.author.id, mine: c.mine })}
+            onPress={() => navigation.navigate('MomentViewer', { userId: c.author.id, mine: c.mine, momentId: c.moment.id })}
           />
         ))}
       </ScrollView>
@@ -171,6 +171,8 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
         textSize={13}
         lines={4}
         caption={false}
+        /* The card is the tap: open this Moment, not the post behind it. */
+        tappable={false}
       />
       {/* The name sits on the content, on a shade deep enough to read on any
           photograph and invisible on a dark one. */}

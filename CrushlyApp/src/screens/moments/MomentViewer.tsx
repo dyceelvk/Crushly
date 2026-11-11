@@ -26,7 +26,7 @@ import { MomentPreview } from './Moments';
 import { palettes, fonts, space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { MOMENT_REACTIONS, MOMENT_STYLES } from '../../lib/catalog';
-import { initialMomentIndex } from '../../lib/moments';
+import { initialMomentIndex, momentSequence } from '../../lib/moments';
 import { timeAgo } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
@@ -69,13 +69,11 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const signature = (list: Group[] | null) => (list ?? []).map((g) => g.moments.map((m) => m.id).join(',')).join('|');
   useEffect(() => {
     if (!data || !targetReady || (momentId != null && isError)) return;
-    let source: Group[] = mine
-      ? (data.mine.moments.length ? [data.mine] : [])
-      : (() => {
-          const i = data.others.findIndex((g) => g.user.id === userId);
-          return i >= 0 ? data.others.slice(i) : [];
-        })();
-    if (momentId != null && !source[0]?.moments.some((m) => m.id === momentId)) source = [];
+    // Which sequence the viewer starts on — the tapped Moment decides it, not
+    // just the tapped person. The rule itself lives (and is tested) in
+    // `lib/moments::momentSequence`. Frozen after the first non-empty answer, so
+    // the order does not reshuffle as Moments are marked seen.
+    const source = momentSequence(mine ? [data.mine] : data.others, { userId, mine, momentId });
     if (groups !== null && groups.some((g) => g.moments.length)) return; // frozen, and holding something
     if (groups !== null && signature(source) === signature(groups)) return;
     setGroups(source);
@@ -422,6 +420,9 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             onReveal={isPost ? (open) => setOfferingPost(open) : undefined}
             style={isPost ? { width: postCard.w, height: postCard.h } : { flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
             textSize={26}
+            /* Inside the Moment the handle belongs: this is where you find out
+               who made the post, and where "View this post" is offered. */
+            showAuthor
             keepPlayerMounted={moment.kind === 'video'}
             autoPlay={moment.kind === 'video' && !paused}
           />

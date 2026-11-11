@@ -50,7 +50,7 @@ function CirclePreview({ moment, size, fallback }: { moment: Moment; size: numbe
     return <Photo uri={moment.mediaUrl} style={{ width: size, height: size }} fit="cover" />;
   }
   if (moment.kind === 'text') {
-    return <MomentPreview moment={moment} style={{ width: size, height: size }} textSize={8} lines={3} caption={false} />;
+    return <MomentPreview moment={moment} style={{ width: size, height: size }} textSize={8} lines={3} caption={false} tappable={false} />;
   }
   return <Avatar uri={fallback.photo} name={fallback.name} size={size} />;
 }
@@ -85,7 +85,7 @@ export function MomentCircle({
   const inner = size - (ringWidth + 3) * 2;
 
   const open = () => {
-    if (moment) navigation.navigate('MomentViewer', { userId: author.id, mine });
+    if (moment) navigation.navigate('MomentViewer', { userId: author.id, mine, momentId: moment.id });
     else navigation.navigate('MomentComposer');
   };
 
