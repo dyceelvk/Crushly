@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, View, type GestureResponderEvent } from 'react-native';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Pressable, TextInput, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,7 +50,8 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const c = palettes.dark; // the viewer is always cinematic dark
   const { reduceMotion } = useTheme();
   const insets = useSafeAreaInsets();
-  const { contentWidth } = useLayout();
+  const { contentWidth, gutter } = useLayout();
+  const { height: windowH } = useWindowDimensions();
   const qc = useQueryClient();
   const toast = useToast();
   const { data, isFetching, isError, refetch } = useMoments();
@@ -97,6 +98,8 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const [viewersOpen, setViewersOpen] = useState(false);
   const [localReaction, setLocalReaction] = useState<Record<number, string | null>>({});
   const [holding, setHolding] = useState(false);
+  /* A shared post's "View this post" offer is up: the timeline waits for it. */
+  const [offeringPost, setOfferingPost] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The freeze is driven by a ref, not by state: the timer loop reads it on the
   // very next frame, so pausing never waits for a render to catch up.
@@ -119,7 +122,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   const targetIndex = !searchTargetUsed.current && gi === 0 && group ? initialMomentIndex(group.moments, momentId) : null;
   const displayIndex = targetIndex ?? mi;
   const moment = group && group.moments.length ? group.moments[Math.min(displayIndex, group.moments.length - 1)] : undefined;
-  const paused = !screenFocused || focused || reactOpen || confirmDelete || viewersOpen || holding;
+  const paused = !screenFocused || focused || reactOpen || confirmDelete || viewersOpen || holding || offeringPost;
   const playbackDurationMs = moment?.kind === 'video'
     ? Math.max(100, Math.min(MOMENT_CLIP_SECONDS * 1000, moment.durationMs ?? DURATION))
     : DURATION;
@@ -228,6 +231,10 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
 
   // Mark viewed.
   useEffect(() => {
+    setOfferingPost(false);
+  }, [moment?.id]);
+
+  useEffect(() => {
     if (moment && !mine && !moment.seen) viewMoment(moment.id).catch(() => {});
   }, [moment, mine]);
 
@@ -279,6 +286,22 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   }, [moment, progress, next, playbackDurationMs]);
 
   const myReaction = moment ? (moment.id in localReaction ? localReaction[moment.id] : moment.myReaction) : null;
+
+  /*
+   * A shared post is not a picture of the screen.
+   *
+   * The card used to be drawn at 9:16 into the whole screen, so the Moment
+   * screen was the post and the name, time, reactions and reply box had nowhere
+   * to go. It is now a portrait card — four wide by five tall — inside a box
+   * that leaves the header and the whole bottom half of the screen free.
+   */
+  const isPost = moment?.kind === 'post';
+  const postCard = useMemo(() => {
+    const room = Math.max(200, windowH - insets.top - insets.bottom - 290);
+    const h = Math.min(room, windowH * 0.5);
+    const w = Math.min(contentWidth - gutter * 2, h * 0.8);
+    return { w, h: Math.min(h, w * 1.25) };
+  }, [windowH, insets.top, insets.bottom, contentWidth, gutter]);
 
   const react = async (kind: string) => {
     if (!moment) return;
@@ -383,13 +406,21 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+        <View
+          style={[
+            { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+            isPost
+              ? { alignItems: 'center', justifyContent: 'center', paddingTop: insets.top + 84, paddingBottom: Math.max(insets.bottom, 12) + 190, zIndex: 2 }
+              : null,
+          ]}
+        >
           <MomentPreview
             key={moment.id}
             moment={moment}
             caption={false}
             showText={false}
-            style={{ flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
+            onReveal={isPost ? (open) => setOfferingPost(open) : undefined}
+            style={isPost ? { width: postCard.w, height: postCard.h } : { flex: 1, padding: moment.kind === 'text' ? space.xl : 0 }}
             textSize={26}
             keepPlayerMounted={moment.kind === 'video'}
             autoPlay={moment.kind === 'video' && !paused}
@@ -400,7 +431,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             touch and keeps it until the finger lifts — a pause can no longer be
             cancelled out from under the member. */}
         <View
-          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1 }}
           onLayout={(e) => setZoneWidth(e.nativeEvent.layout.width)}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}

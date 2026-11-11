@@ -62,6 +62,35 @@ post with its own actions and comments, and no Flow header.
 label has been "All Crush Feed" for two batches — so the spec was updated; it now
 passes 2/2. `moment-circles` 2/2, `circles` 4/4, `space-search` 30/30.
 
+## The Moment card for a shared post: portrait, and a tap that only offers (2026-11-07, latest)
+
+The preview card for a post shared to a Moment was drawn at exactly 9:16, which
+is the shape of the screen it was drawn on — so on the Moment screen the preview
+*was* the screen, and the name, the time, the reactions and the reply box had
+nowhere to sit. A tap also opened the post outright.
+
+It is a portrait card now, in a box smaller than the screen (four wide by five
+tall at most, with the header and the whole bottom of the screen left free), and
+a tap **only offers** the post: a coloured line of text, "View this post", floats
+on the preview. Nothing slides in and no screen changes. That line is the button;
+touching anywhere else on the card puts it away again after five seconds, and the
+timeline holds while it is up rather than advancing past it.
+
+Verified in a browser at 390×844 with a Moment that is a shared clip:
+
+| Check | Result |
+| --- | --- |
+| Card box on the Moment screen | `338 × 402`, centred — not the screen |
+| Author, time above; handle, reactions and reply box below | all visible around the card |
+| Tap the card | no navigation; "View this post" appears over the clip |
+| Tap "View this post" | opens the post |
+
+In a tile (Discover's Moments row, the profile's own Moment strip) the card has
+`tappable={false}` — the tile's own tap opens the Moment, and two nested taps in
+a 124 px tile are one tap too many.
+
+`npm test` 355/355, `moment-circles` 2/2.
+
 ## Deployed 2026-11-07
 
 `63f1a6c` is deployed to production: Vercel deployment `dpl_57MGTcoYY5AhU3NeEeHJnCGLijDg`,

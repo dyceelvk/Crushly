@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { IconButton } from '../../components/IconButton';
@@ -26,8 +26,8 @@ import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
 export function MomentPreview({
-  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true,
-}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; keepPlayerMounted?: boolean; caption?: boolean; showText?: boolean }) {
+  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true, tappable = true, onReveal,
+}: { moment?: Moment; style?: object; textSize?: number; lines?: number; autoPlay?: boolean; keepPlayerMounted?: boolean; caption?: boolean; showText?: boolean; tappable?: boolean; onReveal?: (open: boolean) => void }) {
   if (!moment) return <View style={[{ backgroundColor: '#17171A' }, style]} />;
   /*
    * A Moment that is a shared post: the preview card.
@@ -38,7 +38,7 @@ export function MomentPreview({
    * which is what a preview of words looks like.
    */
   if (moment.kind === 'post') {
-    return <MomentPostCard moment={moment} style={style} textSize={textSize} lines={lines} />;
+    return <MomentPostCard moment={moment} style={style} textSize={textSize} lines={lines} tappable={tappable} onReveal={onReveal} />;
   }
   if (moment.kind === 'video') {
     // A tile does not play. Mounting a player per tile costs a decoder each and
@@ -102,11 +102,18 @@ export function MomentPreview({
 /**
  * The preview card for a Moment that is a shared post.
  *
- * 9:16, nine seconds, the author's handle underneath — and that is the whole
- * card. A tap anywhere on the clip opens the post; a tap on the handle opens the
- * person who made it, which is not the person who shared it. Those two taps are
- * different questions and they have different answers, so they are different
- * targets rather than one target with two meanings.
+ * Portrait, not 9:16. A 9:16 card is the shape of the screen it is drawn on, so
+ * on the Moment screen it was the whole screen and the name, the time, the
+ * reactions and the reply box had nowhere to sit. A portrait card — four by
+ * five, inside a box smaller than the screen — leaves that information where it
+ * belongs: around the preview, not under it.
+ *
+ * A tap on the card does **not** open the post. Opening somebody's post is a
+ * bigger step than tapping a preview, so the first tap only offers it: a
+ * coloured line of text floats over the clip, "View this post", and that line is
+ * the button. No screen changes, nothing slides in — the words appear on the
+ * picture and go again if you do not take them. A tap on the handle still opens
+ * the person who made the post, which is not the person who shared it.
  *
  * The clip is muted here. A preview that starts making noise while somebody is
  * scrolling a row of them is the opposite of a preview.
@@ -116,14 +123,40 @@ function MomentPostCard({
   style,
   textSize = 15,
   lines = 6,
+  tappable = true,
+  onReveal,
 }: {
   moment: Moment;
   style?: object;
   textSize?: number;
   lines?: number;
+  /** Off in a tile: the tile has its own tap (open the Moment). */
+  tappable?: boolean;
+  /** Told when the "View this post" line appears, so a timeline can hold still. */
+  onReveal?: (open: boolean) => void;
 }) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { colors } = useTheme();
   const post = moment.post;
+  const [offered, setOffered] = useState(false);
+  const hide = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const offer = useCallback((next: boolean) => {
+    if (hide.current) clearTimeout(hide.current);
+    setOffered(next);
+    onReveal?.(next);
+    // Long enough to read and reach for, short enough that it is not left on the
+    // picture like a caption.
+    if (next) {
+      hide.current = setTimeout(() => {
+        setOffered(false);
+        onReveal?.(false);
+      }, 5000);
+    }
+  }, [onReveal]);
+
+  useEffect(() => () => { if (hide.current) clearTimeout(hide.current); }, []);
+
   if (!post) {
     // The post is no longer visible to this viewer. The Moment is still theirs,
     // so it is drawn as an empty card rather than vanishing from the row.
@@ -134,44 +167,77 @@ function MomentPostCard({
     );
   }
   const s = MOMENT_STYLES[moment.style] || MOMENT_STYLES.noir;
+  const open = () => navigation.navigate(post.mediaUrl ? 'PostViewer' : 'TextPost', { postId: post.id });
+  const Card: typeof Pressable = tappable ? Pressable : View as unknown as typeof Pressable;
+
   return (
     <View style={[{ alignItems: 'stretch' }, style]}>
       {/*
-        9:16, exactly, in whatever box this card was given.
-        Height is the constraint and the width follows, so a tile and a
-        full-screen viewer draw the same shape instead of two crops of one.
+        The box is whatever this card was given; the shape is the caller's
+        decision (a portrait box on the Moment screen, the tile's own ratio in a
+        row). Nothing here forces 9:16 any more.
       */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ flex: 1, aspectRatio: 9 / 16, maxWidth: '100%' }}>
-          <Pressable
-            onPress={() => navigation.navigate(post.mediaUrl ? 'PostViewer' : 'TextPost', { postId: post.id })}
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${post.authorName}’s post`}
-            style={{ flex: 1, overflow: 'hidden', borderRadius: 14, backgroundColor: '#000' }}
-          >
-            {post.mediaKind === 'video' && post.mediaUrl ? (
-              <EditedClip
-                uri={mediaSource(mediaUrl(post.mediaUrl))}
-                live={null}
-                style={{ width: '100%', height: '100%' }}
-                autoPlay
-                loop
-                muted
-                /* Nine seconds, then it starts again: a preview, not a showing. */
-                maxMs={post.previewMs}
-              />
-            ) : post.mediaUrl ? (
-              <Photo uri={post.mediaUrl} style={{ width: '100%', height: '100%' }} />
-            ) : (
-              <LinearGradient colors={s.colors} style={{ flex: 1, padding: 12, justifyContent: 'center' }}>
-                <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
-                  <LinkText text={post.body} bare />
-                </Txt>
-              </LinearGradient>
-            )}
-          </Pressable>
-        </View>
+      <View style={{ flex: 1, overflow: 'hidden', borderRadius: 16, backgroundColor: '#000' }}>
+        <Card
+          {...(tappable
+            ? {
+                onPress: () => offer(!offered),
+                accessibilityRole: 'button' as const,
+                accessibilityLabel: `Preview of ${post.authorName}’s post`,
+                accessibilityHint: 'Shows a link to view the post',
+              }
+            : {})}
+          style={{ flex: 1 }}
+        >
+          {post.mediaKind === 'video' && post.mediaUrl ? (
+            <EditedClip
+              uri={mediaSource(mediaUrl(post.mediaUrl))}
+              live={null}
+              style={{ width: '100%', height: '100%' }}
+              autoPlay
+              loop
+              muted
+              /* Nine seconds, then it starts again: a preview, not a showing. */
+              maxMs={post.previewMs}
+            />
+          ) : post.mediaUrl ? (
+            <Photo uri={post.mediaUrl} style={{ width: '100%', height: '100%' }} />
+          ) : (
+            <LinearGradient colors={s.colors} style={{ flex: 1, padding: 14, justifyContent: 'center' }}>
+              <Txt variant="accent" color={s.ink} numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
+                <LinkText text={post.body} bare />
+              </Txt>
+            </LinearGradient>
+          )}
+        </Card>
+
+        {/*
+          The offer, floating on the picture. It is the only way into the post
+          from here, so it sits above the card's own tap rather than inside it.
+        */}
+        {offered ? (
+          <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 14, alignItems: 'center' }}>
+            <Pressable
+              onPress={open}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${post.authorName}’s post`}
+              hitSlop={10}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+                backgroundColor: 'rgba(12,12,14,0.72)',
+                borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)',
+                opacity: pressed ? 0.7 : 1,
+                ...(Platform.OS === 'web' ? { boxShadow: '0 6px 18px rgba(0,0,0,0.45)' } : { elevation: 6 }),
+              })}
+            >
+              <Txt variant="bodyStrong" style={{ color: colors.gold }}>View this post</Txt>
+              <Ionicons name="arrow-forward" size={14} color={colors.gold} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
+
       {/* The handle, under the card — the person who made the post, not the
           person who shared it. */}
       <Pressable
@@ -233,7 +299,7 @@ export function MomentsScreen() {
         })}
       >
         <View style={{ width: 64, height: 84, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.elevated, alignItems: 'center', justifyContent: 'center' }}>
-          {mine.length ? <MomentPreview moment={mine[mine.length - 1]} style={{ width: 64, height: 84 }} textSize={9} /> : <Avatar uri={data?.mine.user.photo} name={data?.mine.user.name} size={52} />}
+          {mine.length ? <MomentPreview moment={mine[mine.length - 1]} style={{ width: 64, height: 84 }} textSize={9} tappable={false} /> : <Avatar uri={data?.mine.user.photo} name={data?.mine.user.name} size={52} />}
         </View>
         <View style={{ flex: 1 }}>
           <Txt variant="subheading">Your Moment</Txt>
@@ -311,6 +377,7 @@ function MomentTile({ group, width }: { group: MomentGroup; width: number }) {
         <View style={{ flex: 1, borderRadius: width * 0.3 - 3, overflow: 'hidden', backgroundColor: colors.card }}>
           <MomentPreview
             moment={latest}
+            tappable={false}
             caption={latest.kind !== 'photo'}
             style={{ width: '100%', height: '100%' }}
             textSize={Math.max(10, width / 10)}
