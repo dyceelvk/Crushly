@@ -383,14 +383,21 @@ def assert_strip(seen):
     be read two ways, which is why the order is checked and not eyeballed.
 
     Flow is asserted *absent*, not ignored: a tab that comes back without a
-    surface behind it is the exact fault this check exists for.
+    surface behind it is the exact fault this check exists for. The left tab is
+    "All Crush Feed" (its key is still `crushes` in the app's own code).
     """
+    # The owner renamed the pane: it says "All Crush Feed", not "Crushes",
+    # because it is every Crush in the app and not a list of people you crushed
+    # on. The check follows the label the app actually ships — asserting the old
+    # word made every run fail on a Home screen that was correct.
+    aliases = {'crushes': ('crushes', 'all crush feed'), 'discovery': ('discovery',)}
     points = {}
     for n in seen:
         for value in (n['desc'], n['text']):
             key = norm(value)
-            if key in ('flow', 'crushes', 'discovery'):
-                points.setdefault(key, []).append((n['x'], n['y']))
+            for canonical, words in aliases.items():
+                if key in words:
+                    points.setdefault(canonical, []).append((n['x'], n['y']))
     missing = [k for k in ('crushes', 'discovery') if k not in points]
     if missing:
         fail('the Home strip is missing ' + ', '.join(missing))
