@@ -1,6 +1,6 @@
 # Big clips, and a Flow that pages like Instagram — 2026-11-07
 
-Commit **`acb0cca`** (on top of `8621c7a`). Nothing here is live until it is pushed and Vercel rebuilds: the PAT that was embedded in `origin` did not survive into this session, so the commit exists locally only.
+Commits **`acb0cca`** (clips + paging), **`3ae1a49`** (Moments) and **`c73bee5`** (upload guard), pushed to `main` on top of `8621c7a`. **Live at `holupapp.vercel.app`** — the production bundle contains `Compressing your clip`, `scrollSnapStop`, `momentSequence` and `showAuthor`.
 
 ---
 
@@ -75,8 +75,30 @@ The same class of bug was in the **horizontal rails**: `Crushes This Week` and t
 | Typecheck | clean |
 | Web export | `expo export -p web` succeeds; bundle boots with **no console or page errors** in headless Chromium |
 | Compressor | proven in a real browser (table above); `react-native-compressor` installed but **no phone build has been made with it**, so native compression is unproven |
-| Git | local commit `acb0cca`, **not pushed** — the PAT is gone from this session |
-| Vercel | **not deployed** |
+| Git | pushed: `c73bee5` on `main` |
+| Vercel | **deployed** — `index-552905612a1b8b6463b2338e6ab9ef79.js` was serving the compression + paging + Moments work; booted with no console or page errors in headless Chromium |
+| Cloudflare Worker | **still the old build** — `MAX_UPLOAD_BYTES` is 120 MB in the source here but 80 MB in production until `wrangler deploy` runs |
+
+---
+
+## 3. Moments: the Moment you tapped, and its author only once you are inside
+
+### The wrong Moment opened
+
+The Moments tab draws a person's **newest** Moment on their tile, and the tile passed only `userId` to the viewer. With no target, the viewer started at that person's **first** Moment — so tapping a tile from an hour ago opened something up to twenty hours old. Every entry point now passes the id of the Moment it is actually showing: the Moments tab tile, the "Your Moment" card, the Discover Moments row, the profile's Moment pebbles, the avatar bubble, and search (which already did).
+
+`momentSequence()` in `lib/moments.ts` resolves the sequence the viewer opens (6 new tests): the target is looked for across the **whole feed**, not just in the tapped person's group, because a just-posted Moment jumps to the top and its group can move between the tap and the answer. A Moment that is genuinely gone opens nothing and says so, rather than quietly substituting somebody's oldest. My own Moments are the exception — "nothing of yours is live" would be a lie while they are on the screen behind the viewer.
+
+### The author was reachable before the Moment was entered
+
+A Moment that is a **shared post** drew the post author's `@handle` underneath the preview, and that handle opened their Space. In the Moments tab, on Discover's row, on a profile and inside a circle bubble that meant a name, a profile link and a "view this post" card — all before anybody had entered the Moment. That is what the owner was seeing.
+
+`showAuthor` now defaults **off** for every preview, and is switched on only by the viewer itself. So:
+
+- **In the grid** a shared post is a Moment like any other: the card, no name, no way out. `tappable` is off in every tile, so a tap opens *that Moment*, not the post behind it.
+- **Inside the Moment** the handle is under the card, and a tap on the card floats the coloured **"View this post"** line — the only route to the post, and it appears only here.
+
+---
 
 ### Known gaps
 
