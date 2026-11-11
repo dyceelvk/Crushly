@@ -4,9 +4,11 @@
 # the feed filtered them out, but the row and the photo stayed forever, so any
 # link someone had already saved kept working.
 #
-# Photos that live in the external object store are removed by that bucket's own
-# lifecycle rule; this sweep removes the database rows and any Supabase Storage
-# objects behind older Moments.
+# The sweep also writes every file it removes into `media_deletions`, and the
+# second step below empties that queue: it hands the paths to the media Worker,
+# which deletes them from R2 *and* B2. Rows and files therefore go together, for
+# expired Moments, for deleted posts and Moments, and for closed accounts — the
+# same queue, one drain, no orphans.
 #
 # Runs hourly and on demand (Actions → Expired content cleanup → Run workflow).
 # Needs the same SUPABASE_DB_URL secret as "Deploy database migrations".
@@ -31,6 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Needed for scripts/drain_media_deletions.py, which the second step runs.
+      - uses: actions/checkout@v4
+
       - name: Run the sweep
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -58,3 +63,22 @@ jobs:
           if [ "$failed" != "0" ]; then
             echo "::warning::$failed file deletion(s) failed — check public.media_cleanup_log; the rows are gone but those files may be orphaned."
           fi
+
+      # ---------------------------------------------------------------------
+      # Empty the deletion queue.
+      #
+      # Every deleted post, deleted Moment, expired Moment and closed account
+      # writes its file into `media_deletions` inside the transaction that makes
+      # the change. This is what actually removes the bytes: the paths go to the
+      # media Worker, which clears R2 *and* B2, and only what it confirms is
+      # marked done. A failure leaves the row pending, so the next hour tries
+      # again — the queue is the promise, and it does not expire.
+      #
+      # Skipped with a notice when the Worker credentials are absent, because a
+      # red X every hour for a missing optional secret trains people to ignore it.
+      - name: Delete the files the queue names
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          WORKER_URL: ${{ vars.MEDIA_WORKER_URL }}
+        run: python3 scripts/drain_media_deletions.py

@@ -559,6 +559,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
     if (!post) return;
     try {
       await remove.mutateAsync(post.id);
+      toast({ kind: 'success', title: 'Post deleted', message: 'Gone from our servers.' });
       close();
     } catch (e) {
       toast({ kind: 'error', title: 'Not deleted', message: (e as Error).message });
@@ -1021,7 +1022,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
       <ConfirmSheet
         visible={confirmDelete}
         title="Delete this post?"
-        message="It disappears for everyone, right away. This can’t be undone."
+        message="It’s deleted from our servers straight away — the post and its photo or clip. It disappears for everyone, and this can’t be undone."
         confirmLabel="Delete"
         destructive
         onConfirm={() => {

@@ -19,6 +19,7 @@ import release from './release.json';
 import { uploadContentType, publicRpcError } from './uploadType';
 import { mediaCacheControl } from './cacheControl';
 import { READ_ORDER, DELETE_STORES, isReleasePath } from './mediaStore';
+import { cleanPurgePaths } from './purgePaths';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -712,6 +713,62 @@ async function apkBuild(url: URL, env: Env, origin: string | null, headOnly: boo
   return downloadRelease(env, origin, headOnly);
 }
 
+/**
+ * Empties the database's deletion queue.
+ *
+ * `DELETE /m/<path>` lets a member remove a file they own, and the app uses it —
+ * but a member's phone is not a reliable place to finish a deletion from. The
+ * app can be killed between the row going and the file going, an older install
+ * does not know the step exists at all, and an account being closed has nobody
+ * left to run it. So the database records the intent (see `media_deletions`) and
+ * this endpoint is what carries it out, on a schedule, from the workflow.
+ *
+ * Both stores are cleared for every path. A file written before the move to R2
+ * lives in B2 and vice versa, and each delete is idempotent, so trying both is
+ * both correct and cheap.
+ *
+ * Closed unless ADMIN_TOKEN is set, POST only, and it never echoes why a path
+ * failed to a caller without the token.
+ *
+ *   curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+ *        -d '{"paths":["posts/3/abc.mp4"]}' \
+ *        https://crushly-media.dyceelvk.workers.dev/admin/purge
+ */
+async function purgeMedia(request: Request, env: Env, origin: string | null): Promise<Response> {
+  if (!env.ADMIN_TOKEN) return fail(404, '', origin);
+
+  let paths: string[] = [];
+  try {
+    const body = (await request.json()) as { paths?: unknown };
+    paths = cleanPurgePaths(body?.paths);
+  } catch {
+    return fail(400, 'Send {"paths": [...]}.', origin);
+  }
+  if (!paths.length) return json({ deleted: [], failed: [] }, 200, origin);
+
+  const deleted: string[] = [];
+  const failed: { path: string; error: string }[] = [];
+
+  for (const path of paths) {
+    try {
+      // R2 first, then B2: whichever store holds it, it goes.
+      const hadR2 = await r2Delete(env, path);
+      const hadB2 = await b2Delete(env, path);
+      if (!hadR2 && !hadB2) {
+        // Neither store is reachable — not "nothing to delete". Reporting this
+        // as success would mark the row done and lose the file forever.
+        failed.push({ path, error: 'no store available' });
+        continue;
+      }
+      deleted.push(path);
+    } catch (e) {
+      failed.push({ path, error: (e as Error).message || 'delete failed' });
+    }
+  }
+
+  return json({ deleted, failed }, 200, origin);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -720,6 +777,11 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head });
     if (url.pathname === '/health') return health(env, origin);
+    if (url.pathname === '/admin/purge') {
+      if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
+      if (bearerToken(request, null) !== (env.ADMIN_TOKEN ?? '')) return fail(404, '', origin);
+      return purgeMedia(request, env, origin);
+    }
     if (url.pathname === '/admin/lifecycle') {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
       if (bearerToken(request, null) !== (env.ADMIN_TOKEN ?? '')) return fail(404, '', origin);

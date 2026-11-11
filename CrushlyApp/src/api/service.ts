@@ -887,8 +887,35 @@ export async function trendingClips(limit = 12): Promise<Post[]> {
   return (await rpc<Post[]>('trending_clips', { p_limit: limit })) ?? [];
 }
 
+/**
+ * Delete a post, and its file, and mean it.
+ *
+ * The row is what people see, so it goes first — but the row is not the post.
+ * The photo or clip sits in the media bucket behind a URL that anybody who
+ * already has it can keep using, so a delete that stops at the database leaves
+ * the thing itself exactly where it was, and the space it takes exactly as
+ * taken.
+ *
+ * Two steps, both of them: the server records the file for deletion inside the
+ * same transaction that removes the row (so a killed app cannot lose the
+ * intent), and the file is asked for here as well (so it is gone at the moment
+ * the member sees it gone, not at the top of the next hour). Both are
+ * idempotent; a file that is already gone is not an error.
+ */
 export async function deletePost(postId: number): Promise<void> {
+  // Read the media reference while the row still exists to be read.
+  const row = await supabase
+    .from('posts')
+    .select('media_url')
+    .eq('id', postId)
+    .maybeSingle();
+  const media = (row.data as { media_url?: string | null } | null)?.media_url ?? null;
+
   await rpc<boolean>('delete_post', { p_post_id: postId });
+
+  // Best effort, and deliberately quiet: the server has already queued it, so a
+  // failure here costs an hour, not the file.
+  if (media) await removeMediaFile(media).catch(() => undefined);
 }
 
 /**

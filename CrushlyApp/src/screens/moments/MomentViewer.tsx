@@ -340,7 +340,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       if (!left.length) return close();
       setGroups([{ ...group!, moments: left }]);
       setMi(Math.min(mi, left.length - 1));
-      toast({ kind: 'success', title: 'Moment deleted' });
+      toast({ kind: 'success', title: 'Moment deleted', message: 'Gone from our servers.' });
     } catch (e) {
       toast({ kind: 'error', title: 'Couldn’t delete', message: (e as Error).message });
     }
@@ -622,7 +622,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       <ConfirmSheet
         visible={confirmDelete}
         title="Delete this Moment?"
-        message="It disappears for everyone right away."
+        message="It’s deleted from our servers straight away — the Moment and its photo or clip. It disappears for everyone right away."
         confirmLabel="Delete"
         destructive
         onConfirm={remove}
