@@ -239,9 +239,19 @@ def shot(name, seen=None):
         # uiautomator occasionally returns a tree with nothing in it while the
         # screen is obviously drawn. Say so instead of writing "nothing on
         # screen", which reads like a bug in the app.
+        # `uiautomator dump` fails intermittently on this emulator — it returns
+        # an empty tree, or refuses outright, while the screen is plainly drawn.
+        # Asked once, that flake became a red build on a page that had drawn
+        # perfectly; asked a few times with a moment between, it is just a slow
+        # dump. Only after the retries does it count as an empty screen.
         seen = nodes()
+        for _ in range(4):
+            if seen:
+                break
+            time.sleep(1.5)
+            seen = nodes()
         if not seen:
-            log('[{}] the accessibility dump came back empty; the screenshot is still real'.format(name))
+            log('[{}] the accessibility dump came back empty {} times; the screenshot is still real'.format(name, 5))
     # Long enough for the frame to be finished, not just started. At 0.8s the
     # emulator sometimes handed back a half-painted screen — a card with its
     # action row missing, and a dark rectangle where a list had not drawn yet —
@@ -475,6 +485,8 @@ def assert_discover(seen):
     in the middle of it. So the gap between the title and the page is measured,
     and the magnifier has to be on the title's row rather than floating.
     """
+    # A dump that came back empty is not the page saying it has no title.
+    seen = seen or nodes(attempts=5) or []
     titles = [n for n in seen if n['on_screen'] and n['y'] < SCREEN[1] * 0.6
               for v in (n['text'], n['desc']) if norm(v) == 'discovery']
     if not titles:
