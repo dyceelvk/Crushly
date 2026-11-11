@@ -136,3 +136,48 @@ says.
 The bucket is created by `deploy-worker.yml` if it is missing — a binding to a
 bucket that does not exist makes wrangler refuse the deploy, which would have
 taken the whole Worker down with it.
+
+---
+
+## Why nothing was building, and the channel that costs nothing
+
+Two separate blockers, neither of them code.
+
+**1. GitHub Actions had no room to run.** 220 artifacts — nearly all 40 MB APKs
+from previous builds — came to **3.9 GB**, against the **500 MB** a private repo
+gets. Past that, with no spending limit set, GitHub stops starting jobs: nine
+runs sat `queued` with **zero jobs created**. Deleting the old artifacts freed
+3.86 GB and builds started within two minutes. Nothing was paid for. What is left
+is the 1.0.96 build (77 MB) and nothing else.
+*The lesson is retention, not money:* every emulator round trip left a 40 MB APK
+behind, and a hundred of them is a wall.
+
+**2. R2 — the intended home for the APK — needs the R2 subscription switched on**
+in the Cloudflare account first, and that checkout asks for a card. The Worker
+token also lacks `Workers R2 Storage: Edit`, so the bucket could not be created
+even if the subscription existed. So R2 waits.
+
+**What ships the APK meanwhile: a public release channel.**
+
+A public repository's release assets are downloadable by anyone with the URL —
+the same audience `/download` already has — GitHub does not meter bandwidth on
+them, and they do not count against Actions storage. So `dyceelvk/holupp-releases`
+holds the APK, and the Worker re-serves it behind its one stable URL.
+
+Source order in `downloadRelease`: **R2 if ever bound → the public channel → the
+B2 mirror.** Every rung is verified the same way: the object's length must equal
+`release.json`'s `bytes` before a byte is forwarded.
+
+The R2 binding is **commented out** in `wrangler.toml` rather than left dangling,
+because a Worker bound to a bucket that does not exist fails to deploy *entirely*
+— that would have taken the media pipeline and the update channel down together.
+
+**Verified after deploy (2026-11-11 22:05 UTC):**
+
+| | |
+|---|---|
+| `/version` | 1.0.96, code 96, 97,042,324 bytes |
+| `/download-info` | same file, same bytes, same SHA-256 |
+| `/download` | **HTTP 200**, 97,042,324 bytes, correct SHA-256, `PK\x03\x04` |
+| signature | `7c1f8fc6…b6bb` — same as 1.0.87, so it installs in place |
+| cost | **$0** — no B2 egress, no R2 subscription, no Actions minutes |
