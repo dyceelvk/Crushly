@@ -99,3 +99,40 @@ properly, in order of how much they cost:
 
 Until then the GitHub release page is the way in for anyone who can sign in to
 the repository.
+
+---
+
+## Moving the APK to Cloudflare R2
+
+The B2 cap will not be raised in an afternoon, and the channel cannot depend on a
+metered egress allowance in any case: every install is ~97 MB, and one day of
+installs is enough to exhaust a free tier. So the release moved to the account
+the Worker already lives in.
+
+**What changed**
+
+| | before | after |
+|---|---|---|
+| where the APK lives | private B2 bucket, streamed through the Worker | private R2 bucket `holup-releases`, bound as `RELEASES` |
+| what it costs to serve | metered egress — the thing that ran out | nothing |
+| how it is published | `mirror-android-apk.py` → B2 API | `wrangler r2 object put` → R2 |
+| verification | read the object back over B2 | read it back out of R2 and compare **bytes and SHA-256** to `release.json` |
+
+**The order of preference in `downloadRelease`:** R2, then the B2 mirror. The
+fallback exists because an older install can ask for a build only the mirror
+still holds, and because a fallback nobody exercises is a fallback that does not
+work. Whichever source answers, the object's size is checked against
+`release.json` before a byte is sent — the app refuses a file whose length is not
+the one it was promised, so serving a stale or truncated object would turn
+"update available" into "update failed" on the phone.
+
+**Tests** (`releaseSource.test.ts`, 7): served from R2 with the right headers and
+ZIP magic; HEAD answers with the length and no body; CORS for the web origin; an
+object of the wrong size is refused rather than served; a missing object falls
+through to the mirror; a Worker deployed before the bucket existed still answers
+instead of throwing; `/version` still advertises exactly what `release.json`
+says.
+
+The bucket is created by `deploy-worker.yml` if it is missing — a binding to a
+bucket that does not exist makes wrangler refuse the deploy, which would have
+taken the whole Worker down with it.
