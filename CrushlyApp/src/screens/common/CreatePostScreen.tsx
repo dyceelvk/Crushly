@@ -32,6 +32,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { VideoEditorModal } from '../../components/VideoEditor';
 import type { LiveEdit, VideoEdit } from '../../lib/videoEdit';
 import { emptyEdit, splitForUpload } from '../../lib/videoEdit';
+import { onCompressProgress } from '../../lib/compressVideo';
 import { preparedClip } from '../../lib/videoEncode';
 import { takeTrimResult } from './VideoTrimScreen';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -117,6 +118,14 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [busy, setBusy] = useState(false);
+  /*
+   * What the upload is doing right now.
+   *
+   * A clip can be re-encoded before it is sent, and a 60-second clip takes most
+   * of a minute to re-encode on a slow phone — long enough that a spinner with
+   * no words looks like a hang. The upload reports its own progress here.
+   */
+  const [progressNote, setProgressNote] = useState<string | null>(null);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [pendingMedia, setPendingMedia] = useState<MediaItem | null>(null);
@@ -270,8 +279,13 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
     setEditorOpen(true);
   };
 
+  useEffect(() => onCompressProgress((fraction, label) => {
+    setProgressNote(fraction >= 1 ? label : `${label}… ${Math.round(fraction * 100)}%`);
+  }), []);
+
   const post = async () => {
     setBusy(true);
+    setProgressNote(null);
     try {
       const first = primaryMedia;
       let videoUri: string | undefined = undefined;
@@ -327,6 +341,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
       toast({ kind: 'error', title: 'Post not shared', message: (e as Error).message });
     } finally {
       setBusy(false);
+      setProgressNote(null);
     }
   };
 
@@ -537,7 +552,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           <View style={{ alignItems: 'center', paddingVertical: space.lg }}>
             <ActivityIndicator size="large" color={colors.gold} />
             <Txt variant="small" color="textSecondary" style={{ marginTop: 10 }}>
-              Sharing your post…
+              {progressNote ?? 'Sharing your post…'}
             </Txt>
           </View>
         ) : (

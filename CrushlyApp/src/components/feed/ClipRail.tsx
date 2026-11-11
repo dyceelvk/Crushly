@@ -15,7 +15,7 @@
  *    a dozen tiles cost one frame each and nothing starts moving under a thumb
  *    that was only scrolling. The tap opens the post, which does play.
  */
-import React from 'react';
+import React, { useRef } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +29,7 @@ import { useTrendingClips } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space, radius, stroke } from '../../theme/tokens';
 import { formatCount } from '../../lib/counts';
+import { useWebSnap } from '../../lib/webSnap';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -41,6 +42,10 @@ export function ClipRail() {
   const { colors } = useTheme();
   const { gutter } = useLayout();
   const clips = useTrendingClips();
+  // The rail snaps on a phone by prop; in a browser it needs the browser's own
+  // snap turned on, or a flick throws it past four tiles.
+  const rail = useRef<ScrollView | null>(null);
+  useWebSnap(rail, 'x', !!clips.data?.length);
 
   const items = clips.data ?? [];
   if (clips.isLoading) {
@@ -67,6 +72,7 @@ export function ClipRail() {
       </View>
 
       <ScrollView
+        ref={rail}
         horizontal
         showsHorizontalScrollIndicator={false}
         // Bleed past the page gutter so the next tile is cut by the screen edge

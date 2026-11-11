@@ -51,6 +51,8 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgo } from '../../lib/format';
 import { formatCount, spokenCount } from '../../lib/counts';
+import { isOffPage, pageAt, stepIndex } from '../../lib/pageMath';
+import { scrollerFrom } from '../../lib/webSnap';
 import type { RootStackParamList, ScreenProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -142,23 +144,33 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 65 }).current;
   /*
-   * One gesture, one page — on a phone and in a browser.
+   * One gesture, one clip — the thing Instagram does, done in three places.
    *
-   * `pagingEnabled` is not that. It lets a hard flick carry its own momentum, so
-   * one swipe can travel two or three pages; that is the "one scroll scrolls up
-   * to three videos" the owner reported. Two mechanisms are needed because the
-   * two runtimes behave differently:
+   * What makes a reels feed feel like reels rather than a list is that a gesture
+   * is answered with exactly one clip and a small overshoot when you push on.
+   * `pagingEnabled` alone does not do that: on iOS a hard flick carries its own
+   * momentum and can travel three pages, which is the "one scroll scrolls up to
+   * three videos" the owner reported. Three mechanisms, one per input:
    *
-   *  · **Native** — `snapToInterval` at exactly the page height plus
-   *    `disableIntervalMomentum`, which stops the list at the next interval
-   *    whatever the finger did. `decelerationRate="fast"` makes the settle quick
-   *    rather than a long glide.
-   *  · **Web** — react-native-web does not implement `disableIntervalMomentum`,
-   *    so momentum still flies past. The wheel is therefore taken away from the
-   *    scroller entirely: the first wheel event of a gesture animates exactly one
-   *    page and locks for the length of that animation, and everything the
-   *    gesture sends afterwards is swallowed. That is the only way to be sure,
-   *    and it is what Instagram does on the web.
+   *  · **Finger (native)** — `snapToInterval` at exactly the page height plus
+   *    `disableIntervalMomentum`, so the list stops at the next interval whatever
+   *    the finger did, and `decelerationRate="fast"` for a quick settle rather
+   *    than a long glide.
+   *  · **Finger and wheel (web)** — react-native-web implements neither
+   *    `disableIntervalMomentum` nor snap, so the *browser's* snap does the work:
+   *    `scroll-snap-type: y mandatory` with `scroll-snap-stop: always`, which is
+   *    the same guarantee (never rest on a half-cut clip, never skip one) given
+   *    by the engine that actually owns the scroll. A mouse wheel is then taken
+   *    as a gesture rather than a distance, one page per gesture, because a
+   *    notched wheel sends a stream of events that Chrome reads as one long
+   *    scroll and lands two clips down.
+   *  · **Keyboard** — arrows and page keys move one page while the Flow is the
+   *    screen in front.
+   *
+   * The page maths lives in `lib/pageMath` and is tested; the wheel listener is
+   * on this pager's own scroller, never on `document`, so opening the Flow does
+   * not take the wheel away from the rest of the app (`lib/webSnap` finds the
+   * element).
    */
   const listRef = useRef<FlatList<number>>(null);
   const indexRef = useRef(0);
@@ -175,47 +187,28 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     if (id != null) setActiveId(id);
   }, [ids]);
 
+  /** One gesture forward or back, never past either end. */
+  const step = useCallback((direction: number) => {
+    const next = stepIndex(indexRef.current, direction, ids.length);
+    if (next === indexRef.current) return;
+    listRef.current?.scrollToOffset({ offset: next * height, animated: true });
+  }, [height, ids.length]);
+
   /** Put the list on the nearest whole page. Used by both platforms. */
   const settleToNearest = useCallback(() => {
     if (lockRef.current) return;
-    const page = offsetRef.current / Math.max(height, 1);
-    const nearest = Math.min(Math.max(Math.round(page), 0), Math.max(ids.length - 1, 0));
-    if (Math.abs(page - nearest) > 2 / Math.max(height, 1)) {
+    const nearest = pageAt(offsetRef.current, height, ids.length);
+    if (isOffPage(offsetRef.current, height)) {
       listRef.current?.scrollToOffset({ offset: nearest * height, animated: true });
     }
     if (nearest !== indexRef.current) setIndex(nearest);
-  }, [height, ids.length, setIndex]);
+  }, [height, ids.length, setIndex, step]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
-    /**
-     * The scroller, found by walking out from the list rather than guessing.
-     *
-     * `getScrollableNode()` hands back a node that is *not* the element that
-     * scrolls, so: ask the list for its node, then step through parents and
-     * children until one is taller than its own viewport. That is the element
-     * the browser is scrolling.
-     */
-    const findScroller = (): HTMLElement | null => {
-      const base = listRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null;
-      let node: HTMLElement | null = base?.getScrollableNode?.() ?? null;
-      if (!node) return null;
-      const candidate = (el: HTMLElement | null): boolean =>
-        !!el && el.scrollHeight > el.clientHeight + 40;
-      if (candidate(node)) return node;
-      const inside = node.querySelector<HTMLElement>('*');
-      for (const el of [inside, ...Array.from(node.querySelectorAll<HTMLElement>('div'))]) {
-        if (candidate(el)) return el;
-      }
-      let up: HTMLElement | null = node.parentElement;
-      while (up && up !== document.body) {
-        if (candidate(up)) return up;
-        up = up.parentElement;
-      }
-      return null;
-    };
-
+    // The same walk out from the list that the rails use; see `lib/webSnap`.
+    const scroller = scrollerFrom(listRef);
     /*
      * A magnet, not a mousetrap.
      *
@@ -236,7 +229,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
      * (a scrollbar drag, a restored offset), so a light settle still runs when
      * scrolling goes quiet — a spring to the nearest page, through the list.
      */
-    const scroller = findScroller();
     const pages = () => {
       const content = (scroller?.firstElementChild as HTMLElement | null) ?? null;
       return content ? Array.from(content.children) as HTMLElement[] : [];
@@ -261,17 +253,46 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       observer.observe(scroller.firstElementChild, { childList: true, subtree: false });
     }
 
+    /*
+     * A mouse wheel is a gesture, not a distance.
+     *
+     * Snap alone leaves one gap on a desktop: a notched wheel sends a stream of
+     * small events, and Chrome can read them as one continuous scroll and land
+     * the reader two clips down. Instagram advances exactly one post per
+     * gesture, however hard the wheel is spun, and waits for the gesture to
+     * finish — the events stop — before accepting the next. That is the whole
+     * difference between a pager and a document, so the wheel is taken here and
+     * answered with one page at a time.
+     *
+     * The listener is on this pager's own scroller and nowhere else: an earlier
+     * version listened on `document`, so opening the Flow took the wheel away
+     * from every other screen until the app was reloaded.
+     */
+    let armed = true;
+    let gestureIdle: number | null = null;
+    const endGestureLater = () => {
+      if (gestureIdle) window.clearTimeout(gestureIdle);
+      gestureIdle = window.setTimeout(() => { armed = true; }, 180);
+    };
+    const onWheel = (event: WheelEvent) => {
+      // A sideways gesture belongs to whatever sits beside the pager, not to us.
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      event.preventDefault();
+      if (!armed) { endGestureLater(); return; }
+      armed = false;
+      endGestureLater();
+      step(event.deltaY > 0 ? 1 : -1);
+    };
+    scroller?.addEventListener('wheel', onWheel, { passive: false });
+
     let settle: number | null = null;
     const onScroll = () => {
       if (!scroller) return;
       if (settle) window.clearTimeout(settle);
       settle = window.setTimeout(() => {
         if (!scroller) return;
-        const page = scroller.scrollTop / Math.max(height, 1);
-        const nearest = Math.min(Math.max(Math.round(page), 0), ids.length - 1);
-        // A pixel of slack: browsers round sub-pixel offsets, and correcting a
-        // rounding error every time would fight the scroll for no reason.
-        if (Math.abs(page - nearest) > 2 / Math.max(height, 1)) {
+        const nearest = pageAt(scroller.scrollTop, height, ids.length);
+        if (isOffPage(scroller.scrollTop, height)) {
           listRef.current?.scrollToOffset({ offset: nearest * height, animated: true });
         }
         // The page is settled, so this is the clip that is really in front of
@@ -288,17 +309,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       if (event.key !== 'ArrowDown' && event.key !== 'PageDown' && event.key !== 'ArrowUp' && event.key !== 'PageUp') return;
       event.preventDefault();
       const direction = event.key === 'ArrowDown' || event.key === 'PageDown' ? 1 : -1;
-      const next = Math.min(Math.max(indexRef.current + direction, 0), ids.length - 1);
-      if (next === indexRef.current) return;
-      listRef.current?.scrollToOffset({ offset: next * height, animated: true });
+      step(direction);
     };
     window.addEventListener('keydown', onKey);
 
     return () => {
       window.removeEventListener('keydown', onKey);
+      scroller?.removeEventListener('wheel', onWheel);
       scroller?.removeEventListener('scroll', onScroll);
       observer?.disconnect();
       if (settle) window.clearTimeout(settle);
+      if (gestureIdle) window.clearTimeout(gestureIdle);
       // The snap belongs to this screen; leaving it must not leave the browser
       // snapping some other list.
       if (scroller) {
@@ -320,6 +341,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
        handler above exists. */
     snapToInterval={height}
     snapToAlignment="start"
+    /* Deliberately *not* `pagingEnabled`: on iOS it lets a hard flick carry its
+       own momentum across two or three pages, which is the bug this replaces. */
     disableIntervalMomentum
     decelerationRate="fast"
     showsVerticalScrollIndicator={false}

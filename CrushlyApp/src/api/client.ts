@@ -12,6 +12,32 @@ import {
   setMediaTokenTransport,
 } from '../lib/mediaHost';
 import type { MediaKind } from '../lib/mediaHost';
+import { compressVideo, MAX_PICK_BYTES, TARGET_BYTES } from '../lib/compressVideo';
+
+/**
+ * The sizes that matter on the way in.
+ *
+ * A person may pick up to 300 MB (`MAX_PICK_BYTES`, in `compressVideo`). Anything
+ * over 72 MB is re-encoded down to `TARGET_BYTES` before it leaves the device;
+ * anything left over 120 MB after that is genuinely too big and says so. The
+ * media Worker accepts up to the same 120 MB, so the three numbers agree.
+ */
+const UPLOAD_MAX_BYTES = 120 * 1024 * 1024;
+const COMPRESS_ABOVE_BYTES = 72 * 1024 * 1024;
+
+/**
+ * A clip that needs compressing, told apart from a photo.
+ *
+ * The type is trusted when there is one; a blob read back from some pickers
+ * arrives unlabelled, and a 200 MB file whose name ends in `.mp4` is a clip
+ * whatever its MIME type says.
+ */
+const isHeavyVideo = (blob: Blob, uri: string) => {
+  if (blob.size <= COMPRESS_ABOVE_BYTES) return false;
+  if (blob.type) return blob.type.startsWith('video/');
+  return /\.(mp4|mov|m4v|webm|3gp|mkv)$/i.test(uri.split('?')[0]);
+};
+void TARGET_BYTES;
 import { storage } from '../lib/storage';
 import { isMissingFunctionResponse } from '../lib/errors';
 import { fetchWithDeadline } from '../lib/requestClock';
@@ -308,17 +334,42 @@ export async function uploadMediaFile(
   contentType: string,
 ): Promise<string> {
   requireConfig();
-  const blob = await uriToBlob(uri);
+  const original = await uriToBlob(uri);
+
+  /*
+   * A big clip is compressed, not refused.
+   *
+   * A phone camera writes about 90 MB a minute, so a perfectly ordinary clip is
+   * over the store's limit before anybody has done anything unusual. Telling
+   * that person to "trim it" is telling them the app cannot hold their video. So
+   * anything over the target is re-encoded here, once, before a byte is sent —
+   * and the file that comes out decides its own extension and content type.
+   */
+  let blob = original;
+  if (isHeavyVideo(original, uri)) {
+    // On a phone the encoder gets the file the picker already has; on the web
+    // the blob is the file.
+    const smaller = await compressVideo(original, { sourceUri: Platform.OS === 'web' ? undefined : uri }).catch(() => null);
+    if (smaller) {
+      blob = smaller.blob;
+      contentType = smaller.mimeType;
+      path = path.replace(/\.[^./]+$/, `.${extensionFor(smaller.mimeType, 'webm')}`);
+    }
+  }
+
   // A phone clip of two minutes is not a file anybody meant to post, and the
   // upload is the wrong place to find out: say what the limit is, in the size
   // the person can see in their gallery.
-  const limitMb = bucket === 'media' ? 80 : 12;
+  const limitMb = bucket === 'media' ? UPLOAD_MAX_BYTES / (1024 * 1024) : 12;
   const mb = blob.size / (1024 * 1024);
   if (mb > limitMb) {
     throw new ApiError(
       413,
-      `That file is ${Math.round(mb)} MB. holUpp takes up to ${limitMb} MB — trim it, or pick something shorter.`,
+      `That file is ${Math.round(mb)} MB even after compressing, and holUpp takes up to ${limitMb} MB. Trim it, or pick something shorter.`,
     );
+  }
+  if (original.size > MAX_PICK_BYTES) {
+    throw new ApiError(413, 'That clip is over 300 MB. Trim it first, then post.');
   }
   const kind = bucket === 'media' ? mediaKind(path) : null;
   if (kind === 'banners' && !moved(kind)) throw new ApiError(503, 'Banner uploads are unavailable right now.');

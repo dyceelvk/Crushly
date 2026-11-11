@@ -10,6 +10,7 @@ import { useLayout } from '../Layout';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { describeHighlight } from '../../lib/highlights';
+import { useWebSnap } from '../../lib/webSnap';
 import type { CircleHighlight } from '../../api/types';
 
 /**
@@ -203,6 +204,9 @@ export function CircleHighlightsCard({ onOpenCircle }: { onOpenCircle: (circleId
   const { contentWidth } = useLayout();
   const highlights = useCircleHighlights(8);
   const scroller = useRef<ScrollView | null>(null);
+  // Snap is a native prop; react-native-web ignores it, so the browser's own is
+  // switched on for the same rail.
+  useWebSnap(scroller, 'x');
   const [page, setPage] = useState(0);
 
   // Anything with nothing happening in it is not a highlight, whatever the score.

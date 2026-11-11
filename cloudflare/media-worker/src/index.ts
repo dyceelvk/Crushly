@@ -42,7 +42,10 @@ const AUTHORIZE_URL = 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account
 const AUTH_TTL_MS = 23 * 60 * 60 * 1000; // B2 tokens last 24h; refresh early
 // Match the database and app's largest allowed media; the ticket still enforces
 // smaller per-kind limits (e.g. photos and Moments).
-const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
+// Clips arrive already compressed by the app (target 64 MB), so this is the
+// backstop rather than the everyday limit: it gives the encoder's output room to
+// come in a little over its target without a post failing at the last step.
+const MAX_UPLOAD_BYTES = 120 * 1024 * 1024;
 
 /**
  * Backblaze wants a SHA-1 with every upload, and hashing is the only real work
