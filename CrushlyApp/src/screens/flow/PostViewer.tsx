@@ -207,6 +207,187 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
+    /*
+     * The pager, on the web, driven by us.
+     *
+     * Three separate faults made this feel like a free-scrolling document, and
+     * each one alone was enough:
+     *
+     * 1. **Nothing scrolled.** The list had no height of its own, so it grew
+     *    with its pages and the *document* scrolled instead — measured: a 390×844
+     *    window with five clips gave `document.scrollHeight` of 4220 and no
+     *    inner scroller at all. Every rule aimed at "the scroller" was attached
+     *    to a div that never scrolls, which is why nothing we did to it changed
+     *    anything. The list now has an explicit height (see the `style` below), so
+     *    it is the element that scrolls.
+     *
+     * 2. **The browser's snap silently ate our animation.** With
+     *    `scroll-snap-type: y mandatory` set, a *programmatic* smooth scroll is
+     *    dropped: `scrollTo({top: 844, behavior: 'smooth'})` on a snapped
+     *    container leaves it at 0, in this Chromium, every time — while an
+     *    instant `scrollTop = 844` sticks. So "advance one page" did nothing, at
+     *    all, and the clip never changed. Native snap is therefore **off**, and
+     *    the movement is animated here by writing `scrollTop` frame by frame.
+     *
+     * 3. **A wheel is a gesture, not a distance.** A notched wheel sends a
+     *    stream of events; taken as a distance they add up to four clips. One
+     *    gesture is answered with exactly one clip, and the next is refused until
+     *    the wheel goes quiet — then the movement is ours, so it always lands on
+     *    a page boundary.
+     *
+     * Everything is attached to this pager's own element, never to `document`:
+     * opening the Flow must not take the wheel away from the rest of the app.
+     */
+    let scroller = scrollerFrom(listRef);
+    if (!scroller) {
+      // Nothing looked scrollable. That is not a reason to fall back to the
+      // document — it is a reason to make this list the scroller it was meant to
+      // be, which is one height and one overflow away.
+      const node = (listRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null)?.getScrollableNode?.() ?? null;
+      if (!node) return;
+      node.style.height = `${height}px`;
+      node.style.overflowY = 'auto';
+      scroller = node;
+    }
+    const pageHeight = Math.max(height, 1);
+
+    scroller.style.scrollSnapType = 'none';
+    scroller.style.overscrollBehaviorY = 'contain';
+    // The gesture is read here, not by the browser: without this a finger drag
+    // on a phone browser scrolls the page and our handlers see nothing.
+    scroller.style.touchAction = 'none';
+
+    let raf = 0;
+    let animating = false;
+    /** Move to a page boundary, animated, by writing the offset each frame. */
+    const animateTo = (target: number) => {
+      const last = Math.max((ids.length - 1) * pageHeight, 0);
+      const end = Math.min(Math.max(target, 0), last);
+      const start = scroller.scrollTop;
+      const distance = end - start;
+      cancelAnimationFrame(raf);
+      if (Math.abs(distance) < 1) {
+        scroller.scrollTop = end;
+        animating = false;
+        setIndex(pageAt(end, pageHeight, ids.length));
+        return;
+      }
+      const began = performance.now();
+      const DURATION = 340;
+      animating = true;
+      const frame = (now: number) => {
+        const k = Math.min(1, (now - began) / DURATION);
+        // Ease-out cubic: fast off the mark, gentle landing — the way a paged
+        // feed feels, and short enough that a second gesture is never queued
+        // behind a long glide.
+        const eased = 1 - Math.pow(1 - k, 3);
+        scroller.scrollTop = start + distance * eased;
+        if (k < 1) {
+          raf = requestAnimationFrame(frame);
+        } else {
+          scroller.scrollTop = end;
+          animating = false;
+          // The clip in front is decided here — at rest — and never mid-move,
+          // so two clips can never both be "active" and play at once.
+          setIndex(pageAt(end, pageHeight, ids.length));
+        }
+      };
+      raf = requestAnimationFrame(frame);
+    };
+
+    /** One gesture, one clip. */
+    const go = (direction: number) => {
+      const from = pageAt(scroller.scrollTop, pageHeight, ids.length);
+      const next = stepIndex(from, direction, ids.length);
+      if (next === from) return;
+      animateTo(next * pageHeight);
+    };
+
+    let armed = true;
+    let idle: number | null = null;
+    const endGestureLater = () => {
+      if (idle) window.clearTimeout(idle);
+      idle = window.setTimeout(() => { armed = true; }, 170);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      event.preventDefault();
+      if (!armed) { endGestureLater(); return; }
+      armed = false;
+      endGestureLater();
+      go(event.deltaY > 0 ? 1 : -1);
+    };
+    scroller.addEventListener('wheel', onWheel, { passive: false });
+
+    /* A finger drag on a phone browser, treated as one gesture too. */
+    let dragFrom = 0;
+    let dragging = false;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse') return;
+      dragging = true;
+      dragFrom = event.clientY;
+      cancelAnimationFrame(raf);
+      animating = false;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      const dy = event.clientY - dragFrom;
+      if (Math.abs(dy) < 24) return;
+      go(dy < 0 ? 1 : -1);
+    };
+    scroller.addEventListener('pointerdown', onPointerDown);
+    scroller.addEventListener('pointerup', onPointerUp);
+    scroller.addEventListener('pointercancel', onPointerUp);
+
+    /*
+     * Anything that still moves the scroller without us — a scrollbar drag, a
+     * restored offset, a trackpad the browser handled before the listener was
+     * attached — is brought back to a whole page when it comes to rest. This is
+     * also the only place that notices a move made by something else, so the
+     * active clip is corrected here rather than by guessing mid-move.
+     */
+    let settle: number | null = null;
+    const onScroll = () => {
+      if (settle) window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        if (animating) return;
+        if (isOffPage(scroller.scrollTop, pageHeight)) {
+          animateTo(pageAt(scroller.scrollTop, pageHeight, ids.length) * pageHeight);
+          return;
+        }
+        const nearest = pageAt(scroller.scrollTop, pageHeight, ids.length);
+        if (nearest !== indexRef.current) setIndex(nearest);
+      }, 140);
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+
+    const onKey = (event: KeyboardEvent) => {
+      if (!focusedRef.current) return;
+      if (!['ArrowDown', 'PageDown', 'ArrowUp', 'PageUp'].includes(event.key)) return;
+      event.preventDefault();
+      go(event.key === 'ArrowDown' || event.key === 'PageDown' ? 1 : -1);
+    };
+    window.addEventListener('keydown', onKey);
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      scroller.removeEventListener('wheel', onWheel);
+      scroller.removeEventListener('pointerdown', onPointerDown);
+      scroller.removeEventListener('pointerup', onPointerUp);
+      scroller.removeEventListener('pointercancel', onPointerUp);
+      scroller.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(raf);
+      if (settle) window.clearTimeout(settle);
+      if (idle) window.clearTimeout(idle);
+      scroller.style.touchAction = '';
+      scroller.style.overscrollBehaviorY = '';
+    };
+  }, [height, ids.length, setIndex]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
     // The same walk out from the list that the rails use; see `lib/webSnap`.
     const scroller = scrollerFrom(listRef);
     /*
@@ -336,6 +517,17 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   return <FlatList
     ref={listRef}
     data={ids}
+    /*
+     * Its own height, exactly one page.
+     *
+     * Without this the list grows to the height of every clip and the **page**
+     * scrolls, so the list is not a scroller at all and nothing can be snapped or
+     * paged on it. Measured on a 390×844 window: five clips, no inner scroller,
+     * `document.scrollHeight` 4220. Native lists are already bounded by the
+     * screen, so this is only needed on the web — but `flex: 1` alone is not
+     * enough there, which is why it is a number.
+     */
+    style={{ height }}
     keyExtractor={(id) => String(id)}
     /* Native snapping. On the web these are inert, which is why the wheel
        handler above exists. */

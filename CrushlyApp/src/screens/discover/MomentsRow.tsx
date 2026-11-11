@@ -17,16 +17,18 @@ import { MomentPreview } from '../moments/Moments';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Card = { key: string; author: MomentAuthor; moment: Moment; mine: boolean; count: number; unread: boolean };
 
-const CARD_W = 132;
 /*
- * Tall enough for a 9:16 preview and the handle under it.
+ * The size of a Moment in the Moments tab, not a poster.
  *
- * A shared post's card is nine-by-sixteen by definition, so a 196-tall card could
- * only show it letterboxed or clipped — the handle was cut off by the card's own
- * rounded corner. At this height the preview is exactly 9:16 at full width and
- * the handle has its own line.
+ * This row was 132 × 266 — twice as tall as it was wide, taller than two rows of
+ * anything else on Discover — so one Moment filled the screen and the section
+ * read as a billboard rather than a row you glance along. It is the same shape
+ * the Moments tab uses (three to a phone screen, four by five-ish), which is the
+ * size the owner pointed at: `width` by `width × 1.35`, the pebbles below the
+ * fold on that screen.
  */
-const CARD_H = 266;
+const CARD_W = 104;
+const CARD_H = Math.round(CARD_W * 1.35); // 140 — the Moments tab's own ratio
 
 /**
  * Moments, as one row of Discover.
@@ -165,10 +167,10 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
         style={
           moment.kind === 'post'
             // Left, right and top only: the handle lives in the bottom strip.
-            ? { position: 'absolute', left: 0, right: 0, top: 0, bottom: 34, alignItems: 'center', justifyContent: 'center' }
+            ? { position: 'absolute', left: 0, right: 0, top: 0, bottom: 30, alignItems: 'center', justifyContent: 'center' }
             : StyleSheet.absoluteFill
         }
-        textSize={13}
+        textSize={11}
         lines={4}
         caption={false}
         /* The card is the tap: open this Moment, not the post behind it. */
@@ -179,7 +181,7 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
       <LinearGradient
         pointerEvents="none"
         colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 64 }}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 48 }}
       />
       {/*
         A shared post draws its own handle under its own preview, because the
@@ -189,9 +191,9 @@ function MomentCard({ card, onPress }: { card: Card; onPress: () => void }) {
       <View
         style={{
           position: 'absolute',
-          left: 9,
-          right: 9,
-          bottom: 8,
+          left: 7,
+          right: 7,
+          bottom: 6,
           flexDirection: 'row',
           alignItems: 'center',
           gap: 6,
