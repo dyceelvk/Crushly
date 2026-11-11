@@ -351,6 +351,19 @@ def return_to_tabs(tries=4):
     """
     for _ in range(tries):
         seen = nodes() or []
+        # An empty tree is not a screen with nothing on it — it is a dump that
+        # did not answer. Pressing BACK on that guess is how this walked four
+        # screens backwards and ended up at the bottom of Settings. Ask again,
+        # wake the panel if the device has dozed, and only then move.
+        for _ in range(6):
+            if seen:
+                break
+            time.sleep(1.5)
+            seen = nodes() or []
+        if not seen:
+            adb('shell', 'input', 'keyevent', '224', check=False)  # wake
+            time.sleep(2)
+            seen = nodes() or []
         # Discover preferences is a modal; Android's accessibility tree can
         # still expose Home and Space behind it. Those labels do not mean the
         # modal is gone. Use the visible close control and inspect again.

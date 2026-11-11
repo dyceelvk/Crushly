@@ -206,7 +206,16 @@ function MomentPostCard({
   const Card: typeof Pressable = tappable ? Pressable : View as unknown as typeof Pressable;
 
   return (
-    <View style={[{ alignItems: 'stretch' }, style]}>
+    /*
+     * The card has to claim its box, not shrink to its contents.
+     *
+     * A caller that positions this with `alignItems: 'center'` — the Discover
+     * row does — gives a child with no width of its own `width: auto`, so the
+     * card collapsed to zero and the tile was an empty gold ring with a black
+     * hole in it. That was the blank Moment on Discover, on a post that had a
+     * perfectly good clip behind it. A card fills the box it was handed.
+     */
+    <View style={[{ width: '100%', height: '100%', alignItems: 'stretch' }, style]}>
       {/*
         The box is whatever this card was given; the shape is the caller's
         decision (a portrait box on the Moment screen, the tile's own ratio in a
