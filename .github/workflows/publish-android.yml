@@ -1,0 +1,92 @@
+# Puts an already-built, already-tested APK on the update channel.
+#
+# The build workflow stops short of this on purpose: it refuses to publish a
+# debug-signed APK by itself (`Publish the asset` is disabled). But a build that
+# nobody can install is not a release either — 1.0.83 through 1.0.87 reached
+# phones through this exact path, an APK mirrored to the private bucket that the
+# app's own updater downloads from. This makes that step explicit, repeatable and
+# verified instead of a manual upload.
+#
+# It never builds anything. It takes the artifact from a run that already passed
+# its checks, refuses it unless the bytes match what the release notes advertise,
+# mirrors it, and then asks the *live* Worker to prove it is serving those bytes.
+name: Publish Android APK to the update channel
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Build run id whose Crushly-Android-test-APK artifact to publish'
+        required: true
+        type: string
+      version:
+        description: 'Version the app should advertise, e.g. 1.0.95 (must match release.json on main)'
+        required: true
+        type: string
+      sha256:
+        description: 'SHA-256 of the APK as recorded in release.json'
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crushly-Android-test-APK
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: apk
+      - name: Refuse anything that is not the recorded build
+        run: |
+          set -euo pipefail
+          file="Crushly-${{ inputs.version }}-Android9plus.apk"
+          apk=$(find apk -name "$file" | head -1)
+          test -n "$apk" || { echo "::error::$file is not in run ${{ inputs.run_id }}."; exit 1; }
+          got=$(sha256sum "$apk" | cut -d' ' -f1)
+          want="${{ inputs.sha256 }}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::APK is $got but the release advertises $want. Refusing to publish bytes nobody tested."
+            exit 1
+          fi
+          # The channel must already describe this exact build, or the app would
+          # download one file and be told about another.
+          python3 - <<'PY'
+          import json, os, sys
+          r = json.load(open('cloudflare/media-worker/src/release.json'))
+          v, sha = os.environ['V'], os.environ['SHA']
+          if r['version'] != v or r['sha256'] != sha or r['file'] != 'Crushly-%s-Android9plus.apk' % v:
+              sys.exit('release.json does not describe %s / %s' % (v, sha))
+          print('release.json matches:', r['version'], r['bytes'], 'bytes')
+          PY
+        env:
+          V: ${{ inputs.version }}
+          SHA: ${{ inputs.sha256 }}
+      - name: Mirror to the private bucket the app downloads from
+        env:
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: |
+          set -euo pipefail
+          apk=$(find apk -name "Crushly-${{ inputs.version }}-Android9plus.apk" | head -1)
+          python3 .github/scripts/mirror-android-apk.py "$apk"
+      - name: Make the live Worker prove it serves this build
+        run: |
+          set -euo pipefail
+          want_bytes=$(python3 -c "import json;print(json.load(open('cloudflare/media-worker/src/release.json'))['bytes'])")
+          for _ in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -I https://crushly-media.dyceelvk.workers.dev/download || true)
+            len=$(curl -sI https://crushly-media.dyceelvk.workers.dev/download | tr -d '\r' | sed -n 's/^content-length: //Ip' | head -1)
+            if [ "$code" = "200" ] && [ "$len" = "$want_bytes" ]; then
+              echo "::notice::The update channel is serving ${{ inputs.version }}: HTTP 200, $len bytes."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::/download did not serve $want_bytes bytes (last: HTTP $code, length ${len:-none})."
+          exit 1
