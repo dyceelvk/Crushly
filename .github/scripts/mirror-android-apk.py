@@ -24,7 +24,16 @@ def request(url, *, data=None, extra=None):
     try:
         return urllib.request.urlopen(urllib.request.Request(url, data=data, headers={**headers, **(extra or {})}), timeout=300)
     except urllib.error.HTTPError as e:
-        raise RuntimeError('B2 request failed with HTTP ' + str(e.code)) from None
+        # B2 says *why* in the body — `cap_exceeded`, `unauthorized`,
+        # `cannot_download` — and a bare status code turns a five-minute fix into
+        # an afternoon. The body carries no credentials, so it is safe to print.
+        detail = ''
+        try:
+            raw = e.read(2000).decode('utf-8', 'replace')
+            detail = ' — ' + ' '.join(raw.split())[:400]
+        except Exception:
+            pass
+        raise RuntimeError('B2 request failed with HTTP ' + str(e.code) + detail) from None
 
 def call(url, body, token):
     with request(url, data=json.dumps(body).encode(), extra={'Authorization':token, 'Content-Type':'application/json'}) as r:
