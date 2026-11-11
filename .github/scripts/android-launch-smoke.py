@@ -708,22 +708,39 @@ def assert_connections(seen):
                 node['y1'], node['y2']))
 
 
+def tap_any(needles, cls=None, tries=2, required=False):
+    """Tap the first of several labels that is on screen.
+
+    A label the owner renames is not a fault in the app, and a walk that only
+    knows one spelling fails on a build that is fine. Several places have been
+    renamed once already — the Home pane is "All Crush Feed" and the bar's
+    create button reads "Create" while its accessibility label reads "Create a
+    post" — so these are given as alternatives rather than a single string.
+    """
+    for needle in needles:
+        if tap(needle, cls=cls, tries=tries, required=False):
+            return True
+    if required:
+        fail('nothing on screen to tap for any of: ' + ', '.join(repr(n) for n in needles))
+    return False
+
+
 def walk():
     """Photograph every surface, in the order the app presents them."""
     seen = shot('04-home')
     assert_strip(seen)
 
-    for label, name in (('Crushes', '05-segment-crushes'),
-                        ('Connections', '06-segment-connections')):
-        tap(label)
-        seen = shot(name)
-        if label == 'Connections':
-            assert_connections(seen)
+    if not tap_any(['All Crush Feed', 'Crushes'], required=True):
+        fail('the Home pane could not be selected')
+    seen = shot('05-segment-crushes')
+    tap('Connections')
+    seen = shot('06-segment-connections')
+    assert_connections(seen)
 
     # Walk the editor without publishing or touching another member's data.
     # This used to have an Advanced row with no handler, and a schedule toggle
     # which did not schedule anything. Exercise the real comments setting.
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Post', required=True)
     if not scroll_to('Advanced options', swipes=6):
         fail('editor Advanced options is missing')
@@ -744,7 +761,7 @@ def walk():
     log('editor: advanced sheet opens, comments choice persists, remix status is honest; checked')
 
     # Save a post without a network request, restart the app, and reopen it.
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Post', required=True)
     # The editor can be visibly painted before its EditText is exposed in the
     # Android accessibility tree. Wait for the actual field, not coordinates.
@@ -768,7 +785,7 @@ def walk():
     adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.MainActivity')
     if not wait_for(['Home', 'Whispers'], 90, 'restart after draft save'):
         fail('app did not restart after saving draft')
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Drafts on this phone', required=True)
     if not find(nodes() or [], 'Local post draft check'): fail('post draft did not survive restart')
     tap('Open draft', required=True)
@@ -776,7 +793,7 @@ def walk():
         fail('post draft content was not restored')
     tap('Cancel', required=True)
     tap('Discard changes', required=True)
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Drafts on this phone', required=True)
     tap('Delete', required=True)
     tap('Delete draft', required=True)
@@ -786,7 +803,7 @@ def walk():
     log('phone draft: post saved, survived process restart, reopened and deleted; checked')
 
     # Also exercise the separate Moment composer; no test post is published.
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Moment', required=True)
     if not find(nodes() or [], 'Drafts on this phone'):
         fail('Moment drafts must be reachable before typing')
@@ -810,7 +827,7 @@ def walk():
     tap('Save draft', required=True)
     if not wait_for(['Home', 'Whispers'], 30, 'left Moment draft save'):
         fail('saving Moment draft did not leave the editor')
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Moment', required=True)
     tap('Drafts on this phone', required=True)
     # The draft sheet may be visibly painted while its accessibility tree is
@@ -823,7 +840,7 @@ def walk():
         fail('Moment draft content was not restored')
     tap('Close', required=True)
     tap('Discard changes', required=True)
-    tap('Create post', required=True)
+    tap_any(['Create a post', 'Create', 'Create post'], required=True)
     tap('Moment', required=True)
     tap('Drafts on this phone', required=True)
     tap('Delete', required=True)
