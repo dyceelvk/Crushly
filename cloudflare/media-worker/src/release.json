@@ -1,10 +1,10 @@
 {
-  "version": "1.0.87",
-  "versionCode": 87,
+  "version": "1.0.95",
+  "versionCode": 95,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.87-Android9plus.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.87/Crushly-1.0.87-Android9plus.apk",
-  "notes": "Spaces without banners now have a plain background. Bios and links are easier to use, and you can share a Space from its menu.",
-  "bytes": 95047292,
-  "sha256": "30862f3b2700ae8158275189e2666378d181fe0b42a4cfc84899471e833c5282"
+  "file": "Crushly-1.0.95-Android9plus.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.95/Crushly-1.0.95-Android9plus.apk",
+  "notes": "Clips up to 300 MB are accepted now, and holUpp makes them small enough to post for you. The Flow moves one clip per swipe, the way it should. Moments open the one you tapped, and Moments on Discover are back to their proper size. Smaller fixes throughout.",
+  "bytes": 97041908,
+  "sha256": "ebd6ada1350738c8b3e439283e122557944fdd584e89c8ae03c5255d7a696904"
 }
