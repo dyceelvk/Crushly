@@ -6,5 +6,6 @@
   "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.96/Crushly-1.0.96-Android9plus.apk",
   "notes": "The controls inside a Moment work again: reply, react, Close, Follow and everything along the bottom were drawn but not pressable, and now they are. Smaller fixes throughout.",
   "bytes": 97042324,
-  "sha256": "1633f024346fda3408ca9c17a567b6e08a806d98696d0316d620d89ebb3dff7e"
+  "sha256": "1633f024346fda3408ca9c17a567b6e08a806d98696d0316d620d89ebb3dff7e",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.96/Crushly-1.0.96-Android9plus.apk"
 }

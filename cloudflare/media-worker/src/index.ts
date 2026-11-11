@@ -544,6 +544,41 @@ async function releaseFromR2(env: Env, headOnly: boolean): Promise<Response | nu
 }
 
 /**
+ * The public download channel: a release asset in a public repository.
+ *
+ * This is the rung that costs nothing and needs no account, no card and no
+ * billing setting. A public repository's release assets are fetchable by anyone
+ * with the URL — which is the same audience the update channel already serves —
+ * GitHub does not meter their bandwidth the way B2 meters egress, and there is
+ * no storage quota to outgrow because release assets do not count against
+ * Actions storage.
+ *
+ * It is a static file, verified the same way as everything else: the length must
+ * equal `release.json`'s `bytes` before a single byte is forwarded, and the app
+ * checks the SHA-256 and the ZIP magic on top of that.
+ */
+async function releaseFromPublic(env: Env, headOnly: boolean): Promise<Response | null> {
+  const url = release.publicUrl;
+  if (!url) return null;
+  try {
+    const upstream = await fetch(url, headOnly ? { method: 'HEAD' } : undefined);
+    const size = Number(upstream.headers.get('content-length'));
+    if (!upstream.ok || size !== release.bytes || (!headOnly && !upstream.body)) {
+      if (!headOnly) await upstream.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const headers = releaseHeaders();
+    if (headOnly) {
+      await upstream.body?.cancel().catch(() => undefined);
+      return new Response(null, { status: 200, headers });
+    }
+    return new Response(upstream.body, { status: 200, headers });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Stream the release, from R2 first and the older B2 mirror second.
  *
  * R2 is the home of the APK now: 97 MB per install is metered egress on B2, and
@@ -554,11 +589,14 @@ async function releaseFromR2(env: Env, headOnly: boolean): Promise<Response | nu
  * never exercised is a fallback that does not work.
  */
 async function downloadRelease(env: Env, origin: string | null, headOnly: boolean): Promise<Response> {
-  const fromR2 = await releaseFromR2(env, headOnly);
-  if (fromR2) {
-    const headers = new Headers(fromR2.headers);
+  const withCors = (source: Response) => {
+    const headers = new Headers(source.headers);
     for (const [k, v] of Object.entries(cors(origin))) headers.set(k, String(v));
-    return new Response(fromR2.body, { status: fromR2.status, headers });
+    return new Response(source.body, { status: source.status, headers });
+  };
+  for (const source of [releaseFromR2, releaseFromPublic]) {
+    const answer = await source(env, headOnly);
+    if (answer) return withCors(answer);
   }
   try {
     const auth = await b2Auth(env);

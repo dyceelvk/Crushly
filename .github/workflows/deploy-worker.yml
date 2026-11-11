@@ -59,30 +59,22 @@ jobs:
       - uses: actions/checkout@v4
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
 
-      # The release bucket has to exist before the deploy, or wrangler refuses a
-      # config that binds to a bucket nobody made. Creating it twice is not an
-      # error we care about, so the step only reports what happened.
-      - name: Make sure the release bucket exists
+      # R2 is the intended home for the APK but needs the R2 subscription switched
+      # on in the Cloudflare account first. Until that is done the binding is not
+      # in wrangler.toml at all and the Worker serves the APK from the public
+      # release channel, so this step only reports what it can see — it must never
+      # fail the deploy and take the media pipeline down with it.
+      - name: Check whether the release bucket is available
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != ''
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -uo pipefail
-          npx --yes wrangler@4 r2 bucket create holup-releases 2>&1 | tee /tmp/r2-create.log || true
-          if grep -qi 'already exists\|already owns' /tmp/r2-create.log; then
-            echo "::notice::The release bucket is already there."
-          elif grep -qi 'created' /tmp/r2-create.log; then
-            echo "::notice::Created the release bucket (holup-releases)."
+          if npx --yes wrangler@4 r2 bucket list 2>/dev/null | grep -q 'holup-releases'; then
+            echo "::notice::R2 is available. Bind it in cloudflare/media-worker/wrangler.toml and republish the APK into the bucket."
           else
-            echo "::error::Could not create the release bucket. The CLOUDFLARE_API_TOKEN most likely lacks 'Workers R2 Storage: Edit' — the APK cannot be served from R2 until it has it. Add that permission to the token (Cloudflare → My Profile → API Tokens), then re-run this workflow."
-            exit 1
-          fi
-          # The binding is unusable if the bucket is not really there, and
-          # wrangler's own error for that says nothing about what to fix.
-          if ! npx --yes wrangler@4 r2 bucket list 2>/dev/null | grep -q 'holup-releases'; then
-            echo "::error::The release bucket holup-releases is still not visible to this token. Check its 'Workers R2 Storage: Edit' permission, then re-run."
-            exit 1
+            echo "::notice::R2 is not available to this token (it needs the R2 subscription enabled and 'Workers R2 Storage: Edit'). The APK is served from the public release channel instead — no action needed."
           fi
 
       - uses: cloudflare/wrangler-action@v3

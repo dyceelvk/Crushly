@@ -67,25 +67,35 @@ test('the download is readable from another origin', async () => {
   assert.equal(res.headers.get('access-control-allow-origin'), 'https://holupapp.vercel.app');
 });
 
+/** Run `body` with every outbound fetch failing, so no fallback can quietly work. */
+async function offline<T>(body: () => Promise<T>): Promise<T> {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => { throw new Error('no network in this test'); }) as typeof fetch;
+  try {
+    return await body();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
 test('an object of the wrong size is refused rather than served', async () => {
-  // This is the failure the app itself would catch; the Worker must not be the
-  // one to send it. With no B2 credentials configured there is nothing to fall
-  // back to, so the answer is the honest 503.
-  const env = { RELEASES: bucketWith(release.bytes - 1) } as never;
-  const res = await worker.fetch(get(), env, {} as never);
+  // The failure the app itself would catch; the Worker must not be the one to
+  // send it. With every other source unreachable the answer is the honest 503.
+  const res = await offline(() => worker.fetch(get(), { RELEASES: bucketWith(release.bytes - 1) } as never, {} as never));
   assert.equal(res.status, 503);
   const body = (await res.json()) as Record<string, unknown>;
   assert.match(String(body.error), /temporarily unavailable/i);
 });
 
-test('a missing object falls through to the mirror, and a mirror with no credentials says so', async () => {
-  const env = { RELEASES: bucketWith(null) } as never;
-  const res = await worker.fetch(get(), env, {} as never);
+test('a missing object falls through to the next source rather than failing', async () => {
+  const res = await offline(() => worker.fetch(get(), { RELEASES: bucketWith(null) } as never, {} as never));
+  // Both the bucket and the public channel were unreachable here, so this is the
+  // end of the line — what matters is that it answered instead of throwing.
   assert.equal(res.status, 503);
 });
 
 test('a Worker deployed before the bucket existed still answers', async () => {
-  const res = await worker.fetch(get(), {} as never, {} as never);
+  const res = await offline(() => worker.fetch(get(), {} as never, {} as never));
   assert.equal(res.status, 503);
 });
 
@@ -97,4 +107,56 @@ test('/version keeps advertising the build the release file describes', async ()
   assert.equal(body.versionCode, release.versionCode);
   assert.equal(body.bytes, release.bytes);
   assert.equal(body.sha256, release.sha256);
+});
+
+/* ------------------------------------------------ the public release channel */
+
+test('with no bucket bound, the APK comes from the public release channel', async () => {
+  // The shape of the world right now: R2 not subscribed, B2 capped out, and a
+  // public release asset that anybody can fetch. The Worker asks it for the file
+  // and re-serves it, so the app keeps one stable URL.
+  const realFetch = globalThis.fetch;
+  let asked: string | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    asked = String(input);
+    if (!asked.includes('holupp-releases')) return new Response('nope', { status: 404 });
+    return new Response(fakeApk(), { headers: { 'content-length': String(release.bytes) } });
+  }) as typeof fetch;
+  try {
+    const res = await worker.fetch(get(), {} as never, {} as never);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-length'), String(release.bytes));
+    assert.equal(res.headers.get('content-type'), 'application/vnd.android.package-archive');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    assert.equal(bytes.length, release.bytes);
+    assert.deepEqual([...bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+    assert.match(String(asked), /holupp-releases/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('a public copy of the wrong length is not served', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(new Uint8Array(16), { headers: { 'content-length': '16' } })) as typeof fetch;
+  try {
+    const res = await worker.fetch(get(), {} as never, {} as never);
+    assert.equal(res.status, 503);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('R2 wins when it is bound, so the public channel is only the fallback', async () => {
+  const realFetch = globalThis.fetch;
+  let asked = false;
+  globalThis.fetch = (async () => { asked = true; return new Response('should not be called', { status: 500 }); }) as typeof fetch;
+  try {
+    const res = await worker.fetch(get(), { RELEASES: bucketWith(release.bytes) } as never, {} as never);
+    assert.equal(res.status, 200);
+    assert.equal(asked, false, 'the public channel must not be touched while R2 answers');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

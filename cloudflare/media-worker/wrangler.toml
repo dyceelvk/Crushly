@@ -20,9 +20,15 @@ compatibility_date = "2026-10-09"
 # (97 MB per install is metered egress on B2, and that allowance ran out).
 # The bucket is created by .github/workflows/deploy-worker.yml if it is missing,
 # and filled by .github/workflows/publish-android.yml.
-[[r2_buckets]]
-binding = "RELEASES"
-bucket_name = "holup-releases"
+# R2 is the intended home for the APK, but enabling R2 needs the R2 subscription
+# switched on in the Cloudflare account first (and that checkout wants a card).
+# Until it is, the binding is commented out rather than left dangling: a Worker
+# that binds to a bucket which does not exist fails to deploy *entirely*, which
+# would take the media pipeline and the update channel down with it.
+# Re-enable these two lines — and nothing else — once the bucket exists.
+# [[r2_buckets]]
+# binding = "RELEASES"
+# bucket_name = "holup-releases"
 
 # Served from the Worker's own *.workers.dev address today. Adding a custom
 # domain later needs no code change and no stored URL changes: the old address
