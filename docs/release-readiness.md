@@ -64,6 +64,14 @@ passes 2/2. `moment-circles` 2/2, `circles` 4/4, `space-search` 30/30.
 
 ## The Flow is a feed again, and a reaction answers the finger (2026-11-07, latest)
 
+**LIVE.** `c6f222c` is on `main` and `build/holup-follow-draft`, deployed and
+aliased to `holupapp.vercel.app`, bundle
+`index-e91bef7ca26ba03c5eed51a3941daf08.js` (contains `scrollSnapType='y
+mandatory'`). Checked against production with mocked data: a click on the feed's
+reaction control sends `p_liked: true`, the mark fills `#FF4081`, a second click
+sends `p_liked: false` and it empties again.
+
+
 Six faults, all in the same area, all from the last two batches doing too much.
 
 **1. Flow felt dead, and took the app with it.** The web pager had been given the
