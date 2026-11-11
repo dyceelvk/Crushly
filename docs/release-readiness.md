@@ -12,6 +12,56 @@ Three states are used throughout, and they are not interchangeable:
 
 ---
 
+## The magnet, the holUpp control, and a text post that opens as a post (2026-11-07, latest)
+
+Four reports, four fixes. Everything below is **BUILT** — typechecked, unit-tested,
+driven in a browser against mocked data — and not yet deployed.
+
+**1. Flow scroll is sticky again.** The wheel was already taking one page per
+gesture, but a drag, a scrollbar or a programmatic scroll could still leave the
+list resting between two clips, and half a video at the top of the screen is what
+was reported. The web pager now has a magnet: when scrolling goes quiet for
+140 ms, an offset that is not a page boundary springs to the nearest one. A phone
+gets the same correction at the end of a drag and at the end of momentum.
+
+The reason the first attempt at it looked like a jump back to the top was **not**
+the arithmetic. `element.scrollTo({ behavior: 'smooth' })` collides with
+react-native-web's own scroll responder: the animation starts at the right target
+and the browser finishes it at `0`. The correction is therefore made through
+`listRef.scrollToOffset({ animated: true })`, which is the same path a flick
+takes, and the list stays where it is put.
+
+| Browser check (`node probe13.mjs`, 390×844) | Result |
+| --- | --- |
+| One wheel flick | glides `32 → 133 → 252 → 446 → 633 → 769 → 826 → 844`, rests on page 1 |
+| Parked at `844 + 420` (half a page down) | springs to `844` |
+| Parked at `844 − 420` (half a page up) | springs to `844` |
+| Parked at `1688 + 380` / `1688 − 380` | both spring to `1688` |
+| One flick back up | `1688 → 844`, a whole page |
+
+**2. The reaction control is the holUpp mark.** No heart anywhere in the gesture.
+At rest it is the holUpp outline; a tap crushes; a hold floats the seven faces
+beside the button, over the video, with no sheet and no scrim. The Flow rail's
+reaction bottom sheet is gone — the rail is the control and a count,
+"3 Crushes" (the plural was "Crushs").
+
+**3. The floating picker is now on every surface that reacts.** Flow's rail,
+the all-crush feed's clip card (`CrushClipCard`), and the written post screen.
+The clip card had its own heart button and its own toggle; it now uses the same
+`ReactionButton` with `onDark`, so the count is white on the picture and the mark
+is the app's own. The Crush-shaped empty states that used a heart
+("Nothing published yet", "Nothing shared yet") use the holUpp mark too.
+
+**4. A written post on a Space opens as a post.** The tile routed every tap into
+the Flow pager, which put a piece of writing into a pager built for clips. It now
+routes on the post itself: `mediaUrl` → `PostViewer`, otherwise → `TextPost`.
+Checked in the browser: tapping "A written thought" on a Space opens the written
+post with its own actions and comments, and no Flow header.
+
+`npm test` 355/355. `paging.spec.ts` still pressed a tab labelled "Crushes" — the
+label has been "All Crush Feed" for two batches — so the spec was updated; it now
+passes 2/2. `moment-circles` 2/2, `circles` 4/4, `space-search` 30/30.
+
 ## Deployed 2026-11-07
 
 `63f1a6c` is deployed to production: Vercel deployment `dpl_57MGTcoYY5AhU3NeEeHJnCGLijDg`,

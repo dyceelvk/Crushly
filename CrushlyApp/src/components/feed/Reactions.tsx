@@ -51,12 +51,15 @@ export function ReactionButton({
   size = 24,
   disabled = false,
   word,
+  onDark = false,
 }: {
   myReaction?: ReactionKind | null;
   count?: number;
   onReact: (kind: ShownReaction) => void;
   size?: number;
   disabled?: boolean;
+  /** Draw it for a picture: a clip's controls sit on the video, not on a card. */
+  onDark?: boolean;
   /**
    * Draw the control as the word "Crush" instead of a face.
    *
@@ -166,10 +169,17 @@ export function ReactionButton({
         ) : look?.emoji ? (
           <Txt style={{ fontSize: size }}>{look.emoji}</Txt>
         ) : (
-          <Ionicons name="heart-outline" size={size} color={colors.textSecondary} />
+          /*
+           * Nothing given yet: the holUpp mark, drawn in outline.
+           *
+           * It was a heart outline, which is somebody else's symbol and the one
+           * thing the owner has now rejected three times. The control should look
+           * like this app before you touch it and like this app after.
+           */
+          <CrushIcon size={size} color={onDark ? 'rgba(255,255,255,0.92)' : colors.textSecondary} />
         )}
         {count != null && count > 0 ? (
-          <Txt variant="small" color="textSecondary">{formatCount(count)}</Txt>
+          <Txt variant="small" color={onDark ? undefined : 'textSecondary'} style={onDark ? { color: '#FFFFFF' } : undefined}>{formatCount(count)}</Txt>
         ) : null}
       </Pressable>
 

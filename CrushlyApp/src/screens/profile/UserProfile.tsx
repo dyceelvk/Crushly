@@ -603,7 +603,15 @@ export function SpaceScreen({
                 failed={posts.isError}
                 name={p.name}
                 onRetry={() => void posts.refresh()}
-                onOpen={(postId) => navigation.navigate('PostViewer', { postId })}
+                /*
+                 * The same door rule as everywhere else: words go to the page
+                 * built for words, anything with a picture goes to the pager.
+                 * Every tile used to open the pager, so a written post on your
+                 * own Space dropped you into the Flow with nothing to show.
+                 */
+                onOpen={(post) =>
+                  navigation.navigate(post.mediaUrl ? 'PostViewer' : 'TextPost', { postId: post.id })
+                }
               />
             ) : null}
             {tab === 'moments' ? (
@@ -864,7 +872,7 @@ function SpacePosts({
   failed: boolean;
   name: string;
   onRetry: () => void;
-  onOpen: (postId: number) => void;
+  onOpen: (post: Post) => void;
 }) {
   const { colors } = useTheme();
   const { contentWidth, gutter } = useLayout();
@@ -895,7 +903,7 @@ function SpacePosts({
   if (!shown.length) {
     return (
       <EmptyState
-        icon="heart-outline"
+        icon="crush"
         title="Nothing shared yet"
         message={`${name} hasn’t shared anything yet. What they share lands here.`}
       />
@@ -917,7 +925,7 @@ function SpacePosts({
         {shown.map((post) => (
           <Pressable
             key={post.id}
-            onPress={() => onOpen(post.id)}
+            onPress={() => onOpen(post)}
             accessibilityRole="button"
             accessibilityLabel={`Open ${name}’s post${post.body ? `: ${post.body}` : ''}`}
             style={({ pressed }) => ({ width: tile, opacity: pressed ? 0.85 : 1 })}

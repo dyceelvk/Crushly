@@ -174,7 +174,7 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       }
       ListEmptyComponent={
         <EmptyState
-          icon="heart-outline"
+          icon="crush"
           title="Nothing published yet"
           message="Crushes is everything holUpp is posting. The first post lands here the moment somebody publishes one — yours included."
           action={{

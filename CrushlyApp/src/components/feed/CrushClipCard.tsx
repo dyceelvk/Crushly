@@ -10,6 +10,7 @@ import { Avatar } from '../Photo';
 import { VerifiedBadge } from '../Badges';
 import { EditedClip } from '../EditedClip';
 import { CommentsSheet } from './CommentsSheet';
+import { ReactionButton } from './Reactions';
 import { ShareToWhisper } from '../ShareToWhisper';
 import { useReactToPost } from '../../api/hooks';
 import { mediaUrl } from '../../api/client';
@@ -126,18 +127,16 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
           ) : null}
 
           <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm }}>
-            <Pressable
-              onPress={() => react.mutate({ postId: post.id, liked: !post.liked })}
-              accessibilityRole="button"
-              accessibilityLabel={post.liked ? 'Take back your Crush' : 'Crush this post'}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-              hitSlop={8}
-            >
-              <Ionicons name={post.liked ? 'heart' : 'heart-outline'} size={22} color={post.liked ? colors.crush : '#FFFFFF'} />
-              <Txt variant="bodyStrong" color="#FFFFFF">
-                {post.likeCount}
-              </Txt>
-            </Pressable>
+            {/* Same control as Flow: the holUpp mark at rest, filled once you
+                have crushed, and a hold that floats the seven faces. It was a
+                heart here, which is the one shape the owner has rejected. */}
+            <ReactionButton
+              myReaction={post.myReaction ?? (post.liked ? 'crush' : null)}
+              count={post.likeCount}
+              size={22}
+              onDark
+              onReact={(kind) => react.mutate({ postId: post.id, liked: true, kind })}
+            />
             <Pressable
               onPress={() => setCommentsOpen(true)}
               accessibilityRole="button"

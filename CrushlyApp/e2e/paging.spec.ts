@@ -130,10 +130,10 @@ async function pressText(page: Page, text: string) {
   await page.waitForTimeout(1200);
 }
 
-test('scrolling the Crushes feed adds the older page under the one already read', async ({ page }) => {
+test('scrolling the all-crush feed adds the older page under the one already read', async ({ page }) => {
   await signedIn(page);
   await page.goto('/');
-  await pressText(page, 'Crushes');
+  await pressText(page, 'All Crush Feed');
 
   await expect(page.getByText('page one, post 1', { exact: true })).toBeVisible({ timeout: 30000 });
 
@@ -161,10 +161,10 @@ test('scrolling the Crushes feed adds the older page under the one already read'
   await page.screenshot({ path: 'walk-web/crushes-paging.png', fullPage: false });
 });
 
-test('your own post is in Crushes, and it is yours there', async ({ page }) => {
+test('your own post is in the all-crush feed, and it is yours there', async ({ page }) => {
   await signedIn(page, { withOwnPost: true });
   await page.goto('/');
-  await pressText(page, 'Crushes');
+  await pressText(page, 'All Crush Feed');
 
   await expect(page.getByText('mine, written by me', { exact: true })).toBeVisible({ timeout: 30000 });
   // The one control that only ever appears on your own card.

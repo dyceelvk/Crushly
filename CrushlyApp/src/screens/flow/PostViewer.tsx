@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
+import { ReactionButton } from '../../components/feed/Reactions';
 import { CrushIcon } from '../../components/Logo';
 import { LinkText } from '../../components/LinkText';
 import { useProfileTap } from '../../lib/useProfileTap';
@@ -162,37 +163,81 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const listRef = useRef<FlatList<number>>(null);
   const indexRef = useRef(0);
   const lockRef = useRef(false);
+  /** The offset the list is at, so a settle can be checked without re-reading. */
+  const offsetRef = useRef(0);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setIndex = useCallback((next: number) => {
     indexRef.current = next;
     const id = ids[next];
     if (id != null) setActiveId(id);
   }, [ids]);
 
+  /** Put the list on the nearest whole page. Used by both platforms. */
+  const settleToNearest = useCallback(() => {
+    if (lockRef.current) return;
+    const page = offsetRef.current / Math.max(height, 1);
+    const nearest = Math.min(Math.max(Math.round(page), 0), Math.max(ids.length - 1, 0));
+    if (Math.abs(page - nearest) > 2 / Math.max(height, 1)) {
+      listRef.current?.scrollToOffset({ offset: nearest * height, animated: true });
+    }
+    if (nearest !== indexRef.current) setIndex(nearest);
+  }, [height, ids.length, setIndex]);
+
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
-    /*
-     * One wheel gesture, one page — through the list's own API.
+    /**
+     * The scroller, found by walking out from the list rather than guessing.
      *
-     * The first cut of this found the scroller by hand with `getScrollableNode`
-     * and called `scrollTo` on it. It did not scroll: the node it got back was
-     * not the element that actually scrolls, so the wheel was swallowed and the
-     * page stayed where it was — which is worse than the bug it was meant to fix.
-     * `scrollToOffset` is the list's own contract and needs no guessing, and a
-     * non-animated jump means the two pages are never on screen at once.
+     * `getScrollableNode()` hands back a node that is *not* the element that
+     * scrolls — calling `scrollTo` on it did nothing at all, which is how a
+     * previous fix for this ended up freezing the pager. So: ask the list for its
+     * node, then step through parents and children until one is taller than its
+     * own viewport. That is the element the browser is scrolling.
+     */
+    const findScroller = (): HTMLElement | null => {
+      const base = listRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null;
+      let node: HTMLElement | null = base?.getScrollableNode?.() ?? null;
+      if (!node) return null;
+      const candidate = (el: HTMLElement | null): boolean =>
+        !!el && el.scrollHeight > el.clientHeight + 40;
+      if (candidate(node)) return node;
+      // Down into the subtree first, then up through the parents.
+      const inside = node.querySelector<HTMLElement>('*');
+      for (const el of [inside, ...Array.from(node.querySelectorAll<HTMLElement>('div'))]) {
+        if (candidate(el)) return el;
+      }
+      let up: HTMLElement | null = node.parentElement;
+      while (up && up !== document.body) {
+        if (candidate(up)) return up;
+        up = up.parentElement;
+      }
+      return null;
+    };
+
+    /*
+     * One gesture, one page — and then a magnet.
+     *
+     * The gesture moves exactly one page, animated: a wheel tick slides the next
+     * clip up the way a thumb would, instead of jumping. The magnet is the second
+     * half, and it is what was missing: a drag, a scrollbar, a trackpad's inertia
+     * or a programmatic scroll can all leave the list resting between two pages,
+     * and half a video at the top of the screen reads as broken no matter how the
+     * scroll got there. When scrolling stops, if the offset is not a page
+     * boundary, it springs to the nearest one. Nothing can rest half-cut.
      */
     const go = (direction: 1 | -1) => {
       const next = Math.min(Math.max(indexRef.current + direction, 0), ids.length - 1);
       if (next === indexRef.current) return;
       lockRef.current = true;
       setIndex(next);
-      listRef.current?.scrollToOffset({ offset: next * height, animated: false });
-      window.setTimeout(() => { lockRef.current = false; }, 320);
+      listRef.current?.scrollToOffset({ offset: next * height, animated: true });
+      // Long enough for the glide, short enough that the next deliberate flick
+      // is not swallowed.
+      window.setTimeout(() => { lockRef.current = false; }, 420);
     };
 
     const onWheel = (event: WheelEvent) => {
-      // Only a vertical gesture belongs to the pager, and only if the pager is
-      // the thing on screen.
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
       if (Math.abs(event.deltaY) < 3) return;
       event.preventDefault();
@@ -210,9 +255,35 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     // the browser's own momentum runs underneath the lock.
     document.addEventListener('wheel', onWheel, { passive: false, capture: true });
     window.addEventListener('keydown', onKey);
+
+    /* ------------------------------------------------------------- the magnet */
+    const scroller = findScroller();
+    let settle: number | null = null;
+    const onScroll = () => {
+      if (!scroller) return;
+      if (settle) window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        if (!scroller) return;
+        const page = scroller.scrollTop / Math.max(height, 1);
+        const nearest = Math.min(Math.max(Math.round(page), 0), ids.length - 1);
+        // A pixel of slack: browsers round sub-pixel offsets, and correcting a
+        // rounding error every time would fight the scroll for no reason.
+        if (Math.abs(page - nearest) > 2 / Math.max(height, 1)) {
+          // Animated through the list, not the raw element: a bare
+          // `element.scrollTo({ behavior: 'smooth' })` collides with react-native-web's
+          // own scroll responder and the browser finished the animation at 0.
+          listRef.current?.scrollToOffset({ offset: nearest * height, animated: true });
+        }
+        if (nearest !== indexRef.current) setIndex(nearest);
+      }, 140);
+    };
+    scroller?.addEventListener('scroll', onScroll, { passive: true });
+
     return () => {
       document.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions);
       window.removeEventListener('keydown', onKey);
+      scroller?.removeEventListener('scroll', onScroll);
+      if (settle) window.clearTimeout(settle);
     };
   }, [height, ids.length, setIndex]);
 
@@ -233,7 +304,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     getItemLayout={(_data, index) => ({ length: height, offset: height * index, index })}
     onScroll={(e) => {
       // Keeps our index honest when the list was moved by something other than
-      // the wheel handler — a snap, a scrollbar drag, a restore.
+      // the wheel handler — a snap, a scrollbar drag, a restore — and remembers
+      // where it is so a settle can be judged.
+      offsetRef.current = e.nativeEvent.contentOffset.y;
       if (lockRef.current) return;
       const next = Math.round(e.nativeEvent.contentOffset.y / Math.max(height, 1));
       if (next !== indexRef.current) setIndex(next);
@@ -241,12 +314,24 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     scrollEventThrottle={32}
     /* A phone's snap can still rest a few pixels off if the list was dragged
        slowly and let go. One page, exactly. */
+    /*
+     * The same magnet on a phone.
+     *
+     * `snapToInterval` does the work while the finger is moving, but a slow drag
+     * released with no momentum can settle wherever it was let go — that is the
+     * half-cut frame. Both endings (a drag that stopped, a flick that ran out)
+     * go through one correction: if the offset is not a page boundary, it goes
+     * to the nearest one.
+     */
+    onMomentumScrollBegin={() => { if (settleTimer.current) clearTimeout(settleTimer.current); }}
+    onScrollEndDrag={() => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(() => settleToNearest(), 200);
+    }}
     onMomentumScrollEnd={(e) => {
+      settleToNearest();
       const raw = e.nativeEvent.contentOffset.y / Math.max(height, 1);
       const nearest = Math.min(Math.max(Math.round(raw), 0), ids.length - 1);
-      if (Math.abs(raw - nearest) > 0.01) {
-        listRef.current?.scrollToOffset({ offset: nearest * height, animated: false });
-      }
       if (nearest !== indexRef.current) setIndex(nearest);
     }}
     onEndReached={() => flow.loadOlder()}
@@ -278,7 +363,6 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
 
   const [expanded, setExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [reactionsOpen, setReactionsOpen] = useState(false);
   // Share is a choice now: a person here, or somewhere else entirely.
   const [shareOpen, setShareOpen] = useState(false);
   // The three dots: everything you can do to a post that isn't a reaction.
@@ -309,7 +393,6 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
   const reactWith = useCallback(
     async (kind: ReactionKind) => {
       if (!post) return;
-      setReactionsOpen(false);
       try {
         await react.mutateAsync({ postId: post.id, liked: true, kind });
       } catch (e) {
@@ -533,15 +616,23 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
           maxWidth: Math.min(contentWidth, 420) / 2,
         }}
       >
-        <RailAction
-          icon={post.liked ? 'heart' : 'heart-outline'}
-          tint={post.liked ? colors.crush : '#FFFFFF'}
-          label={post.liked ? 'Take back your Crush' : 'Crush this post, hold for more'}
-          count={formatCount(totalReactions)}
-          spoken={spokenCount(totalReactions, 'Crush')}
-          onPress={tapHeart}
-          onLongPress={() => setReactionsOpen(true)}
-        />
+        {/*
+          The same control as the feed, the text post and a comment: holUpp's
+          mark in outline before you touch it, filled once you have, and a hold
+          that floats the seven faces beside the button. This rail used to open a
+          bottom sheet — a panel sliding up over the video you were watching —
+          which is the one place a reaction sheet should never be.
+        */}
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <ReactionButton
+            myReaction={(post.myReaction ?? (post.liked ? 'crush' : null)) as ReactionKind | null}
+            onReact={(kind) => void reactWith(kind)}
+            size={30}
+          />
+          <Txt variant="caption" color="#FFFFFF" style={{ fontWeight: '600' }}>
+            {spokenCount(totalReactions, 'Crush', 'Crushes')}
+          </Txt>
+        </View>
         <RailAction
           icon="chatbubble-ellipses-outline"
           label="Open comments"
@@ -721,46 +812,6 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
 
       <EditPostSheet post={post} visible={editOpen} onClose={() => setEditOpen(false)} />
 
-      <BottomSheet
-        visible={reactionsOpen}
-        onClose={() => setReactionsOpen(false)}
-        title="Crush it"
-        subtitle="A Crush by any other name — the same words a Moment accepts."
-        maxHeight={0.34}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: space.md }}>
-          {REACTION_KINDS.map((kind) => {
-            const on = post.myReaction === kind;
-            return (
-              <Pressable
-                key={kind}
-                onPress={() => void reactWith(kind)}
-                accessibilityRole="button"
-                accessibilityLabel={REACTION_NAME[kind]}
-                style={{
-                  alignItems: 'center',
-                  gap: 6,
-                  paddingVertical: space.sm,
-                  paddingHorizontal: space.xs,
-                  borderRadius: radius.md,
-                  backgroundColor: on ? colors.crushSoft : 'transparent',
-                  minWidth: 56,
-                }}
-              >
-                {/* Crush is holUpp's own mark, not a red heart. */}
-                {kind === 'crush' ? (
-                  <CrushIcon size={26} color={colors.crush} filled />
-                ) : (
-                  <Txt style={{ fontSize: 26 }}>{REACTION_GLYPH[kind]}</Txt>
-                )}
-                <Txt variant="caption" color={on ? 'crush' : 'textMuted'}>
-                  {REACTION_NAME[kind]}
-                </Txt>
-              </Pressable>
-            );
-          })}
-        </View>
-      </BottomSheet>
 
 
       {/* ------------------------------------------------------- the dots menu */}
