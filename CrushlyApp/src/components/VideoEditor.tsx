@@ -1126,14 +1126,29 @@ function FiltersPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit
   );
 }
 
+/**
+ * The grade: six knobs, each with the name of the thing it changes.
+ *
+ * There used to be one knob here on the phone — brightness — with contrast and
+ * saturation hidden behind `Platform.OS === 'web'` because a translucent veil
+ * cannot honestly fake them. Hiding them was the wrong half of the fix: the
+ * right one was to offer adjustments that a veil *can* draw, so that the panel
+ * is the same six knobs everywhere and every one of them reaches the posted
+ * clip.
+ *
+ * So: brightness, warmth, tint, fade, vignette, grain. The first three run
+ * either side of neutral; the last three only add. All six are drawn by the
+ * player from the edit's data (see `gradeLayers`), which is why a grade set here
+ * is not lost when the clip is posted from another device.
+ */
 function AdjustPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit, mergeKey?: string | null) => void }) {
+  const signed = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}`;
+  const amount = (v: number) => `${Math.round(v * 100)}`;
+
   return (
     <>
-      <PanelNote>
-        {Platform.OS === 'web'
-          ? 'Brightness, contrast and saturation are previewed as real grades.'
-          : 'Brightness uses a light overlay here. Contrast and saturation are unavailable because this device preview cannot render them accurately.'}
-      </PanelNote>
+      <PanelNote>Each knob is drawn over your clip as you set it — what you see here is what gets posted.</PanelNote>
+
       <RangeSlider
         min={-1}
         max={1}
@@ -1141,35 +1156,70 @@ function AdjustPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit,
         step={0.02}
         onChange={(v) => update({ ...edit, brightness: v }, 'brightness')}
         label="Brightness"
-        formatValue={(v) => `${Math.round(v * 100)}`}
+        formatValue={signed}
       />
-      {Platform.OS === 'web' ? (
-        <>
-          <RangeSlider
-            min={-1}
-            max={1}
-            low={edit.contrast}
-            step={0.02}
-            onChange={(v) => update({ ...edit, contrast: v }, 'contrast')}
-            label="Contrast"
-            formatValue={(v) => `${Math.round(v * 100)}`}
-          />
-          <RangeSlider
-            min={-1}
-            max={1}
-            low={edit.saturation}
-            step={0.02}
-            onChange={(v) => update({ ...edit, saturation: v }, 'saturation')}
-            label="Saturation"
-            formatValue={(v) => `${Math.round(v * 100)}`}
-          />
-        </>
-      ) : null}
+      <RangeSlider
+        min={-1}
+        max={1}
+        low={edit.warmth}
+        step={0.02}
+        onChange={(v) => update({ ...edit, warmth: v }, 'warmth')}
+        label="Warmth"
+        formatValue={signed}
+      />
+      <RangeSlider
+        min={-1}
+        max={1}
+        low={edit.tint}
+        step={0.02}
+        onChange={(v) => update({ ...edit, tint: v }, 'tint')}
+        label="Tint"
+        formatValue={signed}
+      />
+      <RangeSlider
+        min={0}
+        max={1}
+        low={edit.fade}
+        step={0.02}
+        onChange={(v) => update({ ...edit, fade: v }, 'fade')}
+        label="Fade"
+        formatValue={amount}
+      />
+      <RangeSlider
+        min={0}
+        max={1}
+        low={edit.vignette}
+        step={0.02}
+        onChange={(v) => update({ ...edit, vignette: v }, 'vignette')}
+        label="Vignette"
+        formatValue={amount}
+      />
+      <RangeSlider
+        min={0}
+        max={1}
+        low={edit.grain}
+        step={0.02}
+        onChange={(v) => update({ ...edit, grain: v }, 'grain')}
+        label="Grain"
+        formatValue={amount}
+      />
+
       <Button
         title="Reset light and colour"
         size="sm"
         variant="secondary"
-        onPress={() => update({ ...edit, brightness: 0, contrast: 0, saturation: 0, filter: 'none' })}
+        onPress={() =>
+          update({
+            ...edit,
+            brightness: 0,
+            warmth: 0,
+            tint: 0,
+            fade: 0,
+            vignette: 0,
+            grain: 0,
+            filter: 'none',
+          })
+        }
       />
     </>
   );
@@ -1191,16 +1241,65 @@ function SpeedPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit) 
   );
 }
 
+/**
+ * Cropping, as opposed to framing.
+ *
+ * A ratio list is not a crop — it decides the shape of the frame and nothing
+ * else, which is why the panel read as "no custom crop". Zoom decides how much
+ * of the picture fills that frame, and the two handles move which part of it is
+ * shown. All three are stored on the edit and applied by the player, so a crop
+ * survives into the feed on the phone and in the browser.
+ */
 function CropPanel({ edit, update }: { edit: VideoEdit; update: (e: VideoEdit) => void }) {
   const ids = Object.keys(ASPECTS) as (keyof typeof ASPECTS)[];
+  const moved = edit.cropZoom !== 1 || edit.cropX !== 0 || edit.cropY !== 0;
   return (
     <>
+      <Txt variant="label" color="textMuted" style={{ marginBottom: 4 }}>Shape</Txt>
       <Segmented<string>
         options={ids.map((id) => ({ value: id, label: ASPECTS[id].label }))}
         value={edit.aspect}
         onChange={(v) => update({ ...edit, aspect: v as VideoEdit['aspect'] })}
       />
-      <PanelNote>Cropping only changes the frame — nothing is cut out of your clip.</PanelNote>
+      <RangeSlider
+        min={1}
+        max={3}
+        low={edit.cropZoom}
+        step={0.02}
+        onChange={(v) => update({ ...edit, cropZoom: v })}
+        label="Zoom in"
+        formatValue={(v) => `${v.toFixed(1)}×`}
+      />
+      <RangeSlider
+        min={-1}
+        max={1}
+        low={edit.cropX}
+        step={0.02}
+        onChange={(v) => update({ ...edit, cropX: v })}
+        label="Move across"
+        formatValue={(v) => `${Math.round(v * 100)}`}
+      />
+      <RangeSlider
+        min={-1}
+        max={1}
+        low={edit.cropY}
+        step={0.02}
+        onChange={(v) => update({ ...edit, cropY: v })}
+        label="Move up and down"
+        formatValue={(v) => `${Math.round(v * 100)}`}
+      />
+      {moved ? (
+        <Button
+          title="Back to the whole frame"
+          size="sm"
+          variant="secondary"
+          onPress={() => update({ ...edit, cropZoom: 1, cropX: 0, cropY: 0 })}
+        />
+      ) : null}
+      <PanelNote>
+        Zooming and moving hide the edges of the picture; nothing is cut out of the file, so you can always
+        widen it again.
+      </PanelNote>
     </>
   );
 }

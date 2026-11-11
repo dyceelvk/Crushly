@@ -1,16 +1,19 @@
 import React, { useMemo, useRef } from 'react';
-import { LayoutChangeEvent, Platform, StyleProp, View, ViewStyle } from 'react-native';
+import { Image, LayoutChangeEvent, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import { VideoView } from 'expo-video';
 import type { VideoPlayer } from 'expo-video';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import {
   Caption,
   Sticker,
   VideoEdit,
   animate,
+  cropTransform,
   cssFilterFor,
+  gradeLayers,
   overlaysAt,
-  tintFor,
 } from '../lib/videoEdit';
+import { GRAIN_TILE } from '../lib/grainTile';
 import { Txt } from './Txt';
 
 type Frame = { width: number; height: number };
@@ -66,7 +69,8 @@ export function VideoEditCanvas({
 }) {
   const frame = useRef<Frame>({ width: 0, height: 0 });
   const { captions, stickers } = overlaysAt(edit, clipTime);
-  const tint = tintFor(edit);
+  const grade = gradeLayers(edit);
+  const crop = cropTransform(edit);
   const css = cssFilterFor(edit);
 
   // On the web the browser grades the picture properly. On the phone we stack a
@@ -91,8 +95,18 @@ export function VideoEditCanvas({
     if (Platform.OS === 'web' && css !== 'none') {
       (base as unknown as Record<string, unknown>).filter = css;
     }
+    // A placed crop is a transform on the picture inside its frame: zoom scales
+    // it and the offset slides it, and the frame's overflow:hidden is what makes
+    // that a crop rather than a spill.
+    if (crop.scale !== 1 || crop.x !== 0 || crop.y !== 0) {
+      base.transform = [
+        { scale: crop.scale },
+        { translateX: (-crop.x * 100) / crop.scale },
+        { translateY: (-crop.y * 100) / crop.scale },
+      ];
+    }
     return base;
-  }, [css]);
+  }, [css, crop.scale, crop.x, crop.y]);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -126,8 +140,12 @@ export function VideoEditCanvas({
         pointerEvents="none"
       />
 
-      {tint ? (
+      {/* The grade. One veil per adjustment, in a fixed order, drawn over the
+          picture on every platform — which is why the phone and the browser
+          finally agree on what an edit looks like. */}
+      {grade.veils.map((veil, i) => (
         <View
+          key={`veil-${i}`}
           pointerEvents="none"
           style={{
             position: 'absolute',
@@ -135,8 +153,55 @@ export function VideoEditCanvas({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: tint.color,
-            opacity: tint.opacity,
+            backgroundColor: veil.color,
+            opacity: veil.opacity,
+          }}
+        />
+      ))}
+
+      {/* A ring of shadow. A gradient is the only honest way to draw one without
+          a colour pipeline: flat dark bands would look like a letterbox. */}
+      {grade.vignette > 0.01 && frame.current.width > 0 ? (
+        <Svg
+          pointerEvents="none"
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${Math.max(1, frame.current.width)} ${Math.max(1, frame.current.height)}`}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <Defs>
+            <RadialGradient id="vignette" cx="50%" cy="50%" r="72%">
+              <Stop offset="0.45" stopColor="#000000" stopOpacity="0" />
+              <Stop offset="1" stopColor="#000000" stopOpacity={String(grade.vignette)} />
+            </RadialGradient>
+          </Defs>
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="url(#vignette)"
+            opacity={grade.vignette * 0.85}
+          />
+        </Svg>
+      ) : null}
+
+      {/* Film grain: one small tile, repeated, so it costs a few hundred bytes
+          and no per-frame work. */}
+      {grade.grain > 0.01 ? (
+        <Image
+          source={{ uri: GRAIN_TILE }}
+          resizeMode="repeat"
+          accessible={false}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100%',
+            opacity: grade.grain * 0.35,
           }}
         />
       ) : null}

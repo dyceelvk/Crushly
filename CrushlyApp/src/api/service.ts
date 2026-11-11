@@ -798,6 +798,29 @@ export async function savedPosts(limit = 20, after?: number | null): Promise<Flo
 }
 
 /** Shares a post. Photos and clips go to the object store like any other media. */
+/**
+ * A picked soundtrack has to live somewhere the other person can reach.
+ *
+ * The editor stores whatever the document picker handed it, and that is a file
+ * URI inside this phone's cache: valid for the author, invisible to everybody
+ * else, and gone the moment the cache is cleared. A clip posted with music then
+ * had no sound for anyone who was not holding the phone that made it.
+ *
+ * So the track is uploaded like any other media and the edit keeps the path
+ * instead. `messages/` is the only kind whose allow-list takes audio today, and
+ * the path is private in exactly the same way a voice note is.
+ */
+async function hostMusic(edit: LiveEdit | null | undefined): Promise<LiveEdit | null | undefined> {
+  const music = edit?.look?.music;
+  if (!edit || !music?.uri) return edit;
+  if (!/^(file|content|blob|ph|assets-library):/i.test(music.uri)) return edit;
+  const id = await meId();
+  const type = /\.(mp3)$/i.test(music.uri) ? 'audio/mpeg' : 'audio/m4a';
+  const ext = type === 'audio/mpeg' ? 'mp3' : 'm4a';
+  const path = await uploadMediaFile('media', `messages/${id}/${Date.now()}-sound.${ext}`, music.uri, type);
+  return { ...edit, look: { ...edit.look, music: { ...music, uri: path } } };
+}
+
 export async function createPost(input: {
   body: string;
   audience: 'connections' | 'everyone';
@@ -830,6 +853,9 @@ export async function createPost(input: {
       type,
     );
   }
+  // Before the edit is written: a soundtrack picked on this phone must not be a
+  // path only this phone understands.
+  const edit = await hostMusic(input.edit);
   const args = {
     p_body: body,
     p_media_url: media,
@@ -840,11 +866,11 @@ export async function createPost(input: {
   // offers the choice, so comments are never enabled for a newly closed post.
   if (input.commentsEnabled !== undefined) {
     return rpc<Post>('create_post_with_location', {
-      ...args, p_edit: input.edit ?? null, p_comments_enabled: input.commentsEnabled, p_location: input.location?.trim() || null,
+      ...args, p_edit: edit ?? null, p_comments_enabled: input.commentsEnabled, p_location: input.location?.trim() || null,
     });
   }
   return rpc<Post>('create_post', {
-    ...args, ...(input.edit ? { p_edit: input.edit as unknown as Record<string, unknown> } : {}),
+    ...args, ...(edit ? { p_edit: edit as unknown as Record<string, unknown> } : {}),
   });
 }
 

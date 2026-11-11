@@ -29,7 +29,6 @@ import { STICKERS } from '../../lib/catalog';
 import { dayLabel, durationLabel } from '../../lib/format';
 import { pickImage } from '../../lib/media';
 import { useLiveCamera } from '../../components/CameraCapture';
-import { useVideoNote } from '../../components/VideoNote';
 import { CallSheet } from '../../components/CallSheet';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
 import { CallManager, type CallState } from '../../lib/call';
@@ -158,18 +157,16 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const recState = useAudioRecorderState(recorder, 250);
 
   /* ------------------------------------------------------------ video notes */
-  const videoNote = useVideoNote();
-  const sendVideoNote = async () => {
-    if (callRef.current?.state && callRef.current.state !== 'idle') return;
-    setTray(false);
-    try {
-      const note = await videoNote.record();
-      if (!note) return;
-      send({ kind: 'video', uri: note.uri, duration: note.duration, mimeType: note.mimeType });
-    } catch (e) {
-      toast({ kind: 'error', title: 'Video note not recorded', message: (e as Error).message });
-    }
-  };
+  /*
+   * There are none, on purpose.
+   *
+   * A Whisper carries pictures and voice notes. Video in a chat is the most
+   * expensive thing a member can send — minutes long, tens of megabytes, and it
+   * sits in storage forever — and it was also the thing that broke newest: a clip
+   * posted from the app played back silent. Until the clip path is trustworthy
+   * end to end, the composer does not offer it at all, and the server refuses it
+   * too, so an old install cannot send one either.
+   */
 
   /* ------------------------------------------------------------------- calls */
   const [callState, setCallState] = useState<CallState>('idle');
@@ -680,7 +677,6 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.sm }}>
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
-                  <TrayButton icon="videocam-outline" label="Video note" onPress={sendVideoNote} />
                   {callsEnabled ? <TrayButton icon="call-outline" label="Call" onPress={startCall} /> : null}
                   <TrayButton icon="person-circle-outline" label="Share Space" onPress={() => { setTray(false); setShareOpen(true); }} />
                 </View>
@@ -762,16 +758,13 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                     <IconButton icon="arrow-up" variant="crush" label="Send Whisper" onPress={sendText} color={colors.crush} />
                   ) : (
                     <>
-                      {/* The camera is two tools in one control: a tap takes a
-                          photo, a hold records a video note. Both were already
-                          in the composer — one behind a tray, one behind a menu
-                          — which is a lot of reaching for the two things a
-                          Whisper is most often made of. */}
+                      {/* A tap takes a photo. It used to be two tools in one —
+                          a hold recorded a video note — and the video half is
+                          gone: a Whisper carries pictures and voice notes. */}
                       <IconButton
                         icon="camera-outline"
-                        label="Camera — tap for a photo, hold for a video note"
+                        label="Camera — take a photo"
                         onPress={() => void sendPhoto(true)}
-                        onLongPress={() => void sendVideoNote()}
                         disabled={recording || callState !== 'idle'}
                       />
                       <IconButton icon="mic-outline" label="Record a voice note" onPress={startRecording} />
@@ -783,7 +776,6 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           </View>
         )}
         {cam.node}
-        {videoNote.node}
         {Platform.OS === 'web'
           ? (() => {
               const { unstable_createElement } = require('react-native-web') as typeof import('react-native-web');

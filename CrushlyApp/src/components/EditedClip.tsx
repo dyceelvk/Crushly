@@ -10,6 +10,8 @@ import { VideoView } from 'expo-video';
 import { frameHeight, leavesBands, stageFit, videoFrame, videoRatio, type StageFit } from '../lib/videoFrame';
 import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
 import { useTheme } from '../theme/ThemeProvider';
+import { mediaSource } from '../lib/mediaHost';
+import { mediaUrl } from '../api/client';
 
 /** Width ÷ height of a local file, read off a hidden <video> on the web. */
 function useWebRatio(uri: string | null | undefined): number | null {
@@ -91,6 +93,23 @@ function sourceUrl(source: VideoSource): string {
   if (typeof source === 'string') return source;
   if (source && typeof source === 'object' && 'uri' in source) return source.uri ?? '';
   return '';
+}
+
+/**
+ * Where a clip's soundtrack actually is.
+ *
+ * Before posting, the editor holds a file URI from this phone. After posting, it
+ * holds the path of the uploaded track — private, like the clip beside it, and
+ * only readable through the media Worker with the member's token. A player given
+ * the bare path would ask the app's own origin for it and get nothing, which is
+ * one way a posted clip ends up silent.
+ */
+function musicSourceOf(music: LiveEdit['look']['music']): VideoSource | null {
+  if (!music?.uri) return null;
+  if (/^(https?:|file:|content:|blob:|data:|ph:|assets-library:)/i.test(music.uri)) {
+    return music.uri;
+  }
+  return mediaSource(mediaUrl(music.uri));
 }
 
 export function EditedClip({
@@ -188,7 +207,7 @@ export function EditedClip({
 
   // Music is a second player running alongside the clip, the same way it was
   // heard in the editor. Most clips have none, and then this costs nothing.
-  const musicPlayer = useVideoPlayer(look.music?.uri ?? null, (p) => {
+  const musicPlayer = useVideoPlayer(musicSourceOf(look.music), (p) => {
     p.loop = loop;
     p.volume = look.music?.volume ?? 0.6;
   });

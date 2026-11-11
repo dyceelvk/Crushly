@@ -7,8 +7,11 @@ import {
   clipLength,
   clampEdit,
   editWindowClosesAt,
+  cropTransform,
   emptyEdit,
   formatTime,
+  gradeLayers,
+  lookOf,
   hasCut,
   isEdited,
   liveWithCuts,
@@ -191,11 +194,14 @@ test('a clip stored before the look travelled plays back untouched', () => {
 test('a look comes back out of storage the way it went in', () => {
   const look = { filter: 'sunset' as const, brightness: 0.25, contrast: -0.1, saturation: 0.4, aspect: '1:1' as const, speed: 1.5, clipVolume: 0, music: null };
   const live = parseLiveEdit(JSON.stringify({ version: 2, captions: [], stickers: [], look }));
-  assert.deepEqual(live?.look, look);
+  // Written before the six knobs existed: what it says is kept, and the new
+  // knobs arrive at neutral rather than as `undefined` the player would have to
+  // guard against on every frame.
+  assert.deepEqual(live?.look, { ...look, warmth: 0, tint: 0, fade: 0, vignette: 0, grain: 0, cropZoom: 1, cropX: 0, cropY: 0 });
 });
 
 test('reopening a posted clip does not reset how it looks', () => {
-  const look = { filter: 'noir' as const, brightness: 0, contrast: 0, saturation: 0, aspect: 'original' as const, speed: 2, clipVolume: 1, music: null };
+  const look = { filter: 'noir' as const, brightness: 0, contrast: 0, saturation: 0, warmth: 0, tint: 0, fade: 0, vignette: 0, grain: 0, aspect: 'original' as const, cropZoom: 1, cropX: 0, cropY: 0, speed: 2, clipVolume: 1, music: null };
   const reopened = editFromLive({ version: 2, captions: [], stickers: [], look }, d);
   assert.equal(reopened.filter, 'noir');
   assert.equal(reopened.speed, 2);
@@ -251,4 +257,133 @@ test('the cut survives being written down and read back', () => {
 test('a stored clip with no cuts reads as no cuts', () => {
   const back = parseLiveEdit(JSON.stringify({ version: 2, captions: [], stickers: [], look: {} }));
   assert.equal(back?.cuts, undefined);
+});
+
+/*
+ * The trim buttons.
+ *
+ * "Use everything", "First Ns" and "Last 5s" were reported as dead: only the
+ * last one appeared to do anything. It was not the buttons. Every one of them
+ * wrote the new timeline but left the previous trim window in place, and
+ * `clampEdit` — which exists so that old edits that only set a window still
+ * open correctly — believes a window that disagrees with a whole-file timeline.
+ * So after a trim, "Use everything" was quietly undone and the clip snapped
+ * back to five seconds.
+ */
+test('use everything restores a clip that was trimmed to its tail', () => {
+  const total = 40;
+  const start = emptyEdit(total);
+  const tail = setTrim(start, total - 5, total, 'post');
+  assert.equal(clipLength(tail), 5);
+
+  const everything = setTrim(tail, 0, total, 'post');
+  assert.equal(clipLength(everything), total);
+  assert.equal(everything.trimStart, 0);
+  assert.equal(everything.trimEnd, total);
+});
+
+test('use everything also restores a clip trimmed to its head', () => {
+  const total = 40;
+  const head = setTrim(emptyEdit(total), 0, 12, 'post');
+  assert.equal(clipLength(head), 12);
+  const everything = setTrim(head, 0, total, 'post');
+  assert.equal(clipLength(everything), total);
+});
+
+test('the trim window always agrees with the pieces after a trim', () => {
+  const total = 40;
+  for (const [s, e] of [[0, 10], [5, 30], [30, 40], [12, 13]] as const) {
+    const edit = setTrim(emptyEdit(total), s, e, 'post');
+    assert.equal(edit.trimStart, edit.segments[0].start, `start after ${s}-${e}`);
+    assert.equal(edit.trimEnd, edit.segments[edit.segments.length - 1].end, `end after ${s}-${e}`);
+  }
+});
+
+test('a second trim never inherits the first one\'s window', () => {
+  const total = 40;
+  const first = setTrim(emptyEdit(total), 30, 35, 'post');
+  const second = setTrim(first, 2, 8, 'post');
+  assert.equal(second.trimStart, 2);
+  assert.equal(second.trimEnd, 8);
+  assert.equal(clipLength(second), 6);
+});
+
+test('every button lands on the length the category allows', () => {
+  // 90 seconds of source, a minute allowed: "use everything" keeps the first
+  // minute rather than refusing, and the cap is what makes it a minute.
+  const big = setTrim(emptyEdit(90), 0, 90, 'post');
+  assert.equal(clipLength(big), EDIT_LIMITS.post.maxSeconds);
+  const moment = setTrim(emptyEdit(90), 0, 90, 'moment');
+  assert.equal(clipLength(moment), EDIT_LIMITS.moment.maxSeconds);
+});
+
+/*
+ * The six knobs.
+ *
+ * They are drawn by the player as veils and two amounts, so the shape of this
+ * output *is* the preview: if a value stops producing a layer, the knob goes
+ * dead without any error, and if it produces the wrong colour the clip drifts.
+ */
+test('a neutral grade draws nothing at all', () => {
+  const grade = gradeLayers(emptyEdit(10));
+  assert.deepEqual(grade.veils, []);
+  assert.equal(grade.vignette, 0);
+  assert.equal(grade.grain, 0);
+});
+
+test('brightness lifts with white and dims with black', () => {
+  const up = gradeLayers({ ...emptyEdit(10), brightness: 0.5 });
+  assert.deepEqual(up.veils, [{ color: '#ffffff', opacity: 0.5 * 0.28 }]);
+  const down = gradeLayers({ ...emptyEdit(10), brightness: -0.5 });
+  assert.deepEqual(down.veils, [{ color: '#000000', opacity: 0.5 * 0.34 }]);
+});
+
+test('warmth and tint move in opposite directions', () => {
+  const warm = gradeLayers({ ...emptyEdit(10), warmth: 1 });
+  assert.equal(warm.veils[0].color, '#ff9a3c');
+  const cool = gradeLayers({ ...emptyEdit(10), warmth: -1 });
+  assert.equal(cool.veils[0].color, '#3ca8ff');
+  const magenta = gradeLayers({ ...emptyEdit(10), tint: 1 });
+  assert.equal(magenta.veils[0].color, '#ff4fa3');
+  const green = gradeLayers({ ...emptyEdit(10), tint: -1 });
+  assert.equal(green.veils[0].color, '#2ee6a8');
+});
+
+test('the veils are always stacked in the same order', () => {
+  const grade = gradeLayers({ ...emptyEdit(10), brightness: 0.4, warmth: 0.6, tint: -0.3, fade: 0.5 });
+  assert.deepEqual(grade.veils.map((v) => v.color), ['#ffffff', '#ff9a3c', '#2ee6a8', '#f6efe6']);
+});
+
+test('vignette and grain pass through, and are clamped to 0..1', () => {
+  const grade = gradeLayers({ ...emptyEdit(10), vignette: 0.6, grain: 0.4 });
+  assert.equal(grade.vignette, 0.6);
+  assert.equal(grade.grain, 0.4);
+  const clamped = gradeLayers({ ...emptyEdit(10), vignette: 4, grain: -2 });
+  assert.equal(clamped.vignette, 1);
+  assert.equal(clamped.grain, 0);
+});
+
+test('a crop is a zoom and an offset the player can apply', () => {
+  assert.deepEqual(cropTransform(emptyEdit(10)), { scale: 1, x: 0, y: 0 });
+  assert.deepEqual(cropTransform({ ...emptyEdit(10), cropZoom: 2, cropX: -0.5, cropY: 0.25 }), {
+    scale: 2,
+    x: -0.5,
+    y: 0.25,
+  });
+  // Out-of-range values are held at the edges rather than thrown away.
+  assert.deepEqual(cropTransform({ ...emptyEdit(10), cropZoom: 9, cropX: -4, cropY: 4 }), {
+    scale: 3,
+    x: -1,
+    y: 1,
+  });
+});
+
+test('the six knobs travel with the clip, so a grade set on a phone posts', () => {
+  const edit = { ...emptyEdit(12), warmth: 0.4, vignette: 0.3, grain: 0.2 };
+  const live = JSON.parse(serializeEdit(edit));
+  const back = parseLiveEdit(JSON.stringify({ version: 2, captions: [], stickers: [], look: lookOf(edit) }));
+  assert.equal(back?.look.warmth, 0.4);
+  assert.equal(back?.look.vignette, 0.3);
+  assert.equal(back?.look.grain, 0.2);
+  assert.ok(live);
 });

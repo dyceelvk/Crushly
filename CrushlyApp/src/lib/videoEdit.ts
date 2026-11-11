@@ -109,10 +109,40 @@ export type VideoEdit = {
   speed: number;
   aspect: AspectId;
   filter: FilterId;
-  /** -1..1 around neutral. */
+  /**
+   * The grade, as six numbers around neutral.
+   *
+   * All six are drawn by the player over the picture — a veil, a wash, a ring of
+   * shadow — rather than written into the frames. That is a deliberate choice
+   * and it is the reason the phone and the browser agree: writing the grade into
+   * the pixels would need a video encoder on the device, and there is none in
+   * this build. Everything that can only be done by a real colour pipeline
+   * (contrast, saturation) is still respected on the web for clips made before
+   * today, but it is no longer offered as a knob, because a knob that changes
+   * the preview and not the posted clip is a lie.
+   *
+   * brightness, warmth, tint: -1..1 around 0. fade, vignette, grain: 0..1.
+   */
   brightness: number;
   contrast: number;
   saturation: number;
+  warmth: number;
+  tint: number;
+  fade: number;
+  vignette: number;
+  grain: number;
+  /**
+   * A crop you can place, not just a shape you can pick.
+   *
+   * `aspect` chooses the frame; these three say what part of the picture fills
+   * it. Zooming in and pushing the frame around is what people mean by
+   * cropping a video, and a list of ratios was never that.
+   *
+   * `cropZoom` is 1..3, `cropX`/`cropY` are -1..1 (fractions of the half-frame).
+   */
+  cropZoom: number;
+  cropX: number;
+  cropY: number;
   captions: Caption[];
   stickers: Sticker[];
   music: MusicTrack | null;
@@ -221,6 +251,14 @@ export function emptyEdit(sourceDuration: number): VideoEdit {
     brightness: 0,
     contrast: 0,
     saturation: 0,
+    warmth: 0,
+    tint: 0,
+    fade: 0,
+    vignette: 0,
+    grain: 0,
+    cropZoom: 1,
+    cropX: 0,
+    cropY: 0,
     captions: [],
     stickers: [],
     music: null,
@@ -287,6 +325,31 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 /**
+ * Hand a new timeline back to `clampEdit` with the trim window moved to match.
+ *
+ * The window (`trimStart`/`trimEnd`) and the pieces are two descriptions of the
+ * same thing, and `clampEdit` treats a window that disagrees with a whole-file
+ * timeline as the older, more specific truth — that is what lets edits made
+ * before the timeline existed still open correctly.
+ *
+ * Which is exactly why every edit that *changes* the pieces has to carry the
+ * new window with them. Otherwise the window left over from the previous edit
+ * wins, and the change is silently thrown away: trim a clip to its last five
+ * seconds, press "Use everything", and the timeline goes back to the whole file
+ * while the stale window snaps it straight back to five seconds. That was a
+ * real bug — the trim buttons looked dead — so the two are now always written
+ * together, in one place.
+ */
+function withSegments(edit: VideoEdit, segments: Segment[]): VideoEdit {
+  return {
+    ...edit,
+    segments,
+    trimStart: segments[0].start,
+    trimEnd: segments[segments.length - 1].end,
+  };
+}
+
+/**
  * Force an edit into what its category allows. Called on load, on category
  * change and before export, so an edit can never be longer than the surface it
  * was made for — including one made before the limit was lowered.
@@ -346,6 +409,14 @@ export function clampEdit(edit: VideoEdit, category: EditCategory): VideoEdit {
     brightness: clamp(edit.brightness, -1, 1),
     contrast: clamp(edit.contrast, -1, 1),
     saturation: clamp(edit.saturation, -1, 1),
+    warmth: clamp(edit.warmth ?? 0, -1, 1),
+    tint: clamp(edit.tint ?? 0, -1, 1),
+    fade: clamp(edit.fade ?? 0, 0, 1),
+    vignette: clamp(edit.vignette ?? 0, 0, 1),
+    grain: clamp(edit.grain ?? 0, 0, 1),
+    cropZoom: clamp(edit.cropZoom ?? 1, 1, 3),
+    cropX: clamp(edit.cropX ?? 0, -1, 1),
+    cropY: clamp(edit.cropY ?? 0, -1, 1),
     clipVolume: clamp(edit.clipVolume, 0, 1),
     captions: clampOverlays(
       edit.captions.slice(0, limit.maxCaptions).map((c) => ({
@@ -396,7 +467,7 @@ export function setTrim(edit: VideoEdit, start: number, end: number, category: E
     tail.end = Math.max(tail.start + MIN_SEGMENT, e0);
   }
 
-  return clampEdit({ ...edit, segments: segs }, category);
+  return clampEdit(withSegments(edit, segs), category);
 }
 
 /* ------------------------------------------------------------- the timeline
@@ -411,7 +482,7 @@ export function setTrim(edit: VideoEdit, start: number, end: number, category: E
 export function splitEdit(edit: VideoEdit, cutTime: number, category: EditCategory): VideoEdit {
   const next = splitAt(segmentsOf(edit), snapFrame(cutTime));
   if (next === segmentsOf(edit)) return edit;
-  return clampEdit({ ...edit, segments: next }, category);
+  return clampEdit(withSegments(edit, next), category);
 }
 
 /** Take a piece out. The timeline always keeps at least one. */
@@ -419,12 +490,12 @@ export function removePiece(edit: VideoEdit, id: string, category: EditCategory)
   const segs = segmentsOf(edit);
   const next = removeSegment(segs, id);
   if (next === segs) return edit;
-  return clampEdit({ ...edit, segments: next }, category);
+  return clampEdit(withSegments(edit, next), category);
 }
 
 /** Put a copy of a piece next to itself. */
 export function duplicatePiece(edit: VideoEdit, id: string, category: EditCategory): VideoEdit {
-  return clampEdit({ ...edit, segments: duplicateSegment(segmentsOf(edit), id) }, category);
+  return clampEdit(withSegments(edit, duplicateSegment(segmentsOf(edit), id)), category);
 }
 
 /** Move a piece one place along. */
@@ -432,7 +503,7 @@ export function movePiece(edit: VideoEdit, id: string, by: -1 | 1, category: Edi
   const segs = segmentsOf(edit);
   const next = moveSegment(segs, id, by);
   if (next === segs) return edit;
-  return clampEdit({ ...edit, segments: next }, category);
+  return clampEdit(withSegments(edit, next), category);
 }
 
 /** Change what part of the file one piece shows. */
@@ -443,7 +514,7 @@ export function trimPiece(
   end: number,
   category: EditCategory,
 ): VideoEdit {
-  return clampEdit({ ...edit, segments: trimSegment(segmentsOf(edit), id, start, end) }, category);
+  return clampEdit(withSegments(edit, trimSegment(segmentsOf(edit), id, start, end)), category);
 }
 
 /** The pieces, without the mirrors — what the timeline UI draws. */
@@ -699,6 +770,58 @@ export type LiveEdit = {
 };
 
 /**
+ * The grade, as layers the player can actually draw.
+ *
+ * Six numbers become a handful of translucent veils and two amounts — one ring
+ * of shadow, one grain. Nothing here needs a video encoder or a GPU pipeline,
+ * which is the whole point: the same layers are drawn over the editor preview
+ * and over the clip in the feed, on the phone and in the browser, so what the
+ * person grading the clip sees is what everybody else sees.
+ *
+ * The veils are applied in a fixed order — the filter preset's own tint first,
+ * then brightness, warmth, tint, and fade — because stacking translucent
+ * colours is not commutative and the order has to be the same every time or the
+ * same edit would look different in two places.
+ */
+export type GradeLayer = { color: string; opacity: number };
+
+export function gradeLayers(edit: VideoEdit): { veils: GradeLayer[]; vignette: number; grain: number } {
+  const veils: GradeLayer[] = [];
+  const f = FILTERS[edit.filter] ?? FILTERS.none;
+  if (f.tint && f.tintOpacity > 0) veils.push({ color: f.tint, opacity: f.tintOpacity });
+
+  const brightness = Math.max(-1, Math.min(1, edit.brightness || 0));
+  if (brightness > 0.01) veils.push({ color: '#ffffff', opacity: brightness * 0.28 });
+  else if (brightness < -0.01) veils.push({ color: '#000000', opacity: -brightness * 0.34 });
+
+  const warmth = Math.max(-1, Math.min(1, edit.warmth || 0));
+  if (warmth > 0.01) veils.push({ color: '#ff9a3c', opacity: warmth * 0.2 });
+  else if (warmth < -0.01) veils.push({ color: '#3ca8ff', opacity: -warmth * 0.2 });
+
+  const tint = Math.max(-1, Math.min(1, edit.tint || 0));
+  if (tint > 0.01) veils.push({ color: '#ff4fa3', opacity: tint * 0.16 });
+  else if (tint < -0.01) veils.push({ color: '#2ee6a8', opacity: -tint * 0.16 });
+
+  const fade = Math.max(0, Math.min(1, edit.fade || 0));
+  if (fade > 0.01) veils.push({ color: '#f6efe6', opacity: fade * 0.22 });
+
+  return {
+    veils,
+    vignette: Math.max(0, Math.min(1, edit.vignette || 0)),
+    grain: Math.max(0, Math.min(1, edit.grain || 0)),
+  };
+}
+
+/** Where the picture sits inside its frame, as a transform. */
+export function cropTransform(edit: VideoEdit): { scale: number; x: number; y: number } {
+  return {
+    scale: Math.min(3, Math.max(1, edit.cropZoom ?? 1)),
+    x: Math.max(-1, Math.min(1, edit.cropX ?? 0)),
+    y: Math.max(-1, Math.min(1, edit.cropY ?? 0)),
+  };
+}
+
+/**
  * How the clip looks, as opposed to what it says.
  *
  * A filter, the light, the shape of the frame, the speed and the sound. All of
@@ -714,7 +837,15 @@ export type Look = {
   brightness: number;
   contrast: number;
   saturation: number;
+  warmth: number;
+  tint: number;
+  fade: number;
+  vignette: number;
+  grain: number;
   aspect: AspectId;
+  cropZoom: number;
+  cropX: number;
+  cropY: number;
   speed: number;
   /** The clip's own audio, or 0 when it was muted. */
   clipVolume: number;
@@ -727,7 +858,15 @@ export const NEUTRAL_LOOK: Look = {
   brightness: 0,
   contrast: 0,
   saturation: 0,
+  warmth: 0,
+  tint: 0,
+  fade: 0,
+  vignette: 0,
+  grain: 0,
   aspect: 'original',
+  cropZoom: 1,
+  cropX: 0,
+  cropY: 0,
   speed: 1,
   clipVolume: 1,
   music: null,
@@ -740,7 +879,15 @@ export function lookOf(edit: VideoEdit): Look {
     brightness: edit.brightness,
     contrast: edit.contrast,
     saturation: edit.saturation,
+    warmth: edit.warmth ?? 0,
+    tint: edit.tint ?? 0,
+    fade: edit.fade ?? 0,
+    vignette: edit.vignette ?? 0,
+    grain: edit.grain ?? 0,
     aspect: edit.aspect,
+    cropZoom: edit.cropZoom ?? 1,
+    cropX: edit.cropX ?? 0,
+    cropY: edit.cropY ?? 0,
     speed: edit.speed,
     clipVolume: edit.clipVolume,
     music: edit.music,
@@ -754,7 +901,15 @@ export function looksNeutral(look: Look): boolean {
     look.brightness === 0 &&
     look.contrast === 0 &&
     look.saturation === 0 &&
+    look.warmth === 0 &&
+    look.tint === 0 &&
+    look.fade === 0 &&
+    look.vignette === 0 &&
+    look.grain === 0 &&
     look.aspect === 'original' &&
+    (look.cropZoom ?? 1) === 1 &&
+    (look.cropX ?? 0) === 0 &&
+    (look.cropY ?? 0) === 0 &&
     look.speed === 1 &&
     look.clipVolume === 1 &&
     !look.music
@@ -770,7 +925,15 @@ export function readLook(raw: Partial<Look> | null | undefined): Look {
     brightness: num(raw.brightness, 0),
     contrast: num(raw.contrast, 0),
     saturation: num(raw.saturation, 0),
+    warmth: num(raw.warmth, 0),
+    tint: num(raw.tint, 0),
+    fade: num(raw.fade, 0),
+    vignette: num(raw.vignette, 0),
+    grain: num(raw.grain, 0),
     aspect: raw.aspect ?? 'original',
+    cropZoom: Math.min(3, Math.max(1, num(raw.cropZoom, 1))),
+    cropX: Math.min(1, Math.max(-1, num(raw.cropX, 0))),
+    cropY: Math.min(1, Math.max(-1, num(raw.cropY, 0))),
     speed: num(raw.speed, 1) || 1,
     clipVolume: num(raw.clipVolume, 1),
     music: music && typeof music.uri === 'string' ? music : null,
