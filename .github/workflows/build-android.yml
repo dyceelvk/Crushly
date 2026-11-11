@@ -181,9 +181,16 @@ jobs:
       - name: Reclaim disk space for the emulator
         run: |
           df -h / | tail -1
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk/*/toolchains/llvm/prebuilt/*/lib/python3 \
-                      /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" \
+          # NOT `$AGENT_TOOLSDIRECTORY`: the JDK that sdkmanager and the emulator
+          # action need lives in it, and deleting it turned this step into a
+          # build-breaker that failed in four seconds instead of a fix.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /opt/hostedtoolcache/CodeQL /usr/local/lib/android/sdk/sources \
+                      /usr/local/lib/android/sdk/system-images/android-1* \
                       /usr/local/lib/android/sdk/system-images/android-2[0-7]* 2>/dev/null || true
+          # The toolchain this job actually uses has to survive the cleanup.
+          java -version > /dev/null
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           sudo rm -rf /home/runner/.gradle/caches/*/transforms 2>/dev/null || true
           df -h / | tail -1
 
