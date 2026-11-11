@@ -86,9 +86,20 @@ def nodes(attempts=3):
     """
     root = None
     for attempt in range(attempts):
+        # uiautomator writes to a file and says "dumped" when it does. When it
+        # fails it says nothing and the *previous* dump stays on disk, so a
+        # reader that does not clear it first can measure a screen that is no
+        # longer there. Clear it, and if the tool has wedged itself (it is a
+        # single process and does get stuck after a few hundred dumps), restart
+        # it before asking again.
+        adb('shell', 'rm', '-f', '/sdcard/crushly-ui.xml', check=False)
         dumped = adb('shell', 'uiautomator', 'dump', '/sdcard/crushly-ui.xml', check=False)
         if 'dumped' not in dumped:
-            return None
+            if attempt == attempts - 1:
+                return None
+            adb('shell', 'pkill', '-f', 'uiautomator', check=False)
+            time.sleep(2)
+            continue
         xml = adb('shell', 'cat', '/sdcard/crushly-ui.xml', check=False)
         try:
             root = ET.fromstring(xml)

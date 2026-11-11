@@ -19,6 +19,7 @@ import { radius, space } from '../../theme/tokens';
 import { MOMENT_STYLES } from '../../lib/catalog';
 import { momentRingState } from '../../lib/momentRings';
 import { EditedClip } from '../../components/EditedClip';
+import { ClipThumb } from '../../components/ClipThumb';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { timeAgo } from '../../lib/format';
@@ -224,16 +225,31 @@ function MomentPostCard({
           style={{ flex: 1 }}
         >
           {post.mediaKind === 'video' && post.mediaUrl ? (
-            <EditedClip
-              uri={mediaSource(mediaUrl(post.mediaUrl))}
-              live={null}
-              style={{ width: '100%', height: '100%' }}
-              autoPlay
-              loop
-              muted
-              /* Nine seconds, then it starts again: a preview, not a showing. */
-              maxMs={post.previewMs}
-            />
+            /*
+             * In a row or a grid this is a **picture** of the clip; inside the
+             * Moment it plays.
+             *
+             * A tile used to mount a playing player. One of them, on a slow
+             * connection or a device whose decoder is busy, painted nothing at
+             * all: the card was a black rectangle with a gold ring round it — a
+             * preview of nothing, which is what the owner saw on Discover. A
+             * paused first frame is what every other grid in the app shows
+             * (`ClipThumb`), and it is always there.
+             */
+            tappable ? (
+              <EditedClip
+                uri={mediaSource(mediaUrl(post.mediaUrl))}
+                live={null}
+                style={{ width: '100%', height: '100%' }}
+                autoPlay
+                loop
+                muted
+                /* Nine seconds, then it starts again: a preview, not a showing. */
+                maxMs={post.previewMs}
+              />
+            ) : (
+              <ClipThumb uri={mediaUrl(post.mediaUrl) ?? ''} style={{ width: '100%', height: '100%' }} />
+            )
           ) : post.mediaUrl ? (
             <Photo uri={post.mediaUrl} style={{ width: '100%', height: '100%' }} />
           ) : (
