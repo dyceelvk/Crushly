@@ -543,12 +543,46 @@ export function useDeletePost() {
   });
 }
 
+/**
+ * Give a reaction, or take it back.
+ *
+ * The mark has to answer the tap, not the network. It used to change only when
+ * the feed came back with the server's answer, so a tap on a slow connection —
+ * which is most of them — looked like a dead button, and people tapped again.
+ * The cached copies of the post are therefore rewritten at once (every list it
+ * appears in, and its own view), the server's answer corrects the guess, and a
+ * failure puts the previous copies back exactly.
+ */
 export function useReactToPost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ postId, liked, kind }: { postId: number; liked: boolean; kind?: ReactionKind }) =>
       service.reactToPost(postId, liked, kind),
-    onSuccess: (_r, vars) => {
+    onMutate: ({ postId, liked, kind }) => {
+      const touched = patchCachedPost(qc, postId, (post) => {
+        const had = !!(post.myReaction ?? (post.liked ? 'crush' : null));
+        const count = Math.max(0, (post.likeCount ?? 0) + (liked ? (had ? 0 : 1) : had ? -1 : 0));
+        return {
+          ...post,
+          liked,
+          myReaction: liked ? ((kind ?? post.myReaction ?? 'crush') as ReactionKind) : null,
+          likeCount: count,
+        };
+      });
+      return { touched };
+    },
+    onError: (_e, _v, ctx) => {
+      for (const [key, data] of ctx?.touched ?? []) qc.setQueryData(key, data);
+    },
+    onSuccess: (result, vars) => {
+      // The server is the truth: it may refuse a reaction on your own post, or
+      // count a row that another device already added.
+      patchCachedPost(qc, vars.postId, (post) => ({
+        ...post,
+        liked: !!result.myReaction,
+        myReaction: result.myReaction,
+        likeCount: result.likeCount ?? post.likeCount,
+      }));
       postsChanged(qc);
       void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
     },
@@ -603,7 +637,7 @@ function patchCachedPost(
 }
 
 /** Every cached query whose payload is a page of posts under `items`. */
-const POST_LIST_HEADS = ['flow', 'public-flow', 'circle-feed', 'space-posts', 'saved-posts'] as const;
+const POST_LIST_HEADS = ['flow', 'public-flow', 'crushes-feed', 'circle-feed', 'space-posts', 'saved-posts'] as const;
 
 function isPostListKey(key: readonly unknown[]): boolean {
   return POST_LIST_HEADS.includes(key[0] as (typeof POST_LIST_HEADS)[number]);

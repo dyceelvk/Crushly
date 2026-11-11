@@ -163,6 +163,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   const listRef = useRef<FlatList<number>>(null);
   const indexRef = useRef(0);
   const lockRef = useRef(false);
+  /** True while this screen is the one in front — the wheel and keys are only ours then. */
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
   /** The offset the list is at, so a settle can be checked without re-reading. */
   const offsetRef = useRef(0);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,10 +193,9 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
      * The scroller, found by walking out from the list rather than guessing.
      *
      * `getScrollableNode()` hands back a node that is *not* the element that
-     * scrolls — calling `scrollTo` on it did nothing at all, which is how a
-     * previous fix for this ended up freezing the pager. So: ask the list for its
-     * node, then step through parents and children until one is taller than its
-     * own viewport. That is the element the browser is scrolling.
+     * scrolls, so: ask the list for its node, then step through parents and
+     * children until one is taller than its own viewport. That is the element
+     * the browser is scrolling.
      */
     const findScroller = (): HTMLElement | null => {
       const base = listRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null;
@@ -202,7 +204,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
       const candidate = (el: HTMLElement | null): boolean =>
         !!el && el.scrollHeight > el.clientHeight + 40;
       if (candidate(node)) return node;
-      // Down into the subtree first, then up through the parents.
       const inside = node.querySelector<HTMLElement>('*');
       for (const el of [inside, ...Array.from(node.querySelectorAll<HTMLElement>('div'))]) {
         if (candidate(el)) return el;
@@ -216,48 +217,50 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     };
 
     /*
-     * One gesture, one page — and then a magnet.
+     * A magnet, not a mousetrap.
      *
-     * The gesture moves exactly one page, animated: a wheel tick slides the next
-     * clip up the way a thumb would, instead of jumping. The magnet is the second
-     * half, and it is what was missing: a drag, a scrollbar, a trackpad's inertia
-     * or a programmatic scroll can all leave the list resting between two pages,
-     * and half a video at the top of the screen reads as broken no matter how the
-     * scroll got there. When scrolling stops, if the offset is not a page
-     * boundary, it springs to the nearest one. Nothing can rest half-cut.
+     * The previous web pager took the wheel away from the browser: every gesture
+     * was a programmatic jump, one page per tick, and while this screen stayed
+     * mounted it swallowed wheel events for the whole app. That is what made the
+     * Flow feel dead and, once it had been opened, made the rest of the app feel
+     * broken too.
+     *
+     * Now the browser scrolls normally and the **browser** does the snapping:
+     * `scroll-snap-type: y mandatory` on the scroller, `scroll-snap-align: start`
+     * and `scroll-snap-stop: always` on every page. A swipe slides the current
+     * clip up and brings the next one, exactly as a thumb expects; momentum can
+     * never skip past a page; and a scroll can never come to rest half-cut,
+     * because the snap positions are the page boundaries themselves.
+     *
+     * The one thing snap cannot do is land correctly after a programmatic move
+     * (a scrollbar drag, a restored offset), so a light settle still runs when
+     * scrolling goes quiet — a spring to the nearest page, through the list.
      */
-    const go = (direction: 1 | -1) => {
-      const next = Math.min(Math.max(indexRef.current + direction, 0), ids.length - 1);
-      if (next === indexRef.current) return;
-      lockRef.current = true;
-      setIndex(next);
-      listRef.current?.scrollToOffset({ offset: next * height, animated: true });
-      // Long enough for the glide, short enough that the next deliberate flick
-      // is not swallowed.
-      window.setTimeout(() => { lockRef.current = false; }, 420);
-    };
-
-    const onWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-      if (Math.abs(event.deltaY) < 3) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (lockRef.current) return;
-      go(event.deltaY > 0 ? 1 : -1);
-    };
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowDown' || event.key === 'PageDown') { event.preventDefault(); go(1); }
-      if (event.key === 'ArrowUp' || event.key === 'PageUp') { event.preventDefault(); go(-1); }
-    };
-
-    // Capture on the document: the wheel must not reach the scroller at all, or
-    // the browser's own momentum runs underneath the lock.
-    document.addEventListener('wheel', onWheel, { passive: false, capture: true });
-    window.addEventListener('keydown', onKey);
-
-    /* ------------------------------------------------------------- the magnet */
     const scroller = findScroller();
+    const pages = () => {
+      const content = (scroller?.firstElementChild as HTMLElement | null) ?? null;
+      return content ? Array.from(content.children) as HTMLElement[] : [];
+    };
+    const snapOn = () => {
+      if (!scroller) return;
+      scroller.style.scrollSnapType = 'y mandatory';
+      scroller.style.overscrollBehaviorY = 'contain';
+      for (const page of pages()) {
+        page.style.scrollSnapAlign = 'start';
+        // `always` is what stops one flick from sailing past three clips: the
+        // browser must come to rest on the next snap point before it can carry on.
+        page.style.scrollSnapStop = 'always';
+      }
+    };
+    snapOn();
+    // Cells are created as the list grows, so re-apply when the content does.
+    const observer = typeof MutationObserver !== 'undefined' && scroller?.firstElementChild
+      ? new MutationObserver(() => snapOn())
+      : null;
+    if (observer && scroller?.firstElementChild) {
+      observer.observe(scroller.firstElementChild, { childList: true, subtree: false });
+    }
+
     let settle: number | null = null;
     const onScroll = () => {
       if (!scroller) return;
@@ -269,21 +272,43 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
         // A pixel of slack: browsers round sub-pixel offsets, and correcting a
         // rounding error every time would fight the scroll for no reason.
         if (Math.abs(page - nearest) > 2 / Math.max(height, 1)) {
-          // Animated through the list, not the raw element: a bare
-          // `element.scrollTo({ behavior: 'smooth' })` collides with react-native-web's
-          // own scroll responder and the browser finished the animation at 0.
           listRef.current?.scrollToOffset({ offset: nearest * height, animated: true });
         }
+        // The page is settled, so this is the clip that is really in front of
+        // the reader. Setting it only here is what stops two clips being
+        // "active" mid-glide — which is how a clip could pause and still be heard.
         if (nearest !== indexRef.current) setIndex(nearest);
-      }, 140);
+      }, 120);
     };
     scroller?.addEventListener('scroll', onScroll, { passive: true });
 
+    /* Keyboard paging, only while this screen is the one on the screen. */
+    const onKey = (event: KeyboardEvent) => {
+      if (!focusedRef.current) return;
+      if (event.key !== 'ArrowDown' && event.key !== 'PageDown' && event.key !== 'ArrowUp' && event.key !== 'PageUp') return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowDown' || event.key === 'PageDown' ? 1 : -1;
+      const next = Math.min(Math.max(indexRef.current + direction, 0), ids.length - 1);
+      if (next === indexRef.current) return;
+      listRef.current?.scrollToOffset({ offset: next * height, animated: true });
+    };
+    window.addEventListener('keydown', onKey);
+
     return () => {
-      document.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions);
       window.removeEventListener('keydown', onKey);
       scroller?.removeEventListener('scroll', onScroll);
+      observer?.disconnect();
       if (settle) window.clearTimeout(settle);
+      // The snap belongs to this screen; leaving it must not leave the browser
+      // snapping some other list.
+      if (scroller) {
+        scroller.style.scrollSnapType = '';
+        scroller.style.overscrollBehaviorY = '';
+        for (const page of pages()) {
+          page.style.scrollSnapAlign = '';
+          page.style.scrollSnapStop = '';
+        }
+      }
     };
   }, [height, ids.length, setIndex]);
 
@@ -303,13 +328,18 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     maxToRenderPerBatch={2}
     getItemLayout={(_data, index) => ({ length: height, offset: height * index, index })}
     onScroll={(e) => {
-      // Keeps our index honest when the list was moved by something other than
-      // the wheel handler — a snap, a scrollbar drag, a restore — and remembers
-      // where it is so a settle can be judged.
+      /*
+       * Remember where the list is; do not decide from it.
+       *
+       * This used to set the active page on every scroll event, which meant that
+       * halfway through a glide to the next clip the *next* page became the
+       * active one: the clip in front of you was paused (it was no longer the
+       * active page) while the incoming one started playing, so a clip could sit
+       * still and still be heard. The active page is now decided where the
+       * scroll comes to rest — `settleToNearest` on a phone, the settle below on
+       * the web — and never mid-move.
+       */
       offsetRef.current = e.nativeEvent.contentOffset.y;
-      if (lockRef.current) return;
-      const next = Math.round(e.nativeEvent.contentOffset.y / Math.max(height, 1));
-      if (next !== indexRef.current) setIndex(next);
     }}
     scrollEventThrottle={32}
     /* A phone's snap can still rest a few pixels off if the list was dragged
@@ -391,10 +421,17 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
   }, []);
 
   const reactWith = useCallback(
-    async (kind: ReactionKind) => {
+    async (kind: ReactionKind | null) => {
       if (!post) return;
       try {
-        await react.mutateAsync({ postId: post.id, liked: true, kind });
+        // `null` is the control saying "take my reaction back": the row goes,
+        // and the mark returns to outline. Two taps in a row is a Crush and an
+        // undo, which is the only way a tap can mean both.
+        await react.mutateAsync({
+          postId: post.id,
+          liked: kind !== null,
+          kind: kind ?? post.myReaction ?? 'crush',
+        });
       } catch (e) {
         toast({ kind: 'error', title: 'Reaction not sent', message: (e as Error).message });
       }
@@ -493,6 +530,8 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
     );
   }
 
+  const covered = commentsOpen || shareOpen || moreOpen || editOpen || confirmDelete;
+  const playing = active && !covered;
   const kinds = post.reactionKinds ?? {};
   const totalReactions = (Object.values(kinds) as number[]).reduce((a, b) => a + b, 0) || post.likeCount;
   const topKinds = REACTION_KINDS.filter((k) => (kinds[k] ?? 0) > 0).slice(0, 3);
@@ -520,7 +559,11 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
               key={post.id}
               uri={resolveVideoUri(post.mediaUrl)}
               live={post.edit ?? null}
-              autoPlay={active}
+              /* A sheet over the clip means the clip is not being watched: the
+                 comments, the share sheet and the editor all covered a clip that
+                 carried on playing its soundtrack underneath. `playing` is the
+                 page being in front *and* nothing being over it. */
+              autoPlay={playing}
               loop
               fill
               fit="fit"
@@ -627,7 +670,8 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
           <ReactionButton
             myReaction={(post.myReaction ?? (post.liked ? 'crush' : null)) as ReactionKind | null}
             onReact={(kind) => void reactWith(kind)}
-            size={30}
+            size={26}
+            framed
           />
           <Txt variant="caption" color="#FFFFFF" style={{ fontWeight: '600' }}>
             {spokenCount(totalReactions, 'Crush', 'Crushes')}

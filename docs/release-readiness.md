@@ -62,6 +62,65 @@ post with its own actions and comments, and no Flow header.
 label has been "All Crush Feed" for two batches — so the spec was updated; it now
 passes 2/2. `moment-circles` 2/2, `circles` 4/4, `space-search` 30/30.
 
+## The Flow is a feed again, and a reaction answers the finger (2026-11-07, latest)
+
+Six faults, all in the same area, all from the last two batches doing too much.
+
+**1. Flow felt dead, and took the app with it.** The web pager had been given the
+wheel: every gesture was prevented, turned into a programmatic jump, and — because
+the listener was on the document and lived as long as the screen was mounted —
+swallowed wheel events for the whole app. Scrolling now belongs to the browser
+again, and the **browser** does the snapping: `scroll-snap-type: y mandatory` on
+the scroller, `scroll-snap-align: start` plus `scroll-snap-stop: always` on each
+page. A swipe slides the current clip up and brings the next one; one flick cannot
+sail past a page; nothing can rest half-cut. A light settle (120 ms after the
+scroll stops, through the list) still catches a programmatic offset. The keyboard
+paging only answers while the Flow is the screen in front.
+
+**2. A clip could sit still and still be heard.** The active page was decided on
+every scroll event, so halfway through a glide the *next* page became active: the
+clip in front of you was paused while the incoming one played, out of view. The
+active page is now decided where the scroll comes to rest, and nowhere else.
+
+**3. A sheet over a clip did not stop it.** Comments, Share, the editor and the
+"more" sheet all covered a clip that kept playing underneath. `autoPlay` is now
+"this page is in front **and** nothing is over it".
+
+**4. A tap on the reaction control could do nothing at all.** The reaction fired
+on press-*out*, and a quick tap (the browser can complete one in under 40 ms)
+never produced a press-in/press-out pair: measured at 0 ms and 20 ms — no request
+at all; at 50 ms — one. It is a real `onPress` now, which is the standard click
+path. Press-in still starts the 260 ms hold timer, and a hold marks itself so the
+click that follows it does not also react.
+
+**5. There was no way to take a reaction back.** Every surface sent the same kind
+again, and giving a Crush twice is not un-crushing. The control now says what a
+tap means: a tap on a reaction you already have sends `null`, which the posts and
+the comments both read as "take it back". Tapping the face you are already wearing
+in the hold row is the same undo.
+
+**6. Comments had no Crush anywhere but a written post.** That rule is gone: every
+comment under every post can be crushed, one word beside Reply.
+
+Also in this batch: the mark answers the tap immediately (a local state in the
+control, corrected by the server's answer), `crushes-feed` was missing from the
+list of cached post lists so the all-crush feed never repainted a reaction, and the
+Flow rail's reaction is now in the same glass circle as the rest of the rail.
+
+| Browser check (390×844, mocked data) | Result |
+| --- | --- |
+| Scroll the Flow | `scroll-snap-type: y mandatory`, 3 pages snapped |
+| One wheel flick | `0 → 844`, one page, done |
+| A half-page park | springs to `844` |
+| A wheel back | `844 → 0` |
+| Reaction, quick click | `p_liked: true` sent; mark fills; `3 → 4 Crushes` |
+| Reaction, second click | `p_liked: false` sent (un-crush) |
+| Comment under a clip | "Crush" present; click sends `react_to_comment` |
+| Pick | `save_post` sent |
+
+`npm test` 355/355 · `paging` 2/2 · `moment-circles` 2/2 · `circles` 4/4 ·
+`space-search` 30/30.
+
 ## The Moment card for a shared post: portrait, and a tap that only offers (2026-11-07, latest)
 
 **LIVE.** `2a9c8e5` is on `main` and `build/holup-follow-draft`; deployment

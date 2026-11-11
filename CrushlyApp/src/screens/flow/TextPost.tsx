@@ -103,10 +103,10 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
    * The server treats "the same kind again" as taking it back, so the button does
    * not need to know whether this is a first reaction or an undo.
    */
-  const reactWith = useCallback(async (kind: ShownReaction) => {
+  const reactWith = useCallback(async (kind: ShownReaction | null) => {
     if (!post) return;
     try {
-      await react.mutateAsync({ postId: post.id, liked: true, kind });
+      await react.mutateAsync({ postId: post.id, liked: kind !== null, kind: kind ?? post.myReaction ?? 'crush' });
     } catch (e) {
       toast({ kind: 'error', title: 'Reaction not sent', message: (e as Error).message });
     }
@@ -295,7 +295,7 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
                   key={c.id}
                   comment={c}
                   onOpenAuthor={openProfile}
-                  onReact={(kind) => reactComment.mutate({ commentId: c.id, kind })}
+                  onReact={(kind) => reactComment.mutate({ commentId: c.id, kind: kind ?? (c.myReaction ?? 'crush') })}
                   onReply={() => {
                     setReplyTo(c);
                     input.current?.focus();
@@ -476,7 +476,7 @@ function CommentLine({
 }: {
   comment: PostComment;
   onOpenAuthor: (id: number) => void;
-  onReact: (kind: ShownReaction) => void;
+  onReact: (kind: ShownReaction | null) => void;
   onReply: () => void;
 }) {
   const { colors } = useTheme();

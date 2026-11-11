@@ -280,7 +280,7 @@ export function PostCard({
           <ReactionButton
             myReaction={p.myReaction}
             count={p.likeCount}
-            onReact={(kind) => like.mutate({ postId: p.id, liked: true, kind })}
+            onReact={(kind) => like.mutate({ postId: p.id, liked: kind !== null, kind: kind ?? (p.myReaction ?? 'crush') })}
             size={22}
           />
         </View>

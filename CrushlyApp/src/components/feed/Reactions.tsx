@@ -52,14 +52,31 @@ export function ReactionButton({
   disabled = false,
   word,
   onDark = false,
+  framed = false,
 }: {
   myReaction?: ReactionKind | null;
   count?: number;
-  onReact: (kind: ShownReaction) => void;
+  /**
+   * Give a reaction, or `null` to take yours back.
+   *
+   * A tap has to be able to undo itself. It could not: the control sent the same
+   * kind again, and giving a reaction twice is not taking it back — so a Crush
+   * you had given stayed given however many times you tapped it. Now the tap
+   * says what it means: tapping a reaction you already have sends `null`.
+   */
+  onReact: (kind: ShownReaction | null) => void;
   size?: number;
   disabled?: boolean;
   /** Draw it for a picture: a clip's controls sit on the video, not on a card. */
   onDark?: boolean;
+  /**
+   * Put the control in the same glass circle as the rest of a rail.
+   *
+   * On the Flow rail the reaction sat as two bare rings beside buttons that were
+   * all in circles, so it did not read as a button at all — it read as a stray
+   * mark. Same circle, same weight, same reach.
+   */
+  framed?: boolean;
   /**
    * Draw the control as the word "Crush" instead of a face.
    *
@@ -77,7 +94,20 @@ export function ReactionButton({
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const held = useRef(false);
   const control = useRef<View>(null);
-  const look = reactionLook(myReaction);
+  /**
+   * The reaction this control last showed, until the data catches up.
+   *
+   * A tap has to change the mark under the finger. Waiting for the network means
+   * a Crush that arrives half a second late — or, on a list that hands its rows
+   * the same objects until it refetches, one that never arrives at all. `null`
+   * here means "nothing tapped yet, follow the props"; any other value is what
+   * the reader just did, and it is dropped the moment the props agree with it or
+   * change underneath it.
+   */
+  const [local, setLocal] = useState<ReactionKind | null | undefined>(undefined);
+  const shown = local !== undefined ? local : (myReaction ?? null);
+  useEffect(() => { setLocal(undefined); }, [myReaction]);
+  const look = reactionLook(shown);
 
   /** Where the control sits, in window coordinates — used to keep the row on screen. */
   const place = useCallback(() => {
@@ -119,19 +149,38 @@ export function ReactionButton({
     }, HOLD_MS);
   };
 
+  /**
+   * The tap.
+   *
+   * This is `onPress`, not `onPressOut`. The reaction used to fire on release,
+   * and a quick tap — a tap the browser completes in under about 40 ms — never
+   * produced a press-in/press-out pair at all, so nothing happened: the control
+   * looked dead. `onPress` is the standard click path and fires for every tap
+   * however short it is. Press-in still starts the hold timer, and a hold marks
+   * itself so the click that follows it does not also react.
+   */
   const end = () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+  };
+
+  const press = () => {
     // A hold already answered the question; the release must not also react.
     if (held.current) { held.current = false; return; }
     setOpen(false);
     if (disabled) return;
-    onReact((look ? (myReaction as ShownReaction) : 'crush'));
+    // Already yours? The tap takes it back. Nothing yet? A Crush.
+    if (look && shown) { haptic.soft(); setLocal(null); onReact(null); return; }
+    setLocal('crush');
+    onReact('crush');
   };
 
   const choose = (kind: ShownReaction) => {
     setOpen(false);
     if (idle.current) { clearTimeout(idle.current); idle.current = null; }
     haptic.tap();
+    // The face you already wear is an undo, the same as tapping the control.
+    if (shown === kind) { setLocal(null); onReact(null); return; }
+    setLocal(kind);
     setFlying({ kind, id: Date.now() });
     onReact(kind);
   };
@@ -141,6 +190,7 @@ export function ReactionButton({
       <Pressable
         onPressIn={start}
         onPressOut={end}
+        onPress={press}
         delayLongPress={HOLD_MS}
         accessibilityRole="button"
         accessibilityLabel={
@@ -150,7 +200,20 @@ export function ReactionButton({
         }
         hitSlop={10}
         testID="reaction-control"
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+        style={[
+          { flexDirection: 'row', alignItems: 'center', gap: 6 },
+          framed
+            ? {
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                justifyContent: 'center',
+                backgroundColor: 'rgba(20,20,23,0.58)',
+                borderWidth: 1,
+                borderColor: colors.borderStrong,
+              }
+            : null,
+        ]}
       >
         {/* Given, the control wears holUpp's own mark in the Crush colour;
             not yet, it is an outline heart, which is a shape and not a brand. */}
@@ -178,7 +241,7 @@ export function ReactionButton({
            */
           <CrushIcon size={size} color={onDark ? 'rgba(255,255,255,0.92)' : colors.textSecondary} />
         )}
-        {count != null && count > 0 ? (
+        {!framed && count != null && count > 0 ? (
           <Txt variant="small" color={onDark ? undefined : 'textSecondary'} style={onDark ? { color: '#FFFFFF' } : undefined}>{formatCount(count)}</Txt>
         ) : null}
       </Pressable>
@@ -188,7 +251,7 @@ export function ReactionButton({
       <ReactionRow
         visible={open}
         anchor={anchor}
-        current={myReaction}
+        current={shown}
         onPick={choose}
         onDismiss={close}
       />

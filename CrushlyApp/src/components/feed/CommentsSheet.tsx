@@ -88,15 +88,14 @@ export function CommentsSheet({
 
   const postId = post?.id ?? null;
   /*
-   * Reactions on a comment belong to written posts only.
+   * Every comment can be crushed, under every kind of post.
    *
-   * A video or a photo is a thing you react to; the comments under it are a
-   * conversation about that thing, and a row of faces on every reply turns the
-   * thread into a second scoreboard. Written posts have no picture to carry the
-   * reaction, so there the comment itself can be crushed — and that lives on the
-   * text post screen, in words, beside Reply.
+   * It was restricted to written posts for a while — the reasoning being that a
+   * clip already has its own scoreboard. But that left the comments under clips
+   * with no way to answer a person, only the post, which is not what a comment
+   * is for. One word, "Crush", beside Reply, the same gesture as everywhere.
    */
-  const commentReactions = !!post && !post.mediaUrl;
+  const commentReactions = !!post;
   const commentsQuery = usePostComments(visible ? postId : null);
   const settingsQuery = usePostCommentSettings(visible ? postId : null);
   const canComment = settingsQuery.data === true;
@@ -180,8 +179,10 @@ export function CommentsSheet({
 
   // Comments carry the same seven reactions as posts, and the same gesture.
   const react = useCallback(
-    (comment: PostComment, kind: ShownReaction) => {
-      reactToComment.mutate({ commentId: comment.id, kind });
+    (comment: PostComment, kind: ShownReaction | null) => {
+      // `null` means "take it back"; the comment's reaction call treats the kind
+      // you already have as an undo, so that is what is sent.
+      reactToComment.mutate({ commentId: comment.id, kind: kind ?? comment.myReaction ?? 'crush' });
     },
     [reactToComment],
   );

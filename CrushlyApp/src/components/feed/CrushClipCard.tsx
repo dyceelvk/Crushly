@@ -135,7 +135,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
               count={post.likeCount}
               size={22}
               onDark
-              onReact={(kind) => react.mutate({ postId: post.id, liked: true, kind })}
+              onReact={(kind) => react.mutate({ postId: post.id, liked: kind !== null, kind: kind ?? (post.myReaction ?? 'crush') })}
             />
             <Pressable
               onPress={() => setCommentsOpen(true)}
