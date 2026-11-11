@@ -25,8 +25,38 @@ export interface Env {
   B2_KEY_ID: string;
   B2_APPLICATION_KEY: string;
   B2_BUCKET: string;
+  /**
+   * The APK. Cloudflare R2, not B2: serving 97 MB from B2 is metered egress, and
+   * the free allowance ran out after a handful of installs — `/download` answered
+   * 503 while everything else kept working. R2 charges nothing to serve, sits in
+   * the same account as this Worker, and needs no request signing.
+   *
+   * Optional in the type on purpose: a Worker deployed before the bucket existed
+   * still starts, and falls back to the B2 mirror.
+   */
+  RELEASES?: R2Bucket;
   /** Optional. Without it /admin/lifecycle stays closed. */
   ADMIN_TOKEN?: string;
+}
+
+/**
+ * The three methods this Worker uses on the release bucket.
+ *
+ * Declared here rather than pulled from `@cloudflare/workers-types`: the Worker
+ * is bundled from source by wrangler, which supplies the real types at build
+ * time, and a hand-written structural type keeps `npm test` runnable in plain
+ * Node without a Cloudflare-specific tsconfig.
+ */
+export interface R2Bucket {
+  head(key: string): Promise<R2Object | null>;
+  get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectBody | null>;
+}
+export interface R2Object {
+  size: number;
+  httpEtag?: string;
+}
+export interface R2ObjectBody extends R2Object {
+  body: ReadableStream;
 }
 
 /**
@@ -466,24 +496,80 @@ const RELEASE = {
   notes: release.notes,
 } as const;
 
-/** Stream the verified release mirror, without exposing B2 credentials. */
+const RELEASE_KEY = `android-releases/${RELEASE.file}`;
+
+/** The headers every release response carries, whatever served it. */
+function releaseHeaders(): Headers {
+  return new Headers({
+    'Content-Type': 'application/vnd.android.package-archive',
+    'Content-Length': String(release.bytes),
+    'Content-Disposition': `attachment; filename="${RELEASE.file}"`,
+    // Never cached anywhere: the URL is stable, the bytes are not.
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+}
+
+/**
+ * The APK, from Cloudflare R2.
+ *
+ * The size is checked against `release.json` before a single byte is sent, for
+ * the same reason the B2 path checks it: the app refuses a download whose length
+ * is not the one it was told, and serving a stale or truncated object would turn
+ * "update available" into "update failed" on the member's phone.
+ *
+ * Returns null when the bucket is not bound, the object is missing, or its size
+ * disagrees — the caller then tries the mirror.
+ */
+async function releaseFromR2(env: Env, headOnly: boolean): Promise<Response | null> {
+  const bucket = env.RELEASES;
+  if (!bucket) return null;
+  try {
+    if (headOnly) {
+      const head = await bucket.head(RELEASE_KEY);
+      if (!head || head.size !== release.bytes) return null;
+      return new Response(null, { status: 200, headers: releaseHeaders() });
+    }
+    const object = await bucket.get(RELEASE_KEY);
+    if (!object || object.size !== release.bytes || !object.body) {
+      await object?.body?.cancel?.().catch(() => undefined);
+      return null;
+    }
+    return new Response(object.body, { status: 200, headers: releaseHeaders() });
+  } catch {
+    // A binding that is present but unreachable must not take the download down
+    // when the mirror can still serve it.
+    return null;
+  }
+}
+
+/**
+ * Stream the release, from R2 first and the older B2 mirror second.
+ *
+ * R2 is the home of the APK now: 97 MB per install is metered egress on B2, and
+ * the allowance ran out — `/download` answered 503 for hours while `/version`
+ * happily advertised a build nobody could fetch. R2 has no egress bill and lives
+ * in the same account as this Worker. B2 stays as a fallback for an install that
+ * asks for a build only the mirror still holds, and because a fallback that is
+ * never exercised is a fallback that does not work.
+ */
 async function downloadRelease(env: Env, origin: string | null, headOnly: boolean): Promise<Response> {
+  const fromR2 = await releaseFromR2(env, headOnly);
+  if (fromR2) {
+    const headers = new Headers(fromR2.headers);
+    for (const [k, v] of Object.entries(cors(origin))) headers.set(k, String(v));
+    return new Response(fromR2.body, { status: fromR2.status, headers });
+  }
   try {
     const auth = await b2Auth(env);
-    const upstream = await b2Download(env, auth, `android-releases/${RELEASE.file}`);
+    const upstream = await b2Download(env, auth, RELEASE_KEY);
     const size = Number(upstream.headers.get('content-length'));
     if (!upstream.ok || size !== release.bytes || !upstream.body) {
       await upstream.body?.cancel().catch(() => undefined);
       return fail(503, 'The Android download is temporarily unavailable. Please try again.', origin);
     }
-    const headers = new Headers({
-      'Content-Type': 'application/vnd.android.package-archive',
-      'Content-Length': String(release.bytes),
-      'Content-Disposition': `attachment; filename="${RELEASE.file}"`,
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-      ...cors(origin),
-    });
+    const headers = releaseHeaders();
+    for (const [k, v] of Object.entries(cors(origin))) headers.set(k, String(v));
     if (headOnly) {
       await upstream.body.cancel().catch(() => undefined);
       return new Response(null, { status: 200, headers });

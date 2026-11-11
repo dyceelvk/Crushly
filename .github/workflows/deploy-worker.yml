@@ -59,6 +59,25 @@ jobs:
       - uses: actions/checkout@v4
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
 
+      # The release bucket has to exist before the deploy, or wrangler refuses a
+      # config that binds to a bucket nobody made. Creating it twice is not an
+      # error we care about, so the step only reports what happened.
+      - name: Make sure the release bucket exists
+        if: env.CF_TOKEN != '' && env.CF_ACCOUNT != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -uo pipefail
+          npx --yes wrangler@4 r2 bucket create holup-releases 2>&1 | tee /tmp/r2-create.log || true
+          if grep -qi 'already exists\|already owns' /tmp/r2-create.log; then
+            echo "::notice::The release bucket is already there."
+          elif grep -qi 'created' /tmp/r2-create.log; then
+            echo "::notice::Created the release bucket (holup-releases)."
+          else
+            echo "::warning::Could not create the release bucket — the token may lack Workers R2 Storage: Edit. The Worker will still fall back to the B2 mirror, and /download may stay 503 while the B2 cap is exhausted."
+          fi
+
       - uses: cloudflare/wrangler-action@v3
         if: env.CF_TOKEN != '' && env.CF_ACCOUNT != '' && env.B2_BUCKET != ''
         with:

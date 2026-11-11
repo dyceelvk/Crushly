@@ -32,7 +32,11 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
+    env:
+      # `wrangler r2 ... --remote` in a job with no wrangler project of its own.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -66,15 +70,44 @@ jobs:
         env:
           V: ${{ inputs.version }}
           SHA: ${{ inputs.sha256 }}
-      - name: Mirror to the private bucket the app downloads from
+      # The APK goes to Cloudflare R2, in the same account as the Worker that
+      # serves it. It used to be mirrored to Backblaze B2, where downloads are
+      # metered: a day of installs exhausted the allowance and /download answered
+      # 503 for hours while /version advertised a build nobody could fetch. R2
+      # charges nothing to serve, so the channel cannot be starved by its own
+      # traffic.
+      - name: Put the APK in the release bucket
         env:
-          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
-          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
-          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           apk=$(find apk -name "Crushly-${{ inputs.version }}-Android9plus.apk" | head -1)
-          python3 .github/scripts/mirror-android-apk.py "$apk"
+          test -n "$apk"
+          npx --yes wrangler@4 r2 object put \
+            "holup-releases/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
+            --file "$apk" \
+            --content-type application/vnd.android.package-archive \
+            --remote
+          # Read back the object's size from the bucket itself before trusting the
+          # Worker's answer: a truncated upload looks exactly like a working one
+          # from the outside, and the app refuses a file whose length is wrong.
+          npx --yes wrangler@4 r2 object get \
+            "holup-releases/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
+            --file /tmp/roundtrip.apk --remote
+          got=$(stat -c %s /tmp/roundtrip.apk)
+          want=$(python3 -c "import json;print(json.load(open('cloudflare/media-worker/src/release.json'))['bytes'])")
+          if [ "$got" != "$want" ]; then
+            echo "::error::The bucket holds $got bytes; release.json advertises $want."
+            exit 1
+          fi
+          got_sha=$(sha256sum /tmp/roundtrip.apk | cut -d' ' -f1)
+          if [ "$got_sha" != "${{ inputs.sha256 }}" ]; then
+            echo "::error::The bucket's copy hashes to $got_sha, not ${{ inputs.sha256 }}."
+            exit 1
+          fi
+          echo "::notice::The release bucket holds ${{ inputs.version }}: $got bytes, SHA-256 matches."
+          rm -f /tmp/roundtrip.apk
       - name: Make the live Worker prove it serves this build
         run: |
           set -euo pipefail

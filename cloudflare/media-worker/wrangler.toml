@@ -15,6 +15,15 @@ compatibility_date = "2026-10-09"
 #   B2_APPLICATION_KEY    Backblaze application key
 #   B2_BUCKET             the private bucket name, e.g. crushly-media
 #
+# The Android APK lives here, not in B2. `holup-releases` is a private R2 bucket
+# bound to this Worker as `RELEASES`; see src/index.ts::downloadRelease for why
+# (97 MB per install is metered egress on B2, and that allowance ran out).
+# The bucket is created by .github/workflows/deploy-worker.yml if it is missing,
+# and filled by .github/workflows/publish-android.yml.
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "holup-releases"
+
 # Served from the Worker's own *.workers.dev address today. Adding a custom
 # domain later needs no code change and no stored URL changes: the old address
 # keeps working alongside the new one.
