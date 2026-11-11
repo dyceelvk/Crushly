@@ -19,6 +19,9 @@ MEDIA="${HARNESS_MEDIA:-/tmp/harness-media}"
 mkdir -p "$H"
 rm -rf "$H/src" && cp -a "$REPO/src" "$H/src"
 rm -rf "$H/harness" && cp -a "$SRC/harness" "$H/harness"
+# Screens import brand artwork by relative path ($H/src/components → ../../assets),
+# so the assets tree has to sit beside src or bundling stops at the first logo.
+rm -rf "$H/assets" && cp -a "$REPO/assets" "$H/assets"
 [ -e "$H/node_modules" ] || ln -s "$REPO/node_modules" "$H/node_modules"
 cp "$REPO/package.json" "$H/package.json"
 node -e "const fs=require('fs');const p='$H/package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.main='harness/index.tsx';fs.writeFileSync(p,JSON.stringify(j,null,2));"

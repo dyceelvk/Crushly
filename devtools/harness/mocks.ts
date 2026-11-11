@@ -602,8 +602,13 @@ export const mockEntries: [unknown[], unknown][] = [
       { id: 3, kind: 'video', body: 'Sound on.', mediaUrl: `${MEDIA}/video-portrait.webm`, style: 'champagne', edit: null, createdAt: now - 1000 * 60 * 200 },
     ],
   })],
-  [['space-posts', 2], { items: posts.filter((p: any) => p.author.id === 2) }],
-  [['space-vibes', 2], { items: vibes.filter((v: any) => v.author.id === 2) }],
+  // A Space's posts arrive through an *infinite* query, so the cache entry is
+  // `{ pages: [{ items, nextCursor }], pageParams }` — not `{ items }`. Seeded as
+  // a single page, TanStack's own `hasNextPage` reads `pages.length` off
+  // `undefined` and the whole screen dies before it draws. That was the harness
+  // telling a story the server never tells.
+  [['space-posts', 2], { pages: [{ items: posts.filter((p: any) => p.author.id === 2), nextCursor: null }], pageParams: [null] }],
+  [['space-vibes', 2], { pages: [{ items: vibes.filter((v: any) => v.author.id === 2), nextCursor: null }], pageParams: [null] }],
   [['moments'], momentsFeed],
   [['badges'], { items: [], notifications: 2, messages: 0 }],
 ];

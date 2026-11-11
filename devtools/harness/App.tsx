@@ -34,7 +34,7 @@ import {
   OnboardingAboutScreen,
   OnboardingPreferencesScreen,
 } from '../src/screens/onboarding/Onboarding';
-import { FlowScreen } from '../src/screens/flow/Flow';
+import { FeedScreen } from '../src/screens/flow/FeedScreen';
 import { PostViewerScreen } from '../src/screens/flow/PostViewer';
 import { MutualCrushScreen } from '../src/screens/crushes/MutualCrush';
 import { ProfileTabScreen } from '../src/screens/profile/ProfileTab';
@@ -127,7 +127,7 @@ function Nav() {
 }
 
 const SCREENS: Record<string, (p: any) => React.ReactElement> = {
-  flow: FlowScreen,
+  flow: FeedScreen,
   profile: ProfileTabScreen,
   edit: EditProfileScreen,
   user: (p: any) => <UserProfileScreen route={{ key: 'u', name: 'UserProfile', params: { id: 2 } } as any} navigation={p.navigation} />,

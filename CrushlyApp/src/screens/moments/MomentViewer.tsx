@@ -28,6 +28,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { MOMENT_REACTIONS, MOMENT_STYLES } from '../../lib/catalog';
 import { initialMomentIndex, momentSequence } from '../../lib/moments';
 import { timeAgo } from '../../lib/format';
+import { VIEWER_LAYERS } from '../../lib/viewerLayers';
 import { haptic } from '../../lib/haptics';
 import type { ScreenProps } from '../../navigation/types';
 
@@ -408,7 +409,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           style={[
             { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
             isPost
-              ? { alignItems: 'center', justifyContent: 'center', paddingTop: insets.top + 84, paddingBottom: Math.max(insets.bottom, 12) + 190, zIndex: 2 }
+              ? { alignItems: 'center', justifyContent: 'center', paddingTop: insets.top + 84, paddingBottom: Math.max(insets.bottom, 12) + 190, zIndex: VIEWER_LAYERS.card }
               : null,
           ]}
         >
@@ -430,9 +431,14 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
 
         {/* Tap to move, hold to pause. One responder surface that claims the
             touch and keeps it until the finger lifts — a pause can no longer be
-            cancelled out from under the member. */}
+            cancelled out from under the member.
+
+            It sits at `VIEWER_LAYERS.pager`, the *bottom* of the stack. It used
+            to sit above the header and the reply bar, and since it covers the
+            whole screen it took every touch meant for them: the reply field, the
+            reaction button, Follow, Delete and Close were all decoration. */}
         <View
-          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1 }}
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: VIEWER_LAYERS.pager }}
           onLayout={(e) => setZoneWidth(e.nativeEvent.layout.width)}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
@@ -447,7 +453,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           accessibilityHint="Tap left for the previous Moment or right for the next. Hold to pause. Swipe down to close; on your own Moment swipe up for activity."
         />
 
-        {moment.kind === 'text' ? <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, bottom: 0, left: space.xl, right: space.xl, justifyContent: 'center' }}>
+        {moment.kind === 'text' ? <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, bottom: 0, left: space.xl, right: space.xl, justifyContent: 'center', zIndex: VIEWER_LAYERS.content }}>
           <Txt variant="accent" color={(MOMENT_STYLES[moment.style] || MOMENT_STYLES.noir).ink} style={{ fontSize: 26, lineHeight: 35.1 }}><LinkText text={moment.body} bare /></Txt>
         </View> : null}
 
@@ -467,7 +473,7 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         />
 
         {/* Top: progress + author */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.md }} pointerEvents="box-none">
+        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.md, zIndex: VIEWER_LAYERS.chrome }} pointerEvents="box-none">
           <View style={{ flexDirection: 'row', gap: 4 }} accessibilityElementsHidden>
             {group.moments.map((m, i) => (
               <View key={m.id} style={{ flex: 1, height: 2.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' }}>
@@ -542,7 +548,10 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
         ) : null}
 
         {/* Bottom */}
-        <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.md) }}>
+        <View
+          pointerEvents="box-none"
+          style={{ paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.md), zIndex: VIEWER_LAYERS.chrome }}
+        >
           {mine ? (
             <View style={{ gap: 4, paddingVertical: space.xs }}>
               <Pressable onPress={() => setViewersOpen(true)} accessibilityRole="button" accessibilityLabel={`Seen by ${moment.viewCount ?? 0}. See viewers`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 6 }}>

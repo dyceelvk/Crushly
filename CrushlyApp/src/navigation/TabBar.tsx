@@ -68,7 +68,10 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
     const focused = state.index === index;
     const { options } = descriptors[route.key];
     const label = (options.title as string) || route.name;
-    const icon = ICONS[route.name];
+    // A tab with no icon in the map used to throw here (`icon[1]` of undefined)
+    // and take the whole bar — and therefore the whole app — down. A route the
+    // map has not been told about draws a plain dot instead.
+    const icon = ICONS[route.name] ?? ['ellipse-outline', 'ellipse-outline'];
     const color = focused ? colors.gold : colors.textMuted;
     const count = counts[route.name] || 0;
     return (
@@ -99,7 +102,7 @@ export function TabBar({ state, navigation, descriptors, onCreate }: BottomTabBa
           {icon === 'crush' ? (
             <CrushIcon size={21} color={color} filled={focused} />
           ) : (
-            <Ionicons name={focused ? icon[0] : icon[1]} size={21} color={color} />
+            <Ionicons name={focused ? icon[0] : icon[1] ?? icon[0]} size={21} color={color} />
           )}
           {count ? <CountBadge count={count} style={{ position: 'absolute', top: -6, right: -12 }} /> : null}
         </View>
