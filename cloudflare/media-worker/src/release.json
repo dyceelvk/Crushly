@@ -1,10 +1,10 @@
 {
-  "version": "1.0.95",
-  "versionCode": 95,
+  "version": "1.0.96",
+  "versionCode": 96,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.95-Android9plus.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.95/Crushly-1.0.95-Android9plus.apk",
-  "notes": "Clips up to 300 MB are accepted now, and holUpp makes them small enough to post for you. The Flow moves one clip per swipe, the way it should. Moments open the one you tapped, and Moments on Discover are back to their proper size. Smaller fixes throughout.",
-  "bytes": 97041908,
-  "sha256": "ebd6ada1350738c8b3e439283e122557944fdd584e89c8ae03c5255d7a696904"
+  "file": "Crushly-1.0.96-Android9plus.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.96/Crushly-1.0.96-Android9plus.apk",
+  "notes": "The controls inside a Moment work again: reply, react, Close, Follow and everything along the bottom were drawn but not pressable, and now they are. Smaller fixes throughout.",
+  "bytes": 97042324,
+  "sha256": "1633f024346fda3408ca9c17a567b6e08a806d98696d0316d620d89ebb3dff7e"
 }
