@@ -29,3 +29,6 @@ CrushlyApp/apk/
 
 # Browser test screenshots
 CrushlyApp/walk-web/
+
+# Wrangler writes local deploy state here; it is machine-specific, not source.
+cloudflare/media-worker/.wrangler/

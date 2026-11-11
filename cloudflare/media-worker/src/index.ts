@@ -499,8 +499,12 @@ const RELEASE = {
 const RELEASE_KEY = `android-releases/${RELEASE.file}`;
 
 /** The headers every release response carries, whatever served it. */
-function releaseHeaders(): Headers {
+function releaseHeaders(source: 'r2' | 'public' | 'b2'): Headers {
   return new Headers({
+    // Which store answered. Not a secret, and the only way to tell from outside
+    // that R2 is serving rather than the fallback — a channel that silently
+    // degrades is a channel nobody notices is broken.
+    'X-Holup-Release-Source': source,
     'Content-Type': 'application/vnd.android.package-archive',
     'Content-Length': String(release.bytes),
     'Content-Disposition': `attachment; filename="${RELEASE.file}"`,
@@ -528,14 +532,14 @@ async function releaseFromR2(env: Env, headOnly: boolean): Promise<Response | nu
     if (headOnly) {
       const head = await bucket.head(RELEASE_KEY);
       if (!head || head.size !== release.bytes) return null;
-      return new Response(null, { status: 200, headers: releaseHeaders() });
+      return new Response(null, { status: 200, headers: releaseHeaders('r2') });
     }
     const object = await bucket.get(RELEASE_KEY);
     if (!object || object.size !== release.bytes || !object.body) {
       await object?.body?.cancel?.().catch(() => undefined);
       return null;
     }
-    return new Response(object.body, { status: 200, headers: releaseHeaders() });
+    return new Response(object.body, { status: 200, headers: releaseHeaders('r2') });
   } catch {
     // A binding that is present but unreachable must not take the download down
     // when the mirror can still serve it.
@@ -567,7 +571,7 @@ async function releaseFromPublic(env: Env, headOnly: boolean): Promise<Response 
       if (!headOnly) await upstream.body?.cancel().catch(() => undefined);
       return null;
     }
-    const headers = releaseHeaders();
+    const headers = releaseHeaders('public');
     if (headOnly) {
       await upstream.body?.cancel().catch(() => undefined);
       return new Response(null, { status: 200, headers });
@@ -606,7 +610,7 @@ async function downloadRelease(env: Env, origin: string | null, headOnly: boolea
       await upstream.body?.cancel().catch(() => undefined);
       return fail(503, 'The Android download is temporarily unavailable. Please try again.', origin);
     }
-    const headers = releaseHeaders();
+    const headers = releaseHeaders('b2');
     for (const [k, v] of Object.entries(cors(origin))) headers.set(k, String(v));
     if (headOnly) {
       await upstream.body.cancel().catch(() => undefined);

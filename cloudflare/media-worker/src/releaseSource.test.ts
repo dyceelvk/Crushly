@@ -48,6 +48,9 @@ test('the release is served from R2 without touching B2', async () => {
   assert.equal(res.headers.get('content-length'), String(release.bytes));
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.match(res.headers.get('content-disposition') ?? '', /Crushly-.*\.apk/);
+  // Which store answered, so "is R2 really doing the work?" is answerable from
+  // a terminal instead of inferred.
+  assert.equal(res.headers.get('x-holup-release-source'), 'r2');
   const bytes = new Uint8Array(await res.arrayBuffer());
   assert.equal(bytes.length, release.bytes);
   assert.deepEqual([...bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
@@ -131,6 +134,7 @@ test('with no bucket bound, the APK comes from the public release channel', asyn
     assert.equal(bytes.length, release.bytes);
     assert.deepEqual([...bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
     assert.match(String(asked), /holupp-releases/);
+    assert.equal(res.headers.get('x-holup-release-source'), 'public');
   } finally {
     globalThis.fetch = realFetch;
   }

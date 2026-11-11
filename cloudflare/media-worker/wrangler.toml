@@ -15,20 +15,16 @@ compatibility_date = "2026-10-09"
 #   B2_APPLICATION_KEY    Backblaze application key
 #   B2_BUCKET             the private bucket name, e.g. crushly-media
 #
-# The Android APK lives here, not in B2. `holup-releases` is a private R2 bucket
-# bound to this Worker as `RELEASES`; see src/index.ts::downloadRelease for why
-# (97 MB per install is metered egress on B2, and that allowance ran out).
-# The bucket is created by .github/workflows/deploy-worker.yml if it is missing,
-# and filled by .github/workflows/publish-android.yml.
-# R2 is the intended home for the APK, but enabling R2 needs the R2 subscription
-# switched on in the Cloudflare account first (and that checkout wants a card).
-# Until it is, the binding is commented out rather than left dangling: a Worker
-# that binds to a bucket which does not exist fails to deploy *entirely*, which
-# would take the media pipeline and the update channel down with it.
-# Re-enable these two lines — and nothing else — once the bucket exists.
-# [[r2_buckets]]
-# binding = "RELEASES"
-# bucket_name = "holup-releases"
+# The Android APK lives in R2, not in B2: 97 MB per install is metered egress on
+# B2 and that allowance ran out. It is filled by publish-android.yml.
+# The APK's home. The bucket is `holupp` — it already existed (created by hand on
+# 2026-11-11), so this is the real name, not a name we chose and then asked for.
+# The Worker streams from here without an egress bill.
+# If the binding is ever removed the Worker falls back to the public release
+# channel, so commenting it out is a safe way to take R2 out of the path.
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "holupp"
 
 # Served from the Worker's own *.workers.dev address today. Adding a custom
 # domain later needs no code change and no stored URL changes: the old address
