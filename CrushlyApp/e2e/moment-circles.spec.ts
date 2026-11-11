@@ -33,7 +33,7 @@ const PHOTO = Buffer.from(
 const person = (id: number, name: string) => ({ id, name, username: name.toLowerCase(), verified: false, photos: [] });
 
 /** Four Moments for Ada, one for Ben — the shape that broke the old row. */
-function moments() {
+function moments(includeShared = false) {
   const now = Date.now();
   const at = (id: number, userId: number, name: string, minutes: number, kind: 'text' | 'photo') => ({
     id, userId, kind, body: `${name} says ${id}`, mediaUrl: kind === 'photo' ? `${MEDIA}/m/moments/${id}.jpg` : null,
@@ -41,7 +41,7 @@ function moments() {
     audience: 'everyone', expiresAt: now + 86_400_000, seen: false, myReaction: null,
     author: person(userId, name),
   });
-  return [
+  const rows = [
     at(1, 2, 'Ada', 4, 'text'),
     at(2, 2, 'Ada', 12, 'photo'),
     at(3, 2, 'Ada', 30, 'text'),
@@ -49,9 +49,13 @@ function moments() {
     at(5, 3, 'Ben', 20, 'photo'),
     at(6, 1, 'Offline test', 8, 'text'),
   ];
+  if (includeShared) rows.push({ ...at(7, 4, 'Kai', 1, 'photo'), kind: 'post' as 'photo',
+    post: { id: 50, body: 'A shared photo', mediaUrl: `${MEDIA}/m/posts/50.jpg`, mediaKind: 'photo', authorId: 8, authorName: 'Other author', username: 'other', previewMs: 9000 },
+  } as typeof rows[number]);
+  return rows;
 }
 
-async function offline(page: Page) {
+async function offline(page: Page, includeShared = false) {
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const token =
     [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, aud: 'authenticated', role: 'authenticated', exp }]
@@ -88,12 +92,12 @@ async function offline(page: Page) {
     else if (path === '/rest/v1/privacy') body = { profile_visibility: 'everyone', discoverable: true, show_city: true };
     else if (path === '/rest/v1/notification_settings') body = {};
     else if (path === '/rest/v1/verification_requests') body = null;
-    else if (path === '/rest/v1/rpc/visible_moments') body = moments();
+    else if (path === '/rest/v1/rpc/visible_moments') body = moments(includeShared);
     /* The Crushes ring asks a narrower question now — `moment_circles()` returns
        only people this member has met here. The mock answers both with the same
        list: what is being checked is how a circle is drawn, not who qualifies,
        and qualification is a database rule the RPC tests already cover. */
-    else if (path === '/rest/v1/rpc/moment_circles') body = moments();
+    else if (path === '/rest/v1/rpc/moment_circles') body = moments(includeShared);
     else if (path === '/rest/v1/rpc/crush_posts_feed') body = { items: [post], nextCursor: null };
     else if (path === '/rest/v1/rpc/public_flow_feed') body = { items: [post] };
     else if (path === '/rest/v1/rpc/holup_app_settings') body = { callsEnabled: false, publicSharingEnabled: true, announcement: null };
@@ -105,8 +109,8 @@ async function offline(page: Page) {
   });
 }
 
-async function signedIn(page: Page) {
-  await offline(page);
+async function signedIn(page: Page, includeShared = false) {
+  await offline(page, includeShared);
   await page.goto('/');
   await page.waitForTimeout(2500);
 
@@ -164,6 +168,12 @@ test('Discover shows one Moment card per person, made of the Moment itself', asy
   await expect(momentsCard).toBeVisible({ timeout: 20_000 });
   // One card for Ada, not four.
   await expect(page.locator('text=Ada says 1')).toHaveCount(1);
+  // Match the compact proportions in the owner's Discovery reference.
+  const card = page.getByRole('button', {name: /Ada’s Moment/}).first();
+  const box = await card.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeCloseTo(114, 0);
+  expect(box!.height).toBeCloseTo(146, 0);
   /*
    * The card is the content, not content inside a frame.
    *
@@ -184,4 +194,22 @@ test('Discover shows one Moment card per person, made of the Moment itself', asy
   expect(fits).not.toBeNull();
   // Inside the card's own padding, not tucked into a circle half its width.
   expect(fits!.inset).toBeLessThan(fits!.cardW * 0.2);
+});
+
+
+test('a compact shared-post Moment keeps its picture and its sharer visible', async ({ page }) => {
+  await signedIn(page, true);
+  await page.getByText('Discovery', {exact:true}).first().click();
+  const card = page.getByRole('button', {name:/Kai’s Moment/}).first();
+  await expect(card).toBeVisible({timeout:20000});
+  const box = await card.boundingBox();
+  expect(box!.width).toBeCloseTo(114, 0);
+  expect(box!.height).toBeCloseTo(146, 0);
+  await expect(card.getByText('Kai', {exact:true})).toBeVisible();
+  const image = card.locator('img').first();
+  await expect(image).toBeVisible();
+  const photo = await image.boundingBox();
+  expect(photo!.height).toBeGreaterThan(90);
+  expect(photo!.height).toBeLessThanOrEqual(116);
+  await expect(card.getByText('Other author')).toHaveCount(0);
 });

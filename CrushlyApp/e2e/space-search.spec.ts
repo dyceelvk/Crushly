@@ -228,16 +228,19 @@ test('external sharing copies a real public post URL', async ({ page, context })
 
 
 test('Flow full-screen pager moves forwards and backwards', async ({ page }) => {
-  const views: number[] = []; await offline(page, [], [], false, true, views); await page.goto('/?post=11');
+  const views: number[] = []; await offline(page, [], [], false, true, views, true); await page.goto('/?post=11');
   await expect(page.getByText('Pager item 11').last()).toBeVisible({ timeout: 30000 });
   await expect.poll(() => views.includes(11), { timeout: 10000 }).toBe(true);
   expect(views).not.toContain(13);
   await page.mouse.move(190, 420); await page.mouse.wheel(0, 850);
   await expect.poll(async () => page.getByText('Pager item 12').last().evaluate(el => { const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), { timeout: 10000 }).toBe(true);
+  // Wait for the current wheel gesture and smooth settle to finish.
+  await page.waitForTimeout(350);
   await page.mouse.wheel(0, 850);
   await expect.poll(async () => page.getByText('Pager item 13').last().evaluate(el => { const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), { timeout: 10000 }).toBe(true);
   await expect.poll(() => views.includes(13), { timeout: 10000 }).toBe(true);
   expect(views).not.toContain(12); // owner's own post is never counted
+  await page.waitForTimeout(350);
   await page.mouse.wheel(0, -850);
   await expect.poll(async () => page.getByText('Pager item 12').last().evaluate(el => { const r=el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), { timeout: 10000 }).toBe(true);
 });
@@ -691,4 +694,45 @@ test('the share sheet offers Save clip for a clip that has one', async ({ page }
   // It sits in the same block as the other two ways out of the app.
   await expect(page.getByRole('button', { name: 'Copy post link' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Share outside holUpp' })).toBeVisible();
+});
+
+test.describe('Flow phone swipe regression', () => {
+  test.use({ isMobile: true, hasTouch: true });
+  test('a fast long swipe advances just one full page and can reverse', async ({ page, context }) => {
+    await offline(page, [], [], false, true, [], true); await page.goto('/?post=11');
+    const pageOnScreen = async (id: number) => page.getByText(`Pager item ${id}`).last().evaluate(el => {
+      const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight;
+    });
+    await expect.poll(() => pageOnScreen(11), {timeout: 30000}).toBe(true);
+    const position = async () => page.getByText('Pager item 11').last().evaluate(el => {
+      let n: HTMLElement | null = el as HTMLElement;
+      while (n && !(getComputedStyle(n).overflowY === 'auto' && n.scrollHeight > n.clientHeight + 2)) n = n.parentElement;
+      if (!n) throw new Error('Flow scroller not found');
+      return {top: n.scrollTop, height: n.clientHeight};
+    });
+    const aligned = async (index: number) => {
+      const p = await position(); return Math.abs(p.top - p.height * index) <= 3;
+    };
+    const cdp = await context.newCDPSession(page);
+    const swipe = async (from: number, to: number) => {
+      await cdp.send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:190,y:from,id:0}]});
+      for (let n=1; n<=5; n++) await cdp.send('Input.dispatchTouchEvent', {type:'touchMove',touchPoints:[{x:190,y:from+(to-from)*n/5,id:0}]});
+      await cdp.send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
+      await page.waitForTimeout(1200);
+    };
+    await swipe(710,120);
+    await expect.poll(() => pageOnScreen(12), {timeout: 8000}).toBe(true);
+    expect(await pageOnScreen(13)).toBe(false);
+    await expect.poll(() => aligned(1)).toBe(true);
+    await swipe(710,120);
+    await expect.poll(() => pageOnScreen(13), {timeout: 8000}).toBe(true);
+    await expect.poll(() => aligned(2)).toBe(true);
+    await swipe(120,710);
+    await expect.poll(() => pageOnScreen(12), {timeout: 8000}).toBe(true);
+    await expect.poll(() => aligned(1)).toBe(true);
+    // A tap on a control must still work after the pager handles a swipe.
+    await page.getByRole('button', {name:'Add a comment'}).nth(1).tap();
+    await expect(page.getByText('Hello there', {exact:true})).toBeVisible();
+    await cdp.detach();
+  });
 });

@@ -6,7 +6,6 @@ import {
   ScrollView,
   FlatList,
   useWindowDimensions,
-  type ViewToken,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -138,40 +137,8 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     [initialId, flow.posts],
   );
   const byId = useMemo(() => new Map(flow.posts.map((p) => [p.id, p])), [flow.posts]);
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems.find((item) => item.isViewable && typeof item.item === 'number');
-    if (first) setActiveId(first.item as number);
-  }).current;
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 65 }).current;
-  /*
-   * One gesture, one clip — the thing Instagram does, done in three places.
-   *
-   * What makes a reels feed feel like reels rather than a list is that a gesture
-   * is answered with exactly one clip and a small overshoot when you push on.
-   * `pagingEnabled` alone does not do that: on iOS a hard flick carries its own
-   * momentum and can travel three pages, which is the "one scroll scrolls up to
-   * three videos" the owner reported. Three mechanisms, one per input:
-   *
-   *  · **Finger (native)** — `snapToInterval` at exactly the page height plus
-   *    `disableIntervalMomentum`, so the list stops at the next interval whatever
-   *    the finger did, and `decelerationRate="fast"` for a quick settle rather
-   *    than a long glide.
-   *  · **Finger and wheel (web)** — react-native-web implements neither
-   *    `disableIntervalMomentum` nor snap, so the *browser's* snap does the work:
-   *    `scroll-snap-type: y mandatory` with `scroll-snap-stop: always`, which is
-   *    the same guarantee (never rest on a half-cut clip, never skip one) given
-   *    by the engine that actually owns the scroll. A mouse wheel is then taken
-   *    as a gesture rather than a distance, one page per gesture, because a
-   *    notched wheel sends a stream of events that Chrome reads as one long
-   *    scroll and lands two clips down.
-   *  · **Keyboard** — arrows and page keys move one page while the Flow is the
-   *    screen in front.
-   *
-   * The page maths lives in `lib/pageMath` and is tested; the wheel listener is
-   * on this pager's own scroller, never on `document`, so opening the Flow does
-   * not take the wheel away from the rest of the app (`lib/webSnap` finds the
-   * element).
-   */
+  /* One page per gesture: native interval snapping, web touch paging with
+     a finger-following drag, and scroller-scoped wheel and keyboard handling. */
   const listRef = useRef<FlatList<number>>(null);
   const indexRef = useRef(0);
   const lockRef = useRef(false);
@@ -207,34 +174,18 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
-    // The same walk out from the list that the rails use; see `lib/webSnap`.
-    const scroller = scrollerFrom(listRef);
-    /*
-     * A magnet, not a mousetrap.
-     *
-     * The previous web pager took the wheel away from the browser: every gesture
-     * was a programmatic jump, one page per tick, and while this screen stayed
-     * mounted it swallowed wheel events for the whole app. That is what made the
-     * Flow feel dead and, once it had been opened, made the rest of the app feel
-     * broken too.
-     *
-     * Now the browser scrolls normally and the **browser** does the snapping:
-     * `scroll-snap-type: y mandatory` on the scroller, `scroll-snap-align: start`
-     * and `scroll-snap-stop: always` on every page. A swipe slides the current
-     * clip up and brings the next one, exactly as a thumb expects; momentum can
-     * never skip past a page; and a scroll can never come to rest half-cut,
-     * because the snap positions are the page boundaries themselves.
-     *
-     * The one thing snap cannot do is land correctly after a programmatic move
-     * (a scrollbar drag, a restored offset), so a light settle still runs when
-     * scrolling goes quiet — a spring to the nearest page, through the list.
-     */
+    // Bind the actual scroll node even before asynchronous pages arrive.
+    // Falling back to an overflowing descendant can grab a post's caption.
+    const node = listRef.current?.getScrollableNode?.();
+    const scroller = node instanceof HTMLElement ? node : scrollerFrom(listRef);
+    // Snap is a fallback for mouse scrollbar movement. Touch is explicitly
+    // bounded below because browser momentum can otherwise skip multiple pages.
     const pages = () => {
       const content = (scroller?.firstElementChild as HTMLElement | null) ?? null;
       return content ? Array.from(content.children) as HTMLElement[] : [];
     };
     const snapOn = () => {
-      if (!scroller) return;
+      if (!scroller || lockRef.current) return;
       scroller.style.scrollSnapType = 'y mandatory';
       scroller.style.overscrollBehaviorY = 'contain';
       for (const page of pages()) {
@@ -276,7 +227,7 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     };
     const onWheel = (event: WheelEvent) => {
       // A sideways gesture belongs to whatever sits beside the pager, not to us.
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (!focusedRef.current || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
       event.preventDefault();
       if (!armed) { endGestureLater(); return; }
       armed = false;
@@ -285,12 +236,75 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     };
     scroller?.addEventListener('wheel', onWheel, { passive: false });
 
+    // Some mobile browsers can skip snap points under a strong fling. While a
+    // vertical swipe is in progress, follow the finger but constrain the drag
+    // to one adjacent page; settle once it ends. Taps, horizontal gestures and
+    // nested vertical scrollers keep their normal behavior.
+    let touch: { x: number; y: number; lastY: number; started: number; origin: number; vertical: boolean; nested: boolean } | null = null;
+    const onTouchStart = (event: TouchEvent) => {
+      if (!focusedRef.current || event.touches.length !== 1 || !scroller) {
+        if (touch?.vertical && scroller) {
+          const origin = touch.origin;
+          lockRef.current = false;
+          snapOn();
+          listRef.current?.scrollToOffset({ offset: origin, animated: true });
+        }
+        touch = null;
+        return;
+      }
+      let target = event.target instanceof HTMLElement ? event.target : null;
+      let nested = false;
+      while (target && target !== scroller) {
+        const overflow = getComputedStyle(target).overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && target.scrollHeight > target.clientHeight + 2) { nested = true; break; }
+        target = target.parentElement;
+      }
+      const point = event.touches[0];
+      touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, started: Date.now(), origin: indexRef.current * height, vertical: false, nested };
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (!touch || touch.nested || event.touches.length !== 1 || !focusedRef.current || !scroller) return;
+      const point = event.touches[0];
+      touch.lastY = point.clientY;
+      const dy = point.clientY - touch.y;
+      const dx = point.clientX - touch.x;
+      if (!touch.vertical && Math.abs(dy) > 6 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+        touch.vertical = true;
+        lockRef.current = true;
+        scroller.style.scrollSnapType = 'none';
+      }
+      if (touch.vertical) {
+        if (event.cancelable) event.preventDefault();
+        const maxOffset = Math.max(0, (ids.length - 1) * height);
+        scroller.scrollTop = Math.min(maxOffset, Math.max(0, touch.origin - Math.max(-height, Math.min(height, dy))));
+      }
+    };
+    const finishTouch = (cancelled: boolean) => {
+      if (!touch || !scroller) { touch = null; lockRef.current = false; return; }
+      const current = touch;
+      touch = null;
+      if (!current.vertical) return;
+      const dy = current.lastY - current.y;
+      const elapsed = Date.now() - current.started;
+      const advance = !cancelled && focusedRef.current && (Math.abs(dy) >= 42 || (Math.abs(dy) >= 22 && elapsed < 300));
+      const index = advance ? stepIndex(Math.round(current.origin / height), dy < 0 ? 1 : -1, ids.length) : Math.round(current.origin / height);
+      lockRef.current = false;
+      snapOn();
+      listRef.current?.scrollToOffset({ offset: index * height, animated: true });
+    };
+    const onTouchEnd = () => finishTouch(false);
+    const onTouchCancel = () => finishTouch(true);
+    scroller?.addEventListener('touchstart', onTouchStart, { passive: true });
+    scroller?.addEventListener('touchmove', onTouchMove, { passive: false });
+    scroller?.addEventListener('touchend', onTouchEnd, { passive: true });
+    scroller?.addEventListener('touchcancel', onTouchCancel, { passive: true });
+
     let settle: number | null = null;
     const onScroll = () => {
       if (!scroller) return;
       if (settle) window.clearTimeout(settle);
       settle = window.setTimeout(() => {
-        if (!scroller) return;
+        if (!scroller || lockRef.current) return;
         const nearest = pageAt(scroller.scrollTop, height, ids.length);
         if (isOffPage(scroller.scrollTop, height)) {
           listRef.current?.scrollToOffset({ offset: nearest * height, animated: true });
@@ -316,8 +330,13 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     return () => {
       window.removeEventListener('keydown', onKey);
       scroller?.removeEventListener('wheel', onWheel);
+      scroller?.removeEventListener('touchstart', onTouchStart);
+      scroller?.removeEventListener('touchmove', onTouchMove);
+      scroller?.removeEventListener('touchend', onTouchEnd);
+      scroller?.removeEventListener('touchcancel', onTouchCancel);
       scroller?.removeEventListener('scroll', onScroll);
       observer?.disconnect();
+      lockRef.current = false;
       if (settle) window.clearTimeout(settle);
       if (gestureIdle) window.clearTimeout(gestureIdle);
       // The snap belongs to this screen; leaving it must not leave the browser
@@ -389,8 +408,6 @@ export function PostViewerScreen({ route, navigation }: ScreenProps<'PostViewer'
     }}
     onEndReached={() => flow.loadOlder()}
     onEndReachedThreshold={0.6}
-    onViewableItemsChanged={onViewableItemsChanged}
-    viewabilityConfig={viewabilityConfig}
     renderItem={({ item }) => <View style={{ height }}><PostViewerPage postId={item} navigation={navigation} active={focused && activeId === item} fallback={byId.get(item)} /></View>}
   />;
 }
