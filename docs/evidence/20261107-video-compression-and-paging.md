@@ -107,3 +107,25 @@ A Moment that is a **shared post** drew the post author's `@handle` underneath t
 - Re-encoding is realtime on the web, so a 60-second clip is a minute of waiting. There is no background encode and no cancel.
 - Compression is skipped below 72 MB even though the target is 64 MB, deliberately: re-encoding loses quality and most posts never reach it.
 - Still open from before: own posts / self-crush display, and double-tap-to-Crush directly on a Flow clip.
+
+---
+
+## 4. Shipped as 1.0.95 (2026-11-07, later)
+
+The build that went green end to end was run **43042866285** on commit **`3e1292c`** — the first Android run whose *entire* emulator walk passed, screen by screen, after eight rounds.
+
+| | |
+|---|---|
+| Version / code | **1.0.95 / 95** (was 1.0.87 / 87 on the channel) |
+| APK | `Crushly-1.0.95-Android9plus.apk`, **97,041,908 bytes** |
+| SHA-256 | `ebd6ada1350738c8b3e439283e122557944fdd584e89c8ae03c5255d7a696904` |
+| Signing certificate | `7c1f8fc6…b6bb` — **identical to 1.0.87**, so an install updates in place |
+| GitHub release | `android-test-1.0.95` (prerelease, with SHA256SUMS, COMPATIBILITY, SECURITY-CHECK) |
+| Update channel | `https://crushly-media.dyceelvk.workers.dev/version` → 1.0.95 |
+| Download | `/download` → HTTP 200, 97,041,908 bytes, SHA-256 matches, ZIP magic `PK\x03\x04` |
+
+Verified the way a phone does it: `/version` → `/download-info` → `/download` → the file's SHA-256 equals the advertised one, and its certificate matches the installed build's. Web is live at the same time (`index-3af41bdd…`).
+
+**New workflow `.github/workflows/publish-android.yml`** fills the gap that kept 1.0.88–1.0.94 from ever reaching a phone: the build workflow refuses to publish (correctly — debug-signed), but nothing mirrored the APK to the private bucket the updater downloads from. The new workflow takes a run id, refuses bytes that do not match `release.json`, mirrors, and then makes the live Worker prove it serves that exact length.
+
+Gaps that remain: it is still a **debug-signed internal test build**, not a Play release; the secure channel (`/secure/version`) is still unavailable by design; and `minVersionCode` still allows very old installs to update straight to this build.
