@@ -64,6 +64,17 @@ passes 2/2. `moment-circles` 2/2, `circles` 4/4, `space-search` 30/30.
 
 ## The Moment card for a shared post: portrait, and a tap that only offers (2026-11-07, latest)
 
+**LIVE.** `2a9c8e5` is on `main` and `build/holup-follow-draft`; deployment
+`dpl_ZbgDss6zazH6o4aUfVdw5a3nCtwE` is `READY`, `PROMOTED`, aliased to
+`holupapp.vercel.app`, serving bundle
+`index-7576bfeb6cc25b6b33da3d5560fbead0.js` — which contains "View this post".
+The first attempt at this push was **blocked** by Vercel: commits authored as
+`agent@arena.ai` have no linked Git account, so the deployment stops with
+`COMMIT_AUTHOR_REQUIRED`. Both commits were re-authored as
+`holUpp build <dyceelvk@gmail.com>` before the push that deployed.
+
+
+
 The preview card for a post shared to a Moment was drawn at exactly 9:16, which
 is the shape of the screen it was drawn on — so on the Moment screen the preview
 *was* the screen, and the name, the time, the reactions and the reply box had
