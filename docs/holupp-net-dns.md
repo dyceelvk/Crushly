@@ -18,7 +18,7 @@ So the domain is bought and attached to the project, but the DNS zone has never 
 pointed at Vercel. Nothing inside Vercel or inside the app can change that; the records
 have to be written in the zone.
 
-## Option A — keep the current nameservers, add the records (smallest change, keeps email)
+## The fix — keep the nameservers, add three records
 
 Log in where the zone lives (the Business Identity hosting panel, or DomainRegistry's DNS
 editor) and edit the zone for `holupp.net`:
@@ -35,17 +35,17 @@ CNAME  www    1680767b10051ab7.vercel-dns-017.com
 Leave `MX`, `TXT` (the `spf1 ... postal.businessidentity.llc` record) and everything else
 alone — that is mail, and it is not mine to break.
 
-## Option B — hand the whole zone to Vercel (one place to manage, no A records to keep)
-
-At DomainRegistry, set the domain's nameservers to:
+## Do NOT move the nameservers — `info@holup.net` already lives on this zone
 
 ```
-ns1.vercel-dns.com
-ns2.vercel-dns.com
+holupp.net  MX   -> 10 mailserver.businessidentity.llc
+holupp.net  TXT  -> v=spf1 a mx include:spf.postal.businessidentity.llc ~all
 ```
 
-Vercel then writes and owns every record. The catch: any mailbox currently on the hosting
-zone has to be recreated as records in Vercel, or mail stops.
+The mailbox was created inside the hosting package that owns this zone. Handing the zone to
+`ns1/ns2.vercel-dns.com` would take `MX` and the SPF record with it and **`info@holup.net`
+would stop receiving mail** until both were rebuilt by hand in Vercel. Adding three records
+(Option A) reaches the same result and touches nothing to do with mail.
 
 ## After either option
 
