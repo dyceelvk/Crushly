@@ -418,3 +418,50 @@ web bundle on https://holupp.net also contains "tap to retry"
 Tests: app 411 pass, worker 30 pass (5 new), `tsc` clean.
 Runs: build `43180798608` ✓, deploy-worker ✓, publish `43184253648` ✓ (artifact
 `13927981072`), deploy-web ✓.
+
+## 13 November 2026 — the restart on a big clip, and clips that stay on the phone
+
+Report: *"I tried posting a video of about 300mb or 200 it restarted the APK"*, and
+*"every video that someone watched should be downloaded or cached in the device"*.
+
+**The restart was a heap blow-up, and the line was `uriToBlob(uri)`.** `uploadMediaFile`
+opened by loading the whole recording into the JavaScript heap, then
+`compressVideo` made a second copy for the encoder. On a 200-300 MB clip Android
+kills the process for memory before either finishes; the app then starts again
+from the splash screen, which is exactly what the owner described.
+
+Fixed by changing the order, not the ceiling:
+
+```
+planUpload(bytes, onDevice)          # src/lib/uploadPlan.ts — pure, tested
+  > 300 MB                -> refuse, by name
+  phone, > 12 MB          -> compress-first, from the file path
+  otherwise               -> use as it is
+```
+
+`compressVideoFile(uri)` compresses from the path the picker already gave us —
+`react-native-compressor` reads the file, it does not need a Blob — and only the
+capped result (64 MB target) is ever read into memory. The web path is unchanged:
+a browser Blob is already in memory and is not copied for an upload.
+
+**Clips now stay on the phone.** `src/lib/videoCache.native.ts` writes a watched
+clip into the app cache under a name derived from its URL, and `EditedClip` plays
+the local file as soon as it exists — so a second watch is instant and works with
+no signal. 400 MB ceiling, oldest first, every delete explicit. The first play is
+never delayed: it streams while the copy is being fetched.
+
+**1.0.103**
+
+```
+/version, /secure/version -> 1.0.103 / versionCode 103 / 97,088,568 bytes
+/download 200, filename="holUpp-1.0.103-RielOS.apk", sha256 b86ad3f0…f3fa5e = release.json
+bundle carries "Compressing your clip", "cacheDirectory", "downloadAsync",
+"minimumFileSizeForCompress", "tap to retry", "Save clip to device"
+classes2/classes3.dex carry VideoCompressor — the encoder is in the APK
+```
+
+Tests: app+worker **429 pass, 0 fail** (+5 uploadPlan, +5 videoCache, +4 dispatch,
++3 publicSite), `tsc` clean. The first attempt at this build failed in CI with
+`Cannot find module '../lib/uploadPlan'` — the new files were untracked and
+`git commit -am` does not stage new files; fixed in `9f5d14a` before the build
+that shipped.
