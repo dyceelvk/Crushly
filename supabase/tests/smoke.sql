@@ -102,16 +102,42 @@ begin
   assert j ->> 'kind' = 'profile' and (j -> 'meta' ->> 'profileId') = jayden_id::text,
     'profile share message';
 
-  -- Video notes and call requests are first-class message kinds.
-  j := public.send_message(conv_id, 'video'::text, ''::text, 'media/messages/demo/note.mp4'::text, '{"duration":12}'::jsonb);
-  assert j ->> 'kind' = 'video' and (j -> 'meta' ->> 'duration') = '12', 'video note message';
-
+  -- Video is refused, and refused for everybody: a Whisper carries photos and
+  -- voice notes. This is a product decision, so it is asserted here rather than
+  -- left to the app to remember — an install that still draws a video button
+  -- cannot send through this door either.
   begin
-    perform public.send_message(conv_id, 'video'::text, ''::text, null::text, '{}'::jsonb);
-    raise exception 'video note without media should fail';
+    perform public.send_message(conv_id, 'video'::text, ''::text, 'media/messages/demo/note.mp4'::text, '{"duration":12}'::jsonb);
+    raise exception 'a Whisper must refuse video';
   exception when others then
-    if sqlerrm like '%without media should fail%' then raise; end if;
+    if sqlerrm like '%must refuse video%' then raise; end if;
+    if sqlerrm not like '%video_not_allowed%' then
+      raise exception 'video was refused for the wrong reason: %', sqlerrm;
+    end if;
   end;
+
+  -- Two photos a day, per member, across every conversation. The third is
+  -- refused with a reason a person can act on, not a generic 400.
+  perform public.send_message(conv_id, 'photo'::text, ''::text, 'messages/' || me || '/one.jpg'::text, '{}'::jsonb);
+  perform public.send_message(conv_id, 'photo'::text, ''::text, 'messages/' || me || '/two.jpg'::text, '{}'::jsonb);
+  begin
+    perform public.send_message(conv_id, 'photo'::text, ''::text, 'messages/' || me || '/three.jpg'::text, '{}'::jsonb);
+    raise exception 'a third photo in a day must be refused';
+  exception when others then
+    if sqlerrm like '%third photo%must be refused%' then raise; end if;
+    if sqlerrm not like '%photo_limit%' then
+      raise exception 'the third photo was refused for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+
+  -- …and the limit is a window, not a life sentence: a photo older than a day
+  -- no longer counts. Backdated, because this suite cannot wait 24 hours.
+  reset role;
+  update public.messages set created_at = public.now_ms() - 25 * 60 * 60 * 1000
+   where sender_id = me and kind = 'photo';
+  set local role authenticated;
+  j := public.send_message(conv_id, 'photo'::text, ''::text, 'messages/' || me || '/four.jpg'::text, '{}'::jsonb);
+  assert j ->> 'kind' = 'photo', 'yesterday’s photos do not count against today';
 
   -- Calls are a switch an administrator owns; this suite is about what a call
   -- does once it is on, so it turns the switch on for itself.
