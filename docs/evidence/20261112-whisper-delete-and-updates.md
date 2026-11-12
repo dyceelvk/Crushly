@@ -213,3 +213,82 @@ bucket holupp        → one object: android-releases/holUpp-1.0.99-Rielosinc.ap
 
 Nothing is left of the old name except history: the bucket holds one file, and
 that file is named for the company.
+
+---
+
+# 13 November 2026 — five things, and the one that explains the rest
+
+## "The delete button doesn't tap, and copy text doesn't work"
+
+Both had the same cause, and it was not the buttons. `ReactionPopup` closes itself
+on the next press anywhere on the page, and on the web it listens in the
+**capture phase** — so the listener fires *before* the button under the finger
+does. It only recognised `[data-testid="reaction-row"]`, the strip of faces. A
+press on Copy or Delete was therefore not "inside the card", the card was
+unmounted on `pointerdown`, and the `click` that would have run the handler had
+nothing left to land on. The tap was real. Its target was deleted mid-gesture.
+
+One rule now decides it, in `src/lib/reactionCard.ts`, and the card itself
+carries `testID="reaction-card"`:
+
+```ts
+export const REACTION_UI_SELECTOR = [
+  '[data-testid="reaction-row"]',
+  '[data-testid="reaction-card"]',
+  '[data-testid="reaction-control"]',
+].join(', ');
+```
+
+Both listeners (the pop-up and the inline row) use it, and three tests pin it.
+Verified present in the shipped bundle: `reaction-card` ×1 (APK), ×2 (web).
+
+## "The Moment card on Discover shows a camera icon instead of the content"
+
+It did, literally: a `videocam-outline` on a dark gradient was the whole preview
+for any Moment that was a clip. A row of Moments was a row of camera icons.
+It now paints the clip's own first frame through `ClipThumb` — the same still the
+grids use — with the caption over it and the author's picture and name in the
+strip beneath, which were already there and stay there.
+
+## "The Moment ring should be stagnant on the Crushes feed"
+
+It was the list header, so it scrolled away with the first post. It is now a
+sticky header (`stickyHeaderIndices={[0]}`) on an opaque background, so it holds
+still and the cards move under it.
+
+## "Hold the right corner of a video in Flow to fast-forward"
+
+New in `EditedClip`: `holdToSpeed`. A strip along the right third (above the
+play/pause surface, so it wins the press) runs the clip at 2× while held and
+returns it to the speed the creator chose on release — not to 1×, which would
+silently undo a slow-motion clip. A `2×` badge appears while held. Wired into
+both the full-screen Flow player and the clip cards in the feeds.
+
+`lib/holdSpeed.ts` is the rule, with tests: base speed is remembered, nonsense
+speeds fall back to 1, and the boost is clamped at 8×.
+
+## The company is RielOS
+
+Every place the download's name is built now says so:
+
+```
+file            holUpp-1.0.100-RielOS.apk
+publish-android.yml, update-worker-release.py, mirror-android-apk.py,
+mediaStore.test.ts, release.json
+```
+
+## 1.0.100, shipped and checked from the outside
+
+```
+build run        43139860199   success (11 steps, secrets audit included)
+publish run      43142384745   success (upload, readback, prune, verify)
+/version         1.0.100, versionCode 100, 97 072 500 bytes
+/secure/version  1.0.100, 97 072 500            ← what installed phones ask
+/download        200, holUpp-1.0.100-RielOS.apk
+sha256 of the downloaded file   62e76a849293… ✓ matches the build
+secrets audit on that file      passed (0 credentials, 7 shapes, 1661 files)
+bucket holupp                   one object: holUpp-1.0.100-RielOS.apk  (92.58 MB)
+bundle                          "Delete from the server", "Hold to fast-forward",
+                                "reaction-card" all present
+live web bundle                 same three, plus the reaction-card selector twice
+```
