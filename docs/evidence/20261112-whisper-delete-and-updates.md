@@ -112,3 +112,38 @@ published.
 
 It said `HOLUP`. The official wordmark is `holUpp` — lowercase h, capital U. The
 splash is now the official symbol and wordmark, optically centred.
+
+## 8. 1.0.99 — built and proven, not yet on the channel
+
+```
+run            43132946395   success (all 11 steps, including the secrets audit)
+apk            app-release.apk   97 070 616 bytes
+sha256         e08ee4da59af7508befb41e0233e56ac8fa51ce44b1e37f5aec943bc1876e700
+versionCode    99   package app.holup.mobile
+bundle         contains "Delete from the server", "Delete this Whisper",
+               "Removed from the server"; zero occurrences of "Video note"
+artifact       Crushly repo → Actions → run 43132946395 → holUpp-secure-unreleased-candidate
+```
+
+Uploading it to R2 failed, and the reason matters more than the failure:
+`publish-android.yml` runs `wrangler r2 object put` with the repository's
+`CLOUDFLARE_API_TOKEN`, and that token has no R2 write scope —
+
+```
+403 Forbidden  {"errors":[{"code":10000,"message":"Authentication error"}]}
+```
+
+Which is why every APK so far was uploaded by hand. The channel was therefore
+put back on 1.0.98, the build the bucket actually holds, so `/version` and
+`/download` agree and no phone is offered a file that cannot be served:
+
+```
+/version          → 1.0.98, versionCode 98, 97045708 bytes
+/secure/version   → the same build (route fixed; this is what phones ask)
+/download         → 200
+```
+
+The moment the token can write to R2, `publish-android.yml` with
+`run_id=43132946395`, `version=1.0.99`, `sha256=e08ee4da…` does the rest —
+including removing 1.0.98, which is now enforced by
+`.github/scripts/prune-old-releases.py` and verified in the same run.
