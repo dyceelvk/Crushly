@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  One entry on purpose. holUpp's web export is a single-page app: every screen
-  after the landing shell is client-rendered and most of it is behind sign-in.
-  Listing routes a crawler cannot render as separate pages would be a sitemap
-  full of soft 404s, which is worse than a short honest one.
+  Two entries, both real pages a crawler can read without running JavaScript:
+  the landing shell and the Android download page. Everything else in holUpp is
+  either client-rendered behind sign-in or a single shared post (/v/, /s/), which
+  is deliberately noindexed. Listing those would be a sitemap full of pages that
+  should not rank.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://holupapp.vercel.app/</loc>
+    <loc>https://holupp.net/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://holupp.net/download</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

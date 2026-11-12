@@ -1,8 +1,14 @@
-# holUpp — https://holupapp.vercel.app
-# Everything the site serves is public-facing shell markup. Member content sits
-# behind sign-in and is never in the HTML, so crawlers are welcome to the pages
-# and cannot reach anything private by being allowed in.
+# holUpp — https://holupp.net
+#
+# Everything public is meant to be read: the landing page, the Android download
+# page. Member content is not here to be hidden — it is simply not in the HTML at
+# all, because every screen after the shell renders behind sign-in.
+#
+# Shared post and Space pages (/v/, /s/) carry their own `noindex, follow`: they
+# are for the one person the link was sent to, not for a search result. They are
+# deliberately not disallowed here, because a crawler that is blocked from
+# fetching a page can never see the noindex on it.
 User-agent: *
 Allow: /
 
-Sitemap: https://holupapp.vercel.app/sitemap.xml
+Sitemap: https://holupp.net/sitemap.xml

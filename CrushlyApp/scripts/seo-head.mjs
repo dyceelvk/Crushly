@@ -68,6 +68,24 @@ const jsonLd = {
       description: DESCRIPTION,
     },
     { '@type': 'WebSite', name: 'holUpp', url: SITE },
+    /*
+     * The app itself, described the way a search engine can use it: what it is,
+     * what it costs, where to get it. Without this, an app with no Play Store
+     * listing is a page of JavaScript with no entity behind it. `downloadUrl`
+     * points at the same verified APK the download page serves.
+     */
+    {
+      '@type': 'SoftwareApplication',
+      name: 'holUpp',
+      applicationCategory: 'SocialNetworkingApplication',
+      operatingSystem: 'Android 9+, Web',
+      url: SITE,
+      downloadUrl: `${SITE}/download`,
+      description: DESCRIPTION,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      publisher: { '@type': 'Organization', name: 'holUpp' },
+      inLanguage: 'en',
+    },
   ],
 };
 
