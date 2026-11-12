@@ -113,7 +113,7 @@ published.
 It said `HOLUP`. The official wordmark is `holUpp` — lowercase h, capital U. The
 splash is now the official symbol and wordmark, optically centred.
 
-## 8. 1.0.99 — built and proven, not yet on the channel
+## 8. 1.0.99 — built, published, live
 
 ```
 run            43132946395   success (all 11 steps, including the secrets audit)
@@ -147,3 +147,49 @@ The moment the token can write to R2, `publish-android.yml` with
 `run_id=43132946395`, `version=1.0.99`, `sha256=e08ee4da…` does the rest —
 including removing 1.0.98, which is now enforced by
 `.github/scripts/prune-old-releases.py` and verified in the same run.
+
+### What unblocked it
+
+`wrangler r2 object put` authenticates with `CLOUDFLARE_API_TOKEN`, and that
+token has no R2 write scope (`403`, `code 10000 Authentication error`). That is
+why every APK up to 1.0.98 had been uploaded by hand. Publishing now uses the R2
+access key pair instead, through `.github/scripts/r2-releases.py`, and the whole
+run is green:
+
+| Step | Result |
+| --- | --- |
+| upload `android-releases/Crushly-1.0.99-Android9plus.apk` | 97 070 616 bytes |
+| read it back and hash it | `e08ee4da59af…` — matches the APK |
+| prune every other release | `Crushly-1.0.98-…apk` removed |
+| verify exactly one release remains | one: 1.0.99 |
+| live Worker serves it | `/download` 200, `content-length: 97070616` |
+
+Final channel state, read now:
+
+```
+/version         → 1.0.99, versionCode 99, 97070616 bytes, e08ee4da…
+/secure/version  → 1.0.99, 97070616            ← what installed phones ask
+/download        → 200, Crushly-1.0.99-Android9plus.apk
+bucket holupp    → 1 object: android-releases/Crushly-1.0.99-Android9plus.apk
+```
+
+## 9. Where files live, and where text lives
+
+The rule the code already enforces, restated because it was asked again:
+
+| Thing | Home | Why |
+| --- | --- | --- |
+| Posts, Moments, videos, images | Cloudflare R2 (`holupp-media`) | 10 GB free, and **zero egress** — a launch cannot exhaust it |
+| The APK | Cloudflare R2 (`holupp`, `android-releases/`) | 92.6 MB of the same 10 GB |
+| Messages, Whispers, replies, bios | **Supabase, as rows** | they are searched, sorted, paginated, counted and protected row by row by RLS |
+| Auth, identities | Supabase | — |
+| Secrets | Cloudflare/Worker secrets + GitHub secrets | never in the app; the build refuses to publish if one is found |
+
+Storage right now: `holupp` 92.6 MB + `holupp-media` 31.4 MB = **1.24 % of the
+10 GB allowance**.
+
+Chat *files* — a Whisper photo, a voice note — are media, and they are in R2 with
+everything else. Putting them in Backblaze B2 would put them behind metered
+downloads, which is exactly what broke 1.0.9x: the B2 allowance ran out and
+`/download` answered 503 for hours. B2 stays what it is today — the archive every
+pre-R2 file is read from, never the place new chat traffic goes.
