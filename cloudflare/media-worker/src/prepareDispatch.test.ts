@@ -78,3 +78,30 @@ test('the repository can be pointed elsewhere without touching code', async () =
     globalThis.fetch = original;
   }
 });
+
+test('the cron records what it did, so a dead trigger is not silent', async () => {
+  const { default: worker } = await import('./index');
+  const original = globalThis.fetch;
+  const puts: { key: string; body: string }[] = [];
+  globalThis.fetch = (async () => new Response(null, { status: 204 })) as typeof fetch;
+  try {
+    const waited: Promise<unknown>[] = [];
+    const env = {
+      MARK_DISPATCH_TOKEN: 'ghp_test',
+      MEDIA: {
+        put: async (key: string, body: string) => { puts.push({ key, body }); return {}; },
+      },
+    } as never;
+    await worker.scheduled({ scheduledTime: 1_700_000_000_000 }, env, {
+      waitUntil: (p: Promise<unknown>) => { waited.push(p); },
+    } as never);
+    await Promise.all(waited);
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].key, '_meta/last-mark-dispatch.json');
+    const record = JSON.parse(puts[0].body);
+    assert.equal(record.result, 'started');
+    assert.equal(record.at, 1_700_000_000_000);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

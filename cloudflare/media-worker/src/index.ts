@@ -172,8 +172,23 @@ function bearerToken(request: Request, queryToken: string | null): string | null
  * again, and until then the copy is simply not ready, which the app already says.
  */
 export async function dispatchMarking(env: Env, now: () => number = Date.now): Promise<'started' | 'skipped'> {
+  return (await dispatchMarkingDetailed(env, now)).result;
+}
+
+/**
+ * The same call, with the reason.
+ *
+ * A cron that fails silently is indistinguishable from a cron that never ran,
+ * and that is exactly the kind of thing this project has been bitten by. The
+ * detail goes to the media bucket under `_meta/`, which nobody's photos can
+ * collide with and which can be read without asking the Worker anything.
+ */
+export async function dispatchMarkingDetailed(
+  env: Env,
+  now: () => number = Date.now,
+): Promise<{ result: 'started' | 'skipped'; status: number | null; reason?: string }> {
   const token = env.MARK_DISPATCH_TOKEN;
-  if (!token) return 'skipped';
+  if (!token) return { result: 'skipped', status: null, reason: 'no token' };
   const repo = env.MARK_REPO || 'dyceelvk/Crushly';
   const response = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/mark-clips.yml/dispatches`, {
     method: 'POST',
@@ -187,7 +202,8 @@ export async function dispatchMarking(env: Env, now: () => number = Date.now): P
     // Worker is in a position to ask and the job is built to answer.
     body: JSON.stringify({ ref: 'main', inputs: { limit: '20', post_ids: '' } }),
   }).catch(() => null);
-  return response?.status === 204 ? 'started' : 'skipped';
+  const status = response?.status ?? null;
+  return { result: status === 204 ? 'started' : 'skipped', status, reason: status === 204 ? undefined : 'github said no' };
 }
 
 /* ------------------------------------------------------------ authentication */
@@ -840,8 +856,20 @@ export default {
    * `waitUntil` because the dispatch is not the member's request — it is
    * bookkeeping, and it must not delay a response or be killed with the request.
    */
-  async scheduled(_event: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(dispatchMarking(env).then(() => undefined));
+  async scheduled(event: { scheduledTime?: number }, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      (async () => {
+        const at = event?.scheduledTime ?? Date.now();
+        const outcome = await dispatchMarkingDetailed(env);
+        // Written where a human can read it without a dashboard: a cron that
+        // stops working must not look the same as one that has nothing to do.
+        await env.MEDIA
+          ?.put('_meta/last-mark-dispatch.json', JSON.stringify({ at, ...outcome }), {
+            httpMetadata: { contentType: 'application/json' },
+          })
+          .catch(() => undefined);
+      })(),
+    );
   },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
