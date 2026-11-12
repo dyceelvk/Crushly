@@ -15,8 +15,18 @@ module.exports = () => {
         // Both public landing pages open the app: a shared post (/v/) and a shared
         // Space (/s/). The Space page links on to ?space=<id> for anyone the app
         // cannot open for, so an old install still lands somewhere real.
-        data: [{ scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/v/' },
-               { scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/s/' }] }],
+        data: [
+          // The domain we actually publish, both apex and www, for the two
+          // public landing pages: a shared post (/v/) and a shared Space (/s/).
+          { scheme: 'https', host: 'holupp.net', pathPrefix: '/v/' },
+          { scheme: 'https', host: 'holupp.net', pathPrefix: '/s/' },
+          { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/v/' },
+          { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/s/' },
+          // The address every link carried before the domain existed. An install
+          // that shipped with it must keep answering the links already out there.
+          { scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/v/' },
+          { scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/s/' },
+        ] }],
     },
     plugins: [...base.plugins, './plugins/withSecureAndroidSigning'],
   };

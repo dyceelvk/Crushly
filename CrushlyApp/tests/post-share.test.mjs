@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validId, renderShare, renderUnavailableShare } from '../api/post-share.mjs';
+import { validId, renderShare, renderUnavailableShare, originOf } from '../api/post-share.mjs';
 test('rejects malformed and unsafe post ids', () => {
   for (const id of ['', '0', '-1', '1x', '1/2', '9007199254740993']) assert.equal(validId(id), false);
   assert.equal(validId('123'), true);
@@ -9,7 +9,7 @@ test('escapes user content and includes copyable canonical and OG tags', () => {
   const html = renderShare({id: 123, author: '<script>', body: '" onmouseover="x & <img>'});
   assert.ok(!html.includes('<script>'));
   assert.ok(!html.includes('<img>'));
-  assert.ok(html.includes('https://holupapp.vercel.app/v/123'));
+  assert.ok(html.includes('https://holupp.net/v/123'));
   assert.ok(html.includes('property="og:description"'));
   assert.ok(html.includes('name="twitter:card"'));
   // A messenger renders a card, not a page: every field one needs is present.
@@ -22,12 +22,29 @@ test('escapes user content and includes copyable canonical and OG tags', () => {
   // links on the page crawlable; messengers ignore this tag, so cards still
   // unfurl. A private post never becomes indexable by being requested.
   assert.ok(html.includes('<meta name="robots" content="noindex, follow">'));
-  assert.ok(html.includes('og:image" content="https://holupapp.vercel.app/brand/share-card.png"'));
-  assert.ok(html.includes(`<link rel="canonical" href="https://holupapp.vercel.app/v/123">`));
+  assert.ok(html.includes('og:image" content="https://holupp.net/brand/share-card.png"'));
+  assert.ok(html.includes(`<link rel="canonical" href="https://holupp.net/v/123">`));
   // Both installs can open the post: the secure scheme first, the older one
   // still offered rather than silently dropped.
   assert.ok(html.includes('href="holup://v/123"'));
   assert.ok(html.includes('href="crushly://v/123"'));
+});
+
+test('a card on the new domain advertises the new domain, and an old link keeps its own', () => {
+  const post = { id: 123, author: 'Ada', body: 'Hello' };
+  // Served by the domain we publish.
+  assert.equal(originOf({ headers: { host: 'holupp.net' } }), 'https://holupp.net');
+  assert.equal(originOf({ headers: { host: 'www.holupp.net' } }), 'https://www.holupp.net');
+  assert.ok(renderShare(post, null, 'https://holupp.net').includes('content="https://holupp.net/v/123"'));
+  // A link shared before the domain existed still unfurls, pointing at itself,
+  // rather than quietly sending the reader somewhere that does not resolve yet.
+  assert.equal(originOf({ headers: { host: 'holupapp.vercel.app' } }), 'https://holupapp.vercel.app');
+  assert.ok(renderShare(post, null, 'https://holupapp.vercel.app').includes('content="https://holupapp.vercel.app/v/123"'));
+  // Any other Host header is not echoed back into the page.
+  assert.equal(originOf({ headers: { host: 'evil.example' } }), 'https://holupp.net');
+  assert.equal(originOf({}), 'https://holupp.net');
+  // Default output is the canonical site.
+  assert.ok(renderShare(post).includes('content="https://holupp.net/v/123"'));
 });
 
 test('landing rechecks visibility every time and never caches restricted posts', async () => {

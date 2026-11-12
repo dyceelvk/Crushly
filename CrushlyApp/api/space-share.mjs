@@ -2,8 +2,18 @@
 // never by an id — ids are sequential, so /s/1, /s/2, … would be a member
 // directory. Always ask the database, never cache: withdrawing visibility has to
 // withdraw the card.
-const SITE = 'https://holupapp.vercel.app';
-const CARD = `${SITE}/brand/share-card.png`;
+// The canonical site is holupp.net. A card is built for whichever holUpp host
+// served it, so a link shared on the old Vercel hostname still advertises the
+// address the reader actually has — and a link minted today advertises the
+// domain. Anything else in the Host header is ignored.
+const SITE = 'https://holupp.net';
+const HOSTS = new Set(['holupp.net', 'www.holupp.net', 'holupapp.vercel.app', 'mecrushly.vercel.app']);
+/** The origin this request arrived on, if it is one of ours. */
+export function originOf(req) {
+  const host = String(req?.headers?.host ?? '').toLowerCase().split(':')[0];
+  return HOSTS.has(host) ? `https://${host}` : SITE;
+}
+const CARD_PATH = '/brand/share-card.png';
 const CARD_ALT = 'holUpp — where crushes become conversations';
 const THEME = '#2A0F2B';
 const TOKEN = /^[0-9a-f]{32}$/;
@@ -39,13 +49,14 @@ export function renderUnavailableSpace() {
   );
 }
 
-export function renderSpace(space, authStorageKey = null) {
+export function renderSpace(space, authStorageKey = null, origin = SITE) {
+  const CARD = `${origin}${CARD_PATH}`;
   const id = String(space.id);
   const name = space.name || 'Someone';
   const title = `${name} on holUpp`;
   const bits = [space.username ? `@${space.username}` : null, space.city].filter(Boolean).join(' · ');
   const description = space.bio || (bits ? `${bits}. See their Space on holUpp.` : 'See their Space on holUpp.');
-  const url = `${SITE}/s/${space.token}`;
+  const url = `${origin}/s/${space.token}`;
   const badge = space.badgeTier === 'diamond' ? ' ◆' : space.badgeTier === 'gold' ? ' ★' : space.verified ? ' ✓' : '';
   const rows = [
     bits ? `<p style="color:#C9A7C4;margin:6px 0 0">${escape(bits)}</p>` : '',
@@ -92,7 +103,7 @@ export default async function handler(req, res) {
     const storageKey = `sb-${new URL(base).hostname.split('.')[0]}-auth-token`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     if (!space || !space.id) return res.status(404).send(req.method === 'HEAD' ? '' : renderUnavailableSpace());
-    return res.status(200).send(req.method === 'HEAD' ? '' : renderSpace({ ...space, token }, storageKey));
+    return res.status(200).send(req.method === 'HEAD' ? '' : renderSpace({ ...space, token }, storageKey, originOf(req)));
   } catch {
     return res.status(503).send('holUpp is temporarily unavailable.');
   }

@@ -292,3 +292,30 @@ bundle                          "Delete from the server", "Hold to fast-forward"
                                 "reaction-card" all present
 live web bundle                 same three, plus the reaction-card selector twice
 ```
+
+## 13 November 2026 — holupp.net as the public site
+
+The domain was bought and attached to the Vercel project, but the app still called itself
+`holupapp.vercel.app` everywhere a stranger could see it, so buying the domain changed
+nothing about what a shared link looked like.
+
+Checked live, then fixed:
+
+```
+holupp.net      A     -> (nothing)                    # zone has no apex record at all
+holupp.net      NS    -> ns1/ns2.hosting.businessidentity.llc
+www.holupp.net  A     -> 66.223.49.89                 # hosting provider's parked page
+registrar             -> DomainRegistry.com LLC, registered 2026-11-12, expires 2027-11-12
+Vercel get_domain_config -> misconfigured: true, aValues: [], cnames: []
+```
+
+Code: `src/lib/publicSite.ts` (new: `PUBLIC_SITE`, `isPublicHost`), `postShare.ts`,
+`spaceShare.ts`, `spaceShareActions.ts` mint `https://holupp.net/v/<id>` and `/s/<token>`;
+`api/post-share.mjs` and `api/space-share.mjs` build the card and canonical **for the host
+that served the page**, so an old link unfurls pointing at itself; `seo-head.mjs`;
+`app.config.js` advertises App Links for `holupp.net` and `www.holupp.net` (`/v/`, `/s/`)
+and keeps `holupapp.vercel.app` so links already in circulation still open the app.
+
+`tsc --noEmit` rc 0. `npm test`: **411 pass, 0 fail**; `tests/`: 7 pass, 0 fail.
+
+The zone still has to be pointed at Vercel: see `docs/holupp-net-dns.md`.

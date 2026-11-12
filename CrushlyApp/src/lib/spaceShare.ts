@@ -5,12 +5,14 @@
  * list. The token is minted by the database when a member taps share, can be
  * revoked, and is what the landing page exchanges for a name card.
  */
+import { PUBLIC_SITE, isPublicHost } from './publicSite';
+
 const TOKEN = /^[0-9a-f]{32}$/;
 
 export function spaceShareUrl(token: string): string {
   const clean = String(token ?? '').trim().toLowerCase();
   if (!TOKEN.test(clean)) throw new Error('Invalid Space link');
-  return `https://holupapp.vercel.app/s/${clean}`;
+  return `${PUBLIC_SITE}/s/${clean}`;
 }
 
 /**
@@ -40,7 +42,7 @@ export function sharedSpaceId(url: string | null | undefined): number | null {
       return m ? id(m[1]) : null;
     }
     const trusted =
-      (u.protocol === 'https:' && u.hostname === 'holupapp.vercel.app') ||
+      (u.protocol === 'https:' && isPublicHost(u.hostname)) ||
       (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname));
     if (!trusted) return null;
     const fromQuery = id(u.searchParams.get('space'));

@@ -15,7 +15,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const SITE = 'https://holupapp.vercel.app';
+const SITE = 'https://holupp.net';
 const TITLE = 'holUpp — where crushes become conversations';
 const DESCRIPTION =
   'holUpp is where a crush turns into a conversation. Post a Moment, join a Space, and meet the people already curious about you. Free on Android and the web.';

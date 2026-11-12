@@ -1,6 +1,7 @@
 import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { spaceShareUrl } from './spaceShare';
+import { PUBLIC_SITE } from './publicSite';
 import { spaceShareToken } from '../api/service';
 import { isMissingFunctionError } from './relationshipFallback';
 
@@ -19,7 +20,7 @@ async function spaceUrl(id: number): Promise<string> {
     return spaceShareUrl(await spaceShareToken(id));
   } catch (e) {
     if (isMissingFunctionError(e as { code?: string; message?: string })) {
-      return `https://holupapp.vercel.app/?space=${id}`;
+      return `${PUBLIC_SITE}/?space=${id}`;
     }
     throw e;
   }

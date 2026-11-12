@@ -223,7 +223,7 @@ test('external sharing copies a real public post URL', async ({ page, context })
   await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Copy post link' }).click();
   await expect(page.getByText('Link copied')).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/v/11');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupp.net/v/11');
 });
 
 
@@ -276,7 +276,7 @@ test('Space bio link opens inside holUpp and own Space link copies from three do
   await page.getByRole('button', { name: 'Copy Space link' }).click();
   await expect(page.getByText('Link copied')).toBeVisible();
   // A Space link carries a minted token, never the member's sequential id.
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`https://holupapp.vercel.app/s/${SHARE_TOKEN}`);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`https://holupp.net/s/${SHARE_TOKEN}`);
 });
 
 test('comment link closes sheet and opens inside holUpp without punctuation', async ({ page }) => {
@@ -354,7 +354,7 @@ test('Crushes clip has a sound button, sharing, and picture opens Flow', async (
   await share.click(); await expect(page.getByText('Send this post')).toBeVisible();
   await page.getByRole('button', {name:'Copy post link'}).click();
   await expect(page.getByText('Link copied')).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupapp.vercel.app/v/11');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://holupp.net/v/11');
   await page.getByRole('button', {name:'Close', exact:true}).last().click();
   await expect(page.getByText('Send this post')).not.toBeVisible();
   await clip.click({position:{x:100,y:100}});
