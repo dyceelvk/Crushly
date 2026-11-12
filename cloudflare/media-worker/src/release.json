@@ -1,11 +1,11 @@
 {
-  "version": "1.0.99",
-  "versionCode": 99,
+  "version": "1.0.98",
+  "versionCode": 98,
   "minVersionCode": 3,
-  "file": "Crushly-1.0.99-Android9plus.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.99/Crushly-1.0.99-Android9plus.apk",
-  "notes": "Delete is in the Whisper menu now, and it is real: the message leaves the server and so does its photo, for both of you. No video note anywhere in a chat. Updates work again — the app checks, tells you, and installs the new build instead of sitting silently on an old one. The splash says holUpp.",
-  "bytes": 97070616,
-  "sha256": "e08ee4da59af7508befb41e0233e56ac8fa51ce44b1e37f5aec943bc1876e700",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.99/Crushly-1.0.99-Android9plus.apk"
+  "file": "Crushly-1.0.98-Android9plus.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.98/Crushly-1.0.98-Android9plus.apk",
+  "notes": "Deleting is now permanent, everywhere: a deleted post or Moment takes its photo or clip with it — the file leaves our servers for good, so it can never be fetched again. Whispers are photos and voice notes only, two photos a day, and the editor has six real knobs plus a crop you can place.",
+  "bytes": 97045708,
+  "sha256": "b3b9dda2707211cc465c1eb8c1a6be32387bbf6cd26b88999d4a49f39377a0b5",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.98/Crushly-1.0.98-Android9plus.apk"
 }
