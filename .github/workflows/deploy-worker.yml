@@ -93,6 +93,7 @@ jobs:
             B2_APPLICATION_KEY
             B2_BUCKET
             ADMIN_TOKEN
+            MARK_DISPATCH_TOKEN
         env:
           SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
@@ -100,6 +101,11 @@ jobs:
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          # Lets the Worker's five-minute cron start the clip-marking job, because
+          # GitHub's own five-minute schedule fires a few times a day on a quiet
+          # repository. Unset means the cron is a no-op and the schedule stays the
+          # only trigger — the feature degrades rather than breaks.
+          MARK_DISPATCH_TOKEN: ${{ secrets.MARK_DISPATCH_TOKEN }}
 
       # Retention rules live on the bucket, not in code, so they can drift —
       # a rule somebody changed by hand, or one that never got added. Every
