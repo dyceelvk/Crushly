@@ -11,6 +11,7 @@ import { frameHeight, leavesBands, stageFit, videoFrame, videoRatio, type StageF
 import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
 import { useTheme } from '../theme/ThemeProvider';
 import { mediaSource } from '../lib/mediaHost';
+import { useCachedClip } from '../lib/cachedClipSource';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from './Txt';
 import { mediaUrl } from '../api/client';
@@ -215,7 +216,17 @@ export function EditedClip({
   const look = live?.look ?? NEUTRAL_LOOK;
   const { reduceMotion } = useTheme();
 
-  const player = useVideoPlayer(uri, (p) => {
+  /*
+   * A clip that has been watched here before comes off this phone's disk.
+   *
+   * The first play is the download — it looks exactly like any other play, and
+   * by the second time the file is local, which is what makes scrolling back up
+   * a feed smooth instead of a re-download. See `lib/cachedClipSource.ts`.
+   */
+  const cachedUri = useCachedClip(sourceUrl(uri) && /^https?:\/\//i.test(sourceUrl(uri)) ? sourceUrl(uri) : null);
+  const playable: VideoSource = cachedUri && cachedUri !== sourceUrl(uri) ? cachedUri : uri;
+
+  const player = useVideoPlayer(playable, (p) => {
     p.loop = loop;
   });
 

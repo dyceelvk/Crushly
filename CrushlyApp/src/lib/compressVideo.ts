@@ -191,6 +191,68 @@ export async function compressVideo(
   return out;
 }
 
+/**
+ * How big a file on this phone is, without reading a byte of it.
+ *
+ * The question "can this be uploaded" used to be answered by loading the file and
+ * weighing the Blob, which on a 200 MB clip is the whole problem. The filesystem
+ * already knows.
+ */
+export async function fileSize(uri: string): Promise<number | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+    const FileSystem = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
+    const info = await FileSystem.getInfoAsync(uri);
+    return info.exists && 'size' in info ? info.size ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compress a clip straight from its path — the phone path that does not OOM.
+ *
+ * `compressVideo` takes a Blob because the web has nothing else. A phone does:
+ * the picker hands over a file, and the native encoder reads that file. So a
+ * 300 MB clip is never turned into a Blob at all, and the 64 MB result is the
+ * only thing that ever enters memory.
+ *
+ * Returns null when this build has no encoder, or the encoder produced nothing —
+ * the caller then uploads what the member picked, if it fits.
+ */
+export async function compressVideoFile(
+  uri: string,
+  targetBytes = TARGET_BYTES,
+  progress?: CompressProgress,
+): Promise<{ uri: string; mimeType: string; bytes: number | null } | null> {
+  if (Platform.OS === 'web') return null;
+  const mod = nativeCompressor();
+  if (!mod) return null;
+  const tell = report(progress);
+  try {
+    tell(0, 'Compressing your clip');
+    const out = await mod.Video.compress(
+      uri,
+      {
+        compressionMethod: 'auto',
+        maxSize: Math.max(1, Math.round(targetBytes / (1024 * 1024))),
+        minimumFileSizeForCompress: Math.round(LEAVE_ALONE_BYTES / (1024 * 1024)),
+      },
+      (fraction) => tell(Math.min(0.99, fraction), 'Compressing'),
+    );
+    if (!out) return null;
+    const bytes = await fileSize(out);
+    // A "compressed" file bigger than the ceiling is not a win; report nothing
+    // and let the caller decide with the original.
+    if (bytes && bytes > targetBytes * 1.05) { tell(1, 'Uploading'); return { uri: out, mimeType: 'video/mp4', bytes }; }
+    tell(1, 'Uploading');
+    return { uri: out, mimeType: 'video/mp4', bytes };
+  } catch {
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------- the web */
 
 async function compressOnWeb(

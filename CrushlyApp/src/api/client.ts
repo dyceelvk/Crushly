@@ -12,7 +12,8 @@ import {
   setMediaTokenTransport,
 } from '../lib/mediaHost';
 import type { MediaKind } from '../lib/mediaHost';
-import { compressVideo, MAX_PICK_BYTES, TARGET_BYTES } from '../lib/compressVideo';
+import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, TARGET_BYTES } from '../lib/compressVideo';
+import { planUpload } from '../lib/uploadPlan';
 
 /**
  * The sizes that matter on the way in.
@@ -334,9 +335,35 @@ export async function uploadMediaFile(
   contentType: string,
 ): Promise<string> {
   requireConfig();
+
+  /*
+   * A phone clip is compressed *before* it is read into memory.
+   *
+   * This used to open with `uriToBlob(uri)`, on a file the member had just picked
+   * — 200 MB of phone video, pulled into the JavaScript heap as one Blob, and
+   * then a second copy made by the compressor. The process was killed for memory
+   * and Android restarted the app from the splash screen: the report was "posting
+   * a big video restarts the APK", and this is the line that did it.
+   *
+   * So on a phone the file is measured from disk, compressed from its path (the
+   * native encoder reads the file it already is, at no memory cost), and only the
+   * result — which is capped at `TARGET_BYTES` — is ever read as a Blob. Nothing
+   * bigger than the upload ceiling passes through the heap.
+   */
+  const onDevice = Platform.OS !== 'web' && /^file:\/\//.test(uri);
+  const pickedBytes = onDevice ? await fileSize(uri) : null;
+  const plan = planUpload(pickedBytes, !!onDevice);
+  if (plan.action === 'refuse') throw new ApiError(413, plan.reason);
+  if (plan.action === 'compress-first') {
+    const smaller = await compressVideoFile(uri, plan.targetBytes).catch(() => null);
+    if (smaller) {
+      uri = smaller.uri;
+      contentType = smaller.mimeType;
+      path = path.replace(/\.[^./]+$/, `.${extensionFor(smaller.mimeType, 'webm')}`);
+    }
+  }
+
   const original = await uriToBlob(uri);
-  // Before a minute of encoding is spent on it: 300 MB is the most anybody may
-  // pick, and a file past that is a mistake worth naming straight away.
   if (original.size > MAX_PICK_BYTES) {
     throw new ApiError(413, 'That clip is over 300 MB. Trim it first, then post.');
   }
