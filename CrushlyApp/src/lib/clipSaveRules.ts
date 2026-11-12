@@ -15,7 +15,16 @@ export type SaveablePost = {
  * which is the one outcome this feature must never produce.
  */
 export function canSaveClip(post: SaveablePost): boolean {
-  return post.mediaKind === 'video' && typeof post.downloadUrl === 'string' && post.downloadUrl.length > 0;
+  /*
+   * The URL is the proof, not `mediaKind`.
+   *
+   * `mediaKind` is guessed from the stored media URL by a feed function, and a
+   * clip whose URL did not match that guess read as a photo — so a copy that
+   * existed was reported as missing, and the Save row sat at "still being
+   * prepared" indefinitely. A marked copy is only ever produced for a clip, so
+   * holding one is the only evidence needed.
+   */
+  return typeof post.downloadUrl === 'string' && post.downloadUrl.length > 0;
 }
 
 /** `holup-<post id>.mp4` — a name that survives being found again in a gallery. */

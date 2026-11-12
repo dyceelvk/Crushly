@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from './Txt';
@@ -61,7 +61,8 @@ export function ShareToWhisper({
    * reads as a feature that does not exist. The row is always there for a clip
    * now, and says which of the three it is: checking, ready, or not ready yet.
    */
-  const [copyState, setCopyState] = useState<'checking' | 'ready' | 'none'>('checking');
+  const [copyState, setCopyState] = useState<'checking' | 'ready' | 'none' | 'error'>('checking');
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const people: ConversationSummary[] = useMemo(() => {
     const items: ConversationSummary[] = list.data ?? [];
@@ -108,21 +109,46 @@ export function ShareToWhisper({
    * pipeline has produced a marked copy — see `canSaveClip` — so a tap can never
    * hand out somebody's work with no name on it.
    */
+  /*
+   * Ask the server, do not infer.
+   *
+   * This used to open with `if (post.mediaKind !== 'video') -> no copy`, before
+   * anything was asked. `mediaKind` is derived from a URL by a regex in a feed
+   * function, so any clip whose stored URL looks unusual read as a photo and was
+   * reported as having no copy — while the marked copy existed, and the server
+   * would have handed it over. The row then said "still being prepared" forever,
+   * which is the owner's report exactly.
+   *
+   * A copy only ever exists for a clip, so the question to ask is the one
+   * `post_download` answers, and nothing else. And when that question fails, say
+   * so — a swallowed error is indistinguishable from "not ready yet", which is
+   * how a broken lookup spent a day looking like a paused job.
+   */
+  const checkCopy = useCallback(async (alive: () => boolean) => {
+    if (!post) { setCopyState('none'); return; }
+    setCopyState('checking');
+    try {
+      const copy = await postDownload(post.id);
+      if (!alive()) return;
+      const url = copy ? postDownloadUrl(post.id) : null;
+      setDownloadUrl(url);
+      setCopyState(copy && !url ? 'error' : url ? 'ready' : 'none');
+      if (copy && !url) setCopyError('The media host is switched off in this build.');
+    } catch (e) {
+      if (!alive()) return;
+      setDownloadUrl(null);
+      setCopyState('error');
+      setCopyError((e as Error).message || 'The copy could not be checked.');
+    }
+  }, [post]);
+
   useEffect(() => {
     let live = true;
     setDownloadUrl(null);
-    setCopyState('checking');
-    if (!post || post.mediaKind !== 'video') { setCopyState('none'); return () => { live = false; }; }
-    void postDownload(post.id)
-      .then((copy) => {
-        if (!live) return;
-        const url = copy ? postDownloadUrl(post.id) : null;
-        setDownloadUrl(url);
-        setCopyState(url ? 'ready' : 'none');
-      })
-      .catch(() => { if (live) setCopyState('none'); });
+    setCopyError(null);
+    void checkCopy(() => live);
     return () => { live = false; };
-  }, [post]);
+  }, [checkCopy]);
 
   /**
    * Share the post to Moments as a nine-second preview.
@@ -242,10 +268,13 @@ export function ShareToWhisper({
       </ScrollView>
 
       <View style={{ padding: space.md, borderTopWidth: 1, borderTopColor: colors.border }}>
-        {post?.mediaKind === 'video' ? (
+        {/* The row exists when a copy does, or when the post says it is a clip
+            and the copy is not ready yet. A photo gets no row: nothing about a
+            photo can ever be saved, and an offer that can only refuse is noise. */}
+        {post && (copyState !== 'none' || post.mediaKind === 'video') ? (
           <Pressable
-            onPress={save}
-            disabled={saving || !canSaveClip({ mediaKind: post.mediaKind, downloadUrl })}
+            onPress={copyState === 'error' ? () => { setCopyError(null); void checkCopy(() => true); } : save}
+            disabled={saving || (copyState !== 'error' && !canSaveClip({ mediaKind: post.mediaKind, downloadUrl }))}
             accessibilityRole="button"
             accessibilityLabel="Save this clip to your device"
             style={({ pressed }) => ({
@@ -257,15 +286,22 @@ export function ShareToWhisper({
             })}
           >
             <Ionicons
-              name={saving ? 'hourglass-outline' : 'download-outline'}
+              name={saving ? 'hourglass-outline' : copyState === 'error' ? 'refresh-outline' : 'download-outline'}
               size={20}
               color={copyState === 'ready' ? colors.gold : colors.textSecondary}
             />
             <Txt variant="body">
-              {saving ? 'Saving…' : copyState === 'checking' ? 'Checking for a copy…' : copyState === 'ready' ? 'Save clip to device' : 'No saved copy yet'}
+              {saving ? 'Saving…'
+                : copyState === 'checking' ? 'Checking for a copy…'
+                : copyState === 'ready' ? 'Save clip to device'
+                : copyState === 'error' ? 'Couldn’t check for a copy'
+                : 'No saved copy yet'}
             </Txt>
-            <Txt variant="caption" color="textMuted">
-              {copyState === 'ready' ? '· with the holUpp mark' : copyState === 'none' ? '· still being prepared' : ''}
+            <Txt variant="caption" color="textMuted" numberOfLines={2} style={{ flexShrink: 1 }}>
+              {copyState === 'ready' ? '· with the holUpp mark'
+                : copyState === 'error' ? `· tap to retry${copyError ? ` (${copyError})` : ''}`
+                : copyState === 'none' ? '· still being prepared'
+                : ''}
             </Txt>
           </Pressable>
         ) : null}

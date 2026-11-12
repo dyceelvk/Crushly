@@ -35,3 +35,12 @@ bucket_name = "holupp-media"
 # Served from the Worker's own *.workers.dev address today. Adding a custom
 # domain later needs no code change and no stored URL changes: the old address
 # keeps working alongside the new one.
+
+# The clip-marking job runs in GitHub Actions (it needs ffmpeg). GitHub treats a
+# five-minute schedule on a quiet repository as a suggestion and fires it a handful of
+# times a day, which is how a posted clip ends up with no marked copy for hours
+# and the share sheet says "still being prepared". This cron is a real one.
+# The dispatch needs MARK_DISPATCH_TOKEN as a secret; without it the tick is a
+# no-op and the GitHub schedule stays the only trigger.
+[triggers]
+crons = ["*/5 * * * *"]

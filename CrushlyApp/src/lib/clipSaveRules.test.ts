@@ -18,8 +18,18 @@ test('a clip with no marked copy is not offered a download', () => {
 });
 
 test('a photo is never a saveable clip', () => {
-  assert.equal(canSaveClip({ mediaKind: 'photo', downloadUrl: 'https://cdn/x.jpg' }), false);
-  assert.equal(canSaveClip({ mediaKind: null, downloadUrl: 'https://cdn/x.mp4' }), false);
+  // A photo never gets a marked copy, so the server answers "none" for it and
+  // there is no URL to save. The URL is the evidence; `mediaKind` is a guess the
+  // feed makes from the same URL, and it used to veto real copies.
+  assert.equal(canSaveClip({ mediaKind: 'photo', downloadUrl: null }), false);
+  assert.equal(canSaveClip({ mediaKind: 'photo' }), false);
+  assert.equal(canSaveClip({}), false);
+  assert.equal(canSaveClip({ downloadUrl: '' }), false);
+  // A copy that the server handed over is saveable even when the feed guessed
+  // "photo" from an unusual URL — that mismatch is exactly the bug this rule
+  // was rewritten for.
+  assert.equal(canSaveClip({ mediaKind: 'photo', downloadUrl: 'https://cdn/x.mp4' }), true);
+  assert.equal(canSaveClip({ mediaKind: null, downloadUrl: 'https://cdn/x.mp4' }), true);
 });
 
 test('the saved file is named after the post, not the storage key', () => {

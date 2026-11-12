@@ -54,6 +54,20 @@ export interface Env {
    * that deploy never mentions, and survives it.
    */
   PURGE_TOKEN?: string;
+  /**
+   * Starts the marking job.
+   *
+   * GitHub's own five-minute schedule is a suggestion: on a quiet repository it
+   * fires
+   * a handful of times a day, so a clip posted at 09:00 could sit with no marked
+   * copy until the afternoon and the share sheet said "still being prepared" the
+   * whole time. This Worker has a real five-minute cron and no such throttle, so
+   * it asks for the job itself. Absent, the cron does nothing and the GitHub
+   * schedule remains the only trigger — the feature degrades, it does not break.
+   */
+  MARK_DISPATCH_TOKEN?: string;
+  /** `owner/repo` whose Actions run the marking job. Defaults to the real one. */
+  MARK_REPO?: string;
 }
 
 /**
@@ -144,6 +158,36 @@ function bearerToken(request: Request, queryToken: string | null): string | null
   // Players that cannot set headers (some audio/video components) may pass it
   // as ?token=. Never cached, never logged.
   return queryToken;
+}
+
+/**
+ * Ask GitHub to run the clip-marking job now.
+ *
+ * The job lives in Actions because it needs ffmpeg, which cannot run in a Worker.
+ * What the Worker can do is notice the schedule is not being honoured and start
+ * it — `workflow_dispatch` is a plain POST. Nothing about a member's clip travels
+ * with this call: the job asks the database what is missing.
+ *
+ * Never throws. A failed dispatch must not fail the cron: the next tick tries
+ * again, and until then the copy is simply not ready, which the app already says.
+ */
+export async function dispatchMarking(env: Env, now: () => number = Date.now): Promise<'started' | 'skipped'> {
+  const token = env.MARK_DISPATCH_TOKEN;
+  if (!token) return 'skipped';
+  const repo = env.MARK_REPO || 'dyceelvk/Crushly';
+  const response = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/mark-clips.yml/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'User-Agent': `holupp-media-worker/${now()}`,
+    },
+    // An empty input list means "whatever is missing", which is the question the
+    // Worker is in a position to ask and the job is built to answer.
+    body: JSON.stringify({ ref: 'main', inputs: { limit: '20', post_ids: '' } }),
+  }).catch(() => null);
+  return response?.status === 204 ? 'started' : 'skipped';
 }
 
 /* ------------------------------------------------------------ authentication */
@@ -790,6 +834,15 @@ async function purgeMedia(request: Request, env: Env, origin: string | null): Pr
 }
 
 export default {
+  /**
+   * The five-minute tick that keeps marked copies close to the post.
+   *
+   * `waitUntil` because the dispatch is not the member's request — it is
+   * bookkeeping, and it must not delay a response or be killed with the request.
+   */
+  async scheduled(_event: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(dispatchMarking(env).then(() => undefined));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
@@ -801,6 +854,12 @@ export default {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
       if (bearerToken(request, null) !== adminToken(env)) return fail(404, '', origin);
       return purgeMedia(request, env, origin);
+    }
+    if (url.pathname === '/admin/prepare') {
+      if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
+      if (bearerToken(request, null) !== adminToken(env)) return fail(404, '', origin);
+      const result = await dispatchMarking(env);
+      return json({ result }, 200, origin);
     }
     if (url.pathname === '/admin/lifecycle') {
       if (request.method !== 'POST') return fail(405, 'Unsupported method.', origin);
