@@ -1,11 +1,11 @@
 {
-  "version": "1.0.102",
-  "versionCode": 102,
+  "version": "1.0.103",
+  "versionCode": 103,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.102-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.102/holUpp-1.0.102-RielOS.apk",
-  "notes": "Saving a clip works. The share sheet used to decide there was no copy before it asked the server, so a clip whose marked copy existed was told 'still being prepared', and stayed that way. It now asks, and if the answer is that the copy is still being made, it says so and lets you tap to try again instead of pretending.",
-  "bytes": 97074648,
-  "sha256": "2e6f6f078d23172fda6e5c356cd979b3e6c5db3f2fbf96d933aaacad80481036",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.102/holUpp-1.0.102-RielOS.apk"
+  "file": "holUpp-1.0.103-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.103/holUpp-1.0.103-RielOS.apk",
+  "notes": "Posting a big video no longer restarts holUpp. A clip is made smaller from the file on your phone instead of being loaded into memory first, which is what was killing the app on 200 MB recordings. And a clip you have watched stays on your phone: it plays again straight away, even with no signal, and Save clip to device can hand it to your gallery with the holUpp mark.",
+  "bytes": 97088568,
+  "sha256": "b86ad3f0cd6fb15087c5eb1fd83ab6c16de5861ff30eae6f7fdd344642f3fa5e",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.103/holUpp-1.0.103-RielOS.apk"
 }
