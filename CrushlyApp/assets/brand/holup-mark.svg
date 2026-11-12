@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 401 286" width="401" height="286" role="img" aria-label="holUpp">
+  <!--
+    holUpp mark — the source of truth.
+
+    Geometry measured off assets/brand/holup-mark.png (401×286), from the
+    bounding boxes of its flat colours, so nothing here is traced by eye:
+
+      soft  centre (116.5, 126)   r 100.5   #FF8C8A
+      pink  centre (274,   159)   r 110     #F764AB
+      hole  centre (216.5, 159.5) r  38.5   #361333
+
+    The hole is a filled disc, not a punch: in the real mark it is ink, and it
+    sits on the pink circle, so it must stay ink on any background. Punching it
+    out reads correctly on white and turns into a grey blob on dark.
+
+    Colours are the app's own — `colors.accent`, `colors.accentAlt` and
+    `colors.bg` in src/theme/tokens.ts. Change one there, change it here.
+  -->
+  <title>holUpp mark</title>
+  <circle cx="116.5" cy="126" r="100.5" fill="#FF8C8A" />
+  <circle cx="274" cy="159" r="110" fill="#F764AB" />
+  <circle cx="216.5" cy="159.5" r="38.5" fill="#361333" />
+</svg>
