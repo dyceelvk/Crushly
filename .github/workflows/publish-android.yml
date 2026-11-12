@@ -102,17 +102,21 @@ jobs:
           set -euo pipefail
           apk=$(find apk -name "Crushly-${{ inputs.version }}-Android9plus.apk" | head -1)
           test -n "$apk"
-          npx --yes wrangler@4 r2 object put \
-            "holupp/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
-            --file "$apk" \
-            --content-type application/vnd.android.package-archive \
-            --remote
+          # `wrangler` cannot do this job: it authenticates with
+          # CLOUDFLARE_API_TOKEN, and that token has no R2 write scope, which is
+          # why every release before 1.0.99 had to be uploaded by hand. The R2
+          # access key pair is scoped to the one bucket and does exactly this.
+          R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}" \
+          R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
+            python3 .github/scripts/r2-releases.py upload \
+            "$apk" "android-releases/Crushly-${{ inputs.version }}-Android9plus.apk"
           # Read back the object's size from the bucket itself before trusting the
           # Worker's answer: a truncated upload looks exactly like a working one
           # from the outside, and the app refuses a file whose length is wrong.
-          npx --yes wrangler@4 r2 object get \
-            "holupp/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
-            --file /tmp/roundtrip.apk --remote
+          R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}" \
+          R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
+            python3 .github/scripts/r2-releases.py fetch \
+            "android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" /tmp/roundtrip.apk
           got=$(stat -c %s /tmp/roundtrip.apk)
           want=$(python3 -c "import json;print(json.load(open('cloudflare/media-worker/src/release.json'))['bytes'])")
           if [ "$got" != "$want" ]; then
@@ -137,18 +141,10 @@ jobs:
       - name: Leave only the current build in the bucket
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 r2 object list holupp --prefix android-releases/ --remote \
-            | python3 .github/scripts/prune-old-releases.py > /tmp/prune.txt
-          if [ -s /tmp/prune.txt ]; then
-            while read -r key; do
-              echo "Removing older release: $key"
-              npx --yes wrangler@4 r2 object delete "holupp/$key" --remote
-            done < /tmp/prune.txt
-          else
-            echo "::notice::No older release was on the server."
-          fi
-          npx --yes wrangler@4 r2 object list holupp --prefix android-releases/ --remote \
-            | python3 .github/scripts/prune-old-releases.py --verify
+          export R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}"
+          export R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
+          python3 .github/scripts/r2-releases.py prune
+          python3 .github/scripts/r2-releases.py verify
           echo "::notice::One build is on the server, and it is the one release.json describes."
 
       - name: Make the live Worker prove it serves this build
