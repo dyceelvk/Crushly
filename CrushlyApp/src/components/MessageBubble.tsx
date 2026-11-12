@@ -2,7 +2,6 @@ import React, { memo, useEffect, useRef } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { Txt } from './Txt';
 import { LinkText } from './LinkText';
 import { Photo, Avatar } from './Photo';
@@ -198,7 +197,17 @@ function BareContent({ m }: { m: Message }) {
     );
   }
   if (m.kind === 'video') {
-    return <VideoNoteBubble m={m} />;
+    /*
+     * Video notes are retired: a Whisper sends photos and voice notes, and the
+     * server refuses a new one. Anything sent before that still has to show it
+     * was there — but this app will not play it, so there is nowhere left in a
+     * chat where a camera starts.
+     */
+    return (
+      <View style={{ maxWidth: 260, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10 }}>
+        <Txt variant="body" color="textMuted">A video note. Whispers are photos and voice notes now.</Txt>
+      </View>
+    );
   }
   if (m.kind === 'post') {
     return <SharedPostBubble m={m} />;
@@ -342,64 +351,6 @@ function MomentQuote({ m, onOpen }: { m: Message; onOpen?: (messageId: number) =
   );
 }
 
-/**
- * A video note is a circle, and it stays a circle.
- *
- * A note is ten seconds and a glance — the shape says that before the timer
- * does, and it keeps the bubble the same size whatever the camera was holding
- * when it was recorded. The picture is cropped to fill the circle (`cover`)
- * rather than letterboxed: inside a round frame a letterbox is a bar of black
- * pretending to be part of the message.
- */
-const NOTE_BUBBLE = 208;
-
-function VideoNoteBubble({ m }: { m: Message }) {
-  const { colors } = useTheme();
-  const player = useVideoPlayer(m.mediaUrl ? mediaSource(mediaUrl(m.mediaUrl)) : null, (p) => {
-    p.loop = false;
-  });
-  const duration = Number(m.meta.duration) || 0;
-  return (
-    <View
-      style={{
-        width: NOTE_BUBBLE,
-        height: NOTE_BUBBLE,
-        borderRadius: NOTE_BUBBLE / 2,
-        overflow: 'hidden',
-        backgroundColor: '#000',
-        borderWidth: 1.5,
-        borderColor: colors.goldLine,
-      }}
-    >
-      <VideoView
-        player={player}
-        style={{ width: NOTE_BUBBLE, height: NOTE_BUBBLE }}
-        contentFit="cover"
-        nativeControls
-        accessibilityLabel={`Video note, ${durationLabel(duration)}`}
-      />
-      {/* The length is part of what a circle cannot show on its own. */}
-      <View
-        style={{
-          position: 'absolute',
-          bottom: 12,
-          alignSelf: 'center',
-          backgroundColor: 'rgba(0,0,0,0.55)',
-          borderRadius: 999,
-          paddingHorizontal: 8,
-          paddingVertical: 2,
-        }}
-        pointerEvents="none"
-      >
-        <Txt variant="caption" color="#fff">
-          {durationLabel(duration)}
-        </Txt>
-      </View>
-      {m.pending ? <ActivityIndicator size="small" color={colors.gold} style={{ position: 'absolute', top: 14, right: 14 }} /> : null}
-    </View>
-  );
-}
-
 function CallRequest({ m, ink }: { m: Message; ink: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 150 }}>
@@ -475,7 +426,7 @@ function describe(m: Message): string {
     case 'voice':
       return `Voice note, ${durationLabel(Number(m.meta.duration) || 0)}`;
     case 'video':
-      return `Video note, ${durationLabel(Number(m.meta.duration) || 0)}`;
+      return 'A video note, which this version does not play';
     case 'call':
       return 'Voice call request';
     case 'sticker':

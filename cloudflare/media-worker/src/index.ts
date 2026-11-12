@@ -808,12 +808,14 @@ export default {
       return applyLifecycle(env, origin);
     }
 
-    // Never offer the exposed legacy debug-signed APK to secure installations.
-    // This channel must remain unavailable until a verified secure release and
-    // an upgrade-tested secure-to-secure resolver are provisioned.
+    // The secure installation asks here, and this is the only build we publish:
+    // the same signed release `/version` describes, offered to the identity that
+    // is actually installed on phones. Answering 503 here was the whole reason a
+    // member was told about an update by nothing at all — the check ran, got a
+    // refusal, and the app carried on silently at its old version forever.
     if (url.pathname === '/secure/version') {
       if (request.method !== 'GET' && request.method !== 'HEAD') return fail(405, 'Unsupported method.', origin);
-      return fail(503, 'Secure Android updates are not available yet.', origin);
+      return appVersion(url, origin);
     }
 
     // What version the app should be running. Public, and deliberately silent

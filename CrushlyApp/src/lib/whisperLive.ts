@@ -30,6 +30,12 @@ export type WhisperLiveStatus = 'connecting' | 'live' | 'offline';
 export type WhisperLiveEvents = {
   /** Something new happened in the thread; the caller refetches from its last id. */
   onNewMessage: () => void;
+  /**
+   * A Whisper was taken back. This cannot be discovered by refetching: the
+   * incremental fetch asks for ids *after* the newest one, so a removal is
+   * invisible to it. It has to be pushed.
+   */
+  onMessageDeleted: (messageId: number) => void;
   /** Their device has my messages up to this id. */
   onDelivered: (upTo: number) => void;
   /** They have read up to this id — only ever sent when receipts are allowed. */
@@ -47,6 +53,8 @@ export type WhisperLiveEvents = {
 export type WhisperLive = {
   /** Tell the other phone something arrived. Cheap, content-free. */
   announce: (messageId: number) => void;
+  /** Tell the other phone a message is gone, so it stops showing it. */
+  deleted: (messageId: number) => void;
   delivered: (upTo: number) => void;
   read: (upTo: number) => void;
   typing: (on: boolean) => void;
@@ -109,6 +117,10 @@ export function openWhisperLive({ conversationId, myId, announcePresence, events
         const id = Number((payload as { id?: number })?.id ?? 0);
         if (id > 0) events.onNewMessage();
       });
+      channel.on('broadcast', { event: 'deleted' }, ({ payload }) => {
+        const id = Number((payload as { id?: number })?.id ?? 0);
+        if (id > 0) events.onMessageDeleted(id);
+      });
       channel.on('broadcast', { event: 'delivered' }, ({ payload }) => {
         const upTo = Number((payload as { upTo?: number })?.upTo ?? 0);
         if (upTo > 0) events.onDelivered(upTo);
@@ -161,6 +173,7 @@ export function openWhisperLive({ conversationId, myId, announcePresence, events
 
       live = {
         announce: (messageId: number) => fire('message', { id: messageId }),
+        deleted: (messageId: number) => fire('deleted', { id: messageId }),
         delivered: (upTo: number) => fire('delivered', { upTo }),
         read: (upTo: number) => fire('read', { upTo }),
         typing: (on: boolean) => {
@@ -201,6 +214,7 @@ export function openWhisperLive({ conversationId, myId, announcePresence, events
 
   return {
     announce: (id) => live?.announce(id),
+    deleted: (id) => live?.deleted(id),
     delivered: (upTo) => live?.delivered(upTo),
     read: (upTo) => live?.read(upTo),
     typing: (on) => live?.typing(on),

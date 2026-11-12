@@ -56,6 +56,28 @@ jobs:
           grep -qi 'certificate SHA-256 digest: cda5c0a7ff47e02ecf8dcef9e22869a09dfe8377aeacb86948555fed097d4ee4' "$RUNNER_TEMP/signature.txt"
           "$tools/aapt" dump badging "$apk" | grep -q "package: name='app.holup.mobile'"
           sha256sum "$apk"
+      # No server credential may leave in a build a member holds. This runs on
+      # the exact file that would be published, before it is published, and it
+      # fails the build rather than warn: a leaked key cannot be un-shipped.
+      - name: Refuse to publish an APK carrying a server secret
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
+          DIDIT_WEBHOOK_SECRET: ${{ secrets.DIDIT_WEBHOOK_SECRET }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_SAFEGUARD_KEY: ${{ secrets.GROQ_SAFEGUARD_KEY }}
+          FCM_SERVER_KEY: ${{ secrets.FCM_SERVER_KEY }}
+          APNS_AUTH_KEY: ${{ secrets.APNS_AUTH_KEY }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 ../.github/scripts/audit-apk-secrets.py android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/SECURITY-CHECK.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: holUpp-secure-unreleased-candidate

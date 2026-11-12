@@ -29,10 +29,13 @@ import { downloadUpdate, installUpdate, readableSize, resolveUpdateDownload } fr
 export function UpdateGate() {
   // The check, the download and the installer are all Android-only; the web
   // build gets its download button in Settings instead.
-  // The old endpoint serves the public-debug package; it is not an update
-  // for the separately signed release identity. Fail closed until a signed
-  // release channel for app.holup.mobile exists.
-  if (Platform.OS !== 'android' || Constants.expoConfig?.android?.package === 'app.holup.mobile') return null;
+  //
+  // This used to bail out for the signed release identity (app.holup.mobile),
+  // because the only channel then was the debug one and offering a differently
+  // signed APK is worse than offering nothing. The Worker now serves this
+  // identity's own build on the secure channel, so the reason to stay silent is
+  // gone — and staying silent is why phones sat on old versions.
+  if (Platform.OS !== 'android') return null;
   return <AndroidUpdateGate />;
 }
 

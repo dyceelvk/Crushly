@@ -1422,6 +1422,9 @@ export function useChat(conversationId: number) {
       announcePresence: presenceRef.current?.announce ?? false,
       events: {
         onNewMessage: () => void catchUp(),
+        // A removal is not something catchUp can find — it asks for ids after
+        // the newest, and a deletion has no id to be after.
+        onMessageDeleted: (id) => setMessages((prev) => prev.filter((m) => m.id !== id)),
         onDelivered: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'deliveredAt')),
         onRead: (upTo) => setMessages((prev) => applyUpTo(prev, upTo, 'readAt')),
         onTyping: (at) => setPeerTypingAt(at),
@@ -1558,6 +1561,39 @@ export function useChat(conversationId: number) {
 
   const discard = useCallback((localId: string) => setMessages((prev) => prev.filter((m) => m.localId !== localId)), []);
 
+  /**
+   * Take a Whisper back.
+   *
+   * Optimistic on purpose: the row vanishing is the whole of what the member
+   * asked for, and a spinner over a message they have decided to remove reads as
+   * hesitation. If the server refuses, the message comes back where it was —
+   * that is the only honest way to report a delete that did not happen.
+   */
+  const remove = useCallback(
+    async (messageId: number): Promise<{ ok: boolean; error?: string }> => {
+      const index = messagesRef.current.findIndex((m) => m.id === messageId);
+      if (index < 0) return { ok: true };
+      const gone = messagesRef.current[index];
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      try {
+        await service.deleteMessage(messageId);
+        // Their screen, not just mine.
+        liveRef.current?.deleted(messageId);
+        qc.invalidateQueries({ queryKey: keys.conversations });
+        return { ok: true };
+      } catch (e) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === messageId)) return prev;
+          const next = [...prev];
+          next.splice(Math.min(index, next.length), 0, gone);
+          return next;
+        });
+        return { ok: false, error: (e as Error).message };
+      }
+    },
+    [qc],
+  );
+
   const react = useCallback(async (messageId: number, kind = 'crush') => {
     const updated = await service.reactToMessage(messageId, kind);
     setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
@@ -1579,6 +1615,7 @@ export function useChat(conversationId: number) {
     loadingMore,
     send,
     discard,
+    remove,
     react,
     typing,
     recording,

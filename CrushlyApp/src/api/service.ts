@@ -1792,6 +1792,27 @@ export async function reactToMessage(messageId: number, kind = 'crush'): Promise
   return rpc<Message>('toggle_message_reaction', { p_message_id: messageId, p_kind: kind });
 }
 
+/**
+ * Take one of my own Whispers back, for good.
+ *
+ * The database function deletes the row and queues the file for the purge in
+ * one transaction, so there is no window where the message is gone from the
+ * thread but the photo is still sitting in the bucket. The file removal here is
+ * a second belt: the queue is the thing that survives, this is the thing that
+ * happens now.
+ */
+export async function deleteMessage(messageId: number): Promise<void> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('media_url')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (error) throw toApiError(error);
+  const media = (data as { media_url: string | null } | null)?.media_url ?? null;
+  await rpc('delete_message', { p_message_id: messageId });
+  if (media) await removeMediaFile(media).catch(() => undefined);
+}
+
 /* ----------------------------------------------------------------- moments */
 
 export async function momentsFeed(): Promise<MomentsFeed> {

@@ -126,6 +126,31 @@ jobs:
           fi
           echo "::notice::The release bucket holds ${{ inputs.version }}: $got bytes, SHA-256 matches."
           rm -f /tmp/roundtrip.apk
+      # One build in the bucket: the current one.
+      #
+      # Every older APK is a file nobody can be served — /download only ever
+      # answers with the version in release.json — but it still occupies the
+      # storage allowance, and an old copy found through a shared link installs
+      # a version we have already replaced. So the previous file goes in the
+      # same run that publishes the new one, and the step refuses to finish
+      # while an older release is still there.
+      - name: Leave only the current build in the bucket
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object list holupp --prefix android-releases/ --remote \
+            | python3 .github/scripts/prune-old-releases.py > /tmp/prune.txt
+          if [ -s /tmp/prune.txt ]; then
+            while read -r key; do
+              echo "Removing older release: $key"
+              npx --yes wrangler@4 r2 object delete "holupp/$key" --remote
+            done < /tmp/prune.txt
+          else
+            echo "::notice::No older release was on the server."
+          fi
+          npx --yes wrangler@4 r2 object list holupp --prefix android-releases/ --remote \
+            | python3 .github/scripts/prune-old-releases.py --verify
+          echo "::notice::One build is on the server, and it is the one release.json describes."
+
       - name: Make the live Worker prove it serves this build
         run: |
           set -euo pipefail

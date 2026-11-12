@@ -139,6 +139,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [flashId, setFlashId] = useState<number | null>(null);
   const listRef = useRef<FlatList<Row>>(null);
   const [tray, setTray] = useState(false);
+  /** The message waiting on a yes/no before it leaves the server for good. */
+  const [deleteFor, setDeleteFor] = useState<Message | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
   /**
@@ -843,6 +845,28 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             <Txt variant="bodyStrong">Copy text</Txt>
           </Pressable>
         ) : null}
+        {/*
+          Delete was in the design and never got built, so a long-press offered
+          reactions, copy and a flag — everything except the thing people were
+          looking for. It is here now, and it is real: the row leaves Postgres,
+          the photo leaves the bucket, and the other phone is told.
+        */}
+        {actionFor?.mine && actionFor.id > 0 ? (
+          <Pressable
+            onPress={() => {
+              const m = actionFor;
+              setActionFor(null);
+              setDeleteFor(m);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Delete this Whisper"
+            accessibilityHint="Removes it from the server for both of you"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12 }}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            <Txt variant="bodyStrong" color="danger">Delete</Txt>
+          </Pressable>
+        ) : null}
         {actionFor && !actionFor.mine ? (
           <Pressable
             onPress={() => {
@@ -858,6 +882,30 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
           </Pressable>
         ) : null}
       </ReactionPopup>
+
+      {/* One question, one answer, and then it is gone. */}
+      <ActionSheet
+        visible={!!deleteFor}
+        onClose={() => setDeleteFor(null)}
+        title="Delete this Whisper?"
+        actions={[
+          {
+            label: 'Delete from the server',
+            hint: deleteFor?.kind === 'photo' ? 'Gone for both of you. Today\u2019s photo stays used.' : 'Gone for both of you.',
+            icon: <Ionicons name="trash-outline" size={22} color={colors.danger} />,
+            destructive: true,
+            immediateOnWeb: true,
+            onPress: async () => {
+              const m = deleteFor;
+              setDeleteFor(null);
+              if (!m) return;
+              const r = await chat.remove(m.id);
+              if (r.ok) toast({ kind: 'success', title: 'Deleted', message: 'Removed from the server.' });
+              else toast({ kind: 'error', title: 'Not deleted', message: 'It is still there. Try again.' });
+            },
+          },
+        ]}
+      />
 
       {/* Share a profile */}
       <ActionSheet
