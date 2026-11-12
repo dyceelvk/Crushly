@@ -1,11 +1,11 @@
 {
-  "version": "1.0.100",
-  "versionCode": 100,
+  "version": "1.0.101",
+  "versionCode": 101,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.100-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.100/holUpp-1.0.100-RielOS.apk",
-  "notes": "Delete and Copy work when you tap them — the card no longer closes under your finger. A Moment card on Discover shows the Moment itself, not a camera icon. The Moments row on Crushes stays put while the feed scrolls under it. Hold the right of a clip to run it at 2×. The download is named for RielOS.",
-  "bytes": 97072500,
-  "sha256": "62e76a849293c003a64f796a2238d5a1b121d3e10ebd96f533b2b17a3a787ac4",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.100/holUpp-1.0.100-RielOS.apk"
+  "file": "holUpp-1.0.101-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.101/holUpp-1.0.101-RielOS.apk",
+  "notes": "holUpp has its own address. Opening holupp.net, or any link shared from now on, takes you straight into the app instead of a browser tab, and the links you send carry holupp.net rather than the old Vercel name. Nothing changes about how the app behaves day to day.",
+  "bytes": 97073592,
+  "sha256": "72a0e1472eb7825db28edc39583843e93eed4751170baf070c27fde0e54fd476",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.101/holUpp-1.0.101-RielOS.apk"
 }
