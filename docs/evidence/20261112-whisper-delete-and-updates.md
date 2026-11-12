@@ -193,3 +193,23 @@ everything else. Putting them in Backblaze B2 would put them behind metered
 downloads, which is exactly what broke 1.0.9x: the B2 allowance ran out and
 `/download` answered 503 for hours. B2 stays what it is today — the archive every
 pre-R2 file is read from, never the place new chat traffic goes.
+
+## 10. The download carries the company name
+
+`Crushly-1.0.99-Android9plus.apk` → **`holUpp-1.0.99-Rielosinc.apk`**, everywhere
+the name is constructed: `publish-android.yml`, `update-worker-release.py`,
+`mirror-android-apk.py`, `release.json`, and the release-path test.
+
+The object was copied inside the bucket (bytes unchanged), the old key removed,
+the Worker deployed, and the public download verified from the outside:
+
+```
+GET /download-info   → file "holUpp-1.0.99-Rielosinc.apk", 97070616 bytes
+GET /download        → 200, content-disposition: holUpp-1.0.99-Rielosinc.apk
+sha256 of the downloaded file → e08ee4da59af7508befb41e0233e56ac8fa51ce44b1e37f5aec943bc1876e700
+secrets audit on the downloaded file → passed (0 credentials, 7 shapes, 1661 files)
+bucket holupp        → one object: android-releases/holUpp-1.0.99-Rielosinc.apk
+```
+
+Nothing is left of the old name except history: the bucket holds one file, and
+that file is named for the company.
