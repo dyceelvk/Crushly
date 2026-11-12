@@ -359,3 +359,62 @@ bundle contains https://holupp.net, and still handles holupapp.vercel.app
 
 Runs: build `43175979518` ✓, deploy-worker `43178439003` ✓, publish `43178472278` ✓
 (artifact `13925401262`).
+
+## 13 November 2026 — save clip: the copy existed, the sheet never asked
+
+Report: *"the video download button still never assigns or render."* The row was
+there and read **"No saved copy yet · still being prepared"**.
+
+The server was never the problem, and this was checked rather than assumed:
+
+```
+post 88, author 3, audience everyone, copy present
+  post_downloads -> posts/3/1794337272410-7c6d209301-marked.mp4 (157113 B)
+  post_download(88) run as member 3 -> {"path": "...-marked.mp4", "bytes": 157113}
+  posts_needing_download(20)        -> 0 waiting
+```
+
+The client opened with `if (post.mediaKind !== 'video') -> no copy`, *before*
+asking anything. `mediaKind` is a regex guess a feed function makes from the
+media URL, so a clip whose URL does not look the way that guess expects is
+reported as having no copy even when the server will hand one over. And the
+lookup's `catch` swallowed the error into `'none'`, so a failed check and a
+missing copy were the same sentence.
+
+Fixed:
+
+* the lookup is `post_download` alone — no `mediaKind` veto; the URL the server
+  returns is the evidence a copy exists (`canSaveClip`)
+* a failed lookup is its own state: **"Couldn't check for a copy · tap to retry
+  (…) "**, and the row is tappable to retry
+* the row shows for any post that has a copy, and for a clip whose copy is still
+  coming; a photo still gets no row
+
+Second half, found while tracing it: `mark-clips.yml` is scheduled every five
+minutes but GitHub fired it **three times in 24 hours** (`03:35`, `22:53`, and
+the rest). A clip posted in between waited for the next tick that GitHub felt
+like honouring. The media Worker now carries a real `*/5` cron and dispatches
+the job itself, recording the outcome in the bucket:
+
+```
+GET holupp-media/_meta/last-mark-dispatch.json
+{"at":1794472529436,"result":"started","status":204}     # and again every 5 min
+```
+
+`MARK_DISPATCH_TOKEN` is a Worker secret, passed by `deploy-worker.yml` from a
+repository secret; unset means the tick is a no-op and the GitHub schedule stays
+the only trigger.
+
+## 1.0.102
+
+```
+/version, /secure/version -> 1.0.102 / versionCode 102 / 97,074,648 bytes
+/download 200, content-disposition filename="holUpp-1.0.102-RielOS.apk"
+full download sha256 2e6f6f078d23172fda6e5c356cd979b3e6c5db3f2fbf96d933aaacad80481036 = release.json
+shipped bundle contains "tap to retry" and "Save clip to device"
+web bundle on https://holupp.net also contains "tap to retry"
+```
+
+Tests: app 411 pass, worker 30 pass (5 new), `tsc` clean.
+Runs: build `43180798608` ✓, deploy-worker ✓, publish `43184253648` ✓ (artifact
+`13927981072`), deploy-web ✓.
