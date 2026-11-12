@@ -15,9 +15,14 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'Build run id whose Crushly-Android-test-APK artifact to publish'
+        description: 'Run id whose APK artifact to publish'
         required: true
         type: string
+      artifact:
+        description: 'Artifact name. Secure builds upload holUpp-secure-unreleased-candidate; the test build uploads Crushly-Android-test-APK.'
+        required: false
+        type: string
+        default: holUpp-secure-unreleased-candidate
       version:
         description: 'Version the app should advertise, e.g. 1.0.95 (must match release.json on main)'
         required: true
@@ -41,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: Crushly-Android-test-APK
+          name: ${{ inputs.artifact }}
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
           path: apk
@@ -49,8 +54,19 @@ jobs:
         run: |
           set -euo pipefail
           file="Crushly-${{ inputs.version }}-Android9plus.apk"
+          # A secure build uploads the raw Gradle output; a test build uploads it
+          # already renamed. Accept either, and name it here, because the name in
+          # the bucket is what /download and /version have to agree on.
           apk=$(find apk -name "$file" | head -1)
-          test -n "$apk" || { echo "::error::$file is not in run ${{ inputs.run_id }}."; exit 1; }
+          if [ -z "$apk" ]; then
+            apk=$(find apk -name 'app-release.apk' | head -1)
+          fi
+          test -n "$apk" || { echo "::error::no APK in run ${{ inputs.run_id }} (looked for $file and app-release.apk)."; exit 1; }
+          if [ "$(basename "$apk")" != "$file" ]; then
+            mv "$apk" "apk/$file"
+            apk="apk/$file"
+          fi
+          echo "APK to publish: $apk ($(stat -c %s "$apk") bytes)" 
           got=$(sha256sum "$apk" | cut -d' ' -f1)
           want="${{ inputs.sha256 }}"
           if [ "$got" != "$want" ]; then
@@ -70,8 +86,10 @@ jobs:
         env:
           V: ${{ inputs.version }}
           SHA: ${{ inputs.sha256 }}
-      # The APK goes to Cloudflare R2, in the same account as the Worker that
-      # serves it. It used to be mirrored to Backblaze B2, where downloads are
+      # The APK goes to Cloudflare R2, in the bucket the Worker's RELEASES binding
+      # actually points at (`holupp`), in the same account as the Worker that
+      # serves it. A second bucket name here would upload to a place nothing
+      # reads. It used to be mirrored to Backblaze B2, where downloads are
       # metered: a day of installs exhausted the allowance and /download answered
       # 503 for hours while /version advertised a build nobody could fetch. R2
       # charges nothing to serve, so the channel cannot be starved by its own
@@ -85,7 +103,7 @@ jobs:
           apk=$(find apk -name "Crushly-${{ inputs.version }}-Android9plus.apk" | head -1)
           test -n "$apk"
           npx --yes wrangler@4 r2 object put \
-            "holup-releases/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
+            "holupp/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
             --file "$apk" \
             --content-type application/vnd.android.package-archive \
             --remote
@@ -93,7 +111,7 @@ jobs:
           # Worker's answer: a truncated upload looks exactly like a working one
           # from the outside, and the app refuses a file whose length is wrong.
           npx --yes wrangler@4 r2 object get \
-            "holup-releases/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
+            "holupp/android-releases/Crushly-${{ inputs.version }}-Android9plus.apk" \
             --file /tmp/roundtrip.apk --remote
           got=$(stat -c %s /tmp/roundtrip.apk)
           want=$(python3 -c "import json;print(json.load(open('cloudflare/media-worker/src/release.json'))['bytes'])")
