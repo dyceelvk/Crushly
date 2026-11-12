@@ -322,7 +322,7 @@ function lastPreview(kind: string, body: string): string {
     case 'voice':
       return 'Voice note';
     case 'video':
-      return 'Video note';
+      return 'A video note';
     case 'sticker':
       return 'Sticker';
     case 'profile':

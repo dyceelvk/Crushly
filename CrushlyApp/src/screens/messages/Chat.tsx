@@ -315,7 +315,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
       m.kind === 'text' ? m.body
         : m.kind === 'photo' ? (m.body || 'Photo')
         : m.kind === 'voice' ? 'Voice note'
-        : m.kind === 'video' ? 'Video note'
+        : m.kind === 'video' ? 'A video note'
         : m.kind === 'sticker' ? 'Sticker'
         : m.kind === 'profile' ? 'Shared a Space'
         : m.kind === 'call' ? 'Voice call'

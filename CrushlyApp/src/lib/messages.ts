@@ -13,7 +13,7 @@ export function messagePreview(m: Message | null, peerName: string): string {
     case 'call':
       return `${prefix}Voice call`;
     case 'video':
-      return `${prefix}Video note`;
+      return `${prefix}A video note`;
     case 'voice':
       return `${prefix}Voice note`;
     case 'sticker':
