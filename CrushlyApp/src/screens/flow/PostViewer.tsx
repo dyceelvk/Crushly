@@ -657,6 +657,9 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
               fit="fit"
               controls
               holdToPause
+              /* Hold the right of the picture to run it at 2×; the rest of the
+                 stage keeps its hold-to-pause, and a double tap still crushes. */
+              holdToSpeed
               onDoubleTap={() => void reactWith('crush')}
               style={{ width: '100%', height: '100%' }}
               accessibilityLabel={`Video by ${authorName}`}

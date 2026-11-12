@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { IconButton } from '../../components/IconButton';
@@ -73,20 +73,31 @@ export function MomentPreview({
     );
   }
   if (moment.kind === 'video') {
-    // A tile does not play. Mounting a player per tile costs a decoder each and
-    // depends on the browser painting a first frame for a video nobody started —
-    // so the picture is drawn as a card and the badge in the corner says "clip".
+    /*
+     * A tile does not play, but it is not a placeholder either.
+     *
+     * This used to draw a camera outline on a dark gradient whenever the Moment
+     * was a clip — so a row of Moments on Discover was a row of camera icons,
+     * and the only way to find out what somebody had actually posted was to open
+     * every card. The card is meant to be a preview of the thing, so it now
+     * paints the clip's own first frame (`ClipThumb`, the same still the grids
+     * use) and keeps the words underneath it. Nothing plays: a player per tile
+     * is a decoder per tile, and a tile is a picture of a clip.
+     */
     if (!autoPlay && !keepPlayerMounted) {
       return (
-        <LinearGradient colors={['#1A1A22', '#08080A']} style={[{ padding: 12, justifyContent: 'center' }, style]}>
+        <View style={[{ overflow: 'hidden', backgroundColor: '#101014' }, style]}>
+          {moment.mediaUrl ? (
+            <ClipThumb uri={mediaUrl(moment.mediaUrl) ?? ''} style={StyleSheet.absoluteFill} />
+          ) : null}
           {caption && moment.body ? (
-            <Txt variant="accent" color="#fff" numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
-              <LinkText text={moment.body} bare />
-            </Txt>
-          ) : (
-            <Ionicons name="videocam-outline" size={Math.max(18, textSize * 1.4)} color="rgba(255,255,255,0.65)" />
-          )}
-        </LinearGradient>
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+              <Txt variant="accent" color="#fff" numberOfLines={lines} style={{ fontSize: textSize, lineHeight: textSize * 1.35 }}>
+                <LinkText text={moment.body} bare />
+              </Txt>
+            </View>
+          ) : null}
+        </View>
       );
     }
     return (

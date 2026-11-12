@@ -146,8 +146,22 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
          They sit above the first card rather than inside it: a Moment is a face
          with a day to live, and a face belongs at the top of a feed. The row hides
          itself when nothing is live, so this costs an empty feed nothing. */
+      /*
+        The Moments strip stays where it is.
+        *
+        * It scrolled away with the first card, so the row of faces that answers
+        * "who is around right now" was gone by the time anybody had read one
+        post — and the feed below already gives its height away to a clip that
+        wants the whole screen. Stuck to the top it keeps meaning: a face is
+        always one tap away, and the cards scroll underneath it.
+        *
+        * `stickyHeaderIndices` counts the header block as index 0, so the one
+        * header here is the one that sticks. The background has to be opaque,
+        * or the cards would be legible through it.
+      */
+      stickyHeaderIndices={[0]}
       ListHeaderComponent={
-        <View style={{ marginHorizontal: -space.md }}>
+        <View style={{ marginHorizontal: -space.md, backgroundColor: colors.bg }}>
           {/* Smaller than a profile row's 74 dp: this is a strip of faces above a
               column of posts, not the posts' equal. See MomentCircle. */}
           <MomentCircles size={58} />

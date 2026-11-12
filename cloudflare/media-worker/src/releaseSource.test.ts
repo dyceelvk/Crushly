@@ -47,7 +47,11 @@ test('the release is served from R2 without touching B2', async () => {
   assert.equal(res.headers.get('content-type'), 'application/vnd.android.package-archive');
   assert.equal(res.headers.get('content-length'), String(release.bytes));
   assert.equal(res.headers.get('cache-control'), 'no-store');
-  assert.match(res.headers.get('content-disposition') ?? '', /Crushly-.*\.apk/);
+  // Whatever release.json names, not a name typed here: the file is called
+  // holUpp-<version>-RielOS.apk now, and the Worker's job is to serve the name
+  // it was given.
+  assert.match(res.headers.get('content-disposition') ?? '', /filename="[^"]+\.apk"/);
+  assert.ok((res.headers.get('content-disposition') ?? '').includes(release.file));
   // Which store answered, so "is R2 really doing the work?" is answerable from
   // a terminal instead of inferred.
   assert.equal(res.headers.get('x-holup-release-source'), 'r2');

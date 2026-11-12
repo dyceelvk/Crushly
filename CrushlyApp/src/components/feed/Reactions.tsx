@@ -8,6 +8,7 @@ import { CrushIcon } from '../Logo';
 import { formatCount } from '../../lib/counts';
 import type { ReactionKind } from '../../api/types';
 import { REACTION_ROW, reactionLook, type ShownReaction } from '../../lib/reactions';
+import { insideReactionUI } from '../../lib/reactionCard';
 
 /**
  * The seven reactions, and the gesture that reaches them.
@@ -353,12 +354,19 @@ export function ReactionPopup({
   const { width } = useWindowDimensions();
   const ROW_W = REACTION_ROW.length * SLOT + PILL_PAD * 2;
 
+  /*
+   * A press inside the card must not close the card.
+   *
+   * This listener runs in the capture phase, so it fires before the button
+   * under the finger does. It used to recognise only the row of faces, which
+   * meant a press on Copy or Delete unmounted the card between pointerdown and
+   * click and the button never ran — the reported "it doesn't tap". Everything
+   * that belongs to the card is now recognised, by one shared rule.
+   */
   useEffect(() => {
     if (!visible || Platform.OS !== 'web') return;
     const onDown = (event: Event) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest('[data-testid="reaction-row"]')) return;
+      if (insideReactionUI(event.target as { closest?: unknown } | null)) return;
       onDismiss();
     };
     document.addEventListener('pointerdown', onDown, true);
@@ -381,6 +389,7 @@ export function ReactionPopup({
         style={StyleSheet.absoluteFill}
       />
       <View
+        testID="reaction-card"
         style={{
           position: 'absolute',
           left,
@@ -437,9 +446,7 @@ function ReactionRow({
     const onDown = (event: Event) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('[data-testid="reaction-row"]')) return;
-      // A press on any reaction control is that control opening its own row.
-      if (target.closest('[data-testid="reaction-control"]')) return;
+      if (insideReactionUI(target)) return;
       onDismiss();
     };
     document.addEventListener('pointerdown', onDown, true);

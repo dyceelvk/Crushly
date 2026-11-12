@@ -24,6 +24,6 @@ test('deletes clear both stores, so no copy is left behind', () => {
 });
 
 test('the APK is never mistaken for member media', () => {
-  assert.equal(isReleasePath('android-releases/holUpp-1.0.96-Rielosinc.apk'), true);
+  assert.equal(isReleasePath('android-releases/holUpp-1.0.96-RielOS.apk'), true);
   assert.equal(isReleasePath('posts/2026/11/abc.jpg'), false);
 });

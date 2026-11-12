@@ -70,6 +70,7 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
           loop
           muted={muted}
           controls={false}
+          holdToSpeed
           fallbackRatio={0.8}
           maxHeight={560}
           accessibilityLabel={`Clip by ${authorName}`}

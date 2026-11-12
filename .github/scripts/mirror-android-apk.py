@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 
 p = pathlib.Path(sys.argv[1])
-if not re.fullmatch(r'holUpp-\d+\.\d+\.\d+-Rielosinc\.apk', p.name):
+if not re.fullmatch(r'holUpp-\d+\.\d+\.\d+-RielOS\.apk', p.name):
     sys.exit('Unexpected release filename')
 key = os.environ['B2_KEY_ID'].strip()
 secret = os.environ['B2_APPLICATION_KEY'].strip()

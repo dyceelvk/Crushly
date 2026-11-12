@@ -3,7 +3,7 @@
     "name": "holUpp",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.99",
+    "version": "1.0.100",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 99
+      "versionCode": 100
     },
     "web": {
       "favicon": "./assets/favicon.png",

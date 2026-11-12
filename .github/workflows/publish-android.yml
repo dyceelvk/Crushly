@@ -53,7 +53,7 @@ jobs:
       - name: Refuse anything that is not the recorded build
         run: |
           set -euo pipefail
-          file="holUpp-${{ inputs.version }}-Rielosinc.apk"
+          file="holUpp-${{ inputs.version }}-RielOS.apk"
           # A secure build uploads the raw Gradle output; a test build uploads it
           # already renamed. Accept either, and name it here, because the name in
           # the bucket is what /download and /version have to agree on.
@@ -79,7 +79,7 @@ jobs:
           import json, os, sys
           r = json.load(open('cloudflare/media-worker/src/release.json'))
           v, sha = os.environ['V'], os.environ['SHA']
-          if r['version'] != v or r['sha256'] != sha or r['file'] != 'holUpp-%s-Rielosinc.apk' % v:
+          if r['version'] != v or r['sha256'] != sha or r['file'] != 'holUpp-%s-RielOS.apk' % v:
               sys.exit('release.json does not describe %s / %s' % (v, sha))
           print('release.json matches:', r['version'], r['bytes'], 'bytes')
           PY
@@ -100,7 +100,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          apk=$(find apk -name "holUpp-${{ inputs.version }}-Rielosinc.apk" | head -1)
+          apk=$(find apk -name "holUpp-${{ inputs.version }}-RielOS.apk" | head -1)
           test -n "$apk"
           # `wrangler` cannot do this job: it authenticates with
           # CLOUDFLARE_API_TOKEN, and that token has no R2 write scope, which is
@@ -109,14 +109,14 @@ jobs:
           R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}" \
           R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
             python3 .github/scripts/r2-releases.py upload \
-            "$apk" "android-releases/holUpp-${{ inputs.version }}-Rielosinc.apk"
+            "$apk" "android-releases/holUpp-${{ inputs.version }}-RielOS.apk"
           # Read back the object's size from the bucket itself before trusting the
           # Worker's answer: a truncated upload looks exactly like a working one
           # from the outside, and the app refuses a file whose length is wrong.
           R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}" \
           R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
             python3 .github/scripts/r2-releases.py fetch \
-            "android-releases/holUpp-${{ inputs.version }}-Rielosinc.apk" /tmp/roundtrip.apk
+            "android-releases/holUpp-${{ inputs.version }}-RielOS.apk" /tmp/roundtrip.apk
           got=$(stat -c %s /tmp/roundtrip.apk)
           want=$(python3 -c "import json;print(json.load(open('cloudflare/media-worker/src/release.json'))['bytes'])")
           if [ "$got" != "$want" ]; then

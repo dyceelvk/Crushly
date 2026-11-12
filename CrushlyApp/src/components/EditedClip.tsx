@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform, StyleProp, View, ViewStyle } from 'react-native';
+import { AppState, Platform, Pressable, StyleProp, View, ViewStyle } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, type VideoPlayer, type VideoSource } from 'expo-video';
 import { VideoEditCanvas } from './VideoEditCanvas';
@@ -11,7 +11,10 @@ import { frameHeight, leavesBands, stageFit, videoFrame, videoRatio, type StageF
 import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
 import { useTheme } from '../theme/ThemeProvider';
 import { mediaSource } from '../lib/mediaHost';
+import { Ionicons } from '@expo/vector-icons';
+import { Txt } from './Txt';
 import { mediaUrl } from '../api/client';
+import { speedWhile } from '../lib/holdSpeed';
 
 /** Width ÷ height of a local file, read off a hidden <video> on the web. */
 function useWebRatio(uri: string | null | undefined): number | null {
@@ -129,6 +132,7 @@ export function EditedClip({
   onDoubleTap,
   accessibilityLabel,
   cornerControl,
+  holdToSpeed = false,
 }: {
   /**
    * The clip. A plain URL for a local file, or `{ uri, headers }` for anything
@@ -197,6 +201,16 @@ export function EditedClip({
   accessibilityLabel?: string;
   /** Optional control rendered inside the frame where the corner player control sits. */
   cornerControl?: React.ReactNode;
+  /**
+   * Press and hold the right edge to run the clip at double speed; let go and it
+   * returns to the speed it was made at.
+   *
+   * Holding the picture itself already means "pause" on a full-screen stage, so
+   * the fast-forward lives in its own strip along the right — a thumb can find
+   * it without taking the pause gesture away, and it never covers the part of
+   * the frame you are watching.
+   */
+  holdToSpeed?: boolean;
 }) {
   const look = live?.look ?? NEUTRAL_LOOK;
   const { reduceMotion } = useTheme();
@@ -259,9 +273,19 @@ export function EditedClip({
     [live, look.filter, look.brightness, look.contrast, look.saturation, look.aspect],
   );
 
+  /**
+   * The gesture's speed, held apart from the clip's own.
+   *
+   * `look.speed` is what the creator chose and what the file should be played
+   * at; `boosting` is what a thumb is doing right now. The player gets the
+   * product of the two, and letting go restores the first without ever having
+   * touched it.
+   */
+  const [boosting, setBoosting] = useState(false);
+  const rate = speedWhile({ holding: boosting, base: look.speed });
   useEffect(() => {
-    if (player) player.playbackRate = look.speed;
-  }, [player, look.speed]);
+    if (player) player.playbackRate = rate;
+  }, [player, rate]);
 
   useEffect(() => {
     if (player) player.volume = look.clipVolume;
@@ -501,6 +525,40 @@ export function EditedClip({
           compact={controls === 'corner'}
           label={accessibilityLabel}
         />
+      ) : null}
+
+      {/*
+        Fast-forward, where a thumb lands. Only over a clip that is actually
+        playing: on a paused one there is nothing to speed up, and a bare strip
+        would swallow the tap that means "play".
+      */}
+      {holdToSpeed && playing ? (
+        <Pressable
+          testID="clip-fast-forward"
+          onPressIn={() => setBoosting(true)}
+          onPressOut={() => setBoosting(false)}
+          onPress={() => undefined}
+          accessibilityRole="button"
+          accessibilityLabel="Hold to fast-forward"
+          accessibilityHint="Runs this clip at double speed while you hold"
+          accessibilityState={{ busy: boosting }}
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '34%' }}
+        >
+          {boosting ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute', right: 12, top: 12,
+                flexDirection: 'row', alignItems: 'center', gap: 4,
+                paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999,
+                backgroundColor: 'rgba(10,10,12,0.66)',
+              }}
+            >
+              <Ionicons name="play-forward" size={13} color="#FFFFFF" />
+              <Txt variant="caption" color="#FFFFFF">2×</Txt>
+            </View>
+          ) : null}
+        </Pressable>
       ) : null}
     </View>
   );
