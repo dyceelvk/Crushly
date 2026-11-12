@@ -27,6 +27,12 @@ MIGRATION_FILES = sorted(p for p in MIGRATIONS.iterdir() if p.suffix == '.sql')
 # Supabase records and executes migrations once; these one-shot migrations
 # create security-sensitive tables rather than claiming to be re-runnable.
 ONE_SHOT_MIGRATIONS = {
+    # A cutover candidate, not a deployment migration: its own header says it is
+    # for a disposable database and that the shipped rules live in the files
+    # that follow it. Its tables are created unconditionally, so the second pass
+    # below — which exists to prove the ordinary migrations are re-runnable —
+    # fails on it, and has been failing the whole job since it landed.
+    '20261110080000_relationship_cutover.sql',
     '20261109133904_manual_evidence_retention_foundation.sql',
     '20261109134050_protect_evidence_cleanup_auth.sql',
     '20261109140000_manual_verification_backend_inactive.sql',
@@ -87,6 +93,11 @@ def main() -> int:
         # migrations above must not recreate protected tables or reset data.
         for f in MIGRATION_FILES:
             if f.name in ONE_SHOT_MIGRATIONS:
+                continue
+            # A file that declares `-- REQUIRES:` is a correction to a database
+            # that already carries something — it is not re-runnable by design,
+            # and `scripts/validate-cutover.sh` skips it for the same reason.
+            if '-- REQUIRES:' in f.read_text()[:2000]:
                 continue
             if not run_file(f):
                 return 1

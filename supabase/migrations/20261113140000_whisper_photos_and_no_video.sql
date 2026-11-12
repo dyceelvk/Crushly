@@ -28,10 +28,20 @@
 
 do $$
 begin
+  -- Only the original body is renamed. A second run of this file finds the
+  -- wrapper under `send_message` and the body already renamed, and must do
+  -- nothing — otherwise the rename collides with itself and the migration is
+  -- not re-runnable, which the test harness checks by applying every file
+  -- twice.
   if exists (
-    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public' and p.proname = 'send_message'
-  ) then
+      select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'send_message'
+    )
+    and not exists (
+      select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'send_message_unchecked'
+    )
+  then
     execute 'alter function public.send_message(bigint, text, text, text, jsonb) rename to send_message_unchecked';
   end if;
 end $$;
