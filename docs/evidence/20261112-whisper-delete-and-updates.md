@@ -319,3 +319,43 @@ and keeps `holupapp.vercel.app` so links already in circulation still open the a
 `tsc --noEmit` rc 0. `npm test`: **411 pass, 0 fail**; `tests/`: 7 pass, 0 fail.
 
 The zone still has to be pointed at Vercel: see `docs/holupp-net-dns.md`.
+
+## 13 November 2026 — holupp.net resolves, 1.0.101 published
+
+The domain now answers from both authoritative nameservers, and the app links to it.
+
+```
+1.1.1.1 holupp.net A -> 64.29.17.1, 216.198.79.1        NOERROR
+8.8.8.8 holupp.net A -> 64.29.17.1, 216.198.79.1        NOERROR
+ns1 (master) A      -> 64.29.17.1, 216.198.79.1   serial 2026111217
+ns2          A      -> 64.29.17.1, 216.198.79.1
+https://holupp.net        200  <title>holUpp — where crushes become conversations
+https://www.holupp.net    308  -> https://holupp.net/
+certificate               CN=holupp.net, Let's Encrypt, 2026-11-12 → 2027-02-10
+/.well-known/assetlinks.json   200
+MX -> 10 mailserver.businessidentity.llc (info@holup.net unaffected)
+```
+
+What it took, in order: the zone had **no apex A record at all**; the host's panel wrote
+records to ns2 but not to ns1's master (serials diverged, `…10` on ns2 vs `…17` on ns1);
+replacing the NS records inside the zone with Cloudflare's **before** delegation moved made
+every resolver SERVFAIL (reverted in minutes); finally the apex A records committed on ns1
+and both servers agreed.
+
+A Cloudflare zone was created as a standby during the outage
+(`6d3af60697ffafb1bb91ab13f0a5d817`, still `pending`) with all eight records including the
+DKIM/SPF/DMARC copied from the live zone; it is unused now and can be deleted.
+
+**1.0.101 published** so the installed app claims the new host in its App Links:
+
+```
+version 1.0.101 / versionCode 101 / 97,073,592 bytes
+sha256 72a0e1472eb7825db28edc39583843e93eed4751170baf070c27fde0e54fd476
+/download 200, content-disposition filename="holUpp-1.0.101-RielOS.apk", full download hashes equal
+removed older release: android-releases/holUpp-1.0.100-RielOS.apk
+one build on the server: android-releases/holUpp-1.0.101-RielOS.apk
+bundle contains https://holupp.net, and still handles holupapp.vercel.app
+```
+
+Runs: build `43175979518` ✓, deploy-worker `43178439003` ✓, publish `43178472278` ✓
+(artifact `13925401262`).
