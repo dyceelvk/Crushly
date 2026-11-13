@@ -1,11 +1,11 @@
 {
-  "version": "1.0.106",
-  "versionCode": 106,
+  "version": "1.0.107",
+  "versionCode": 107,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.106-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.106/holUpp-1.0.106-RielOS.apk",
-  "notes": "Posting a clip no longer fails with \u201cwe couldn\u2019t read that file\u201d. And the web home page now says what it means: holUpp is on Android, here is the download.",
-  "bytes": 98104761,
-  "sha256": "030574120e071efc884d63750a66306b0812b101986c84c338ffe8d9cab5b305",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.106/holUpp-1.0.106-RielOS.apk"
+  "file": "holUpp-1.0.107-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.107/holUpp-1.0.107-RielOS.apk",
+  "notes": "Posting a clip no longer ruins its quality: the compressor now keeps 1080p and a proper bitrate instead of crushing the picture. Signing up also asks you to follow the official holUpp accounts, so updates and help find you from day one. And when a phone is out of storage, posting says so plainly instead of failing with a mystery error.",
+  "bytes": 96839190,
+  "sha256": "89c3fc3d93f268c91772882fb1d1a27b885aa5015c2caf85638b9d699a46f04d",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.107/holUpp-1.0.107-RielOS.apk"
 }
