@@ -1,12 +1,25 @@
 import { Platform } from 'react-native';
 import { getCaptchaToken } from '../lib/captcha';
-import { markedClipKey, planMark } from '../lib/clipMarkPlan';
-import { markClipFile, markEncoderAvailable } from '../lib/markClip';
+import { markedClipKey } from '../lib/clipMarkPlan';
+import { markedCopyFitsUpload, planClipPost } from '../lib/clipPostPlan';
+import { markClipFile, markEncoderAvailable, removeMarkedClip } from '../lib/markClip';
+import { fileSize, NoSpaceError } from '../lib/compressVideo';
+import { removeCompressedClip } from '../lib/compressClip';
 import Constants from 'expo-constants';
 import { updateVersionPath } from '../lib/updateChannel';
 import { browserLocation } from '../lib/browser';
 import { profileCompletion } from '../lib/completion';
-import { supabase, ApiError, extensionFor, removeMediaFile, requireConfig, toApiError, uploadMediaFile } from './client';
+import {
+  supabase,
+  ApiError,
+  extensionFor,
+  prepareClipForUpload,
+  removeMediaFile,
+  requireConfig,
+  toApiError,
+  uploadMediaFile,
+  UPLOAD_CEILING_BYTES,
+} from './client';
 import { backendFromProbe, isMissingFunctionError } from '../lib/relationshipFallback';
 import { callMessageMeta } from '../lib/callChannel';
 import { MEDIA_BASE_URL } from '../lib/mediaHost';
@@ -870,28 +883,84 @@ export async function createPost(input: {
     const type = (input.videoMime || 'video/mp4').toLowerCase();
     // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
     // for a clip, so the container is chosen here instead.
-    const clipPath = `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`;
-    media = await uploadMediaFile('media', clipPath, input.videoUri, type);
+    let clipPath = `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`;
 
     /**
-     * Everything about the mark is optional, and one `try` around all of it says
-     * so: the handle lookup, the transcode, the second upload. A decorative copy
-     * of a clip must never be the reason a post fails — the scheduled job exists
-     * precisely to pick up what this cannot finish.
+     * The clip is compressed exactly once, here, and everything that follows
+     * works on that smaller file: the post upload, the mark, and the marked
+     * copy's upload.
+     *
+     * The order matters more than it looks. Compression used to happen inside
+     * `uploadMediaFile` (a private matter between the pick and the bucket), so
+     * the mark was handed `input.videoUri` — the *original* 200 MB pick — and
+     * re-encoded it at camera resolution. That marked file came out near the
+     * original size and was compressed again on its way up. Three full
+     * transcodes of the same footage, back to back, is what made the Android app
+     * close while it said "compressing". Now the original is decoded once, and
+     * never again.
+     */
+    const pickedBytes = await fileSize(input.videoUri);
+    const prepared = await prepareClipForUpload(input.videoUri, type).catch((e) => {
+      // A phone with no room for the output is the member's to act on, so that
+      // reason travels; anything else falls back to uploading the pick itself.
+      if (e instanceof NoSpaceError) throw e;
+      return null;
+    });
+    if (prepared) {
+      clipPath = clipPath.replace(/\.[^./]+$/, `.${extensionFor(prepared.contentType, 'mp4')}`);
+    }
+    const preparedUri = prepared?.uri ?? input.videoUri;
+    const preparedBytes = prepared?.bytes ?? pickedBytes;
+
+    /**
+     * The marked copy is disposable and the marked upload is what reads it, so
+     * the `try`/`finally` here owns its lifetime — a temp file left in the cache
+     * is a phone filling up one post at a time.
      */
     try {
-      const plan = planMark({ platform: Platform.OS, encoderAvailable: markEncoderAvailable(), bytes: null });
-      if (plan.action === 'mark') {
-        const marked = await markClipFile(input.videoUri, await myHandle());
-        if (marked) {
-          await uploadMediaFile('media', markedClipKey(clipPath), marked.uri, 'video/mp4');
-          markedClipPath = markedClipKey(clipPath);
+      media = await uploadMediaFile('media', clipPath, preparedUri, prepared?.contentType ?? type, {
+        prepared: !!prepared,
+      });
+
+      /**
+       * Everything about the mark is optional, and one `try` around all of it
+       * says so: the handle lookup, the transcode, the second upload. A
+       * decorative copy of a clip must never be the reason a post fails — the
+       * scheduled job exists precisely to pick up what this cannot finish.
+       */
+      const plan = planClipPost({
+        platform: Platform.OS,
+        encoderAvailable: markEncoderAvailable(),
+        pickedBytes,
+        preparedBytes,
+      });
+      if (plan.markFrom === 'prepared') {
+        let markedUri: string | null = null;
+        try {
+          const marked = await markClipFile(preparedUri, await myHandle());
+          markedUri = marked?.uri ?? null;
+          if (marked) {
+            await uploadMediaFile('media', markedClipKey(clipPath), marked.uri, 'video/mp4', {
+              // The mark re-encodes the compressed copy, so the result is
+              // already the right size; only an encoder that overshot (or a
+              // size nobody could measure) takes the compressing path again.
+              prepared: markedCopyFitsUpload(marked.bytes, UPLOAD_CEILING_BYTES),
+            });
+            markedClipPath = markedClipKey(clipPath);
+          }
+        } catch (e) {
+          console.warn('clip marking skipped:', (e as Error).message);
+        } finally {
+          // The marked copy has been uploaded (or was never made); it is a cache
+          // file from here on.
+          if (markedUri) removeMarkedClip(markedUri);
         }
       }
-    } catch (e) {
-      console.warn('clip marking skipped:', (e as Error).message);
+    } finally {
+      if (prepared) removeCompressedClip(prepared.uri);
     }
   }
+
   // Before the edit is written: a soundtrack picked on this phone must not be a
   // path only this phone understands.
   const edit = await hostMusic(input.edit);

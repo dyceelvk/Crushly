@@ -2,6 +2,8 @@ package app.holupp.clipcompress
 
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Handler
+import android.os.HandlerThread
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Effect
@@ -24,6 +26,8 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -130,76 +134,106 @@ class HolupClipCompressModule : Module() {
         .setEffects(Effects(emptyList(), listOf(resize)))
         .build()
 
+      /*
+       * A transcode happens on one thread that owns a Looper, and only one at a
+       * time.
+       *
+       * Media3 is explicit about this: a Transformer is accessed from a single
+       * application thread, and `start()` throws IllegalStateException from any
+       * other. This module used to build the Transformer and call `start()` on
+       * whatever worker Expo happened to hand the async function to, and to poll
+       * `getProgress()` from a second thread of its own — two threads, one
+       * object, and a rule that is checked rather than assumed. It also let two
+       * exports overlap, so a post that compressed a clip and then marked it had
+       * two decoders, two encoders and two GL surfaces alive at once. On a
+       * phone that is the difference between a post and a force-close.
+       *
+       * So: a private HandlerThread per transcode, everything Transformer-shaped
+       * posted onto it, and the caller's worker thread left to wait. The
+       * HandlerThread exists only for the duration of this call.
+       */
+      if (!COMPRESSING.compareAndSet(false, true)) {
+        throw CodedException(
+          "E_BUSY",
+          "Another clip is still being prepared. Please let that one finish.",
+          null,
+        )
+      }
+
+      val worker = HandlerThread("holupp-clip-compress")
+      worker.start()
+      val handler = Handler(worker.looper)
       val latch = CountDownLatch(1)
       var failure: Exception? = null
-
-      val transformer = Transformer.Builder(context)
-        .setVideoMimeType(MimeTypes.VIDEO_H264)
-        .setAudioMimeType(MimeTypes.AUDIO_AAC)
-        .setEncoderFactory(encoderFactory)
-        .addListener(object : Transformer.Listener {
-          override fun onCompleted(composition: Composition, exportResult: androidx.media3.transformer.ExportResult) {
-            latch.countDown()
-          }
-
-          override fun onError(
-            composition: Composition,
-            exportResult: androidx.media3.transformer.ExportResult,
-            exportException: androidx.media3.transformer.ExportException
-          ) {
-            failure = exportException
-            latch.countDown()
-          }
-        })
-        .build()
+      val transformerRef = AtomicReference<Transformer?>(null)
 
       val composition = Composition.Builder(EditedMediaItemSequence.Builder(listOf(edited)).build()).build()
 
-      // Progress is polled rather than listened to: getProgress() is the one
-      // progress API this version of Transformer guarantees, and a poll every
-      // 200 ms is far more often than a progress bar can show.
-      val poller = Thread {
-        while (latch.count > 0) {
-          try {
-            val holder = ProgressHolder()
-            val state = transformer.getProgress(holder)
-            if (state == Transformer.PROGRESS_STATE_AVAILABLE) sendEvent("onProgress", mapOf("progress" to min(0.99, holder.progress / 100.0)))
-          } catch (_: Exception) {
-            // A progress read must never fail the job.
-          }
-          try {
-            Thread.sleep(200)
-          } catch (_: InterruptedException) {
-            break
-          }
-        }
-      }
-      poller.isDaemon = true
-      poller.start()
+      var finished = false
+      try {
+        handler.post {
+          val transformer = Transformer.Builder(context)
+            .setLooper(worker.looper)
+            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .setEncoderFactory(encoderFactory)
+            .addListener(object : Transformer.Listener {
+              override fun onCompleted(composition: Composition, exportResult: androidx.media3.transformer.ExportResult) {
+                latch.countDown()
+              }
 
-      // Blocks only this module's own worker, never the JS thread or the UI.
-      // `start()` can itself reject a codec or GL configuration on some Android
-      // builds, before Transformer's listener has a chance to report an error.
-      // Turn that into a normal failed compression so the upload path can keep
-      // the original instead of leaving a spinner or taking down the app.
-      val finished = try {
-        transformer.start(composition, output.absolutePath)
-        latch.await(10, TimeUnit.MINUTES)
+              override fun onError(
+                composition: Composition,
+                exportResult: androidx.media3.transformer.ExportResult,
+                exportException: androidx.media3.transformer.ExportException
+              ) {
+                failure = exportException
+                latch.countDown()
+              }
+            })
+            .build()
+          transformerRef.set(transformer)
+          try {
+            transformer.start(composition, output.absolutePath)
+          } catch (error: Exception) {
+            failure = error
+            latch.countDown()
+            return@post
+          }
+          // Progress is polled rather than listened to: getProgress() is the one
+          // progress API this version of Transformer guarantees. The poll runs on
+          // the transformer's own thread, because that is the only thread allowed
+          // to touch it — a poll from anywhere else is exactly the mistake that
+          // made this module unreliable.
+          val poll = object : Runnable {
+            override fun run() {
+              if (latch.count == 0L) return
+              try {
+                val holder = ProgressHolder()
+                if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                  sendEvent("onProgress", mapOf("progress" to min(0.99, holder.progress / 100.0)))
+                }
+              } catch (_: Exception) {
+                // A progress read must never fail the job.
+              }
+              handler.postDelayed(this, PROGRESS_POLL_MS)
+            }
+          }
+          handler.postDelayed(poll, PROGRESS_POLL_MS)
+        }
+        finished = latch.await(MAX_TRANSCODE_MINUTES, TimeUnit.MINUTES)
       } catch (error: InterruptedException) {
-        runCatching { transformer.cancel() }
         Thread.currentThread().interrupt()
-        output.delete()
         throw CodedException("E_FAILED", "Compressing that clip was interrupted. Try again.", error)
-      } catch (error: Exception) {
-        runCatching { transformer.cancel() }
-        output.delete()
-        throw CodedException("E_FAILED", "This phone couldn't compress that clip. The original is still safe.", error)
       } finally {
-        poller.interrupt()
+        // Cancelling is a call on the transformer, so it goes to its thread too.
+        handler.post { runCatching { transformerRef.get()?.cancel() } }
+        worker.quitSafely()
+        COMPRESSING.set(false)
       }
 
       if (!finished) {
-        runCatching { transformer.cancel() }
+        runCatching { transformerRef.get()?.cancel() }
         output.delete()
         throw CodedException("E_FAILED", "Compressing that clip took too long. Try a shorter one.", null)
       }
@@ -295,6 +329,15 @@ class HolupClipCompressModule : Module() {
         ImmutableList.copyOf(software + hardware)
       }
     }
+
+    /** One transcode at a time, for the whole process. */
+    val COMPRESSING = AtomicBoolean(false)
+
+    /** How long a single export may take before the member is told to try a shorter clip. */
+    const val MAX_TRANSCODE_MINUTES = 10L
+
+    /** Progress polling cadence — far more often than a progress bar can show. */
+    const val PROGRESS_POLL_MS = 200L
 
     const val MAX_EDGE = 1080
     const val MIN_BPS = 2_500_000L

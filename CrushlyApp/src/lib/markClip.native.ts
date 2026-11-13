@@ -60,4 +60,19 @@ export async function markClipFile(inputUri: string, handle: string, endCardUri?
   }
 }
 
+/**
+ * Delete the marked copy once the upload has read it.
+ *
+ * Best-effort, like every other cache cleanup here: a file that will not delete
+ * must never turn a finished post into a failure.
+ */
+export function removeMarkedClip(uri?: string | null): void {
+  if (!uri) return;
+  try {
+    new File(uri).delete();
+  } catch {
+    // the phone's cache sweeper will get it
+  }
+}
+
 export { Directory };

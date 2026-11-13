@@ -31,3 +31,10 @@ export async function markClipFile(
 ): Promise<{ uri: string; bytes: number; ms: number } | null> {
   return null;
 }
+
+/**
+ * A marked copy is a cache file once it has been uploaded. Nothing on the web
+ * ever makes one, so there is nothing to remove — but the call site is shared,
+ * and a platform branch at every call site is how one of them forgets.
+ */
+export function removeMarkedClip(_uri?: string | null): void {}

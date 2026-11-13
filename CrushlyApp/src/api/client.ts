@@ -356,6 +356,62 @@ export async function uriToBlob(rawUri: string): Promise<Blob> {
   }
 }
 
+export type UploadMediaOptions = {
+  /**
+   * The caller has already compressed this file (see `prepareClipForUpload`) and
+   * the encoded copy is the one to send.
+   *
+   * This is not a way to skip a check: the pick limit, the 120 MB ceiling and
+   * the content-type work all still run. It only says "do not transcode this
+   * again", which is the difference between one heavy encode per post and three.
+   */
+  prepared?: boolean;
+};
+
+/** Bytes at or below this can be uploaded exactly as they are. */
+export const UPLOAD_CEILING_BYTES = UPLOAD_MAX_BYTES;
+
+/**
+ * Compress a phone clip once, from its path, and hand back the copy to upload.
+ *
+ * Posting used to compress the same footage three times — once here, once for
+ * the mark (on the *original* pick), and once more for the marked copy that came
+ * out at source resolution. Three MediaCodec sessions in a row is what closed
+ * the app. So the compression moves out to where the caller can see it, and the
+ * caller passes the result back in with `prepared: true`.
+ *
+ * Returns `null` when the clip needs no compression, when this is the web, or
+ * when compressing failed — in every one of those cases the caller's original
+ * uri is the right thing to upload, and the normal path still applies.
+ */
+export async function prepareClipForUpload(
+  uri: string,
+  contentType: string,
+): Promise<{ uri: string; contentType: string; bytes: number | null } | null> {
+  const onDevice = Platform.OS !== 'web' && /^file:\/\//.test(uri);
+  if (!onDevice) return null;
+  const pickedBytes = await fileSize(uri);
+  const plan = planUpload(pickedBytes, true);
+  if (plan.action === 'refuse') throw new ApiError(413, plan.reason);
+  if (plan.action !== 'compress-first') return null;
+  const smaller = await compressVideoFile(uri, plan.targetBytes).catch((e) => {
+    if (e instanceof NoSpaceError) throw e;
+    return null;
+  });
+  if (!smaller) {
+    if (mustStopAfterFailedCompression(pickedBytes, UPLOAD_MAX_BYTES)) {
+      // Never recover from a failed native encode by loading a 200–300 MB
+      // original into the JS heap.
+      throw new ApiError(
+        422,
+        'holUpp couldn’t compress that video on this phone. Your original is still safe; please try again.',
+      );
+    }
+    return null;
+  }
+  return { uri: smaller.uri, contentType: smaller.mimeType, bytes: smaller.bytes ?? (await fileSize(smaller.uri)) };
+}
+
 /**
  * Uploads local media to a storage bucket and returns its path.
  * User media must live in `<kind>/<profile id>/<file>` (see storage policies).
@@ -365,6 +421,7 @@ export async function uploadMediaFile(
   path: string,
   uri: string,
   contentType: string,
+  options?: UploadMediaOptions,
 ): Promise<string> {
   requireConfig();
 
@@ -385,7 +442,11 @@ export async function uploadMediaFile(
   let compressedTempUri: string | null = null;
   const onDevice = Platform.OS !== 'web' && /^file:\/\//.test(uri);
   const pickedBytes = onDevice ? await fileSize(uri) : null;
-  const plan = planUpload(pickedBytes, !!onDevice);
+  // A file the caller already compressed is sent as it is. Compressing it again
+  // would not make it smaller in any way that matters, and on a phone each pass
+  // is a decoder, an encoder and a GL surface that the next pass has to share
+  // memory with.
+  const plan = options?.prepared ? ({ action: 'use-as-is' } as const) : planUpload(pickedBytes, !!onDevice);
   if (plan.action === 'refuse') throw new ApiError(413, plan.reason);
   if (plan.action === 'compress-first') {
     const smaller = await compressVideoFile(uri, plan.targetBytes).catch((e) => { if (e instanceof NoSpaceError) throw e; return null; });
@@ -426,7 +487,7 @@ export async function uploadMediaFile(
    * and the file that comes out decides its own extension and content type.
    */
   let blob = original;
-  if (isHeavyVideo(original, uri)) {
+  if (!options?.prepared && isHeavyVideo(original, uri)) {
     // On a phone the encoder gets the file the picker already has; on the web
     // the blob is the file.
     const sourceUri = Platform.OS === 'web' ? undefined : uri;
