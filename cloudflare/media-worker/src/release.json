@@ -1,11 +1,11 @@
 {
-  "version": "1.0.103",
-  "versionCode": 103,
+  "version": "1.0.105",
+  "versionCode": 105,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.103-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.103/holUpp-1.0.103-RielOS.apk",
-  "notes": "Posting a big video no longer restarts holUpp. A clip is made smaller from the file on your phone instead of being loaded into memory first, which is what was killing the app on 200 MB recordings. And a clip you have watched stays on your phone: it plays again straight away, even with no signal, and Save clip to device can hand it to your gallery with the holUpp mark.",
-  "bytes": 97088568,
-  "sha256": "b86ad3f0cd6fb15087c5eb1fd83ab6c16de5861ff30eae6f7fdd344642f3fa5e",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.103/holUpp-1.0.103-RielOS.apk"
+  "file": "holUpp-1.0.105-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.105/holUpp-1.0.105-RielOS.apk",
+  "notes": "The Save clip button is there the moment you post a clip. Your name and the holUpp mark are burned in on the phone before the upload, so the ready-to-save copy exists as soon as the post does, instead of five minutes later.",
+  "bytes": 98100485,
+  "sha256": "2079dca34142183dc3907f3529f83650acb34af61374130e307c7007d1c83082",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.105/holUpp-1.0.105-RielOS.apk"
 }
