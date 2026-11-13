@@ -1,11 +1,11 @@
 {
-  "version": "1.0.105",
-  "versionCode": 105,
+  "version": "1.0.106",
+  "versionCode": 106,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.105-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.105/holUpp-1.0.105-RielOS.apk",
-  "notes": "The Save clip button is there the moment you post a clip. Your name and the holUpp mark are burned in on the phone before the upload, so the ready-to-save copy exists as soon as the post does, instead of five minutes later.",
-  "bytes": 98100485,
-  "sha256": "2079dca34142183dc3907f3529f83650acb34af61374130e307c7007d1c83082",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.105/holUpp-1.0.105-RielOS.apk"
+  "file": "holUpp-1.0.106-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.106/holUpp-1.0.106-RielOS.apk",
+  "notes": "Posting a clip no longer fails with \u201cwe couldn\u2019t read that file\u201d. And the web home page now says what it means: holUpp is on Android, here is the download.",
+  "bytes": 98104761,
+  "sha256": "030574120e071efc884d63750a66306b0812b101986c84c338ffe8d9cab5b305",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.106/holUpp-1.0.106-RielOS.apk"
 }
