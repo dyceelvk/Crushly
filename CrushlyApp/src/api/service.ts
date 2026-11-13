@@ -957,7 +957,7 @@ export async function createPost(input: {
         }
       }
     } finally {
-      if (prepared) removeCompressedClip(prepared.uri);
+      for (const temp of prepared?.tempUris ?? []) removeCompressedClip(temp);
     }
   }
 

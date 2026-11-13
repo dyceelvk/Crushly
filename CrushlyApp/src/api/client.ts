@@ -15,6 +15,7 @@ import type { MediaKind } from '../lib/mediaHost';
 import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, NoSpaceError, TARGET_BYTES } from '../lib/compressVideo';
 import { removeCompressedClip } from '../lib/compressClip';
 import { mustStopAfterFailedCompression, planUpload } from '../lib/uploadPlan';
+import { blobFallbackIsSafe, STREAM_FAILED_MESSAGE, uploadTransport } from '../lib/uploadTransport';
 
 /**
  * The sizes that matter on the way in.
@@ -264,6 +265,178 @@ async function withRetry<T>(run: () => Promise<T>, tries = 2): Promise<T> {
   throw last;
 }
 
+/**
+ * Send a file from disk without the bytes ever entering the JS heap.
+ *
+ * `expo-file-system`'s `uploadAsync` is the only upload primitive in the app
+ * that takes a *path* instead of a Blob: the platform opens the file and streams
+ * it into the request body, so memory stays flat whether the clip is 4 MB or
+ * 120 MB. Everything else (`fetch(uri) -> blob -> fetch(url, {body})`) makes two
+ * copies of the file, and two copies of a 60 MB clip is what closed the app on
+ * the "Uploading" spinner.
+ *
+ * Bundled through a dynamic import because the module is native-only: the web
+ * build must never load it, and a build without it must fall back quietly
+ * (see `uploadTransport`).
+ */
+class StreamingUnavailable extends Error {}
+
+type DiskUpload = { status: number; body: string };
+
+async function uploadFileFromDisk(
+  url: string,
+  fileUri: string,
+  headers: Record<string, string>,
+): Promise<DiskUpload> {
+  let FileSystem: typeof import('expo-file-system/legacy');
+  try {
+    FileSystem = await import('expo-file-system/legacy');
+  } catch {
+    throw new StreamingUnavailable('expo-file-system is not in this build');
+  }
+  if (typeof FileSystem.uploadAsync !== 'function' || !FileSystem.FileSystemUploadType) {
+    throw new StreamingUnavailable('this build has no uploadAsync');
+  }
+  try {
+    const result = await FileSystem.uploadAsync(url, fileUri, {
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers,
+    });
+    return { status: result.status, body: result.body ?? '' };
+  } catch (e) {
+    // A throw from uploadAsync is the transport: no request was answered.
+    throw new ApiError(0, 'You seem to be offline. Check your connection and try again.');
+  }
+}
+
+function jsonBody(text: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** The media Worker's `{ error }`, or the status, said in words. */
+function mediaErrorFromBody(body: string, status: number): string {
+  const data = jsonBody(body);
+  const error = typeof data?.error === 'string' ? data.error : '';
+  return error || `We couldn’t save that file (${status}). Try again.`;
+}
+
+/** `uploadToMediaStore`, streaming from disk instead of sending a Blob. */
+async function uploadToMediaStoreFromFile(kind: MediaKind, fileUri: string, contentType: string): Promise<string> {
+  return withRetry(async () => {
+    const token = await mediaAccessToken();
+    const res = await uploadFileFromDisk(`${MEDIA_BASE_URL}/m`, fileUri, {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': contentType,
+      'X-Media-Kind': kind,
+    });
+    if (res.status < 200 || res.status >= 300) throw new ApiError(res.status, mediaErrorFromBody(res.body, res.status));
+    const data = jsonBody(res.body) as { url?: string } | null;
+    if (!data?.url) throw new ApiError(500, 'We couldn’t save that file. Try again.');
+    return data.url;
+  });
+}
+
+/**
+ * The storage fallback for files the Worker does not serve, streamed.
+ *
+ * Same request `supabase.storage.upload()` makes — POST the object endpoint with
+ * the member's own access token and `x-upsert` — except the body is the file on
+ * disk rather than a Blob the client had to read first.
+ */
+async function uploadToSupabaseFromFile(
+  bucket: 'media' | 'verification',
+  path: string,
+  fileUri: string,
+  contentType: string,
+): Promise<string> {
+  return withRetry(async () => {
+    const { data } = await supabase.auth.getSession();
+    const access = data.session?.access_token;
+    if (!access) throw new ApiError(401, 'Your session has expired — sign in again.');
+    const objectUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${path
+      .replace(/^\/+/, '')
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/')}`;
+    const res = await uploadFileFromDisk(objectUrl, fileUri, {
+      Authorization: `Bearer ${access}`,
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': contentType,
+      'x-upsert': 'true',
+    });
+    if (res.status < 200 || res.status >= 300) {
+      const message = typeof jsonBody(res.body)?.message === 'string' ? String(jsonBody(res.body)?.message) : '';
+      throw new ApiError(res.status, message || 'We couldn’t save that file. Try again.');
+    }
+    return path;
+  });
+}
+
+/** Whether this build can hand the platform a file path at all. */
+async function hasDiskUpload(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const FileSystem = await import('expo-file-system/legacy');
+    return typeof FileSystem.uploadAsync === 'function' && !!FileSystem.FileSystemUploadType;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Upload `uri` by streaming it from disk, or return null to take the Blob path.
+ *
+ * Returns a path/URL on success. Returns null when this file is small enough that
+ * reading it into memory is safe and the stream could not be used — the old path
+ * still works, and a post must never fail for a missing optimisation. For a file
+ * too big to hold twice, there is no safe fallback, so the failure is reported
+ * instead of attempted.
+ */
+async function uploadFromDiskIfPossible(input: {
+  bucket: 'media' | 'verification';
+  path: string;
+  uri: string;
+  contentType: string;
+  onDevice: boolean;
+}): Promise<string | null> {
+  const { bucket, path, contentType } = input;
+  if (!input.onDevice) return null;
+  if (uploadTransport(Platform.OS, input.uri, await hasDiskUpload()) !== 'disk-stream') return null;
+
+  // Already normalised to a `file://` path by the caller.
+  const fileUri = input.uri;
+  const bytes = await fileSize(fileUri);
+
+  const limitMb = bucket === 'media' ? UPLOAD_MAX_BYTES / (1024 * 1024) : 12;
+  if (bytes !== null && bytes / (1024 * 1024) > limitMb) {
+    throw new ApiError(
+      413,
+      `That file is ${Math.round(bytes / (1024 * 1024))} MB even after compressing, and holUpp takes up to ${Math.round(limitMb)} MB. Trim it, or pick something shorter.`,
+    );
+  }
+
+  const kind = bucket === 'media' ? mediaKind(path) : null;
+  if (kind === 'banners' && !moved(kind)) throw new ApiError(503, 'Banner uploads are unavailable right now.');
+
+  try {
+    if (kind && moved(kind)) return await uploadToMediaStoreFromFile(kind, fileUri, contentType);
+    return await uploadToSupabaseFromFile(bucket, path, fileUri, contentType);
+  } catch (e) {
+    if (e instanceof StreamingUnavailable) {
+      if (blobFallbackIsSafe(bytes)) return null;
+      throw new ApiError(500, STREAM_FAILED_MESSAGE);
+    }
+    // A transport failure on a file too large to hold in memory is reported, not
+    // retried by reading it: the retry would be the crash.
+    throw e;
+  }
+}
+
 async function uploadToMediaStore(kind: MediaKind, blob: Blob, contentType: string): Promise<string> {
   return withRetry(async () => {
     const token = await mediaAccessToken();
@@ -387,19 +560,41 @@ export const UPLOAD_CEILING_BYTES = UPLOAD_MAX_BYTES;
 export async function prepareClipForUpload(
   uri: string,
   contentType: string,
-): Promise<{ uri: string; contentType: string; bytes: number | null } | null> {
-  const onDevice = Platform.OS !== 'web' && /^file:\/\//.test(uri);
-  if (!onDevice) return null;
-  const pickedBytes = await fileSize(uri);
+): Promise<{ uri: string; contentType: string; bytes: number | null; tempUris: string[] } | null> {
+  if (Platform.OS === 'web') return null;
+
+  // An Android gallery hands back `content://`. Nothing downstream — measuring,
+  // compressing, streaming — can use one, so it becomes a real file first, and
+  // the copy belongs to whoever asked for it (returned as `tempUris`).
+  let local = uri;
+  const tempUris: string[] = [];
+  if (/^content:\/\//i.test(uri)) {
+    const readable = await readableUri(uri);
+    if (readable !== uri) {
+      local = readable;
+      tempUris.push(readable);
+    }
+  }
+  if (!/^file:\/\//.test(local)) return null;
+
+  const pickedBytes = await fileSize(local);
   const plan = planUpload(pickedBytes, true);
-  if (plan.action === 'refuse') throw new ApiError(413, plan.reason);
-  if (plan.action !== 'compress-first') return null;
-  const smaller = await compressVideoFile(uri, plan.targetBytes).catch((e) => {
+  if (plan.action === 'refuse') {
+    for (const temp of tempUris) removeCompressedClip(temp);
+    throw new ApiError(413, plan.reason);
+  }
+  if (plan.action !== 'compress-first') {
+    // Nothing to compress: the file to upload is the one the picker gave us
+    // (or its cache copy), and there is nothing else for the caller to delete.
+    return { uri: local, contentType, bytes: pickedBytes, tempUris };
+  }
+  const smaller = await compressVideoFile(local, plan.targetBytes).catch((e) => {
     if (e instanceof NoSpaceError) throw e;
     return null;
   });
   if (!smaller) {
     if (mustStopAfterFailedCompression(pickedBytes, UPLOAD_MAX_BYTES)) {
+      for (const temp of tempUris) removeCompressedClip(temp);
       // Never recover from a failed native encode by loading a 200–300 MB
       // original into the JS heap.
       throw new ApiError(
@@ -407,9 +602,16 @@ export async function prepareClipForUpload(
         'holUpp couldn’t compress that video on this phone. Your original is still safe; please try again.',
       );
     }
-    return null;
+    return { uri: local, contentType, bytes: pickedBytes, tempUris };
   }
-  return { uri: smaller.uri, contentType: smaller.mimeType, bytes: smaller.bytes ?? (await fileSize(smaller.uri)) };
+  return {
+    uri: smaller.uri,
+    contentType: smaller.mimeType,
+    bytes: smaller.bytes ?? (await fileSize(smaller.uri)),
+    // The encoded copy and any cache copy: the caller deletes them when the post
+    // is done with them.
+    tempUris: [smaller.uri, ...tempUris],
+  };
 }
 
 /**
@@ -440,6 +642,24 @@ export async function uploadMediaFile(
    * bigger than the upload ceiling passes through the heap.
    */
   let compressedTempUri: string | null = null;
+  /*
+   * An Android gallery hands back `content://`, not a path.
+   *
+   * That matters more than it sounds. Everything below — measuring the file,
+   * compressing from disk, streaming the upload — needs a path, so a content URI
+   * used to fall through every one of those checks and end up in the Blob path,
+   * where the *original* clip was read into the JS heap before anything
+   * compressed it. So it is copied into the cache once, up front (a disk-to-disk
+   * copy the heap never sees), and the copy is deleted with the other temp files.
+   */
+  let contentTempUri: string | null = null;
+  if (Platform.OS !== 'web' && /^content:\/\//i.test(uri)) {
+    const readable = await readableUri(uri);
+    if (readable !== uri) {
+      contentTempUri = readable;
+      uri = readable;
+    }
+  }
   const onDevice = Platform.OS !== 'web' && /^file:\/\//.test(uri);
   const pickedBytes = onDevice ? await fileSize(uri) : null;
   // A file the caller already compressed is sent as it is. Compressing it again
@@ -467,11 +687,34 @@ export async function uploadMediaFile(
     }
   }
 
+  /*
+   * On a phone the file is now sent from disk, not from memory.
+   *
+   * This is the second half of the same bug. 1.0.109 stopped compressing three
+   * times, so the spinner reached 100% — and then closed during "Uploading",
+   * because the upload still did `uriToBlob(file)` and sent that Blob: the clip
+   * in the JS heap, and a second copy made by the networking layer to put it on
+   * the wire. `uploadAsync` hands over a path and streams it; the heap never
+   * sees the video at all.
+   *
+   * The Blob path stays for the web, for small files, and for any build without
+   * the module — a slower upload is acceptable, a killed app is not.
+   */
+  const streamed = await uploadFromDiskIfPossible({ bucket, path, uri, contentType, onDevice })
+    .finally(() => {
+      if (contentTempUri) removeCompressedClip(contentTempUri);
+    });
+  if (streamed) {
+    if (compressedTempUri) removeCompressedClip(compressedTempUri);
+    return streamed;
+  }
+
   let original: Blob;
   try {
     original = await uriToBlob(uri);
   } finally {
     if (compressedTempUri) removeCompressedClip(compressedTempUri);
+    if (contentTempUri) removeCompressedClip(contentTempUri);
   }
   if (original.size > MAX_PICK_BYTES) {
     throw new ApiError(413, 'That clip is over 300 MB. Trim it first, then post.');
