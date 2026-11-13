@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.net.Uri
+import android.os.Handler
+import android.os.HandlerThread
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -23,6 +25,8 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The mark, burnt into the clip on the phone, before it is uploaded.
@@ -107,38 +111,80 @@ class HolupClipMarkModule : Module() {
         items.add(EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(endCard))).build())
       }
 
+      /*
+       * Media3 requires a Transformer to be touched from one thread that owns a
+       * Looper, and `start()` throws from any other. This module used to build
+       * the Transformer and call `start()` on whatever thread Expo handed the
+       * async function to — a thread with no Looper, so the Transformer silently
+       * borrowed the main thread's and every call after that was a coin toss.
+       * The failure was not a clean error either: a mark runs right after the
+       * upload's own transcode, and on a phone the second GL surface and second
+       * encoder arriving while the first was still winding down is what the
+       * process died of.
+       *
+       * So the export gets a thread of its own, the caller waits, and only one
+       * transcode runs in the app at a time (see `MARKING`).
+       */
+      if (!MARKING.compareAndSet(false, true)) {
+        throw CodedException(
+          "E_BUSY",
+          "Another clip is still being prepared. Please let that one finish.",
+          null,
+        )
+      }
+
+      val worker = HandlerThread("holupp-clip-mark")
+      worker.start()
+      val handler = Handler(worker.looper)
       val latch = CountDownLatch(1)
       var failure: Exception? = null
+      val transformerRef = AtomicReference<Transformer?>(null)
 
-      val transformer = Transformer.Builder(context)
-        .setVideoMimeType(MimeTypes.VIDEO_H264)
-        .setAudioMimeType(MimeTypes.AUDIO_AAC)
-        .addListener(object : Transformer.Listener {
-          override fun onCompleted(composition: Composition, exportResult: androidx.media3.transformer.ExportResult) {
-            latch.countDown()
-          }
-
-          override fun onError(
-            composition: Composition,
-            exportResult: androidx.media3.transformer.ExportResult,
-            exportException: androidx.media3.transformer.ExportException
-          ) {
-            failure = exportException
-            latch.countDown()
-          }
-        })
-        .build()
-
-      // Blocks only this module's own worker, never the JS thread or the UI.
       // A Composition holds *sequences*, not items: the items are one after the
       // other in a single sequence, which is what makes the end card follow the
       // clip instead of playing over it.
       val composition = Composition.Builder(EditedMediaItemSequence.Builder(items).build()).build()
-      transformer.start(composition, output.absolutePath)
-      val finished = latch.await(10, TimeUnit.MINUTES)
+
+      val finished = try {
+        handler.post {
+          val transformer = Transformer.Builder(context)
+            .setLooper(worker.looper)
+            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .addListener(object : Transformer.Listener {
+              override fun onCompleted(composition: Composition, exportResult: androidx.media3.transformer.ExportResult) {
+                latch.countDown()
+              }
+
+              override fun onError(
+                composition: Composition,
+                exportResult: androidx.media3.transformer.ExportResult,
+                exportException: androidx.media3.transformer.ExportException
+              ) {
+                failure = exportException
+                latch.countDown()
+              }
+            })
+            .build()
+          transformerRef.set(transformer)
+          try {
+            transformer.start(composition, output.absolutePath)
+          } catch (error: Exception) {
+            // `start()` can reject a codec or a GL configuration before the
+            // listener ever hears about it. Turn it into an ordinary failure so
+            // the post keeps going unmarked.
+            failure = error
+            latch.countDown()
+          }
+        }
+        latch.await(MAX_MARK_MINUTES, TimeUnit.MINUTES)
+      } finally {
+        handler.post { runCatching { transformerRef.get()?.cancel() } }
+        worker.quitSafely()
+        MARKING.set(false)
+      }
 
       if (!finished) {
-        transformer.cancel()
         throw CodedException("E_FAILED", "Marking that clip took too long. It was uploaded whole instead.", null)
       }
       failure?.let { error ->
@@ -169,6 +215,14 @@ class HolupClipMarkModule : Module() {
 
   private object MediaTypes {
     const val H264 = "video/avc"
+  }
+
+  private companion object {
+    /** One mark at a time, for the whole process. */
+    val MARKING = AtomicBoolean(false)
+
+    /** How long one mark may take before the clip is posted unmarked instead. */
+    const val MAX_MARK_MINUTES = 10L
   }
 
   /**
