@@ -92,8 +92,10 @@ const jsonLd = {
 const tags = [
   MARKER,
   `<meta name="description" content="${DESCRIPTION}" />`,
-  `<meta name="robots" content="index,follow" />`,
-  `<link rel="canonical" href="${SITE}/" />`,
+  // This document is the Expo shell, which is now served at /app only. It is an
+  // app, not a page: crawlable it is not, and this is the tag that says so.
+  `<meta name="robots" content="noindex, nofollow" />`,
+  `<link rel="canonical" href="${SITE}/app" />`,
   `<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />`,
   VERIFY ? `<meta name="google-site-verification" content="${VERIFY}" />` : '',
   `<meta property="og:type" content="website" />`,
@@ -109,7 +111,6 @@ const tags = [
   `<meta name="twitter:title" content="${TITLE}" />`,
   `<meta name="twitter:description" content="${DESCRIPTION}" />`,
   `<meta name="twitter:image" content="${IMAGE}" />`,
-  `<meta name="robots" content="noindex, nofollow" />`,
   `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`,
 ]
   .filter(Boolean)
@@ -118,7 +119,11 @@ const tags = [
 
 const withTitle = html.replace(/<title>[^<]*<\/title>/, `<title>${TITLE}</title>`);
 const withNoscript = withTitle.replace(/<noscript>[\s\S]*?<\/noscript>/i, NOSCRIPT);
-const patched = withNoscript.replace(/<\/head>/i, `${tags}\n  </head>`);
+const withRobots = withNoscript.replace(
+  /<meta name="robots"[^>]*>/i,
+  '<meta name="robots" content="noindex, nofollow" />',
+);
+const patched = withRobots.replace(/<\/head>/i, `${tags}\n  </head>`);
 
 if (patched === withNoscript) {
   console.error('seo-head: found no </head> to inject into — refusing to ship an unlabelled page.');
