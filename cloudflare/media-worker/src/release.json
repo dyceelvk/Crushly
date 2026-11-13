@@ -1,11 +1,11 @@
 {
-  "version": "1.0.110",
-  "versionCode": 110,
+  "version": "1.0.111",
+  "versionCode": 111,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.110-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.110/holUpp-1.0.110-RielOS.apk",
-  "notes": "Posting a big video no longer closes the app. 1.0.109 fixed the compression; this fixes the upload after it — the clip is now sent straight from the phone's storage instead of being copied into the app's memory first, so a long video no longer runs the phone out of memory while it uploads.",
-  "bytes": 96983610,
-  "sha256": "ed0597f4eb7799e6d7cffb6f98875daa6aa2b7eaa1ae749baa838a38387d58f6",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.110/holUpp-1.0.110-RielOS.apk"
+  "file": "holUpp-1.0.111-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.111/holUpp-1.0.111-RielOS.apk",
+  "notes": "The security check before signing in now appears instead of spinning forever. It was being stopped by a redirect inside the app — the page it loads lives on www.holupp.net and the app refused to follow it — and, once it did load, the check had nowhere to keep its state. Both are fixed, and if the check cannot run it now says so and offers Try again.",
+  "bytes": 96979214,
+  "sha256": "ee9d9c805c6e8955179e05d41e2a9d3cd788225577baf724cd201ecf3fd579e7",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.111/holUpp-1.0.111-RielOS.apk"
 }
