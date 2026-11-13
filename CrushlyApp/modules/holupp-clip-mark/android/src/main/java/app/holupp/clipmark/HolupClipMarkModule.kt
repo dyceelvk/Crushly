@@ -13,6 +13,7 @@ import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
@@ -80,21 +81,20 @@ class HolupClipMarkModule : Module() {
       val effects: List<Effect> = buildList {
         val chip = markBitmap(handle)
         if (chip != null) {
-          add(
-            OverlayEffect(
-              listOf(BitmapOverlay.createStaticBitmapOverlay(chip)),
-              OverlaySettings.Builder()
-                // Anchors are 0..1 across the frame: 0.94 is just inside the
-                // bottom-right corner, with the 6% of slack the chip's own
-                // padding gives it.
-                .setBackgroundFrameAnchor(0.94f, 0.94f)
-                .build()
-            )
-          )
+          // OverlayEffect takes only the overlay: where it sits is a property of
+          // the overlay, not of the effect. (The two-argument form is 1.6+; this
+          // build pins 1.5.1, and the compiler is the authority on that.)
+          val settings = OverlaySettings.Builder()
+            // Anchors are 0..1 across the frame: 0.94 is just inside the
+            // bottom-right corner, with the 6% of slack the chip's own padding
+            // gives it.
+            .setBackgroundFrameAnchor(0.94f, 0.94f)
+            .build()
+          add(OverlayEffect(listOf(BitmapOverlay.createStaticBitmapOverlay(chip, settings))))
         }
       }
 
-      val items = mutableListOf(
+      val items = mutableListOf<EditedMediaItem>(
         EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input)))
           .setEffects(Effects(listOf(), effects))
           .build()
@@ -130,7 +130,11 @@ class HolupClipMarkModule : Module() {
         .build()
 
       // Blocks only this module's own worker, never the JS thread or the UI.
-      transformer.start(Composition.Builder(items).build(), output.absolutePath)
+      // A Composition holds *sequences*, not items: the items are one after the
+      // other in a single sequence, which is what makes the end card follow the
+      // clip instead of playing over it.
+      val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
+      transformer.start(composition, output.absolutePath)
       val finished = latch.await(10, TimeUnit.MINUTES)
 
       if (!finished) {
@@ -138,8 +142,11 @@ class HolupClipMarkModule : Module() {
         throw CodedException("E_FAILED", "Marking that clip took too long. It was uploaded whole instead.", null)
       }
       failure?.let { error ->
-        val code = if (error.errorCode == androidx.media3.transformer.ExportException.ERROR_CODE_ENCODER_INIT_FAILED) "E_NO_ENCODER" else "E_FAILED"
-        throw CodedException(code, "This phone couldn’t mark that clip. It was uploaded whole instead.", error)
+        // One code, not a taxonomy: the app reacts identically to every failure
+        // (upload the original, let the job mark it later), and `available()`
+        // has already ruled out a phone with no encoder. A second code here would
+        // be a distinction nothing acts on.
+        throw CodedException("E_FAILED", "This phone couldn’t mark that clip. It was uploaded whole instead.", error)
       }
       if (!output.isFile || output.length() == 0L) {
         throw CodedException("E_FAILED", "The marked clip came out empty. It was uploaded whole instead.", null)
