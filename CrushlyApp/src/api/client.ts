@@ -14,7 +14,7 @@ import {
 import type { MediaKind } from '../lib/mediaHost';
 import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, NoSpaceError, TARGET_BYTES } from '../lib/compressVideo';
 import { removeCompressedClip } from '../lib/compressClip';
-import { planUpload } from '../lib/uploadPlan';
+import { mustStopAfterFailedCompression, planUpload } from '../lib/uploadPlan';
 
 /**
  * The sizes that matter on the way in.
@@ -394,6 +394,15 @@ export async function uploadMediaFile(
       compressedTempUri = smaller.uri;
       contentType = smaller.mimeType;
       path = path.replace(/\.[^./]+$/, `.${extensionFor(smaller.mimeType, 'webm')}`);
+    } else if (onDevice && mustStopAfterFailedCompression(pickedBytes, UPLOAD_MAX_BYTES)) {
+      // Never recover from a failed native encode by loading a 200–300 MB
+      // original into the JS heap. That fallback can kill the app and lose the
+      // useful error; keep the source file untouched and tell the member the
+      // transcode failed instead.
+      throw new ApiError(
+        422,
+        'holUpp couldn’t compress that video on this phone. Your original is still safe; please try again.',
+      );
     }
   }
 

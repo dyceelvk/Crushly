@@ -5,9 +5,13 @@ import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Effect
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.EncoderSelector
+import androidx.media3.transformer.EncoderUtil
 import androidx.media3.transformer.Effects
+import com.google.common.collect.ImmutableList
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.Composition
@@ -43,11 +47,16 @@ import kotlin.math.roundToInt
  *     apart, so a long clip gets a slightly larger file rather than a muddy one.
  *   - Frame rate: the source's original rate. Transformer preserves it rather
  *     than upsampling a 24 fps clip or needlessly dropping frames from a 60 fps one.
+ *   - Codec selection: try Android's software AVC encoder first when available,
+ *     while retaining hardware codecs as fallback. This avoids vendor hardware
+ *     encoder failures across brands without special-casing any phone; an
+ *     unsupported software format can still be handled by the device encoder.
  *
  * It also refuses to start when the phone has no room for the output. The old
  * encoder failed deep inside ffmpeg with "we couldn't read that file", which
  * told the member nothing. E_NO_SPACE says the true thing, in words.
  */
+@OptIn(UnstableApi::class)
 class HolupClipCompressModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("HolupClipCompress")
@@ -107,6 +116,8 @@ class HolupClipCompressModule : Module() {
         .setBitrate(bitrateBps)
         .build()
       val encoderFactory = DefaultEncoderFactory.Builder(context)
+        .setVideoEncoderSelector(softwareFirstEncoderSelector)
+        .setEnableFallback(true)
         .setRequestedVideoEncoderSettings(videoSettings)
         .build()
 
@@ -167,16 +178,34 @@ class HolupClipCompressModule : Module() {
       poller.start()
 
       // Blocks only this module's own worker, never the JS thread or the UI.
-      transformer.start(composition, output.absolutePath)
-      val finished = latch.await(10, TimeUnit.MINUTES)
-      poller.interrupt()
+      // `start()` can itself reject a codec or GL configuration on some Android
+      // builds, before Transformer's listener has a chance to report an error.
+      // Turn that into a normal failed compression so the upload path can keep
+      // the original instead of leaving a spinner or taking down the app.
+      val finished = try {
+        transformer.start(composition, output.absolutePath)
+        latch.await(10, TimeUnit.MINUTES)
+      } catch (error: InterruptedException) {
+        runCatching { transformer.cancel() }
+        Thread.currentThread().interrupt()
+        output.delete()
+        throw CodedException("E_FAILED", "Compressing that clip was interrupted. Try again.", error)
+      } catch (error: Exception) {
+        runCatching { transformer.cancel() }
+        output.delete()
+        throw CodedException("E_FAILED", "This phone couldn't compress that clip. The original is still safe.", error)
+      } finally {
+        poller.interrupt()
+      }
 
       if (!finished) {
-        transformer.cancel()
+        runCatching { transformer.cancel() }
+        output.delete()
         throw CodedException("E_FAILED", "Compressing that clip took too long. Try a shorter one.", null)
       }
       failure?.let { error ->
-        throw CodedException("E_FAILED", "This phone couldn't compress that clip.", error)
+        output.delete()
+        throw CodedException("E_FAILED", "This phone couldn't compress that clip. The original is still safe.", error)
       }
       if (!output.isFile || output.length() == 0L) {
         throw CodedException("E_FAILED", "The compressed clip came out empty.", null)
@@ -249,6 +278,24 @@ class HolupClipCompressModule : Module() {
   private fun even(n: Int): Int = max(2, (n / 2) * 2)
 
   private companion object {
+    /**
+     * Prefer Android's platform software AVC implementation when it supports
+     * this format. Hardware encoders remain in the list as compatibility
+     * fallbacks for devices with no usable software encoder or formats the
+     * software codec cannot handle. Ordering is intentional: equal-capability
+     * codecs are tried in selector order by Media3.
+     */
+    val softwareFirstEncoderSelector: EncoderSelector = EncoderSelector { mimeType ->
+      val supported = EncoderUtil.getSupportedEncoders(mimeType)
+      val software = supported.filterNot { EncoderUtil.isHardwareAccelerated(it, mimeType) }
+      if (software.isEmpty()) {
+        supported
+      } else {
+        val hardware = supported.filter { EncoderUtil.isHardwareAccelerated(it, mimeType) }
+        ImmutableList.copyOf(software + hardware)
+      }
+    }
+
     const val MAX_EDGE = 1080
     const val MIN_BPS = 2_500_000L
     const val MAX_BPS = 10_000_000L
