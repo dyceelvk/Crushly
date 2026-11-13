@@ -1,0 +1,197 @@
+package app.holupp.clipmark
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.net.Uri
+import androidx.media3.common.Effect
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.OverlaySettings
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.Transformer
+import expo.modules.kotlin.exception.CodedException
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+/**
+ * The mark, burnt into the clip on the phone, before it is uploaded.
+ *
+ * Why this exists at all. The mark used to be produced only by a scheduled job
+ * (`scripts/mark_pending_clips.py`), because marking is a transcode and a
+ * transcode on the upload path makes the poster wait. The consequence nobody
+ * wrote down: `downloadUrl` — and therefore the whole Save row — only exists
+ * once that job has run. Post a clip at 11:02 and the button appears at ~11:05,
+ * or not at all if the runner is blocked. Four separate reports of "the button
+ * never happens on posting" are that timer.
+ *
+ * Doing it here instead puts the button in the post itself: the file is already
+ * being re-encoded for size (`videoEncode`), so the mark rides along and the
+ * upload carries both variants.
+ *
+ * What this deliberately does NOT do is decide whether to mark. That is
+ * `src/lib/clipMarkPlan.ts`, where it is testable without a phone. This file
+ * draws what it is told to draw.
+ */
+class HolupClipMarkModule : Module() {
+  override fun definition() = ModuleDefinition {
+    Name("HolupClipMark")
+
+    /**
+     * Mark one clip.
+     *
+     * @param inputPath   absolute path (no scheme) to the clip already on disk
+     * @param outputPath  where the marked file should be written; must not exist
+     * @param handle      the creator's handle without the leading @; may be blank
+     * @param endCardPath optional absolute path to a short silent end card to append
+     *
+     * Resolves with a map: `{ path, bytes, ms }`. Rejects with `code`:
+     *   E_NO_ENCODER  the device has no H.264 encoder this pipeline can use
+     *   E_FAILED      the transcode failed; `message` says why, in words a member can read
+     *   E_INPUT       the input file is missing or unreadable
+     */
+    AsyncFunction("mark") { inputPath: String, outputPath: String, handle: String, endCardPath: String? ->
+      val context = appContext.reactContext
+        ?: throw CodedException("E_FAILED", "The app is not ready yet. Try again.", null)
+
+      val input = File(inputPath)
+      if (!input.isFile || !input.canRead()) {
+        throw CodedException("E_INPUT", "That clip is no longer on this phone.", null)
+      }
+      val output = File(outputPath)
+      output.parentFile?.mkdirs()
+      if (output.exists()) output.delete()
+
+      val started = System.currentTimeMillis()
+
+      // The mark itself: a small dark chip with the handle, bottom-right, drawn
+      // once into a bitmap. A bitmap overlay is one composite per frame, where
+      // drawing text per frame would be text layout on every frame of a
+      // 60-second clip.
+      val effects: List<Effect> = buildList {
+        val chip = markBitmap(handle)
+        if (chip != null) {
+          add(
+            OverlayEffect(
+              listOf(BitmapOverlay.createStaticBitmapOverlay(chip)),
+              OverlaySettings.Builder()
+                // Anchors are 0..1 across the frame: 0.94 is just inside the
+                // bottom-right corner, with the 6% of slack the chip's own
+                // padding gives it.
+                .setBackgroundFrameAnchor(0.94f, 0.94f)
+                .build()
+            )
+          )
+        }
+      }
+
+      val items = mutableListOf(
+        EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input)))
+          .setEffects(Effects(listOf(), effects))
+          .build()
+      )
+
+      // The end card is a separate item in one Composition, so it is joined by
+      // the player's own timeline rather than by a second pass over the file.
+      val endCard = endCardPath?.let { File(it) }
+      if (endCard != null && endCard.isFile && endCard.canRead()) {
+        items.add(EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(endCard))).build())
+      }
+
+      val latch = CountDownLatch(1)
+      var failure: Exception? = null
+
+      val transformer = Transformer.Builder(context)
+        .setVideoMimeType(MimeTypes.VIDEO_H264)
+        .setAudioMimeType(MimeTypes.AUDIO_AAC)
+        .addListener(object : Transformer.Listener {
+          override fun onCompleted(composition: Composition, exportResult: androidx.media3.transformer.ExportResult) {
+            latch.countDown()
+          }
+
+          override fun onError(
+            composition: Composition,
+            exportResult: androidx.media3.transformer.ExportResult,
+            exportException: androidx.media3.transformer.ExportException
+          ) {
+            failure = exportException
+            latch.countDown()
+          }
+        })
+        .build()
+
+      // Blocks only this module's own worker, never the JS thread or the UI.
+      transformer.start(Composition.Builder(items).build(), output.absolutePath)
+      val finished = latch.await(10, TimeUnit.MINUTES)
+
+      if (!finished) {
+        transformer.cancel()
+        throw CodedException("E_FAILED", "Marking that clip took too long. It was uploaded whole instead.", null)
+      }
+      failure?.let { error ->
+        val code = if (error.errorCode == androidx.media3.transformer.ExportException.ERROR_CODE_ENCODER_INIT_FAILED) "E_NO_ENCODER" else "E_FAILED"
+        throw CodedException(code, "This phone couldn’t mark that clip. It was uploaded whole instead.", error)
+      }
+      if (!output.isFile || output.length() == 0L) {
+        throw CodedException("E_FAILED", "The marked clip came out empty. It was uploaded whole instead.", null)
+      }
+
+      mapOf(
+        "path" to output.absolutePath,
+        "bytes" to output.length(),
+        "ms" to (System.currentTimeMillis() - started)
+      )
+    }
+
+    /** True when this device can mark, so the app can skip the attempt entirely. */
+    Function("available") {
+      android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+        info.isEncoder && info.supportedTypes.any { it.equals(MediaTypes.H264, ignoreCase = true) || it.contains("avc", ignoreCase = true) }
+      }
+    }
+  }
+
+  private object MediaTypes {
+    const val H264 = "video/avc"
+  }
+
+  /**
+   * The chip: `@handle` in white on a translucent near-black, drawn at 3x the
+   * display size so it stays sharp when the clip is 1080p. Returns null when
+   * there is nothing to draw, so a blank handle produces no overlay rather than
+   * an empty box.
+   */
+  private fun markBitmap(handle: String): Bitmap? {
+    val label = handle.trim().removePrefix("@")
+    if (label.isEmpty()) return null
+
+    val text = "@$label"
+    val scale = 3f
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.WHITE
+      textSize = 26f * scale
+      typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+    }
+    val padX = 18f * scale
+    val padY = 11f * scale
+    val width = textPaint.measureText(text) + padX * 2
+    val metrics = textPaint.fontMetrics
+    val height = (metrics.descent - metrics.ascent) + padY * 2
+
+    val bitmap = Bitmap.createBitmap(width.toInt().coerceAtLeast(1), height.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(150, 11, 7, 12) }
+    canvas.drawRoundRect(RectF(0f, 0f, width, height), height / 2f, height / 2f, background)
+    canvas.drawText(text, padX, padY - metrics.ascent, textPaint)
+    return bitmap
+  }
+}

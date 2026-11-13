@@ -1,0 +1,43 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.holupp'
+version = '1.0.0'
+
+android {
+  namespace 'app.holupp.clipmark'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+    // Media3 Transformer is Java 8+ bytecode and its API is annotated; compiling
+    // against it without this produces "cannot access androidx.media3.common.MediaItem".
+    minSdk 24
+  }
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+}
+
+dependencies {
+  /*
+   * Media3 rather than ffmpeg-kit: it is the platform's own decoder and encoder
+   * (MediaCodec), so a clip the phone recorded is usually re-encoded by hardware
+   * instead of by a bundled binary. That is the difference between marking a
+   * 40-second clip in four seconds and in forty, which is the whole point of
+   * doing this on the device at all.
+   *
+   * `transformer` is the pipeline, `effect` carries OverlayEffect/BitmapOverlay
+   * for the mark, and `exoplayer` is needed by Transformer's internals even
+   * though nothing here plays a video.
+   */
+  implementation 'androidx.media3:media3-transformer:1.5.1'
+  implementation 'androidx.media3:media3-effect:1.5.1'
+  implementation 'androidx.media3:media3-common:1.5.1'
+  implementation 'androidx.media3:media3-exoplayer:1.5.1'
+}

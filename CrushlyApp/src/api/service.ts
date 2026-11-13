@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import { getCaptchaToken } from '../lib/captcha';
+import { markedClipKey, planMark } from '../lib/clipMarkPlan';
+import { markClipFile, markEncoderAvailable } from '../lib/markClip';
 import Constants from 'expo-constants';
 import { updateVersionPath } from '../lib/updateChannel';
 import { browserLocation } from '../lib/browser';
@@ -105,6 +107,14 @@ const cleanJson = (value: unknown, maxBytes = 2000): Record<string, unknown> => 
 async function meId(): Promise<number> {
   const row = unwrap<{ id: number }>(await supabase.from('profiles').select('id').single());
   return row.id;
+}
+
+/** The poster's own handle, for the mark drawn on their clip. */
+async function myHandle(): Promise<string> {
+  const row = unwrap<{ username: string | null; name: string | null }>(
+    await supabase.from('profiles').select('username,name').single(),
+  );
+  return (row.username || row.name || 'holUpp').replace(/^@/, '');
 }
 
 async function myEmail(): Promise<string> {
@@ -842,17 +852,40 @@ export async function createPost(input: {
     const type = input.photoMime || 'image/jpeg';
     media = await uploadMediaFile('media', `posts/${id}/${Date.now()}.${extensionFor(type)}`, input.photoUri, type);
   }
+  /**
+   * The posted clip, and optionally the marked copy of it.
+   *
+   * Marking here — before the upload, on the phone — is what makes the Save row
+   * exist at the instant the post does. It used to be a five-minute cron job, so
+   * the row appeared minutes later or not at all, and that timer is the "download
+   * button never happens" report.
+   *
+   * The marked file is uploaded to a key derived from the original's, which the
+   * server also derives before it will record it. A failure here loses nothing:
+   * the post still goes up and the scheduled job marks it later.
+   */
+  let markedClipPath: string | null = null;
   if (input.videoUri) {
     const id = await meId();
     const type = (input.videoMime || 'video/mp4').toLowerCase();
     // extensionFor() maps mp4 to m4a, which is right for a voice note and wrong
     // for a clip, so the container is chosen here instead.
-    media = await uploadMediaFile(
-      'media',
-      `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`,
-      input.videoUri,
-      type,
-    );
+    const clipPath = `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`;
+    media = await uploadMediaFile('media', clipPath, input.videoUri, type);
+
+    const plan = planMark({ platform: Platform.OS, encoderAvailable: markEncoderAvailable(), bytes: null });
+    if (plan.action === 'mark') {
+      const marked = await markClipFile(input.videoUri, await myHandle());
+      if (marked) {
+        try {
+          await uploadMediaFile('media', markedClipKey(clipPath), marked.uri, 'video/mp4');
+          markedClipPath = markedClipKey(clipPath);
+        } catch {
+          // Uploading the marked copy failed; the post is already up and the
+          // scheduled job will produce one. Nothing to tell the member.
+        }
+      }
+    }
   }
   // Before the edit is written: a soundtrack picked on this phone must not be a
   // path only this phone understands.
@@ -865,14 +898,30 @@ export async function createPost(input: {
   };
   // Legacy callers retain the old RPC; the composer uses an atomic RPC when it
   // offers the choice, so comments are never enabled for a newly closed post.
-  if (input.commentsEnabled !== undefined) {
-    return rpc<Post>('create_post_with_location', {
-      ...args, p_edit: edit ?? null, p_comments_enabled: input.commentsEnabled, p_location: input.location?.trim() || null,
-    });
+  const created = input.commentsEnabled !== undefined
+    ? await rpc<Post>('create_post_with_location', {
+        ...args, p_edit: edit ?? null, p_comments_enabled: input.commentsEnabled, p_location: input.location?.trim() || null,
+      })
+    : await rpc<Post>('create_post', {
+        ...args, ...(edit ? { p_edit: edit as unknown as Record<string, unknown> } : {}),
+      });
+
+  if (markedClipPath && created?.id) {
+    /**
+     * Recorded before the caller sees the post, so the composer's refresh and
+     * everybody else's first fetch both have a Save row. The server derives the
+     * key again and refuses if the post is not this member's clip, so a failure
+     * here is silent by design: it means no marked copy, which the scheduled job
+     * will fix.
+     */
+    try {
+      await rpc<boolean>('register_own_post_download', { p_post_id: created.id });
+      return { ...created, downloadUrl: `/d/${created.id}` };
+    } catch {
+      return created;
+    }
   }
-  return rpc<Post>('create_post', {
-    ...args, ...(edit ? { p_edit: edit as unknown as Record<string, unknown> } : {}),
-  });
+  return created;
 }
 
 /** A viewer may read this only if the server says the post is visible. */
