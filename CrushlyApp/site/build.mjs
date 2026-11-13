@@ -830,8 +830,8 @@ function downloadPage() {
              aria-disabled="true" rel="nofollow">Checking Android download…</a>
           <p class="dl-status" id="apk-status" role="status" aria-live="polite">Checking the current Android build…</p>
           <dl class="spec" style="margin-top:20px">
-            <dt>Version</dt><dd data-release="version">1.0.106</dd>
-            <dt>File size</dt><dd data-release="bytes">93.6 MB</dd>
+            <dt>Version</dt><dd data-release="version">${RELEASE.version}</dd>
+            <dt>File size</dt><dd data-release="bytes">${RELEASE.size}</dd>
             <dt>Minimum Android</dt><dd>8.0 (Oreo)</dd>
             <dt>Released</dt><dd data-release="date">13 November 2026</dd>
             <dt>Price</dt><dd>Free</dd>
@@ -1031,7 +1031,11 @@ Sitemap: ${SITE}/sitemap.xml
 
 async function main() {
   try {
-    const res = await fetch(`${WORKER}/version`, { signal: AbortSignal.timeout(8000) });
+    // The update feed is briefly cacheable for phones, but a marketing build
+    // must capture the current release in its static HTML. Cache-bust this
+    // server-side read so a deploy that follows a release immediately cannot
+    // stamp the previous version into the indexable download page.
+    const res = await fetch(`${WORKER}/version?site-build=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const info = await res.json();
       if (info.version) RELEASE.version = String(info.version);
