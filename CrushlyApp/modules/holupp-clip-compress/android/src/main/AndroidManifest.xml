@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Nothing requested. The module reads a file the app already wrote and
+       writes a second one beside it; no storage, camera or media permission is
+       involved. -->
+</manifest>

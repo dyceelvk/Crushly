@@ -9,6 +9,7 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { UsernameField } from '../../components/UsernameField';
 import { useSetUsername } from '../../api/hooks';
+import { Avatar } from '../../components/Photo';
 import { Chip, ChipGroup } from '../../components/Chip';
 import { IconButton } from '../../components/IconButton';
 import { PhotoGrid } from '../../components/PhotoGrid';
@@ -16,7 +17,7 @@ import { RangeSlider } from '../../components/Slider';
 import { ListRow, Group } from '../../components/ListRow';
 import { useToast } from '../../components/Toast';
 import { useMe, useUpdatePreferences, useUpdatePrivacy, useUpdateProfile } from '../../api/hooks';
-import { completeOnboarding } from '../../api/service';
+import { completeOnboarding, followMember, profileByUsername } from '../../api/service';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { haptic } from '../../lib/haptics';
@@ -27,10 +28,10 @@ import { MINIMUM_MEMBER_AGE } from '../../lib/minimumAge';
 import type { Intention, Me } from '../../api/types';
 import type { ScreenProps } from '../../navigation/types';
 
-const TOTAL = 5;
+const TOTAL = 6;
 
 /**
- * Where you are in the flow, as five segments rather than a bar.
+ * Where you are in the flow, as six segments rather than a bar.
  *
  * A single bar with a gradient on it answers "how far" but not "how many left",
  * and the gradient made the filled part ambiguous — a member cannot tell a
@@ -63,7 +64,7 @@ function StepSegments({ step, total }: { step: number; total: number }) {
 }
 
 /**
- * The frame all five onboarding steps share.
+ * The frame all six onboarding steps share.
  *
  * Replaces a header that stacked a back button, a gradient bar and a "1/5"
  * counter on one crowded line, with the title at whatever distance was left
@@ -505,9 +506,9 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
     try {
       await updatePrefs.mutateAsync({ ageMin: ages[0], ageMax: ages[1], maxDistance: distance, intentions, interests, verifiedOnly: false });
       await updatePrivacy.mutateAsync({ showOnline, discoverable });
-      await completeOnboarding();
-      await refresh(); // flips the navigator to the main app
-      toast({ kind: 'success', title: 'You’re on holUpp', message: 'Your space is ready. Start with a feeling.' });
+      // One step left: the official accounts. Finishing happens there, so a
+      // member who skips it still gets in — the step is an invitation, not a gate.
+      navigation.navigate('OnboardingFollow');
     } catch (e) {
       setFinishing(false);
       toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });
@@ -518,7 +519,7 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
   const distanceIndex = Math.max(0, distanceSteps.indexOf(distance));
 
   return (
-    <Shell step={5} title="Your preferences" subtitle="Who would you like to discover? Adjust anytime from Discover." onBack={() => navigation.goBack()} onNext={finish} nextLabel="Start discovering" loading={finishing}>
+    <Shell step={5} title="Your preferences" subtitle="Who would you like to discover? Adjust anytime from Discover." onBack={() => navigation.goBack()} onNext={finish} nextLabel="Continue" loading={finishing}>
       {/* The live value sits on the same line as its label, right-aligned, in
           tabular figures — so dragging a thumb changes digits in place instead
           of shifting the whole row sideways. */}
@@ -563,6 +564,132 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
         <ListRow title="Show when I’m online" subtitle="If off, you won’t see others’ status either" icon="radio-button-on-outline" iconTone="success" toggle={{ value: showOnline, onChange: setShowOnline }} />
         <ListRow title="Show me in Discover" subtitle="Turn off to browse privately; Crushes you send still arrive" icon="eye-outline" iconTone="gold" toggle={{ value: discoverable, onChange: setDiscoverable }} last />
       </Group>
+    </Shell>
+  );
+}
+
+/* 6 — Stay close to holUpp */
+
+/**
+ * The company's own accounts. Both start selected, so one tap on Continue
+ * follows them — but the step is an invitation, not a gate. Skipping it still
+ * gets the member in, and following can be done later from either Space.
+ */
+const OFFICIAL_ACCOUNTS = [
+  { handle: 'holupp', fallbackName: 'Holupyall', blurb: 'Official updates, new features and what is coming next.' },
+  { handle: 'info_holup', fallbackName: 'InfoholUp', blurb: 'Help, answers and the things worth knowing.' },
+] as const;
+
+export function OnboardingFollowScreen({ navigation }: ScreenProps<'OnboardingFollow'>) {
+  const { colors } = useTheme();
+  const toast = useToast();
+  const { refresh } = useAuth();
+  const [profiles, setProfiles] = useState<Record<string, { id: number; name: string; photo: string | null }>>({});
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(OFFICIAL_ACCOUNTS.map((a) => a.handle)));
+  const [finishing, setFinishing] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const found: Record<string, { id: number; name: string; photo: string | null }> = {};
+      await Promise.all(OFFICIAL_ACCOUNTS.map(async (account) => {
+        try {
+          const profile = await profileByUsername(account.handle);
+          if (profile) found[account.handle] = {
+            id: profile.id,
+            name: profile.name || account.fallbackName,
+            photo: profile.photos?.[0]?.url ?? null,
+          };
+        } catch { /* row still renders with its fallback name */ }
+      }));
+      if (alive) setProfiles(found);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const toggle = (handle: string) => setSelected((s) => {
+    const next = new Set(s);
+    if (next.has(handle)) next.delete(handle);
+    else next.add(handle);
+    return next;
+  });
+
+  const enter = async (shouldFollow: boolean) => {
+    setFinishing(true);
+    try {
+      if (shouldFollow) {
+        // Best-effort: a member who cannot reach the accounts right now still
+        // gets in, and can follow them later.
+        await Promise.allSettled(OFFICIAL_ACCOUNTS.filter((a) => selected.has(a.handle)).map(async (account) => {
+          const id = profiles[account.handle]?.id ?? (await profileByUsername(account.handle))?.id;
+          if (id != null) await followMember(id);
+        }));
+      }
+      await completeOnboarding();
+      await refresh(); // flips the navigator to the main app
+      toast({ kind: 'success', title: 'You’re on holUpp', message: 'Your space is ready. Start with a feeling.' });
+    } catch (e) {
+      setFinishing(false);
+      toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });
+    }
+  };
+
+  return (
+    <Shell
+      step={6}
+      title="Stay close to holUpp"
+      subtitle="Follow the official accounts. Updates, help and what is coming next — straight from the people who build it."
+      onBack={() => navigation.goBack()}
+      onNext={() => enter(true)}
+      nextLabel="Start discovering"
+      loading={finishing}
+      skip={() => enter(false)}
+    >
+      <View style={{ gap: space.xs }}>
+        {OFFICIAL_ACCOUNTS.map((account) => {
+          const on = selected.has(account.handle);
+          const profile = profiles[account.handle];
+          return (
+            <Pressable
+              key={account.handle}
+              onPress={() => { haptic.tap(); toggle(account.handle); }}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`Follow @${account.handle}`}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', gap: space.sm,
+                paddingVertical: space.sm, paddingHorizontal: space.sm,
+                borderRadius: radius.md, borderWidth: stroke.hairline,
+                borderColor: on ? colors.primaryLine : colors.border,
+                backgroundColor: on ? colors.primarySoft : colors.card,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Avatar uri={profile?.photo ?? null} name={profile?.name ?? account.fallbackName} size={44} />
+              <View style={{ flex: 1 }}>
+                <Txt variant="bodyStrong">{profile?.name ?? account.fallbackName}</Txt>
+                <Txt variant="small" color="textSecondary" style={{ marginTop: 1 }}>@{account.handle}</Txt>
+                <Txt variant="small" color="textMuted" style={{ marginTop: 2 }}>{account.blurb}</Txt>
+              </View>
+              <View style={{
+                width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                borderWidth: stroke.thick, borderColor: on ? colors.primary : colors.borderStrong,
+                backgroundColor: on ? colors.primary : 'transparent',
+              }}>
+                {on ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={{ marginTop: rhythm.group, gap: space.xs }}>
+        {['You can unfollow anytime — nothing here is permanent.', 'New features are announced here first, before anywhere else.'].map((tip) => (
+          <View key={tip} style={{ flexDirection: 'row', gap: space.xs }}>
+            <Ionicons name="sparkles-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
+            <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>{tip}</Txt>
+          </View>
+        ))}
+      </View>
     </Shell>
   );
 }

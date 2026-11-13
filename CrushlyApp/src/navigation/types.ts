@@ -34,6 +34,7 @@ export type RootStackParamList = {
   OnboardingPhotos: undefined;
   OnboardingAbout: undefined;
   OnboardingPreferences: undefined;
+  OnboardingFollow: undefined;
   Main: NavigatorScreenParams<TabParamList> | undefined;
   UserProfile: { id: number };
   Chat: { conversationId: number };

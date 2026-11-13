@@ -23,7 +23,7 @@ import { FollowScreen } from '../screens/auth/Follow';
 import { WelcomeScreen } from '../screens/auth/Welcome';
 import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } from '../screens/auth/AuthForms';
 import {
-  OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
+  OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingFollowScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
 } from '../screens/onboarding/Onboarding';
 import { SearchScreen } from '../screens/discover/Search';
 import { FeedScreen } from '../screens/flow/FeedScreen';

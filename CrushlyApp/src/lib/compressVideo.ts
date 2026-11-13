@@ -1,4 +1,7 @@
 import { Platform } from 'react-native';
+import { clipCompressorAvailable, compressClipFile, NoSpaceError, removeCompressedClip } from './compressClip';
+
+export { NoSpaceError };
 
 /**
  * Making a big clip small enough to post.
@@ -79,13 +82,14 @@ const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
  * How many bits a second the picture can have.
  *
  * Audio is a fixed, small cost; everything left is spread over the clip's length.
- * The floor is 350 kbit/s because below that a 1080-wide picture falls apart, and
- * the ceiling is 4 Mbit/s because above that we are not saving anybody anything.
+ * The floor is 2.5 Mbit/s because below that a 1080-wide picture falls apart —
+ * the old 350 kbit/s floor produced the muddy clips members reported. The ceiling
+ * is 10 Mbit/s; the phone path uses the same limits via Media3 Transformer.
  */
 function videoBitrateKbps(durationS: number, targetBytes: number): number {
   const totalKbps = (targetBytes * SAFETY * 8) / 1000 / Math.max(durationS, 1);
   const video = Math.round(totalKbps - AUDIO_KBPS);
-  return Math.min(4000, Math.max(350, video));
+  return Math.min(10000, Math.max(2500, video));
 }
 
 /** Audio is speech and music at phone size; 96 kbit/s stereo is generous. */
@@ -103,7 +107,7 @@ const FPS = 30;
  * picture and a clean one rather than a large, muddy one.
  */
 function widthFor(bitrateKbps: number, sourceW: number, sourceH: number): number {
-  const cap = bitrateKbps >= 2400 ? 1080 : bitrateKbps >= 1200 ? 854 : bitrateKbps >= 700 ? 640 : 480;
+  const cap = bitrateKbps >= 2500 ? 1080 : bitrateKbps >= 1200 ? 854 : bitrateKbps >= 700 ? 640 : 480;
   const portrait = sourceH > sourceW;
   const longest = Math.max(sourceW, sourceH) || cap;
   const want = Math.min(cap, longest);
@@ -139,29 +143,9 @@ function pickMime(): string {
   return '';
 }
 
-/** What the phone path can do, if this build has an encoder in it. */
-type NativeCompressor = {
-  Video: {
-    compress: (
-      uri: string,
-      options: { compressionMethod?: 'auto' | 'manual'; maxSize?: number; bitrate?: number; minimumFileSizeForCompress?: number },
-      /** Called with 0…1 as the encoder works, a few times a second. */
-      onProgress?: (fraction: number) => void,
-    ) => Promise<string>;
-  };
-};
-
-function nativeCompressor(): NativeCompressor | null {
-  if (Platform.OS === 'web') return null;
-  try {
-    // Required lazily: a web bundle must not contain it, and a build without the
-    // native module must still start.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
-    const mod = require('react-native-compressor') as NativeCompressor | undefined;
-    return typeof mod?.Video?.compress === 'function' ? mod : null;
-  } catch {
-    return null;
-  }
+/** Whether this build carries the phone's encoder at all. */
+function nativeCompressorAvailable(): boolean {
+  return Platform.OS !== 'web' && clipCompressorAvailable();
 }
 
 /**
@@ -227,30 +211,19 @@ export async function compressVideoFile(
   progress?: CompressProgress,
 ): Promise<{ uri: string; mimeType: string; bytes: number | null } | null> {
   if (Platform.OS === 'web') return null;
-  const mod = nativeCompressor();
-  if (!mod) return null;
+  if (!nativeCompressorAvailable()) return null;
   const tell = report(progress);
-  try {
-    tell(0, 'Compressing your clip');
-    const out = await mod.Video.compress(
-      uri,
-      {
-        compressionMethod: 'auto',
-        maxSize: Math.max(1, Math.round(targetBytes / (1024 * 1024))),
-        minimumFileSizeForCompress: Math.round(LEAVE_ALONE_BYTES / (1024 * 1024)),
-      },
-      (fraction) => tell(Math.min(0.99, fraction), 'Compressing'),
-    );
-    if (!out) return null;
-    const bytes = await fileSize(out);
-    // A "compressed" file bigger than the ceiling is not a win; report nothing
-    // and let the caller decide with the original.
-    if (bytes && bytes > targetBytes * 1.05) { tell(1, 'Uploading'); return { uri: out, mimeType: 'video/mp4', bytes }; }
-    tell(1, 'Uploading');
-    return { uri: out, mimeType: 'video/mp4', bytes };
-  } catch {
-    return null;
-  }
+  tell(0, 'Compressing your clip');
+  // A NoSpaceError is the one failure that must reach the member: the phone
+  // cannot hold the output, and pretending otherwise ends in "we couldn't read
+  // that file" at the upload. Everything else falls back to the original.
+  const out = await compressClipFile(uri, targetBytes, (fraction) =>
+    tell(Math.min(0.99, fraction), 'Compressing'),
+  );
+  if (!out) return null;
+  const bytes = out.bytes ?? (await fileSize(out.uri));
+  tell(1, 'Uploading');
+  return { uri: out.uri, mimeType: 'video/mp4', bytes };
 }
 
 /* ------------------------------------------------------------------- the web */
@@ -437,9 +410,7 @@ async function compressOnDevice(
   targetBytes: number,
   { sourceUri, progress }: { sourceUri?: string; progress?: CompressProgress },
 ): Promise<CompressedVideo | null> {
-  const mod = nativeCompressor();
-  if (!mod) return null;
-
+  if (!nativeCompressorAvailable()) return null;
   let path = sourceUri && /^file:\/\//.test(sourceUri) ? sourceUri : '';
   let wroteTemp = false;
   if (!path) {
@@ -448,30 +419,24 @@ async function compressOnDevice(
     wroteTemp = !!path;
   }
   if (!path) return null;
-
   progress?.(0.05, 'Compressing');
   try {
-    const out = await mod.Video.compress(
-      path,
-      {
-        compressionMethod: 'auto',
-        maxSize: Math.max(1, Math.round(targetBytes / (1024 * 1024))),
-        minimumFileSizeForCompress: Math.round(LEAVE_ALONE_BYTES / (1024 * 1024)),
-      },
-      (fraction) => progress?.(0.05 + Math.min(0.9, fraction) * 0.95, 'Compressing'),
+    const out = await compressClipFile(path, targetBytes, (fraction: number) =>
+      progress?.(0.05 + Math.min(0.9, fraction) * 0.95, 'Compressing'),
     );
-    const blob = await readBack(out);
-    // A transcode that grew the file is not a win: keep what the person had.
-    if (!blob || !blob.size || blob.size >= input.size) return null;
-    progress?.(1, 'Done');
-    return { blob, mimeType: blob.type || 'video/mp4', width: 0, height: 0, durationMs: 0, bytes: blob.size };
-  } catch {
-    return null;
+    if (!out) return null;
+    try {
+      const blob = await readBack(out.uri);
+      if (!blob || !blob.size || blob.size >= input.size) return null;
+      progress?.(1, 'Done');
+      return { blob, mimeType: blob.type || 'video/mp4', width: 0, height: 0, durationMs: 0, bytes: blob.size };
+    } finally {
+      removeCompressedClip(out.uri);
+    }
   } finally {
     if (wroteTemp) void deleteFile(path);
   }
 }
-
 /** The encoder's file, read back as a Blob so the upload path stays one shape. */
 async function readBack(uri: string): Promise<Blob | null> {
   try {

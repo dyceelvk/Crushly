@@ -12,7 +12,8 @@ import {
   setMediaTokenTransport,
 } from '../lib/mediaHost';
 import type { MediaKind } from '../lib/mediaHost';
-import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, TARGET_BYTES } from '../lib/compressVideo';
+import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, NoSpaceError, TARGET_BYTES } from '../lib/compressVideo';
+import { removeCompressedClip } from '../lib/compressClip';
 import { planUpload } from '../lib/uploadPlan';
 
 /**
@@ -381,20 +382,27 @@ export async function uploadMediaFile(
    * result — which is capped at `TARGET_BYTES` — is ever read as a Blob. Nothing
    * bigger than the upload ceiling passes through the heap.
    */
+  let compressedTempUri: string | null = null;
   const onDevice = Platform.OS !== 'web' && /^file:\/\//.test(uri);
   const pickedBytes = onDevice ? await fileSize(uri) : null;
   const plan = planUpload(pickedBytes, !!onDevice);
   if (plan.action === 'refuse') throw new ApiError(413, plan.reason);
   if (plan.action === 'compress-first') {
-    const smaller = await compressVideoFile(uri, plan.targetBytes).catch(() => null);
+    const smaller = await compressVideoFile(uri, plan.targetBytes).catch((e) => { if (e instanceof NoSpaceError) throw e; return null; });
     if (smaller) {
       uri = smaller.uri;
+      compressedTempUri = smaller.uri;
       contentType = smaller.mimeType;
       path = path.replace(/\.[^./]+$/, `.${extensionFor(smaller.mimeType, 'webm')}`);
     }
   }
 
-  const original = await uriToBlob(uri);
+  let original: Blob;
+  try {
+    original = await uriToBlob(uri);
+  } finally {
+    if (compressedTempUri) removeCompressedClip(compressedTempUri);
+  }
   if (original.size > MAX_PICK_BYTES) {
     throw new ApiError(413, 'That clip is over 300 MB. Trim it first, then post.');
   }
@@ -415,7 +423,10 @@ export async function uploadMediaFile(
     const sourceUri = Platform.OS === 'web' ? undefined : uri;
     let target = TARGET_BYTES;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const smaller = await compressVideo(original, { targetBytes: target, sourceUri }).catch(() => null);
+      const smaller = await compressVideo(original, { targetBytes: target, sourceUri }).catch((e) => {
+        if (e instanceof NoSpaceError) throw e;
+        return null;
+      });
       if (!smaller) break;
       blob = smaller.blob;
       contentType = smaller.mimeType;
