@@ -38,3 +38,13 @@ export function planUpload(bytes: number | null, onDevice: boolean): UploadPlan 
   if (bytes <= LEAVE_ALONE_BYTES) return { action: 'use-as-is' };
   return { action: 'compress-first', targetBytes: UPLOAD_TARGET_BYTES };
 }
+
+/**
+ * A failed native transcode must not send a large source through `uriToBlob`.
+ * For a clip above the upload ceiling, that fallback can allocate hundreds of
+ * megabytes in the JS heap and restart the app — repeat the original crash
+ * instead of surfacing a useful error. The file on disk is left untouched.
+ */
+export function mustStopAfterFailedCompression(bytes: number | null, uploadMaxBytes: number): boolean {
+  return bytes !== null && bytes > uploadMaxBytes;
+}

@@ -11,7 +11,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
-import androidx.media3.effect.OverlaySettings
+import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.EditedMediaItem
@@ -84,7 +84,7 @@ class HolupClipMarkModule : Module() {
           // OverlayEffect takes only the overlay: where it sits is a property of
           // the overlay, not of the effect. (The two-argument form is 1.6+; this
           // build pins 1.5.1, and the compiler is the authority on that.)
-          val settings = OverlaySettings.Builder()
+          val settings = StaticOverlaySettings.Builder()
             // Anchors are 0..1 across the frame: 0.94 is just inside the
             // bottom-right corner, with the 6% of slack the chip's own padding
             // gives it.
@@ -133,7 +133,7 @@ class HolupClipMarkModule : Module() {
       // A Composition holds *sequences*, not items: the items are one after the
       // other in a single sequence, which is what makes the end card follow the
       // clip instead of playing over it.
-      val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
+      val composition = Composition.Builder(EditedMediaItemSequence.Builder(items).build()).build()
       transformer.start(composition, output.absolutePath)
       val finished = latch.await(10, TimeUnit.MINUTES)
 
