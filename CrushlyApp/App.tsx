@@ -22,6 +22,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import type { RootStackParamList } from './src/navigation/types';
 import { ApiError } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { CaptchaHost } from './src/components/CaptchaHost';
 
 ExpoSplash.preventAutoHideAsync().catch(() => {});
 
@@ -142,6 +143,10 @@ export default function App() {
                   not a settings-page event, and a member who never opens
                   Settings would never hear about one. */}
               <UpdateGate />
+              {/* Above the whole app, not inside the auth screens: the check is
+                  asked for from the auth state layer, and this is what answers
+                  it. Renders nothing until a token is actually needed. */}
+              <CaptchaHost />
             </ToastProvider>
           </AuthProvider>
         </ThemeProvider>

@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
+import { captchaFailureMessage, getCaptchaToken, isCaptchaError } from '../lib/captcha';
 import { emailSendMessage, signUpOutcome } from '../lib/auth';
 import { keys } from '../api/hooks';
 import { getMe, webOrigin } from '../api/service';
@@ -132,9 +133,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string) => {
       requireConfig();
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      /**
+       * Fetched per attempt, never cached: a Turnstile token is single-use and
+       * expires. When no site key is configured this is `undefined` and the
+       * request is exactly what it was before the check existed.
+       */
+      const captchaToken = await getCaptchaToken();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+        ...(captchaToken ? { options: { captchaToken } } : {}),
+      });
       if (error) {
         const msg = String(error.message ?? '');
+        if (isCaptchaError(msg)) throw new ApiError(400, captchaFailureMessage(msg), 'captcha');
         if (/invalid login credentials/i.test(msg)) throw new ApiError(401, 'That email and password don’t match.');
         // A stable code, so the sign-in screen can offer the way out of this
         // state instead of only describing it.
@@ -176,13 +188,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
        * in the project's redirect allow list.
        */
       const origin = webOrigin();
+      // Same rule as sign-in: the check is asked for here, at the request, and
+      // the token is spent immediately.
+      const captchaToken = await getCaptchaToken();
       const { data, error } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
-        ...(origin ? { options: { emailRedirectTo: origin } } : {}),
+        options: {
+          ...(origin ? { emailRedirectTo: origin } : {}),
+          ...(captchaToken ? { captchaToken } : {}),
+        },
       });
       if (error) {
         const msg = String(error.message ?? '');
+        if (isCaptchaError(msg)) throw new ApiError(400, captchaFailureMessage(msg), 'captcha');
         if (/already (registered|exists)/i.test(msg)) {
           throw new ApiError(409, 'An account with this email already exists. Try signing in.');
         }

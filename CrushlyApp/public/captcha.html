@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Quick check — holUpp</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; padding: 0; background: transparent; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        display: flex; align-items: center; justify-content: center;
+        min-height: 100vh; color: #AD8D9D;
+      }
+      #slot { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+      .note { font-size: 13px; line-height: 1.4; text-align: center; }
+      button {
+        background: none; border: 0; padding: 8px; font: inherit; font-size: 13px;
+        color: #AD8D9D; text-decoration: underline; cursor: pointer;
+      }
+    </style>
+    <!--
+      The page the phone's WebView loads so Cloudflare's widget runs on a real
+      hostname (holupp.net) instead of `file://`. Turnstile validates that
+      hostname against the widget's allow list — if this page loads and stays
+      blank, `holupp.net` is missing from the key's domains.
+
+      The site key arrives in the query string because the app is the thing that
+      knows its own build; nothing secret is here, and nothing is stored.
+    -->
+  </head>
+  <body>
+    <div id="slot">
+      <div id="widget"></div>
+      <div class="note" id="note">Confirming you’re a person…</div>
+      <button id="cancel" type="button">Cancel</button>
+    </div>
+
+    <script>
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var sitekey = (params.get('sitekey') || '').trim();
+        var note = document.getElementById('note');
+        var slot = document.getElementById('widget');
+
+        function send(payload) {
+          var text = JSON.stringify(payload);
+          // Inside the app.
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(text);
+            return;
+          }
+          // Opened in a browser: the opener gets the token, and the page shows it
+          // so the flow can be tested without installing anything.
+          if (window.parent && window.parent !== window) window.parent.postMessage(payload, '*');
+          note.textContent = payload.type === 'token' ? 'Token acquired.' : 'Could not complete the check.';
+        }
+
+        document.getElementById('cancel').addEventListener('click', function () {
+          send({ type: 'cancel' });
+        });
+
+        if (!sitekey) {
+          note.textContent = 'No site key was passed to this page.';
+          send({ type: 'error', message: 'missing site key' });
+          return;
+        }
+
+        window.addEventListener('error', function (event) {
+          send({ type: 'error', message: String((event && event.message) || 'widget error') });
+        });
+
+        var script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onerror = function () {
+          note.textContent = 'The check could not load. Check your connection.';
+          send({ type: 'error', message: 'script failed to load' });
+        };
+        script.onload = function () {
+          if (!window.turnstile) {
+            note.textContent = 'The check could not load.';
+            send({ type: 'error', message: 'turnstile unavailable' });
+            return;
+          }
+          window.turnstile.render(slot, {
+            sitekey: sitekey,
+            theme: 'dark',
+            size: 'flexible',
+            appearance: 'always',
+            callback: function (token) {
+              note.textContent = 'Confirmed.';
+              send({ type: 'token', token: token });
+            },
+            'error-callback': function (code) {
+              send({ type: 'error', message: String(code || 'error-callback') });
+            },
+            'timeout-callback': function () {
+              send({ type: 'error', message: 'timeout' });
+            }
+          });
+        };
+        document.head.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

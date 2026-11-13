@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { getCaptchaToken } from '../lib/captcha';
 import Constants from 'expo-constants';
 import { updateVersionPath } from '../lib/updateChannel';
 import { browserLocation } from '../lib/browser';
@@ -1528,17 +1529,28 @@ export function webOrigin(): string | undefined {
 
 export async function resendConfirmation(email: string): Promise<void> {
   const origin = webOrigin();
+  // A resend is an email-sending endpoint, which is exactly what captcha is
+  // there to protect: without a token here it is the cheapest way to make the
+  // project send mail on someone else's behalf.
+  const captchaToken = await getCaptchaToken();
   const { error } = await supabase.auth.resend({
     type: 'signup',
     email: email.trim().toLowerCase(),
-    ...(origin ? { options: { emailRedirectTo: origin } } : {}),
+    options: {
+      ...(origin ? { emailRedirectTo: origin } : {}),
+      ...(captchaToken ? { captchaToken } : {}),
+    },
   });
   if (error) throw toApiError(error);
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
   const next = email.trim().toLowerCase();
-  const { error } = await supabase.auth.resetPasswordForEmail(next, { redirectTo: webOrigin() });
+  const captchaToken = await getCaptchaToken();
+  const { error } = await supabase.auth.resetPasswordForEmail(next, {
+    redirectTo: webOrigin(),
+    ...(captchaToken ? { captchaToken } : {}),
+  });
   if (error) throw toApiError(error);
 }
 
