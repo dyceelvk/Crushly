@@ -21,8 +21,19 @@ import { cleanEnvValue } from './env';
 /** Cloudflare's script. `render=explicit` because we create the widget ourselves. */
 export const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
-/** Where the native WebView loads the widget from. Must be a host in the key's allow list. */
-export const CAPTCHA_PAGE_ORIGIN = 'https://holupp.net';
+/**
+ * Where the native WebView loads the widget from.
+ *
+ * `www.` and not the apex, and that matters: `https://holupp.net/...` answers
+ * **308** to `https://www.holupp.net/...`, so the WebView was loading the apex,
+ * being redirected, and — because the redirect target was not in the navigation
+ * allow list — refusing the load. The sheet sat on a spinner with nothing in it
+ * and no error, which is exactly how it was reported: "it doesn't show the
+ * captcha, it keeps loading".
+ *
+ * The host here must also be in the Turnstile widget's allow list.
+ */
+export const CAPTCHA_PAGE_ORIGIN = 'https://www.holupp.net';
 
 /** How long we wait for the check before letting the person try again. */
 export const CAPTCHA_TIMEOUT_MS = 60_000;
@@ -47,6 +58,29 @@ export function captchaEnabled(): boolean {
 export function captchaPageUrl(): string {
   const key = encodeURIComponent(captchaSiteKey());
   return `${CAPTCHA_PAGE_ORIGIN}/captcha.html?sitekey=${key}`;
+}
+
+/**
+ * Which navigations the captcha WebView may follow.
+ *
+ * The widget page, its own `www.` host, and Cloudflare's challenge frames — and
+ * nothing else. This is a security boundary (an allow list, not a deny list), so
+ * it is a pure function with its own tests rather than a regex buried in a
+ * component. Getting it wrong is invisible: a blocked navigation looks exactly
+ * like a slow network.
+ */
+const CAPTCHA_HOSTS = ['holupp.net', 'www.holupp.net', 'challenges.cloudflare.com'];
+
+export function captchaNavigationAllowed(rawUrl: string): boolean {
+  let host: string;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'https:') return false;
+    host = url.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return CAPTCHA_HOSTS.includes(host);
 }
 
 type Solver = () => Promise<string>;

@@ -45,6 +45,10 @@
         var slot = document.getElementById('widget');
 
         function send(payload) {
+          if (payload.type === 'token' || payload.type === 'error') {
+            done = true;
+            clearTimeout(watchdog);
+          }
           var text = JSON.stringify(payload);
           // Inside the app.
           if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -60,6 +64,22 @@
         document.getElementById('cancel').addEventListener('click', function () {
           send({ type: 'cancel' });
         });
+
+        /*
+         * A widget that never answers must not look like a slow network forever.
+         *
+         * If no token, no error and no challenge has appeared after this long,
+         * the app is told so in words it can show: the two causes are a site key
+         * whose allowed domains do not include this host, and a WebView that
+         * cannot run the challenge. Silence was the old behaviour and it is the
+         * reason this failure was reported as "it keeps loading".
+         */
+        var done = false;
+        var watchdog = setTimeout(function () {
+          if (done) return;
+          note.textContent = 'The check is taking too long.';
+          send({ type: 'error', message: 'timeout:no-answer from ' + location.hostname });
+        }, 20000);
 
         if (!sitekey) {
           note.textContent = 'No site key was passed to this page.';
@@ -95,6 +115,10 @@
               send({ type: 'token', token: token });
             },
             'error-callback': function (code) {
+              // Cloudflare's codes are worth keeping: 110200 means the site key
+              // does not allow this hostname, which is a dashboard fix, not a
+              // network one.
+              note.textContent = 'The check could not run on this site.';
               send({ type: 'error', message: String(code || 'error-callback') });
             },
             'timeout-callback': function () {

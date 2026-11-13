@@ -5,8 +5,9 @@ import { useTheme } from '../theme/ThemeProvider';
 import {
   CAPTCHA_TIMEOUT_MS,
   captchaEnabled,
-  captchaPageUrl,
   captchaFailureMessage,
+  captchaNavigationAllowed,
+  captchaPageUrl,
   setCaptchaSolver,
 } from '../lib/captcha';
 
@@ -29,6 +30,11 @@ export function CaptchaHost() {
   const { colors } = useTheme();
   const [pending, setPending] = useState<Pending | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // A reload is a new document with a new Cloudflare session. `key` is how the
+  // WebView is thrown away and replaced, because a page that failed to render
+  // once (a blocked redirect, a challenge that never answered) does not recover
+  // by itself.
+  const [attempt, setAttempt] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTimer = useCallback(() => {
@@ -69,6 +75,17 @@ export function CaptchaHost() {
     };
   }, [clearTimer, finish]);
 
+  const retry = useCallback(() => {
+    setMessage(null);
+    clearTimer();
+    setAttempt((n) => n + 1);
+    if (pending) {
+      timer.current = setTimeout(() => {
+        finish({ error: new Error('The security check took too long. Try again.') });
+      }, CAPTCHA_TIMEOUT_MS);
+    }
+  }, [clearTimer, finish, pending]);
+
   const onMessage = useCallback(
     (raw: string) => {
       let payload: { type?: string; token?: string; message?: string } | null = null;
@@ -106,22 +123,46 @@ export function CaptchaHost() {
           </Text>
           <View style={styles.webviewWrap}>
             <WebView
+              key={attempt}
               source={{ uri: captchaPageUrl() }}
               originWhitelist={['https://*']}
               javaScriptEnabled
               domStorageEnabled
-              // Only the widget's own host is allowed to navigate; anything else
-              // is a dead end the person cannot back out of.
-              onShouldStartLoadWithRequest={(req) => /^(https:\/\/(challenges\.cloudflare\.com|holupp\.net))/i.test(req.url)}
+              /*
+               * Turnstile runs its challenge in an iframe on
+               * challenges.cloudflare.com, and that frame needs its own storage.
+               * Android turns third-party cookies OFF by default, so the
+               * challenge loaded and then had nowhere to keep its state: the
+               * spinner turned forever and no token was ever produced. This is
+               * the single most common reason a captcha "keeps loading" inside a
+               * WebView, and it is invisible unless you know to look for it.
+               */
+              thirdPartyCookiesEnabled
+              sharedCookiesEnabled
+              // The widget opens no windows of its own; a popup here would be a
+              // blank screen with no way back.
+              setSupportMultipleWindows={false}
+              javaScriptCanOpenWindowsAutomatically={false}
+              // No cache: a stale challenge document is worse than a slow one.
+              cacheEnabled={false}
+              // Only the widget page and Cloudflare may be navigated to.
+              onShouldStartLoadWithRequest={(req) => captchaNavigationAllowed(req.url)}
               onMessage={(event) => onMessage(event.nativeEvent.data)}
+              onError={() => setMessage('The security check couldn’t load. Check your connection, then try again.')}
+              onHttpError={() => setMessage('The security check couldn’t load. Check your connection, then try again.')}
               style={styles.webview}
             />
           </View>
           {message ? <Text style={[styles.error, { color: colors.danger }]}>{message}</Text> : null}
           {message ? (
-            <Pressable onPress={() => finish({ error: new Error(message) })} style={styles.cancel}>
-              <Text style={[styles.cancelText, { color: colors.textMuted }]}>Cancel</Text>
-            </Pressable>
+            <View style={styles.actions}>
+              <Pressable onPress={retry} style={styles.action}>
+                <Text style={[styles.actionText, { color: colors.primary }]}>Try again</Text>
+              </Pressable>
+              <Pressable onPress={() => finish({ error: new Error(message) })} style={styles.action}>
+                <Text style={[styles.cancelText, { color: colors.textMuted }]}>Cancel</Text>
+              </Pressable>
+            </View>
           ) : (
             <ActivityIndicator color={colors.primary} style={styles.spinner} />
           )}
@@ -139,7 +180,9 @@ const styles = StyleSheet.create({
   webviewWrap: { height: 120, marginTop: 14, borderRadius: 12, overflow: 'hidden' },
   webview: { flex: 1, backgroundColor: 'transparent' },
   error: { fontSize: 13, lineHeight: 18, marginTop: 10 },
-  cancel: { alignSelf: 'center', paddingVertical: 12 },
+  actions: { flexDirection: 'row', justifyContent: 'center', gap: 18, marginTop: 4 },
+  action: { paddingVertical: 12, paddingHorizontal: 8 },
+  actionText: { fontSize: 14, fontWeight: '700' },
   cancelText: { fontSize: 13, fontWeight: '600' },
   spinner: { marginTop: 14 },
 });
