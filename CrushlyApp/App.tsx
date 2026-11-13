@@ -23,6 +23,7 @@ import type { RootStackParamList } from './src/navigation/types';
 import { ApiError } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { CaptchaHost } from './src/components/CaptchaHost';
+import { WebGate, webGateActive } from './src/components/WebGate';
 
 ExpoSplash.preventAutoHideAsync().catch(() => {});
 
@@ -131,6 +132,13 @@ function Shell() {
   );
 }
 
+/**
+ * Whether `/` should show the gate instead of the app. Computed once per load:
+ * a browser that lands on a shared /v/ link gets the real app, and the home page
+ * gets a sentence and a download button.
+ */
+const gate = webGateActive();
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -138,7 +146,7 @@ export default function App() {
         <ThemeProvider>
           <AuthProvider>
             <ToastProvider>
-              <Shell />
+              {gate ? <WebGate /> : <Shell />}
               {/* Offered above the app rather than inside a screen: an update is
                   not a settings-page event, and a member who never opens
                   Settings would never hear about one. */}

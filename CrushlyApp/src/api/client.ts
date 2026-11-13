@@ -294,8 +294,39 @@ async function deleteFromMediaStore(url: string): Promise<void> {
   }
 }
 
+/**
+ * A URI this app can actually read.
+ *
+ * The Android picker hands back `content://` URIs, and `fetch()` cannot read
+ * those — the read fails and the member is told "we couldn’t read that file", on
+ * a file sitting right there in their gallery. It only bit clips that skipped
+ * compression (a small one, or one whose re-encode failed), because the
+ * compressor's output is already a `file://` path.
+ *
+ * So a content URI is copied out of the provider and into our own cache first.
+ * One copy of a 40 MB clip is a second of I/O; failing the post is not.
+ */
+async function readableUri(uri: string): Promise<string> {
+  if (Platform.OS !== 'android' || !uri.startsWith('content://')) return uri;
+  try {
+    const FileSystem = await import('expo-file-system/legacy');
+    const dir = `${FileSystem.cacheDirectory ?? ''}holupp-upload/`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+    const target = `${dir}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await FileSystem.copyAsync({ from: uri, to: target });
+    return target;
+  } catch (e) {
+    // Deliberately not fatal here: the caller's existing read path gets one more
+    // attempt with the original URI, and fails with its own message if that fails
+    // too. This keeps one unreadable provider from breaking every upload.
+    console.warn('readableUri: could not copy content uri', (e as Error).message);
+    return uri;
+  }
+}
+
 /** Reads a local file (camera roll / recorder URI) into a Blob on any platform. */
-export async function uriToBlob(uri: string): Promise<Blob> {
+export async function uriToBlob(rawUri: string): Promise<Blob> {
+  const uri = await readableUri(rawUri);
   let lastError: unknown = null;
 
   // fetch() works for blob:, data: and http: URIs on both web and native.

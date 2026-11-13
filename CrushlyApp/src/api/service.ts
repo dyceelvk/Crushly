@@ -873,18 +873,23 @@ export async function createPost(input: {
     const clipPath = `posts/${id}/${Date.now()}.${type.includes('webm') ? 'webm' : 'mp4'}`;
     media = await uploadMediaFile('media', clipPath, input.videoUri, type);
 
-    const plan = planMark({ platform: Platform.OS, encoderAvailable: markEncoderAvailable(), bytes: null });
-    if (plan.action === 'mark') {
-      const marked = await markClipFile(input.videoUri, await myHandle());
-      if (marked) {
-        try {
+    /**
+     * Everything about the mark is optional, and one `try` around all of it says
+     * so: the handle lookup, the transcode, the second upload. A decorative copy
+     * of a clip must never be the reason a post fails — the scheduled job exists
+     * precisely to pick up what this cannot finish.
+     */
+    try {
+      const plan = planMark({ platform: Platform.OS, encoderAvailable: markEncoderAvailable(), bytes: null });
+      if (plan.action === 'mark') {
+        const marked = await markClipFile(input.videoUri, await myHandle());
+        if (marked) {
           await uploadMediaFile('media', markedClipKey(clipPath), marked.uri, 'video/mp4');
           markedClipPath = markedClipKey(clipPath);
-        } catch {
-          // Uploading the marked copy failed; the post is already up and the
-          // scheduled job will produce one. Nothing to tell the member.
         }
       }
+    } catch (e) {
+      console.warn('clip marking skipped:', (e as Error).message);
     }
   }
   // Before the edit is written: a soundtrack picked on this phone must not be a
