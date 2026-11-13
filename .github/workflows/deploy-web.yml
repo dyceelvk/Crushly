@@ -155,32 +155,31 @@ jobs:
           import re, sys, time, urllib.request
           version, title = sys.argv[1], sys.argv[2]
           """
-          Two checks, because one of them was not enough.
+          Three checks, because each one alone has lied before.
 
-          This used to look for the app version inside the live bundle and call it
-          proven. Every commit on the same version therefore passed against a
-          *stale* site: on 2026-11-07 holupapp.vercel.app was eight commits behind,
-          still serving the pre-rename bundle, and this job went green because
-          1.0.95 was still 1.0.95. The commit that day was never shipped and
-          nothing said so.
-
-          The page's own <title> only changes when the build changes, so it is the
-          cheap proof that the live document is this build and not an older one.
+          `/` is now the public marketing site, so its <title> is the proof that
+          the document on the domain is this build. `/app` is the Expo shell,
+          which is where the version has to appear — checking the bundle on `/`
+          stopped being possible the day the site took that URL over, and a check
+          that silently passes when it cannot run is worse than no check.
           """
           for attempt in range(20):
               try:
-                  html = urllib.request.urlopen('https://holupapp.vercel.app', timeout=30).read().decode('utf-8', 'ignore')
-                  live_title = re.search(r'<title>(.*?)</title>', html, re.S)
+                  home = urllib.request.urlopen('https://holupapp.vercel.app/', timeout=30).read().decode('utf-8', 'ignore')
+                  live_title = re.search(r'<title>(.*?)</title>', home, re.S)
                   live_title = live_title.group(1).strip() if live_title else ''
-                  bundle = re.search(r'/_expo/static/js/web/index-[a-f0-9]+\.js', html)
-                  if bundle and live_title == title:
+                  app = urllib.request.urlopen('https://holupapp.vercel.app/app', timeout=30).read().decode('utf-8', 'ignore')
+                  bundle = re.search(r'/_expo/static/js/web/index-[a-f0-9]+\.js', app)
+                  if live_title != title:
+                      print('live title is not this build yet: ' + repr(live_title) + ' (attempt ' + str(attempt + 1) + ')')
+                  elif not bundle:
+                      print('live /app has no bundle yet (attempt ' + str(attempt + 1) + ')')
+                  else:
                       js = urllib.request.urlopen('https://holupapp.vercel.app' + bundle.group(0), timeout=90).read().decode('utf-8', 'ignore')
                       if re.search(r'version[^0-9]{0,12}' + re.escape(version), js):
-                          print('::notice::holupapp.vercel.app is serving ' + version + ' (' + bundle.group(0) + ') with the title of this build')
+                          print('::notice::holupapp.vercel.app serves the new site on / (' + repr(title) + ') and ' + version + ' on /app')
                           sys.exit(0)
                       print('live bundle is not ' + version + ' yet (attempt ' + str(attempt + 1) + ')')
-                  elif bundle:
-                      print('live title is not this build yet: ' + repr(live_title) + ' (attempt ' + str(attempt + 1) + ')')
               except Exception as exc:
                   print('could not read the live site: ' + str(exc))
               time.sleep(15)

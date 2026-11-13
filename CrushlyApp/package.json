@@ -58,7 +58,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:web": "expo export -p web --output-dir dist --clear && node scripts/seo-head.mjs",
+    "build:web": "expo export -p web --output-dir dist --clear && node scripts/seo-head.mjs && node site/build.mjs",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "admin": "node scripts/admin.mjs",

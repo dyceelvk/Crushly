@@ -109,6 +109,7 @@ const tags = [
   `<meta name="twitter:title" content="${TITLE}" />`,
   `<meta name="twitter:description" content="${DESCRIPTION}" />`,
   `<meta name="twitter:image" content="${IMAGE}" />`,
+  `<meta name="robots" content="noindex, nofollow" />`,
   `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`,
 ]
   .filter(Boolean)
