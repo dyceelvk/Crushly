@@ -153,7 +153,7 @@ class HolupClipCompressModule : Module() {
         })
         .build()
 
-      val composition = Composition.Builder(EditedMediaItemSequence(listOf(edited))).build()
+      val composition = Composition.Builder(EditedMediaItemSequence.Builder(listOf(edited)).build()).build()
 
       // Progress is polled rather than listened to: getProgress() is the one
       // progress API this version of Transformer guarantees, and a poll every
