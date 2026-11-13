@@ -55,6 +55,25 @@ export function hasFocus(player: Focusable): boolean {
   return active === player;
 }
 
+/**
+ * Pause every clip in the app, now.
+ *
+ * Used before a transcode: a phone that is decoding a clip for the feed and is
+ * then asked to decode another one for compression runs out of video memory, and
+ * Android kills the process. The member sees the app close at 0% of a
+ * compression, which is exactly when the encoder asks for its buffers.
+ */
+export function pauseAllPlayers(): void {
+  for (const player of registry) {
+    try {
+      player.pause();
+    } catch {
+      // A player that cannot be paused is already gone.
+    }
+  }
+  active = null;
+}
+
 /** Test seam: forget every registered player. */
 export function __resetPlayerFocus(): void {
   registry.clear();

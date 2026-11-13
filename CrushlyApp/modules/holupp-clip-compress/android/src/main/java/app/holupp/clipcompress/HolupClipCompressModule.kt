@@ -225,6 +225,20 @@ class HolupClipCompressModule : Module() {
       } catch (error: InterruptedException) {
         Thread.currentThread().interrupt()
         throw CodedException("E_FAILED", "Compressing that clip was interrupted. Try again.", error)
+      } catch (error: Throwable) {
+        /*
+         * OutOfMemoryError is not an Exception, so it used to sail past every
+         * catch in this module and take the process down — the app closed at 0%
+         * of a compression with no message at all. It is catchable here because
+         * the allocation that failed belongs to this worker thread: no media
+         * buffer was half-allocated, so nothing is corrupted by carrying on.
+         * The member gets a sentence; the upload path keeps the original file.
+         */
+        throw CodedException(
+          "E_FAILED",
+          "This phone ran out of memory compressing that clip. Close other apps, or try a shorter clip.",
+          error,
+        )
       } finally {
         // Cancelling is a call on the transformer, so it goes to its thread too.
         handler.post { runCatching { transformerRef.get()?.cancel() } }

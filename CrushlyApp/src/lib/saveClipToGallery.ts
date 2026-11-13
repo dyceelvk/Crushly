@@ -25,9 +25,19 @@
  * screen. The native half lives in `saveClipToGallery.native.ts`, and Metro picks
  * one file per platform, so the native module cannot reach a browser at all.
  */
+import { downloadSource } from './mediaHost';
+
 export async function saveClipFile(url: string, name: string): Promise<'saved' | 'downloaded' | 'denied'> {
+  /*
+   * `/d/<post id>` is a path, not an address: it needs the Worker's origin and
+   * the member's token. `downloadSource` adds both (the token as a query
+   * parameter on the web, which is also what makes the navigation fallback below
+   * work at all).
+   */
+  const resolved = downloadSource(url);
+  const address = typeof resolved === 'string' ? resolved : resolved.uri;
   try {
-    const response = await fetch(url, { credentials: 'omit' });
+    const response = await fetch(address, { credentials: 'omit' });
     if (!response.ok) throw new Error(`download refused (${response.status})`);
     const blob = await response.blob();
     if (!blob.size) throw new Error('empty file');
@@ -49,7 +59,7 @@ export async function saveClipFile(url: string, name: string): Promise<'saved' |
      * `holup-<post id>.mp4` — because `/d/` answers with
      * `Content-Disposition: attachment`.
      */
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    const opened = window.open(address, '_blank', 'noopener,noreferrer');
     if (!opened) throw new Error('Your browser blocked the download. Allow pop-ups for holUpp and try again.');
     return 'downloaded';
   }

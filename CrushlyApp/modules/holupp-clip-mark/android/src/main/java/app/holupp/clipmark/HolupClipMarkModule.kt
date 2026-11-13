@@ -178,6 +178,11 @@ class HolupClipMarkModule : Module() {
           }
         }
         latch.await(MAX_MARK_MINUTES, TimeUnit.MINUTES)
+      } catch (error: Throwable) {
+        // OutOfMemoryError included: a mark runs right after an upload's own
+        // transcode, which is the moment video memory is thinnest. Failing the
+        // mark is fine (the post goes up unmarked); taking the app down is not.
+        throw CodedException("E_FAILED", "This phone couldn’t mark that clip. It was uploaded whole instead.", error)
       } finally {
         handler.post { runCatching { transformerRef.get()?.cancel() } }
         worker.quitSafely()

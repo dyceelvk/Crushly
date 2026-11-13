@@ -14,3 +14,20 @@ export function speedWhile({ holding, base }: { holding: boolean; base: number |
   const settled = Number.isFinite(normal) && normal > 0 ? normal : 1;
   return holding ? Math.min(settled * HOLD_SPEED, 8) : settled;
 }
+
+
+/**
+ * A tap is not a hold.
+ *
+ * The fast-forward strip answered `onPressIn`, so merely touching the right of
+ * the picture started boosting — and it covered the mute button, so muting
+ * fast-forwarded instead. A tap must never change speed: the boost only begins
+ * once the finger has stayed down for this long, which is longer than any tap a
+ * thumb makes by accident.
+ */
+export const HOLD_SPEED_DELAY_MS = 260;
+
+/** Whether a touch that has been down for `heldMs` should be speeding the clip up. */
+export function boostWhileHeld(heldMs: number): boolean {
+  return heldMs >= HOLD_SPEED_DELAY_MS;
+}

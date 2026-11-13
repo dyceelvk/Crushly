@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform, Pressable, StyleProp, View, ViewStyle } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, type VideoPlayer, type VideoSource } from 'expo-video';
@@ -15,7 +15,7 @@ import { useCachedClip } from '../lib/cachedClipSource';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from './Txt';
 import { mediaUrl } from '../api/client';
-import { speedWhile } from '../lib/holdSpeed';
+import { HOLD_SPEED_DELAY_MS, speedWhile } from '../lib/holdSpeed';
 
 /** Width ÷ height of a local file, read off a hidden <video> on the web. */
 function useWebRatio(uri: string | null | undefined): number | null {
@@ -293,6 +293,12 @@ export function EditedClip({
    * touched it.
    */
   const [boosting, setBoosting] = useState(false);
+  // A hold timer, not a flag: the strip must be able to tell a tap from a hold.
+  const boostTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearBoostTimer = useCallback(() => {
+    if (boostTimer.current) clearTimeout(boostTimer.current);
+    boostTimer.current = null;
+  }, []);
   const rate = speedWhile({ holding: boosting, base: look.speed });
   useEffect(() => {
     if (player) player.playbackRate = rate;
@@ -539,21 +545,39 @@ export function EditedClip({
       ) : null}
 
       {/*
-        Fast-forward, where a thumb lands. Only over a clip that is actually
-        playing: on a paused one there is nothing to speed up, and a bare strip
-        would swallow the tap that means "play".
+        Fast-forward, where a thumb lands — and under everything else.
+
+        This used to sit on top of the mute button and start boosting the moment a
+        finger touched down, so muting a clip fast-forwarded it instead. Two rules
+        fix it, and both are needed:
+
+         · The strip is rendered **before** the corner control and the play/pause
+           layer, so anything drawn over it wins the touch.
+         · A tap is not a hold: the boost only starts after `HOLD_SPEED_DELAY_MS`,
+           and a touch that lifts before that does nothing at all.
       */}
       {holdToSpeed && playing ? (
         <Pressable
           testID="clip-fast-forward"
-          onPressIn={() => setBoosting(true)}
-          onPressOut={() => setBoosting(false)}
+          onPressIn={() => {
+            clearBoostTimer();
+            boostTimer.current = setTimeout(() => {
+              boostTimer.current = null;
+              setBoosting(true);
+            }, HOLD_SPEED_DELAY_MS);
+          }}
+          onPressOut={() => {
+            clearBoostTimer();
+            setBoosting(false);
+          }}
+          /* A press that ends without the delay elapsed is a tap: the strip does
+             nothing, and the tap belongs to whatever it was aimed at. */
           onPress={() => undefined}
           accessibilityRole="button"
           accessibilityLabel="Hold to fast-forward"
           accessibilityHint="Runs this clip at double speed while you hold"
           accessibilityState={{ busy: boosting }}
-          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '34%' }}
+          style={{ position: 'absolute', right: 0, top: 0, height: '64%', width: '30%' }}
         >
           {boosting ? (
             <View
@@ -571,6 +595,7 @@ export function EditedClip({
           ) : null}
         </Pressable>
       ) : null}
+
     </View>
   );
 }

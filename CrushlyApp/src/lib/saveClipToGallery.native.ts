@@ -29,6 +29,7 @@
  */
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
+import { downloadSource } from './mediaHost';
 
 export async function saveClipFile(url: string, name: string): Promise<'saved' | 'downloaded' | 'denied'> {
   // `writeOnly` is enough on Android 13+: saving needs no permission to read the
@@ -36,9 +37,20 @@ export async function saveClipFile(url: string, name: string): Promise<'saved' |
   const permission = await MediaLibrary.requestPermissionsAsync(true, ['video']);
   if (!permission.granted) return 'denied';
 
+  /*
+   * The URL that arrives here is `/d/<post id>` — a path, not an address — and
+   * it needs the member's token or the Worker refuses with 401. Sending the bare
+   * path is what produced "Your session has expired" on a session that was
+   * perfectly fine: `downloadAsync` was handed something with no host and no
+   * Authorization header at all.
+   */
+  const source = downloadSource(url);
+  const address = typeof source === 'string' ? source : source.uri;
+  const headers = typeof source === 'string' ? undefined : source.headers;
+
   const target = `${FileSystem.cacheDirectory ?? ''}${name}`;
   try {
-    const result = await FileSystem.downloadAsync(url, target);
+    const result = await FileSystem.downloadAsync(address, target, headers ? { headers } : undefined);
     if (result.status === 401) throw new Error('Your session expired. Sign in again, then save the clip.');
     if (result.status === 404) throw new Error('That clip isn’t available to save.');
     if (result.status !== 200) throw new Error(`The clip could not be downloaded (${result.status}). Please try again.`);

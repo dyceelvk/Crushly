@@ -136,6 +136,34 @@ export function mediaAuthHeaders(url?: string | null): Record<string, string> | 
 }
 
 /**
+ * A download address the platform can actually fetch.
+ *
+ * The database and `createPost` hand back `/d/<post id>` — a path, because the
+ * Worker is the only thing that knows where the file lives. Two things were
+ * missing when that path reached `FileSystem.downloadAsync` on Android:
+ *
+ *  · the origin, so the request had no host to go to at all;
+ *  · the member's token, so the Worker answered **401** — and the app then told
+ *    the member their session had expired, on a perfectly good session. Three
+ *    reports of "Save clip says my session expired" are this function's absence.
+ *
+ * So a relative `/d/...` becomes an absolute Worker URL here, and the token
+ * rides along exactly the way it does for playback: a header on a phone, a query
+ * parameter on the web (which is also what makes a plain navigation — the web
+ * save fallback — carry the token at all).
+ */
+export function downloadSource(url?: string | null): string | { uri: string; headers?: Record<string, string> } {
+  if (!url) return '';
+  const absolute = /^\/(d|apk)\//.test(url) ? `${MEDIA_BASE_URL}${url}` : url;
+  if (!absolute || !token) return absolute;
+  if (tokenInQuery) {
+    const base = absolute.split('?')[0];
+    return `${base}${base.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  }
+  return { uri: absolute, headers: { Authorization: `Bearer ${token}` } };
+}
+
+/**
  * A ready-to-use image/player source. On native this is the URL plus an
  * Authorization header; on the web the token is already in the URL, because a
  * browser will not send headers for an <img>.

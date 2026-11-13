@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HOLD_SPEED, speedWhile } from './holdSpeed';
+import { HOLD_SPEED, speedWhile, HOLD_SPEED_DELAY_MS, boostWhileHeld } from './holdSpeed';
 
 test('holding plays at double, letting go returns to the clip own speed', () => {
   assert.equal(speedWhile({ holding: true, base: 1 }), HOLD_SPEED);
@@ -21,4 +21,23 @@ test('a nonsense speed is treated as normal rather than producing NaN', () => {
 
 test('the boost is clamped so a fast clip cannot run away', () => {
   assert.equal(speedWhile({ holding: true, base: 4 }), 8);
+});
+
+/**
+ * A tap is not a hold.
+ *
+ * The feed reported that touching mute, comment, crush or share fast-forwarded
+ * the clip instead. The strip answered on press-in, so any touch on the right of
+ * the picture boosted — and it was drawn over the mute button. These pin the
+ * delay half of the fix; the layering half is in EditedClip.
+ */
+test('a touch that is only a tap never changes the speed', () => {
+  assert.equal(boostWhileHeld(0), false);
+  assert.equal(boostWhileHeld(80), false);
+  assert.equal(boostWhileHeld(HOLD_SPEED_DELAY_MS - 1), false);
+});
+
+test('a real hold does', () => {
+  assert.equal(boostWhileHeld(HOLD_SPEED_DELAY_MS), true);
+  assert.equal(boostWhileHeld(900), true);
 });

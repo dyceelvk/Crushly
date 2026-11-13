@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mediaKind } from './mediaHost';
+import { downloadSource, mediaKind, setMediaToken, setMediaTokenTransport } from './mediaHost';
 
 const BASE = 'https://crushly-media.example.workers.dev';
 
@@ -132,4 +132,43 @@ test('the access token only ever goes to our own media host', () => {
   mod.setMediaToken(null);
   assert.equal(mod.mediaAuthHeaders(`${BASE}/m/photos/12/a.jpg`), undefined);
   assert.equal(mod.mediaSource('photos/12/a.jpg'), 'photos/12/a.jpg');
+});
+
+/**
+ * Saving a clip to the device.
+ *
+ * `downloadUrl` arrives from the database as `/d/<post id>` — a path. Handed
+ * straight to `FileSystem.downloadAsync` it had no host and no token, so the
+ * media Worker answered 401 and the member was told their session had expired.
+ * These pin the two halves of the fix: the origin, and the token.
+ */
+test('a /d/ path becomes an absolute URL on the media Worker', () => {
+  setMediaToken('tok-1');
+  setMediaTokenTransport(false);
+  const source = downloadSource('/d/12');
+  assert.equal(typeof source === 'object' && source.uri.startsWith('https://'), true);
+  assert.ok(typeof source === 'object' && source.uri.endsWith('/d/12'));
+  setMediaToken(null);
+});
+
+test('the save request carries the member token, on both transports', () => {
+  setMediaToken('tok-2');
+  setMediaTokenTransport(false);
+  const native = downloadSource('/d/12');
+  assert.deepEqual(typeof native === 'object' ? native.headers : null, { Authorization: 'Bearer tok-2' });
+
+  setMediaTokenTransport(true);
+  const web = downloadSource('/d/12');
+  assert.equal(typeof web === 'string' && web.endsWith('?token=tok-2'), true);
+  setMediaTokenTransport(false);
+  setMediaToken(null);
+});
+
+test('an absolute URL is left alone, and a missing one is empty', () => {
+  setMediaToken('tok-3');
+  setMediaTokenTransport(false);
+  const absolute = downloadSource('https://media.test/d/9');
+  assert.equal(typeof absolute === 'object' && absolute.uri, 'https://media.test/d/9');
+  assert.equal(downloadSource(null), '');
+  setMediaToken(null);
 });

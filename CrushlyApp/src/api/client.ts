@@ -16,6 +16,7 @@ import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, NoSpaceErro
 import { removeCompressedClip } from '../lib/compressClip';
 import { mustStopAfterFailedCompression, planUpload } from '../lib/uploadPlan';
 import { blobFallbackIsSafe, STREAM_FAILED_MESSAGE, uploadTransport } from '../lib/uploadTransport';
+import { pauseAllPlayers } from '../lib/playerFocus';
 
 /**
  * The sizes that matter on the way in.
@@ -579,6 +580,17 @@ export async function prepareClipForUpload(
 
   const pickedBytes = await fileSize(local);
   const plan = planUpload(pickedBytes, true);
+  /*
+   * Free the decoders before asking for another one.
+   *
+   * The report that put this here: a clip force-closed the app at **0%** of
+   * compression — the moment the encoder asks the phone for its buffers. A feed
+   * or a preview still decoding the same footage is holding video memory the
+   * encoder then cannot get, and Android kills the process rather than fail the
+   * allocation. Pausing every player first costs nothing and gives the transcode
+   * the room it needs.
+   */
+  if (plan.action === 'compress-first') pauseAllPlayers();
   if (plan.action === 'refuse') {
     for (const temp of tempUris) removeCompressedClip(temp);
     throw new ApiError(413, plan.reason);
