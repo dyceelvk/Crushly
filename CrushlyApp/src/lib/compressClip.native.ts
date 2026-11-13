@@ -64,8 +64,8 @@ export async function compressClipFile(
   onProgress?: (fraction: number) => void,
 ): Promise<{ uri: string; bytes: number; ms: number } | null> {
   if (!native) return null;
+  const output = new File(Paths.cache, 'holupp-compressed', `${Date.now()}.mp4`);
   try {
-    const output = new File(Paths.cache, 'holupp-compressed', `${Date.now()}.mp4`);
     const events = new EventEmitter<{ onProgress: (event: { progress: number }) => void }>(native as never);
     const subscription = events.addListener('onProgress', (event: { progress: number }) => {
       onProgress?.(event.progress);
