@@ -30,13 +30,13 @@ export const MAX_PICK_BYTES = 300 * 1024 * 1024;
 /**
  * What a finished upload should weigh.
  *
- * The owner asked for "up to 300 MB in, compressing to 100 MB or so". 64 MB is
- * inside that promise and better than it: a 100 MB post takes a minute to start
- * playing on a phone's data, and nothing is lost that a phone screen can show.
- * The media store also refuses anything over its ceiling, so the target has to
- * land well under it whatever the clip.
+ * The owner asked for "up to 300 MB in, compressing to 100 MB or so". 96 MB
+ * lands just under that promise and comfortably below the media store's 120 MB
+ * ceiling, while keeping enough bits for a clean 1080p picture. The quality floor
+ * may make some clips larger than this target; that is deliberate — a member's
+ * video should not be sacrificed just to hit an arbitrary number.
  */
-export const TARGET_BYTES = 64 * 1024 * 1024;
+export const TARGET_BYTES = 96 * 1024 * 1024;
 
 /** Below this there is nothing to gain, and re-encoding only loses quality. */
 const LEAVE_ALONE_BYTES = 12 * 1024 * 1024;

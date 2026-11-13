@@ -77,6 +77,7 @@ export async function compressClipFile(
       subscription.remove();
     }
   } catch (e) {
+    removeCompressedClip(output.uri);
     if ((e as { code?: string } | null)?.code === 'E_NO_SPACE') {
       throw new NoSpaceError((e as Error).message);
     }

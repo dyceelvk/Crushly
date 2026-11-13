@@ -37,10 +37,12 @@ import kotlin.math.roundToInt
  *     clip is scaled to 1080p; a 720p clip is never upscaled.
  *   - Bitrate: derived from the size budget the app asks for, but clamped to a
  *     floor of 2.5 Mbit/s and a ceiling of 10 Mbit/s. A 60-second clip against
- *     a 64 MB budget asks for ~8.5 Mbit/s, which is what 1080p actually needs.
+ *     the 96 MB budget asks for about 11.7 Mbit/s and is safely capped at 10,
+ *     which keeps a 1080p picture clean without targeting an arbitrary tiny file.
  *     The floor is the important half: below 2.5 Mbit/s a 1080p picture falls
  *     apart, so a long clip gets a slightly larger file rather than a muddy one.
- *   - Frame rate: 30, which is what phone cameras record and what a feed shows.
+ *   - Frame rate: the source's original rate. Transformer preserves it rather
+ *     than upsampling a 24 fps clip or needlessly dropping frames from a 60 fps one.
  *
  * It also refuses to start when the phone has no room for the output. The old
  * encoder failed deep inside ffmpeg with "we couldn't read that file", which
@@ -57,9 +59,8 @@ class HolupClipCompressModule : Module() {
      * @param inputPath   absolute path (no scheme) to the clip already on disk
      * @param outputPath  where the compressed file should be written; must not exist
      * @param targetBytes the size budget in bytes; the bitrate is derived from it
-     * @param onProgress  called with 0…1 as the encoder works
      *
-     * Resolves with a map: `{ path, bytes, ms }`. Rejects with `code`:
+     * Resolves with a map: `{ path, bytes, ms }`; progress is emitted as `onProgress` events. Rejects with `code`:
      *   E_NO_ENCODER  the device has no H.264 encoder this pipeline can use
      *   E_NO_SPACE    the phone cannot hold the output next to the input
      *   E_FAILED      the transcode failed; `message` says why, in words a member can read
@@ -116,7 +117,6 @@ class HolupClipCompressModule : Module() {
       )
       val edited = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input)))
         .setEffects(Effects(emptyList(), listOf(resize)))
-        .setFrameRate(FPS.toInt())
         .build()
 
       val latch = CountDownLatch(1)
@@ -229,7 +229,7 @@ class HolupClipCompressModule : Module() {
    * anybody anything.
    */
   private fun bitrateFor(targetBytes: Long, durationSec: Double): Int {
-    val totalBps = (targetBytes * 8 / durationSec).toLong()
+    val totalBps = (targetBytes * SIZE_SAFETY * 8 / durationSec).toLong()
     val videoBps = totalBps - AUDIO_BPS
     return min(MAX_BPS, max(MIN_BPS, videoBps)).toInt()
   }
@@ -250,10 +250,10 @@ class HolupClipCompressModule : Module() {
 
   private companion object {
     const val MAX_EDGE = 1080
-    const val FPS = 30f
     const val MIN_BPS = 2_500_000L
     const val MAX_BPS = 10_000_000L
     const val AUDIO_BPS = 128_000L
+    const val SIZE_SAFETY = 0.92
     /** Room for the output plus the encoder's working files. */
     const val HEADROOM_BYTES = 32L * 1024L * 1024L
   }
