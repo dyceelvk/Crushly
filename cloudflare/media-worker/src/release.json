@@ -1,11 +1,11 @@
 {
-  "version": "1.0.108",
-  "versionCode": 108,
+  "version": "1.0.109",
+  "versionCode": 109,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.108-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.108/holUpp-1.0.108-RielOS.apk",
-  "notes": "Video compression is more compatible across Android phones: holUpp prefers Android’s standard video encoder when available, keeps other supported codecs as fallbacks, and handles reported compression failures without discarding your original clip.",
-  "bytes": 96969718,
-  "sha256": "9ef0311050902cfb9c3d57fdfd70db3c19450a211a417f6899427d7b5ac5a543",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.108/holUpp-1.0.108-RielOS.apk"
+  "file": "holUpp-1.0.109-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.109/holUpp-1.0.109-RielOS.apk",
+  "notes": "Posting a big video no longer closes the app. The clip is compressed once instead of three times over, so a phone that ran out of memory in the middle of a post now finishes it — and the clip still gets your name on it, because the mark is made from the smaller copy.",
+  "bytes": 96967806,
+  "sha256": "3058095a8750f51db28bcfe15c24ae39451effeb776098f8eaa6f9027b9b14be",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.109/holUpp-1.0.109-RielOS.apk"
 }
