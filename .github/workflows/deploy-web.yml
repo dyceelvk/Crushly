@@ -73,9 +73,9 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-      # Public Turnstile site key. Blank is safe: the app then sends no captcha
-      # token, which is the pre-captcha behaviour, not a broken build.
-      EXPO_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.EXPO_PUBLIC_TURNSTILE_SITE_KEY }}
+          # Public Turnstile site key. Blank is safe: the app then sends no
+          # captcha token, which is the pre-captcha behaviour, not a broken build.
+          EXPO_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.EXPO_PUBLIC_TURNSTILE_SITE_KEY }}
         run: |
           node scripts/check-public-build.mjs
           npm run build:web
