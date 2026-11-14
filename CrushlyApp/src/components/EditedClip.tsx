@@ -6,6 +6,7 @@ import { VideoEditCanvas } from './VideoEditCanvas';
 import { PlayPauseFlash } from './PlayPauseFlash';
 import { NEUTRAL_LOOK, emptyEdit, type LiveEdit } from '../lib/videoEdit';
 import { followCuts } from '../lib/timeline';
+import { applyClipBuffer } from '../lib/playerBuffer';
 import { VideoView } from 'expo-video';
 import { frameHeight, leavesBands, stageFit, videoFrame, videoRatio, type StageFit } from '../lib/videoFrame';
 import { registerPlayer, releaseFocus, takeFocus } from '../lib/playerFocus';
@@ -228,6 +229,9 @@ export function EditedClip({
 
   const player = useVideoPlayer(playable, (p) => {
     p.loop = loop;
+    // A byte ceiling on what the player may hold (see lib/playerBuffer). This is
+    // the player that exhausted the heap when a long clip was opened.
+    applyClipBuffer(p);
   });
 
   // Music is a second player running alongside the clip, the same way it was
@@ -615,6 +619,9 @@ function BackdropClip({ source, active }: { source: VideoSource; active: boolean
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
+    // A backdrop is decoration: it must never be the reason a feed runs out of
+    // memory, so it gets the same small ceiling as everything else.
+    applyClipBuffer(p);
   });
 
   useEffect(() => {

@@ -21,6 +21,7 @@ import { ClipThumb } from '../../components/ClipThumb';
 import { Segmented } from '../../components/Segmented';
 import { Suggestions } from '../../components/Suggestions';
 import { activeToken, applyToken } from '../../lib/mentions';
+import { makeClipWorkingCopy } from '../../lib/clipWorkingCopy';
 import { Pill } from '../../components/Badges';
 import { PressableScale } from '../../components/PressableScale';
 import { Rise } from '../../components/Rise';
@@ -126,6 +127,8 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
    * no words looks like a hang. The upload reports its own progress here.
    */
   const [progressNote, setProgressNote] = useState<string | null>(null);
+  // A picked clip is being made smaller before the trim screen opens it.
+  const [preparing, setPreparing] = useState(false);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [pendingMedia, setPendingMedia] = useState<MediaItem | null>(null);
@@ -251,6 +254,28 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         }
 
         if (isVideo) {
+          /*
+           * Shrink it before any player opens it.
+           *
+           * The trim screen used to be handed the file the camera wrote — on a
+           * phone that is routinely a few hundred megabytes — and playing that
+           * is where the process hit the 256 MB heap cap and Android killed it.
+           * One encode here, and everything after it (trim, filters, captions,
+           * the mark, the upload) works on the small copy. The member's own file
+           * is never modified or deleted; a failed encode returns it untouched
+           * and nothing below changes.
+           */
+          setPreparing(true);
+          setProgressNote(null);
+          try {
+            item.uri = (await makeClipWorkingCopy(item.uri)).uri;
+          } catch {
+            // A clip that plays beats no clip at all.
+          } finally {
+            setPreparing(false);
+            setProgressNote(null);
+          }
+
           // Videos go trim-first before anything else.
           setPendingMedia(item);
           navigation.navigate('VideoTrim', {
@@ -345,7 +370,7 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
     }
   };
 
-  const canPost = !busy && ready;
+  const canPost = !busy && !preparing && ready;
 
   const rightPanelWidth = 340;
 
@@ -548,11 +573,11 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
           </View>
         ) : null}
 
-        {busy ? (
+        {busy || preparing ? (
           <View style={{ alignItems: 'center', paddingVertical: space.lg }}>
             <ActivityIndicator size="large" color={colors.gold} />
             <Txt variant="small" color="textSecondary" style={{ marginTop: 10 }}>
-              {progressNote ?? 'Sharing your post…'}
+              {progressNote ?? (preparing ? 'Getting your clip ready…' : 'Sharing your post…')}
             </Txt>
           </View>
         ) : (

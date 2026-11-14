@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer } from 'expo-video';
+import { applyClipBuffer } from '../lib/playerBuffer';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoEditCanvas } from './VideoEditCanvas';
@@ -160,6 +161,9 @@ export function VideoEditorModal({
 
   const player = useVideoPlayer(visible && sourceUri ? sourceUri : null, (p) => {
     p.loop = false;
+    // Editing means seeking: the player is asked for frames all over the file,
+    // and its own look-ahead is what filled the 256 MB heap. Cap the bytes.
+    applyClipBuffer(p);
   });
   const musicPlayer = useVideoPlayer(edit.music?.uri ?? null, (p) => {
     p.loop = true;

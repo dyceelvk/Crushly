@@ -14,6 +14,7 @@ import { createMoment } from '../../api/service';
 import { keys } from '../../api/hooks';
 import type { MomentStyle } from '../../api/types';
 import { MOMENT_STYLES } from '../../lib/catalog';
+import { makeClipWorkingCopy } from '../../lib/clipWorkingCopy';
 import { pickImage, type PickedImage } from '../../lib/media';
 import * as ImagePicker from 'expo-image-picker';
 import { EditedClip } from '../../components/EditedClip';
@@ -171,6 +172,19 @@ export function MomentComposerScreen({ navigation }: ScreenProps<'MomentComposer
           if (response.ok) sourceUri = URL.createObjectURL(await response.blob());
         } catch {
           // Retain the picker URI if pinning the browser blob is unavailable.
+        }
+      }
+      // A Moment is 25 seconds, but 25 seconds of phone video can still be
+      // 80 MB, and the trim screen plays it. Shrink it here, once, so neither
+      // the player nor the encoder ever holds the camera original.
+      if (Platform.OS !== 'web') {
+        setBusy(true);
+        try {
+          sourceUri = (await makeClipWorkingCopy(sourceUri)).uri;
+        } catch {
+          // The member's own file stays usable; nothing to report.
+        } finally {
+          setBusy(false);
         }
       }
       setPendingClip({

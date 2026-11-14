@@ -950,9 +950,39 @@ export default {
       if (!copy.ok) return fail(copy.status, copy.message, origin);
       if (!copy.data?.path) return fail(404, 'That clip isn’t available.', origin);
 
-      const auth = await b2Auth(env);
-      const upstream = await b2Download(env, auth, copy.data.path);
-      if (!upstream.ok) return fail(404, 'That clip isn’t available.', origin);
+      /*
+       * Both stores, in the same order every other read uses.
+       *
+       * This route asked B2 only, and that stopped being true the day media
+       * moved to R2: a marked copy produced on the phone is uploaded through
+       * `/m`, which writes to R2. So the file existed, the database pointed at
+       * it, and this endpoint looked in the other bucket and answered 404 —
+       * which the app can only report as "that clip isn't available to save".
+       * Every clip posted since the move was unsaveable.
+       */
+      let upstream: Response | null = null;
+      for (const store of READ_ORDER) {
+        if (store === 'r2') {
+          upstream = await r2Get(env, copy.data.path);
+        } else {
+          /*
+           * A B2 that is unreachable, unconfigured or out of allowance must not
+           * turn "no copy yet" into a 500: R2 has already been asked, and the
+           * answer below is the one a member can act on.
+           */
+          try {
+            const auth = await b2Auth(env);
+            const answer = await b2Download(env, auth, copy.data.path);
+            upstream = answer.ok ? answer : null;
+          } catch {
+            upstream = null;
+          }
+        }
+        if (upstream) break;
+      }
+      if (!upstream) {
+        return fail(404, 'The saved copy of this clip isn’t ready yet. Try again in a minute.', origin);
+      }
 
       // A download, not a page: the browser and Android both need the filename,
       // and a marked copy must never be cached under a key another member shares.

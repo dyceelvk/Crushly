@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Txt } from '../../components/Txt';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { makeClipWorkingCopy } from '../../lib/clipWorkingCopy';
 import { Avatar, Photo } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { Button } from '../../components/Button';
@@ -226,7 +227,10 @@ function RoomChat({
       const asset = result.assets[0];
       setPhoto(null);
       setClipEdit(null);
-      setClip({ uri: asset.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: asset.duration ?? 0 });
+      // Compressed before the editor sees it: a Circle clip is watched and
+      // edited in place, and the camera original is what exhausted the heap.
+      const working = await makeClipWorkingCopy(asset.uri).catch(() => ({ uri: asset.uri }));
+      setClip({ uri: working.uri, mimeType: asset.mimeType || 'video/mp4', durationMs: asset.duration ?? 0 });
     } catch (e) {
       toast({ kind: 'error', title: 'Clip not added', message: (e as Error).message });
     } finally {
