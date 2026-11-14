@@ -1,11 +1,11 @@
 {
-  "version": "1.0.113",
-  "versionCode": 113,
+  "version": "1.0.114",
+  "versionCode": 114,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.113-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.113/holUpp-1.0.113-RielOS.apk",
-  "notes": "Saving a clip works again: the saved copy was being looked for in the wrong storage, so a clip that did exist came back as “not available”. And posting a big video should stop closing the app — a picked clip is now made smaller on the phone *before* the editor opens it, the players hold far less video in memory, and the app asks Android for a larger memory allowance.",
-  "bytes": 96983426,
-  "sha256": "6b83705748a2c6e4a7a879352e7b63c19f9e73629ed9045ecdf6890a6b41efed",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.113/holUpp-1.0.113-RielOS.apk"
+  "file": "holUpp-1.0.114-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.114/holUpp-1.0.114-RielOS.apk",
+  "notes": "Two follow-ups to 1.0.113. A clip is now made smaller the moment you pick it, once — not once for the editor and again for the upload — so posting no longer spends twice as long compressing. And saving a clip tries both file stores instead of only the old one, so the saved copy is found wherever it was written.",
+  "bytes": 96989610,
+  "sha256": "ca35220a70683d2654402c1b00a9e6b90eb54b272bf00d701fa1c53c82bc4b2c",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.114/holUpp-1.0.114-RielOS.apk"
 }
