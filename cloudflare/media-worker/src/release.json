@@ -1,11 +1,11 @@
 {
-  "version": "1.0.116",
-  "versionCode": 116,
+  "version": "1.0.117",
+  "versionCode": 117,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.116-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.116/holUpp-1.0.116-RielOS.apk",
-  "notes": "Signing in works. The web version was refused because it had no security-check key and was asking for a widget that Cloudflare no longer allows — both fixed, and verified on the live site. This build carries the same fixes plus everything from 1.0.113–1.0.115: saving a clip finds the saved copy in the right storage, a picked clip is shrunk once on the phone, and players hold far less video in memory.",
-  "bytes": 96990850,
-  "sha256": "0fd53699d53b069a319c077bd74782c3957dcac29adb8a03ed6a4051ec2b000a",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.116/holUpp-1.0.116-RielOS.apk"
+  "file": "holUpp-1.0.117-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.117/holUpp-1.0.117-RielOS.apk",
+  "notes": "Onboarding finishes. Step 5 of 6 saved your preferences, then tried to open a screen that was never registered with the navigator — nothing threw, so the Continue button just stopped. Every new member stopped there, on the web and on the phone. The last step is registered now, and onboarding completes in place if it ever goes missing again.",
+  "bytes": 96991258,
+  "sha256": "561deb6ba2276283862b8f04aed8dbb667214d129f8f392946ae594b1a50da01",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.117/holUpp-1.0.117-RielOS.apk"
 }
