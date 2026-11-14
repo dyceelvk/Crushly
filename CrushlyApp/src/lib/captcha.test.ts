@@ -95,10 +95,12 @@ test('whitespace, quotes and newlines around a key are ignored', () => {
   assert.equal(normalizeSiteKey('0x4AAAAAAF_cVwI C4n5lJE8c'), '0x4AAAAAAF_cVwIC4n5lJE8c');
 });
 
-test('something that is not a key is not treated as one', () => {
+test('an empty value is the only thing that means "no check"', () => {
   assert.equal(normalizeSiteKey(''), '');
-  assert.equal(normalizeSiteKey('not-a-key'), '');
-  assert.equal(normalizeSiteKey('0x4tooShort'), '');
+  assert.equal(normalizeSiteKey(null), '');
+  // A short 0x4 value cannot be repaired into a key, so it is left alone and
+  // Cloudflare is allowed to reject it out loud.
+  assert.equal(normalizeSiteKey('0x4tooShort'), '0x4tooShort');
 });
 
 test('a key that is wrong is reported as a setup fault, not as a bad answer', () => {
@@ -122,4 +124,15 @@ test('the widget is never asked for a size Turnstile rejects', () => {
 test('the check stays invisible unless Cloudflare needs the person', () => {
   assert.equal(TURNSTILE_RENDER_OPTIONS.appearance, 'interaction-only');
   assert.equal(TURNSTILE_RENDER_OPTIONS.execution, 'execute');
+});
+
+/**
+ * A key the normaliser does not recognise must be used as configured, never
+ * silently dropped. Dropping it turns the check off, and "no captcha_token
+ * found" is the least helpful thing Supabase can say. Cloudflare's own test keys
+ * (`1x…`, `2x…`, `3x…`) are exactly such values.
+ */
+test('a key of an unfamiliar shape is passed through, not discarded', () => {
+  assert.equal(normalizeSiteKey('1x00000000000000000000AA'), '1x00000000000000000000AA');
+  assert.equal(normalizeSiteKey('not-a-turnstile-key'), 'not-a-turnstile-key');
 });

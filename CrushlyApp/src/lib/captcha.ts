@@ -39,38 +39,30 @@ export const CAPTCHA_PAGE_ORIGIN = 'https://www.holupp.net';
 export const CAPTCHA_TIMEOUT_MS = 60_000;
 
 /**
- * The site key is normalised before use, because it is a value a person edits
- * by hand in a web form and it is the one setting whose shape can be checked
- * without any network access.
+ * The site key, normalised before use.
  *
- * A Turnstile site key is exactly 24 characters: `0x4` and twenty-one more from
- * `[A-Za-z0-9_-]`. Anything appended to it — a stray paste, a quote, a newline —
- * makes Cloudflare answer "Invalid sitekey", which blocks every sign-in with no
- * useful explanation. Reducing the value to its real 24 characters costs
- * nothing and removes that failure completely.
+ * A Turnstile site key is 24 characters and starts `0x4`. Anything appended to it
+ * — a stray paste, a quote, a newline — makes Cloudflare answer "Invalid
+ * sitekey", which blocks every sign-in and says nothing useful about why, so a
+ * value of that shape is reduced to its real 24 characters.
  *
- * Correction on the record: an earlier commit claimed the shipped key carried 30
- * extra characters. It did not. That came from reading a Hermes string table —
- * the 24-character key is stored immediately before a 30-character font hash, so
- * a plain text search across the file shows the two as one run. The key in
- * 1.0.111–1.0.114 was correct, and the check that was failing was failing for
- * another reason.
+ * What it must NOT do is quietly discard a key it does not recognise. An earlier
+ * version returned '' for anything not starting `0x4`, which silently turned the
+ * check off: Cloudflare's own test keys (`1x…`, `2x…`, `3x…`) hit that path, and
+ * so would any future key format. A blank key means "no token", which Supabase
+ * refuses with the least helpful error there is. An unrecognised value is
+ * therefore used exactly as configured, where it fails loudly instead.
  */
-const SITE_KEY = /^0x4[A-Za-z0-9_-]{21}$/; // 3 + 21 = the 24 a Turnstile key always is
-
-/** The 24-character key inside whatever was pasted, or '' if there isn't one. */
 export function normalizeSiteKey(raw: string | undefined | null): string {
   const value = cleanEnvValue(raw).replace(/\s+/g, '');
   if (!value) return '';
   const start = value.indexOf('0x4');
-  if (start < 0) return '';
-  // Whatever follows the key is not part of it: a Turnstile key is a fixed
-  // length, so the tail can be dropped without guessing.
+  if (start < 0) return value;
   const candidate = value.slice(start, start + 24);
-  return SITE_KEY.test(candidate) ? candidate : '';
+  return /^0x4[A-Za-z0-9_-]{21}$/.test(candidate) ? candidate : value;
 }
 
-/** The public site key, or '' when not configured or not a valid key. */
+/** The public site key as configured, or '' when there is none. */
 export function captchaSiteKey(): string {
   return normalizeSiteKey(process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY ?? '');
 }
