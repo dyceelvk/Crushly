@@ -228,6 +228,30 @@ export function EditedClip({
 
   const player = useVideoPlayer(playable, (p) => {
     p.loop = loop;
+    /*
+     * Four seconds of read-ahead instead of the default twenty.
+     *
+     * The feed keeps a player alive per card, and Media3 buffers ahead into the
+     * Java heap. Posting a clip needs that heap for the encoder's own buffers; a
+     * member who opens the composer straight from the feed was leaving 20 seconds
+     * of video resident and the compressor then failed to allocate — the reported
+     * crash at 0% of compression.
+     */
+    try {
+      p.bufferOptions = {
+        // 4 seconds of look-ahead instead of the 20-second default, and a hard
+        // 12 MB ceiling on what may be held in memory. The byte ceiling is the
+        // one that matters: the crash was LoadControl asking for more data
+        // until the 256 MB heap ran out, so time alone is not a real limit at
+        // high bitrates.
+        preferredForwardBufferDuration: 4,
+        maxBufferBytes: 12 * 1024 * 1024,
+        prioritizeTimeOverSizeThreshold: false,
+        minBufferForPlayback: 1,
+      };
+    } catch {
+      // Nothing to do: a player that ignores this behaves as it always did.
+    }
   });
 
   // Music is a second player running alongside the clip, the same way it was

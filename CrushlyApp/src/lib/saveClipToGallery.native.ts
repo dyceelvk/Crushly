@@ -40,7 +40,10 @@ export async function saveClipFile(url: string, name: string): Promise<'saved' |
   try {
     const result = await FileSystem.downloadAsync(url, target);
     if (result.status === 401) throw new Error('Your session expired. Sign in again, then save the clip.');
-    if (result.status === 404) throw new Error('That clip isn’t available to save.');
+    // 404 is not "you may not see this": it means the marked copy has not been
+    // produced yet (marking runs on the phone, then is backfilled by a job). Say
+    // that, so the answer is "try again in a minute" rather than a dead end.
+    if (result.status === 404) throw new Error('The mark is still being added to this clip. Try again in a minute.');
     if (result.status !== 200) throw new Error(`The clip could not be downloaded (${result.status}). Please try again.`);
 
     const info = await FileSystem.getInfoAsync(target);

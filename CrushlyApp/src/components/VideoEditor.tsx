@@ -160,6 +160,27 @@ export function VideoEditorModal({
 
   const player = useVideoPlayer(visible && sourceUri ? sourceUri : null, (p) => {
     p.loop = false;
+    /*
+     * A short read-ahead, because this preview shares the process heap with the
+     * compressor. Media3 buffers ahead into Java byte arrays, and a 20-second
+     * read-ahead of a phone clip is tens of megabytes the encoder then cannot
+     * have — which is the out-of-memory kill reported as "it closes at 0%".
+     */
+    try {
+      p.bufferOptions = {
+        // 4 seconds of look-ahead instead of the 20-second default, and a hard
+        // 12 MB ceiling on what may be held in memory. The byte ceiling is the
+        // one that matters: the crash was LoadControl asking for more data
+        // until the 256 MB heap ran out, so time alone is not a real limit at
+        // high bitrates.
+        preferredForwardBufferDuration: 4,
+        maxBufferBytes: 12 * 1024 * 1024,
+        prioritizeTimeOverSizeThreshold: false,
+        minBufferForPlayback: 1,
+      };
+    } catch {
+      // A build whose player ignores this keeps its default; nothing else breaks.
+    }
   });
   const musicPlayer = useVideoPlayer(edit.music?.uri ?? null, (p) => {
     p.loop = true;
