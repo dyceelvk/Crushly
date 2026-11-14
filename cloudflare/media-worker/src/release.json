@@ -1,11 +1,11 @@
 {
-  "version": "1.0.114",
-  "versionCode": 114,
+  "version": "1.0.116",
+  "versionCode": 116,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.114-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.114/holUpp-1.0.114-RielOS.apk",
-  "notes": "The security check is now validated where it is configured: the key is reduced to the 24 characters a Turnstile key actually is, the build refuses to ship a key of the wrong shape, and a check that cannot run now says that plainly instead of asking you to try again.",
-  "bytes": 96989610,
-  "sha256": "ca35220a70683d2654402c1b00a9e6b90eb54b272bf00d701fa1c53c82bc4b2c",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.114/holUpp-1.0.114-RielOS.apk"
+  "file": "holUpp-1.0.116-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.116/holUpp-1.0.116-RielOS.apk",
+  "notes": "Signing in works. The web version was refused because it had no security-check key and was asking for a widget that Cloudflare no longer allows — both fixed, and verified on the live site. This build carries the same fixes plus everything from 1.0.113–1.0.115: saving a clip finds the saved copy in the right storage, a picked clip is shrunk once on the phone, and players hold far less video in memory.",
+  "bytes": 96990850,
+  "sha256": "0fd53699d53b069a319c077bd74782c3957dcac29adb8a03ed6a4051ec2b000a",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.116/holUpp-1.0.116-RielOS.apk"
 }
