@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 """Refuse to build an app whose captcha site key cannot possibly work.
 
-This exists because 1.0.111 through 1.0.114 shipped with
-
-    0x4AAAAAAF_cVwIC4n5lJE8ca1a84037fdb644723129315c390ad9
-
-— the real 24-character Turnstile key with a 30-character hex string pasted onto
-the end of it. Cloudflare's widget answered "Invalid sitekey. Contact the Site
-Administrator", no token was ever produced, and Supabase refused every sign-in
-and sign-up with `captcha_failed`. From the phone that looked like a check that
-would not pass, which is exactly how it was reported.
+A Turnstile site key is 24 characters, always. One with anything appended to it
+makes Cloudflare answer "Invalid sitekey", which blocks every sign-in and says
+nothing useful about why. This is the shape check that catches that before a
+build reaches a phone.
 
 Nothing in the app can repair a key that is wrong; what can be done is to stop
 the build. The key is public (it ships inside the APK), so validating its shape

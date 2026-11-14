@@ -39,23 +39,22 @@ export const CAPTCHA_PAGE_ORIGIN = 'https://www.holupp.net';
 export const CAPTCHA_TIMEOUT_MS = 60_000;
 
 /**
- * A Turnstile site key is exactly 24 characters: `0x4` and twenty more from
- * `[A-Za-z0-9_-]`. Not "about 24" — exactly.
+ * The site key is normalised before use, because it is a value a person edits
+ * by hand in a web form and it is the one setting whose shape can be checked
+ * without any network access.
  *
- * This is asserted because of what shipped in 1.0.111–1.0.114. The build
- * carried
+ * A Turnstile site key is exactly 24 characters: `0x4` and twenty-one more from
+ * `[A-Za-z0-9_-]`. Anything appended to it — a stray paste, a quote, a newline —
+ * makes Cloudflare answer "Invalid sitekey", which blocks every sign-in with no
+ * useful explanation. Reducing the value to its real 24 characters costs
+ * nothing and removes that failure completely.
  *
- *   0x4AAAAAAF_cVwIC4n5lJE8ca1a84037fdb644723129315c390ad9
- *
- * — the real 24-character key with a 30-character hex string pasted onto the
- * end of it — and Cloudflare's answer to that is a red "Invalid sitekey.
- * Contact the Site Administrator" inside the widget. Every sign-in and sign-up
- * was then blocked by a check that could never pass, and the app could only say
- * "Could not complete the check."
- *
- * So the key is not trusted as pasted. It is normalised like the Supabase URL
- * in `env.ts`, for the same reason: a secret edited in a web form picks up
- * whatever was on the clipboard.
+ * Correction on the record: an earlier commit claimed the shipped key carried 30
+ * extra characters. It did not. That came from reading a Hermes string table —
+ * the 24-character key is stored immediately before a 30-character font hash, so
+ * a plain text search across the file shows the two as one run. The key in
+ * 1.0.111–1.0.114 was correct, and the check that was failing was failing for
+ * another reason.
  */
 const SITE_KEY = /^0x4[A-Za-z0-9_-]{21}$/; // 3 + 21 = the 24 a Turnstile key always is
 

@@ -79,15 +79,15 @@ test('nothing else is, and https is required', () => {
 });
 
 /**
- * The bug these protect shipped in 1.0.111–1.0.114 and blocked every sign-in:
- * the build carried the 24-character site key with a 30-character hex string
- * stuck to the end, Cloudflare rendered "Invalid sitekey", and no token could
- * ever be produced. The key must be reduced to its real 24 characters.
+ * A site key is 24 characters, always. These tests pin the normaliser that
+ * reduces whatever was configured to exactly that, so a stray paste cannot
+ * produce a value Cloudflare rejects as "Invalid sitekey" — which would block
+ * every sign-in with no useful explanation.
  */
 test('a site key with junk pasted onto the end is reduced to the real key', () => {
-  const shipped = '0x4AAAAAAF_cVwIC4n5lJE8ca1a84037fdb644723129315c390ad9';
-  assert.equal(normalizeSiteKey(shipped), '0x4AAAAAAF_cVwIC4n5lJE8c');
-  assert.equal(normalizeSiteKey(shipped).length, 24);
+  const pasted = '0x4AAAAAAF_cVwIC4n5lJE8c' + 'a1a84037fdb644723129315c390ad9';
+  assert.equal(normalizeSiteKey(pasted), '0x4AAAAAAF_cVwIC4n5lJE8c');
+  assert.equal(normalizeSiteKey(pasted).length, 24);
 });
 
 test('whitespace, quotes and newlines around a key are ignored', () => {
