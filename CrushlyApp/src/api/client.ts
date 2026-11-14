@@ -13,6 +13,7 @@ import {
 } from '../lib/mediaHost';
 import type { MediaKind } from '../lib/mediaHost';
 import { compressVideo, compressVideoFile, fileSize, MAX_PICK_BYTES, NoSpaceError, TARGET_BYTES } from '../lib/compressVideo';
+import { isPreparedWorkingCopy } from '../lib/workingCopies';
 import { removeCompressedClip } from '../lib/compressClip';
 import { mustStopAfterFailedCompression, planUpload } from '../lib/uploadPlan';
 import { blobFallbackIsSafe, STREAM_FAILED_MESSAGE, uploadTransport } from '../lib/uploadTransport';
@@ -577,6 +578,18 @@ export async function prepareClipForUpload(
     }
   }
   if (!/^file:\/\//.test(local)) return null;
+
+  /*
+   * Already encoded — by `makeClipWorkingCopy`, the moment it was picked.
+   *
+   * That copy is the file the trim screen and the editor worked on, and it is
+   * inside the upload allowance by construction. Encoding it a second time here
+   * would cost another pass through MediaCodec on the member's phone, degrade
+   * the picture again, and make the post feel broken — so it goes up as it is.
+   */
+  if (isPreparedWorkingCopy(local)) {
+    return { uri: local, contentType: 'video/mp4', bytes: await fileSize(local), tempUris };
+  }
 
   const pickedBytes = await fileSize(local);
   const plan = planUpload(pickedBytes, true);

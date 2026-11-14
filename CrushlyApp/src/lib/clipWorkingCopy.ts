@@ -31,6 +31,7 @@
 import { Platform } from 'react-native';
 import { compressVideoFile, fileSize, type CompressProgress } from './compressVideo';
 import { LEAVE_ALONE_BYTES, UPLOAD_TARGET_BYTES } from './uploadPlan';
+import { notePreparedCopy } from './workingCopies';
 
 export type WorkingCopy = {
   /** What to hand to the editor, the player and the upload. */
@@ -58,5 +59,6 @@ export async function makeClipWorkingCopy(
   const smaller = await compressVideoFile(uri, UPLOAD_TARGET_BYTES, progress).catch(() => null);
   if (!smaller?.uri || smaller.uri === uri) return { uri, bytes, compressed: false };
 
+  notePreparedCopy(smaller.uri);
   return { uri: smaller.uri, bytes: smaller.bytes ?? bytes, compressed: true };
 }
