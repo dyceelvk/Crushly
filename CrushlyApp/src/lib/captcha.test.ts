@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { captchaEnabled, captchaFailureMessage, captchaNavigationAllowed, captchaPageUrl, captchaSiteKey, getCaptchaToken, isCaptchaError, normalizeSiteKey, setCaptchaSolver } from './captcha';
+import { TURNSTILE_RENDER_OPTIONS, captchaEnabled, captchaFailureMessage, captchaNavigationAllowed, captchaPageUrl, captchaSiteKey, getCaptchaToken, isCaptchaError, normalizeSiteKey, setCaptchaSolver } from './captcha';
 
 /**
  * The captcha helper is the thin part between "Supabase wants a token" and "the
@@ -105,4 +105,21 @@ test('a key that is wrong is reported as a setup fault, not as a bad answer', ()
   const shown = captchaFailureMessage('110200');
   assert.match(shown, /set up wrong/i);
   assert.ok(!/try again/i.test(shown), `must not offer a retry that cannot work: ${shown}`);
+});
+
+/**
+ * The web sign-in failure, pinned.
+ *
+ * Turnstile's current script rejects `size: 'invisible'` with an uncaught error,
+ * so `render()` never produced a widget and no token was ever sent. These tests
+ * fail if that value comes back, and if the invisible behaviour is dropped in a
+ * way that would put a visible widget on every screen.
+ */
+test('the widget is never asked for a size Turnstile rejects', () => {
+  assert.ok(['compact', 'flexible', 'normal'].includes(TURNSTILE_RENDER_OPTIONS.size));
+});
+
+test('the check stays invisible unless Cloudflare needs the person', () => {
+  assert.equal(TURNSTILE_RENDER_OPTIONS.appearance, 'interaction-only');
+  assert.equal(TURNSTILE_RENDER_OPTIONS.execution, 'execute');
 });

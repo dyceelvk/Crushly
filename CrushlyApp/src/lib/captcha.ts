@@ -115,6 +115,33 @@ export function captchaNavigationAllowed(rawUrl: string): boolean {
   return CAPTCHA_HOSTS.includes(host);
 }
 
+/**
+ * How the widget is asked to render — and the reason web sign-in was broken even
+ * with a correct key.
+ *
+ * `size: 'invisible'` was used for an invisible check. The current Turnstile
+ * script rejects that value outright:
+ *
+ *   [Cloudflare Turnstile] Invalid value for parameter "size", expected
+ *   "compact", "flexible", or "normal", got "invisible".
+ *
+ * `render()` therefore threw, no widget existed, `execute()` had nothing to run,
+ * and the sign-in request reached Supabase with no token — so GoTrue answered
+ * "captcha protection: request disallowed (no captcha_token found)" and the
+ * member saw a security check that "didn't load". Only the browser was affected:
+ * the phone opens its own captcha page instead.
+ *
+ * An invisible check is now one of the three valid sizes plus
+ * `appearance: 'interaction-only'` (show the widget only if Cloudflare needs the
+ * person) and `execution: 'execute'` (run when asked, not on page load).
+ */
+export const TURNSTILE_RENDER_OPTIONS = {
+  size: 'flexible',
+  appearance: 'interaction-only',
+  execution: 'execute',
+  retry: 'never',
+} as const;
+
 type Solver = () => Promise<string>;
 
 let solver: Solver | null = null;

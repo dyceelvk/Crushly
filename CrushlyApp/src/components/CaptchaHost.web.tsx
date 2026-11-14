@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import {
   CAPTCHA_TIMEOUT_MS,
+  TURNSTILE_RENDER_OPTIONS,
   TURNSTILE_SCRIPT,
   captchaEnabled,
   captchaFailureMessage,
@@ -81,6 +82,9 @@ export function CaptchaHost() {
       if (disposed) throw new Error('The security check is not available yet. Reopen the app and try again.');
 
       return new Promise<string>((resolve, reject) => {
+        // `execute()` on a widget that is already executing logs a warning and
+        // does nothing, so a retry could sit waiting for a token nobody asked for.
+        let executed = false;
         const timer = setTimeout(() => {
           if (widgetId) api.reset(widgetId);
           reject(new Error('The security check took too long. Try again.'));
@@ -105,13 +109,18 @@ export function CaptchaHost() {
         try {
           widgetId = api.render(host, {
             sitekey: captchaSiteKey(),
-            size: 'invisible',
-            retry: 'never',
+            // The options live in lib/captcha.ts next to the reason each exists:
+            // the old `size: 'invisible'` is rejected by the current widget
+            // script, and that single value broke every web sign-in.
+            ...TURNSTILE_RENDER_OPTIONS,
             callback: (token: string) => settle(() => resolve(token)),
             'error-callback': (code: string) => settle(() => reject(new Error(captchaFailureMessage(String(code ?? ''))))),
             'timeout-callback': () => settle(() => reject(new Error('The security check took too long. Try again.'))),
           });
-          api.execute(widgetId);
+          if (!executed) {
+            executed = true;
+            api.execute(widgetId);
+          }
         } catch (error) {
           settle(() => reject(error instanceof Error ? error : new Error(String(error))));
         }
