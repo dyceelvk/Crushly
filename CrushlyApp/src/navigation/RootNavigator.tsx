@@ -189,6 +189,16 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="OnboardingPhotos" component={OnboardingPhotosScreen} />
           <Stack.Screen name="OnboardingAbout" component={OnboardingAboutScreen} />
           <Stack.Screen name="OnboardingPreferences" component={OnboardingPreferencesScreen} />
+          {/*
+           * The last step, and the only place `completeOnboarding()` runs.
+           *
+           * This route was imported in 1.0.107 and never registered, so the
+           * previous step's `navigate('OnboardingFollow')` had nowhere to go:
+           * React Navigation reports an unhandled action and the member sat on
+           * "Your preferences" with a spinner and no way forward. Every new
+           * member on web and on the phone was stuck on step 5 of 6.
+           */}
+          <Stack.Screen name="OnboardingFollow" component={OnboardingFollowScreen} />
           <Stack.Screen name="Info" component={InfoScreen} />
         </Stack.Group>
       ) : (

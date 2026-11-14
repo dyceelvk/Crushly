@@ -506,9 +506,24 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
     try {
       await updatePrefs.mutateAsync({ ageMin: ages[0], ageMax: ages[1], maxDistance: distance, intentions, interests, verifiedOnly: false });
       await updatePrivacy.mutateAsync({ showOnline, discoverable });
-      // One step left: the official accounts. Finishing happens there, so a
-      // member who skips it still gets in — the step is an invitation, not a gate.
-      navigation.navigate('OnboardingFollow');
+      /*
+       * One step left: the official accounts, where onboarding is completed.
+       *
+       * That step has to exist in this build, or this is where the member stops
+       * — which is exactly what happened: the route was imported in 1.0.107 and
+       * never registered, so `navigate` was an unhandled action, no error was
+       * thrown, and the button spun forever on step 5 of 6. The route is
+       * registered now, but the check below means a build that loses it again
+       * finishes onboarding here instead of trapping anyone.
+       */
+      const routes = navigation.getState()?.routeNames ?? [];
+      if (routes.includes('OnboardingFollow')) {
+        navigation.navigate('OnboardingFollow');
+      } else {
+        await completeOnboarding();
+        await refresh();
+        toast({ kind: 'success', title: 'You’re on holUpp', message: 'Your space is ready. Start with a feeling.' });
+      }
     } catch (e) {
       setFinishing(false);
       toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });
