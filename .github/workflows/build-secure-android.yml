@@ -25,6 +25,9 @@ jobs:
       # "Invalid sitekey" — signing in was impossible and looked like a bug in
       # the check. See .github/scripts/check_captcha_key.py.
       - name: Check the captcha site key is usable
+        # Some of these jobs run from CrushlyApp/, so the script is addressed
+        # from the workspace root rather than from the current directory.
+        working-directory: ${{ github.workspace }}
         run: python3 .github/scripts/check_captcha_key.py
         env:
           EXPO_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.EXPO_PUBLIC_TURNSTILE_SITE_KEY }}
