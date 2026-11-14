@@ -4,8 +4,8 @@
 # Netlify was removed on 2026-11-02. It had not deployed anything successfully in
 # a long time, and its step failed with exit 127 — `bash build.sh` looked for the
 # script inside CrushlyApp/ because of this job's working-directory, while the
-# script lives at the repository root. Vercel is where holupapp.vercel.app is
-# served from, so Netlify is no longer a target.
+# script lives at the repository root. Vercel is where www.holupp.net is served
+# from, so Netlify is no longer a target.
 #
 # Why this file was rewritten (2026-11-02):
 #
@@ -174,26 +174,37 @@ jobs:
           stopped being possible the day the site took that URL over, and a check
           that silently passes when it cannot run is worse than no check.
           """
+          # Newest first. www.holupp.net is the address members actually use and
+          # the one the Vercel project answers on; holupapp.vercel.app is only
+          # kept as a fallback. On 2026-11-14 this check went red against
+          # holupapp.vercel.app alone: that host had stopped answering (404 on
+          # every path) while www.holupp.net was already serving the very build
+          # being verified. A check that can fail because of a retired alias,
+          # with production perfectly fine, is a check people learn to ignore.
+          HOSTS = ['https://www.holupp.net', 'https://holupapp.vercel.app']
+          last = {host: 'not read' for host in HOSTS}
           for attempt in range(20):
-              try:
-                  home = urllib.request.urlopen('https://holupapp.vercel.app/', timeout=30).read().decode('utf-8', 'ignore')
-                  live_title = re.search(r'<title>(.*?)</title>', home, re.S)
-                  live_title = live_title.group(1).strip() if live_title else ''
-                  app = urllib.request.urlopen('https://holupapp.vercel.app/app', timeout=30).read().decode('utf-8', 'ignore')
-                  bundle = re.search(r'/_expo/static/js/web/index-[a-f0-9]+\.js', app)
-                  if live_title != title:
-                      print('live title is not this build yet: ' + repr(live_title) + ' (attempt ' + str(attempt + 1) + ')')
-                  elif not bundle:
-                      print('live /app has no bundle yet (attempt ' + str(attempt + 1) + ')')
-                  else:
-                      js = urllib.request.urlopen('https://holupapp.vercel.app' + bundle.group(0), timeout=90).read().decode('utf-8', 'ignore')
-                      if re.search(r'version[^0-9]{0,12}' + re.escape(version), js):
-                          print('::notice::holupapp.vercel.app serves the new site on / (' + repr(title) + ') and ' + version + ' on /app')
-                          sys.exit(0)
-                      print('live bundle is not ' + version + ' yet (attempt ' + str(attempt + 1) + ')')
-              except Exception as exc:
-                  print('could not read the live site: ' + str(exc))
+              for host in HOSTS:
+                  try:
+                      home = urllib.request.urlopen(host + '/', timeout=30).read().decode('utf-8', 'ignore')
+                      live_title = re.search(r'<title>(.*?)</title>', home, re.S)
+                      live_title = live_title.group(1).strip() if live_title else ''
+                      app = urllib.request.urlopen(host + '/app', timeout=30).read().decode('utf-8', 'ignore')
+                      bundle = re.search(r'/_expo/static/js/web/index-[a-f0-9]+\.js', app)
+                      if live_title != title:
+                          last[host] = 'title is ' + repr(live_title)
+                      elif not bundle:
+                          last[host] = '/app has no bundle'
+                      else:
+                          js = urllib.request.urlopen(host + bundle.group(0), timeout=90).read().decode('utf-8', 'ignore')
+                          if re.search(r'version[^0-9]{0,12}' + re.escape(version), js):
+                              print('::notice::' + host + ' serves the new site on / (' + repr(title) + ') and ' + version + ' on /app')
+                              sys.exit(0)
+                          last[host] = 'bundle is not ' + version
+                  except Exception as exc:
+                      last[host] = str(exc)
+              print('attempt ' + str(attempt + 1) + ': ' + '; '.join(host + ' -> ' + why for host, why in last.items()))
               time.sleep(15)
-          print('::error::holupapp.vercel.app is not serving this build (' + repr(title) + '). This commit is not shipped until it is.')
+          print('::error::no holUpp host is serving this build (' + repr(title) + '). ' + '; '.join(host + ' -> ' + why for host, why in last.items()))
           sys.exit(1)
           PY
