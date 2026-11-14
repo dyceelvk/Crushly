@@ -38,9 +38,42 @@ export const CAPTCHA_PAGE_ORIGIN = 'https://www.holupp.net';
 /** How long we wait for the check before letting the person try again. */
 export const CAPTCHA_TIMEOUT_MS = 60_000;
 
-/** The public site key, or '' when not configured. */
+/**
+ * A Turnstile site key is exactly 24 characters: `0x4` and twenty more from
+ * `[A-Za-z0-9_-]`. Not "about 24" — exactly.
+ *
+ * This is asserted because of what shipped in 1.0.111–1.0.114. The build
+ * carried
+ *
+ *   0x4AAAAAAF_cVwIC4n5lJE8ca1a84037fdb644723129315c390ad9
+ *
+ * — the real 24-character key with a 30-character hex string pasted onto the
+ * end of it — and Cloudflare's answer to that is a red "Invalid sitekey.
+ * Contact the Site Administrator" inside the widget. Every sign-in and sign-up
+ * was then blocked by a check that could never pass, and the app could only say
+ * "Could not complete the check."
+ *
+ * So the key is not trusted as pasted. It is normalised like the Supabase URL
+ * in `env.ts`, for the same reason: a secret edited in a web form picks up
+ * whatever was on the clipboard.
+ */
+const SITE_KEY = /^0x4[A-Za-z0-9_-]{21}$/; // 3 + 21 = the 24 a Turnstile key always is
+
+/** The 24-character key inside whatever was pasted, or '' if there isn't one. */
+export function normalizeSiteKey(raw: string | undefined | null): string {
+  const value = cleanEnvValue(raw).replace(/\s+/g, '');
+  if (!value) return '';
+  const start = value.indexOf('0x4');
+  if (start < 0) return '';
+  // Whatever follows the key is not part of it: a Turnstile key is a fixed
+  // length, so the tail can be dropped without guessing.
+  const candidate = value.slice(start, start + 24);
+  return SITE_KEY.test(candidate) ? candidate : '';
+}
+
+/** The public site key, or '' when not configured or not a valid key. */
 export function captchaSiteKey(): string {
-  return cleanEnvValue(process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY ?? '');
+  return normalizeSiteKey(process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY ?? '');
 }
 
 export function captchaEnabled(): boolean {
@@ -131,6 +164,16 @@ export function isCaptchaError(message: string): boolean {
 export function captchaFailureMessage(message: string): string {
   if (/no captcha_token found/i.test(message)) {
     return 'The security check didn’t load. Update the app, or turn the check off in Supabase while you test.';
+  }
+  /*
+   * The check was configured wrong, not answered wrong.
+   *
+   * 110200 is Cloudflare's "invalid sitekey" / domain-not-allowed code, and it
+   * is the one failure a person cannot retry their way out of. Saying "try
+   * again" for it is what made a broken key look like a flaky phone.
+   */
+  if (/110200|invalid site ?key|invalid-input-response|not allowed/i.test(message)) {
+    return 'The security check is set up wrong in this build, so it can’t pass. Signing in is blocked until it is fixed — please report it.';
   }
   return 'The security check failed. Try again.';
 }

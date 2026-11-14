@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { captchaEnabled, captchaFailureMessage, captchaNavigationAllowed, captchaPageUrl, captchaSiteKey, getCaptchaToken, isCaptchaError, setCaptchaSolver } from './captcha';
+import { captchaEnabled, captchaFailureMessage, captchaNavigationAllowed, captchaPageUrl, captchaSiteKey, getCaptchaToken, isCaptchaError, normalizeSiteKey, setCaptchaSolver } from './captcha';
 
 /**
  * The captcha helper is the thin part between "Supabase wants a token" and "the
@@ -16,19 +16,19 @@ test('with no site key the app behaves as if the check did not exist', async () 
 });
 
 test('a configured key with no widget mounted says so instead of sending a blank request', async () => {
-  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekey';
+  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekeyAAA';
   setCaptchaSolver(null);
   await assert.rejects(() => getCaptchaToken(), /security check is not available/i);
 });
 
 test('an empty token from the solver is a failure, not a pass', async () => {
-  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekey';
+  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekeyAAA';
   setCaptchaSolver(async () => '   ');
   await assert.rejects(() => getCaptchaToken(), /did not complete/i);
 });
 
 test('a token is trimmed and handed back exactly once per call', async () => {
-  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekey';
+  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekeyAAA';
   let calls = 0;
   setCaptchaSolver(async () => {
     calls += 1;
@@ -39,8 +39,8 @@ test('a token is trimmed and handed back exactly once per call', async () => {
 });
 
 test('the native page is built from the configured key and never from a secret', () => {
-  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekey';
-  assert.equal(captchaPageUrl(), 'https://www.holupp.net/captcha.html?sitekey=0x4AAAAAAAtestsitekey');
+  process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY = '0x4AAAAAAAtestsitekeyAAA';
+  assert.equal(captchaPageUrl(), 'https://www.holupp.net/captcha.html?sitekey=0x4AAAAAAAtestsitekeyAAA');
 });
 
 test('provider wording is never shown to a person', () => {
@@ -76,4 +76,33 @@ test('nothing else is, and https is required', () => {
   assert.equal(captchaNavigationAllowed('http://www.holupp.net/captcha.html'), false);
   assert.equal(captchaNavigationAllowed('javascript:alert(1)'), false);
   assert.equal(captchaNavigationAllowed(''), false);
+});
+
+/**
+ * The bug these protect shipped in 1.0.111–1.0.114 and blocked every sign-in:
+ * the build carried the 24-character site key with a 30-character hex string
+ * stuck to the end, Cloudflare rendered "Invalid sitekey", and no token could
+ * ever be produced. The key must be reduced to its real 24 characters.
+ */
+test('a site key with junk pasted onto the end is reduced to the real key', () => {
+  const shipped = '0x4AAAAAAF_cVwIC4n5lJE8ca1a84037fdb644723129315c390ad9';
+  assert.equal(normalizeSiteKey(shipped), '0x4AAAAAAF_cVwIC4n5lJE8c');
+  assert.equal(normalizeSiteKey(shipped).length, 24);
+});
+
+test('whitespace, quotes and newlines around a key are ignored', () => {
+  assert.equal(normalizeSiteKey('  "0x4AAAAAAF_cVwIC4n5lJE8c"\n'), '0x4AAAAAAF_cVwIC4n5lJE8c');
+  assert.equal(normalizeSiteKey('0x4AAAAAAF_cVwI C4n5lJE8c'), '0x4AAAAAAF_cVwIC4n5lJE8c');
+});
+
+test('something that is not a key is not treated as one', () => {
+  assert.equal(normalizeSiteKey(''), '');
+  assert.equal(normalizeSiteKey('not-a-key'), '');
+  assert.equal(normalizeSiteKey('0x4tooShort'), '');
+});
+
+test('a key that is wrong is reported as a setup fault, not as a bad answer', () => {
+  const shown = captchaFailureMessage('110200');
+  assert.match(shown, /set up wrong/i);
+  assert.ok(!/try again/i.test(shown), `must not offer a retry that cannot work: ${shown}`);
 });

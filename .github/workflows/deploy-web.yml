@@ -57,6 +57,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A captcha key that cannot work must not reach a phone. 1.0.111–1.0.114
+      # shipped one with 30 extra characters, and Cloudflare answered
+      # "Invalid sitekey" — signing in was impossible and looked like a bug in
+      # the check. See .github/scripts/check_captcha_key.py.
+      - name: Check the captcha site key is usable
+        run: python3 .github/scripts/check_captcha_key.py
+        env:
+          EXPO_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.EXPO_PUBLIC_TURNSTILE_SITE_KEY }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
