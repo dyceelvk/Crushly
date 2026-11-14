@@ -1,11 +1,11 @@
 {
-  "version": "1.0.112",
-  "versionCode": 112,
+  "version": "1.0.113",
+  "versionCode": 113,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.112-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.112/holUpp-1.0.112-RielOS.apk",
-  "notes": "Three fixes. Saving a clip now works — the button was asking the server for the file without signing the request, so it came back as “your session expired”. Tapping mute, comment, Crush or Share on a playing clip no longer fast-forwards it: holding the picture still runs it at 2×, but a tap is just a tap. And a big video no longer closes the app at the start of compression — the phone now gets its video memory back before compressing, and if it runs out it says so instead of disappearing.",
-  "bytes": 96985690,
-  "sha256": "0b9c30cbfae6843d9be66c2afdac72992c65b41433ebaeed8a86df4df1245b02",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.112/holUpp-1.0.112-RielOS.apk"
+  "file": "holUpp-1.0.113-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.113/holUpp-1.0.113-RielOS.apk",
+  "notes": "Saving a clip works again: the saved copy was being looked for in the wrong storage, so a clip that did exist came back as “not available”. And posting a big video should stop closing the app — a picked clip is now made smaller on the phone *before* the editor opens it, the players hold far less video in memory, and the app asks Android for a larger memory allowance.",
+  "bytes": 96983426,
+  "sha256": "6b83705748a2c6e4a7a879352e7b63c19f9e73629ed9045ecdf6890a6b41efed",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.113/holUpp-1.0.113-RielOS.apk"
 }
