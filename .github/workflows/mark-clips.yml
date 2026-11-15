@@ -29,7 +29,10 @@
 # What this does NOT do is guarantee a copy at the instant of posting. That needs
 # a transcoder on the publish path — see the note at the bottom of this file.
 #
-# Secrets used: SUPABASE_DB_URL, B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET.
+# Secrets used: SUPABASE_DB_URL, B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET,
+# R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and the CLOUDFLARE_ACCOUNT_ID variable.
+# Reads go to R2 first and Backblaze second, the same order the Worker serves
+# media in.
 # Nothing sensitive is committed and nothing is echoed.
 
 name: Mark clips for download
@@ -95,7 +98,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg postgresql-client espeak-ng
-          python -m pip install --quiet pillow imageio imageio-ffmpeg numpy scipy
+          python -m pip install --quiet pillow imageio imageio-ffmpeg numpy scipy boto3
           ffmpeg -version | head -1
 
       - name: Rebuild the brand pieces if they are missing
@@ -110,6 +113,12 @@ jobs:
           B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          # Media lives in R2 now — a clip posted since the move is only there,
+          # so a job that reads B2 alone cannot mark it. Same key pair the
+          # release channel uses, scoped to the one bucket.
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           LIMIT: ${{ inputs.limit || '20' }}
           POST_IDS: ${{ inputs.post_ids }}
         run: |

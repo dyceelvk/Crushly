@@ -27,7 +27,13 @@
  */
 import { downloadSource } from './mediaHost';
 
-export async function saveClipFile(url: string, name: string): Promise<'saved' | 'downloaded' | 'denied'> {
+export async function saveClipFile(
+  url: string,
+  name: string,
+  _postId?: number,
+): Promise<'saved' | 'downloaded' | 'denied'> {
+  // No gallery to write to and no local copy of a marked clip on the web: the
+  // post id is accepted so both halves have one signature, and ignored.
   /*
    * `/d/<post id>` is a path, not an address: it needs the Worker's origin and
    * the member's token. `downloadSource` adds both (the token as a query

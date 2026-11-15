@@ -30,12 +30,35 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import { downloadSource } from './mediaHost';
+import { markedCopyFor } from './markedCopy';
 
-export async function saveClipFile(url: string, name: string): Promise<'saved' | 'downloaded' | 'denied'> {
+export async function saveClipFile(url: string, name: string, postId?: number): Promise<'saved' | 'downloaded' | 'denied'> {
   // `writeOnly` is enough on Android 13+: saving needs no permission to read the
   // gallery, and asking for more than the job needs is a worse prompt.
   const permission = await MediaLibrary.requestPermissionsAsync(true, ['video']);
   if (!permission.granted) return 'denied';
+
+  /*
+   * A clip this phone posted already has its marked file here.
+   *
+   * No request, no filename to trust, and nothing that can fail because of
+   * signal or an expired token: the bytes were written on this device a moment
+   * after the post went up. Asking the network for a file the phone is holding is
+   * a round trip that can only fail, and it did — on mobile data it is exactly
+   * how "save" turned into "try again in a minute".
+   *
+   * When the copy is gone (cache evicted, or somebody else's clip) the download
+   * below is the only source, and it stays exactly as it was.
+   */
+  if (postId) {
+    const local = await markedCopyFor(postId);
+    if (local) {
+      await MediaLibrary.Asset.create(local);
+      // The gallery owns its own copy now; the cached one has done its job.
+      await FileSystem.deleteAsync(local, { idempotent: true }).catch(() => undefined);
+      return 'saved';
+    }
+  }
 
   /*
    * The URL that arrives here is `/d/<post id>` — a path, not an address — and

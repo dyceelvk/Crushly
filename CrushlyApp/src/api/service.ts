@@ -3,6 +3,7 @@ import { getCaptchaToken } from '../lib/captcha';
 import { markedClipKey } from '../lib/clipMarkPlan';
 import { markedCopyFitsUpload, planClipPost } from '../lib/clipPostPlan';
 import { markClipFile, markEncoderAvailable, removeMarkedClip } from '../lib/markClip';
+import { keepMarkedCopy } from '../lib/markedCopy';
 import { fileSize, NoSpaceError } from '../lib/compressVideo';
 import { removeCompressedClip } from '../lib/compressClip';
 import Constants from 'expo-constants';
@@ -873,11 +874,15 @@ export async function createPost(input: {
    * the row appeared minutes later or not at all, and that timer is the "download
    * button never happens" report.
    *
-   * The marked file is uploaded to a key derived from the original's, which the
-   * server also derives before it will record it. A failure here loses nothing:
-   * the post still goes up and the scheduled job marks it later.
+   * The marked file is uploaded like any other media — the server mints its key —
+   * and the address it comes back with is the one registered against the post.
+   * A failure here loses nothing: the post still goes up and the marking job
+   * makes the copy later.
    */
-  let markedClipPath: string | null = null;
+  /** Where the marked copy was really uploaded. Null when there is no mark. */
+  let markedClipUrl: string | null = null;
+  /** The phone's own copy of it, kept until the post exists. */
+  let markedTempUri: string | null = null;
   if (input.videoUri) {
     const id = await meId();
     const type = (input.videoMime || 'video/mp4').toLowerCase();
@@ -936,24 +941,41 @@ export async function createPost(input: {
       });
       if (plan.markFrom === 'prepared') {
         let markedUri: string | null = null;
+        /* Kept, not deleted, when the upload worked: Save uses this file. */
+        markedTempUri = null;
         try {
           const marked = await markClipFile(preparedUri, await myHandle());
           markedUri = marked?.uri ?? null;
           if (marked) {
-            await uploadMediaFile('media', markedClipKey(clipPath), marked.uri, 'video/mp4', {
+            /*
+             * Where the marked file actually went — not where we asked for it.
+             *
+             * The upload URL's path is a suggestion: `media_upload_ticket` mints
+             * the object key on the server precisely so a client cannot name a
+             * path in the bucket. This used to record `markedClipKey(clipPath)`
+             * and nothing else, so every Save button pointed at
+             * `…-marked.mp4` while the bytes sat under a key the ticket had
+             * chosen — a file that existed and a row that described a file that
+             * never would. The answer to "save this clip" was then, permanently,
+             * "the saved copy isn't ready yet."
+             *
+             * The returned address is the truth, and it is what gets registered.
+             */
+            markedTempUri = marked.uri;
+            markedClipUrl = await uploadMediaFile('media', markedClipKey(clipPath), marked.uri, 'video/mp4', {
               // The mark re-encodes the compressed copy, so the result is
               // already the right size; only an encoder that overshot (or a
               // size nobody could measure) takes the compressing path again.
               prepared: markedCopyFitsUpload(marked.bytes, UPLOAD_CEILING_BYTES),
             });
-            markedClipPath = markedClipKey(clipPath);
           }
         } catch (e) {
           console.warn('clip marking skipped:', (e as Error).message);
         } finally {
           // The marked copy has been uploaded (or was never made); it is a cache
-          // file from here on.
-          if (markedUri) removeMarkedClip(markedUri);
+          // file from here on — except on the phone, where it is kept until the
+          // post exists, so Save can write it straight to the gallery.
+          if (markedUri && !markedClipUrl) removeMarkedClip(markedUri);
         }
       }
     } finally {
@@ -980,21 +1002,36 @@ export async function createPost(input: {
         ...args, ...(edit ? { p_edit: edit as unknown as Record<string, unknown> } : {}),
       });
 
-  if (markedClipPath && created?.id) {
+  if (markedClipUrl && created?.id) {
     /**
-     * Recorded before the caller sees the post, so the composer's refresh and
-     * everybody else's first fetch both have a Save row. The server derives the
-     * key again and refuses if the post is not this member's clip, so a failure
-     * here is silent by design: it means no marked copy, which the scheduled job
-     * will fix.
+     * The post is what the row is attached to, so the registration can only
+     * happen once the post exists — which is also the moment the phone can keep
+     * its copy of the marked file, under the id Save will ask for.
+     *
+     * `p_marked_url` is required by the server now. Without an address there is
+     * no row, and no row is honest: it means "no copy yet", which the marking
+     * job then fixes. A row that points at nothing is what made Save fail every
+     * single time.
      */
     try {
-      await rpc<boolean>('register_own_post_download', { p_post_id: created.id });
+      await rpc<boolean>('register_own_post_download', {
+        p_post_id: created.id,
+        p_marked_url: markedClipUrl,
+      });
+      /*
+       * Keep the marked file on this phone until Save uses it, or the cache
+       * evicts it. This is the member's own clip, already on their own device —
+       * the last thing it should need is a download. Saving it then costs no
+       * network at all, which is the difference between a tap that works on a
+       * bus and a tap that says "try again in a minute".
+       */
+      if (markedTempUri) await keepMarkedCopy(created.id, markedTempUri);
       return { ...created, downloadUrl: `/d/${created.id}` };
     } catch {
       return created;
     }
   }
+  if (markedTempUri) removeMarkedClip(markedTempUri);
   return created;
 }
 

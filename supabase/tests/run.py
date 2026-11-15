@@ -191,6 +191,11 @@ def main() -> int:
         # Holup is 16+: the floor is in the database, so it is tested there.
         if not run_file(ROOT / 'minimum_age.sql'):
             return 1
+        # A saved clip has to be the file that was uploaded, not a key somebody
+        # guessed — and the marking job has to be handed the ones nobody has
+        # confirmed.
+        if not run_file(ROOT / 'marked_copy.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

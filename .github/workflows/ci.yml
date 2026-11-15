@@ -43,6 +43,9 @@ jobs:
       # that field forward and nobody compared it to the version being built.
       # The lookup is by version, so a forgotten entry fails here in seconds
       # instead of after a 40-minute APK build that cannot be announced.
+      # Saving a clip depends on three places agreeing about where the marked
+      # file lives, and on the job reading the store the Worker serves from.
+      - run: python3 .github/scripts/test_mark_pending.py
       - run: python3 .github/scripts/test_update_notes.py
       - run: python3 .github/scripts/update_notes.py --check
 

@@ -33,5 +33,9 @@ export async function saveClipToDevice(post: {
   downloadUrl?: string | null;
 }): Promise<SaveOutcome> {
   if (!canSaveClip(post) || !post.downloadUrl) return 'unavailable';
-  return saveClipFile(post.downloadUrl, clipFileName(post.id, post.downloadUrl));
+  /*
+   * The post id travels with the request so the phone can answer from the marked
+   * copy it already has, instead of downloading its own clip back.
+   */
+  return saveClipFile(post.downloadUrl, clipFileName(post.id, post.downloadUrl), post.id);
 }

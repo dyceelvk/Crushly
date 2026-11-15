@@ -5,14 +5,22 @@ Runs outside the request path, on purpose. Marking a clip means a full ffmpeg
 re-encode, and doing that while somebody is uploading would make them wait for it;
 doing it in a batch keeps uploads instant and clears a backlog in one run.
 
-For each post with no copy yet:
+For each post the database says needs attention:
 
-  1. ask the database what is missing (`posts_needing_download`);
-  2. pull the original out of the private bucket;
-  3. burn in the mark and the creator's handle, append the end splash
+  1. ask what is missing (`posts_needing_download` — no copy at all, or a copy
+     the app registered but nobody confirmed);
+  2. if a copy was registered but unconfirmed, check it is really in the bucket;
+     if it is, record its size and move on. Nothing is re-encoded;
+  3. otherwise pull the original out of the private bucket;
+  4. burn in the mark and the creator's handle, append the end splash
      (`CrushlyApp/scripts/mark-clip.py`);
-  4. put the marked file next to the original, under a `-marked` key;
-  5. record the key (`register_post_download`).
+  5. put the marked file next to the original, under a `-marked` key;
+  6. record the key and its size (`register_post_download`).
+
+Both stores are read, R2 first and Backblaze second, in the same order the Worker
+serves media in — a clip posted since the move to R2 lives only there, and a job
+that can only read B2 cannot mark it, which is how a Save button stayed broken
+with a healthy queue behind it.
 
 Nothing here touches `posts.media_url`. The clip that plays inside holUpp is never
 re-encoded, and the marked copy is only ever served through the Worker's
@@ -34,6 +42,14 @@ import urllib.request
 from pathlib import Path
 
 MARKER = Path(__file__).resolve().parent.parent / "CrushlyApp/scripts/mark-clip.py"
+
+#: The stores a clip may live in, in the order they are tried — the same order
+#: the media Worker serves in (`READ_ORDER` in
+#: `cloudflare/media-worker/src/mediaStore.ts`). A job that reads one store and a
+#: Worker that serves the other is how a healthy clip looked missing: every post
+#: made since the move to R2 failed here with `HTTP Error 404`, so no marked copy
+#: was ever produced for it.
+STORE_ORDER = ("r2", "b2")
 PYTHON = sys.executable
 
 
@@ -126,6 +142,27 @@ class B2:
         with urllib.request.urlopen(request, timeout=120) as response:
             return json.loads(response.read())
 
+    def size(self, key: str) -> int | None:
+        """Bytes of `key`, or None when B2 does not have it.
+
+        `b2_list_file_names` with a prefix and an exact-name match: B2 has no
+        HEAD that answers 404 the way S3 does, and treating an auth error as
+        "missing" would silently re-mark clips that are fine.
+        """
+        try:
+            answer = self._call("b2_list_file_names", {
+                "bucketId": self.bucket_id,
+                "startFileName": key,
+                "maxFileCount": 1,
+                "prefix": key,
+            })
+        except urllib.error.HTTPError:
+            return None
+        for item in answer.get("files", []):
+            if item.get("fileName") == key:
+                return int(item.get("contentLength") or 0)
+        return None
+
     def download(self, key: str, target: Path) -> None:
         url = f"{self.download_url}/file/{self.bucket_name}/{urllib.parse.quote(key)}"
         request = urllib.request.Request(url, headers={"Authorization": self.auth})
@@ -153,6 +190,55 @@ class B2:
         )
         with urllib.request.urlopen(request, timeout=600) as response:
             response.read()
+
+
+
+class R2:
+    """Cloudflare R2, through the S3 API and the release bucket's own key pair.
+
+    Same credentials the APK channel uses (`r2-releases.py`), scoped to the one
+    bucket, so a job needs no wider access than an upload does. `boto3` is not
+    installed everywhere this script runs, so a missing library or missing
+    credentials leave `available` false and the job continues on Backblaze —
+    which is what it did before R2 existed.
+    """
+
+    def __init__(self) -> None:
+        self.available = False
+        self.bucket = os.environ.get("R2_BUCKET", "holupp").strip() or "holupp"
+        account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        key = os.environ.get("R2_ACCESS_KEY_ID", "").strip()
+        secret = os.environ.get("R2_SECRET_ACCESS_KEY", "").strip()
+        if not (account and key and secret):
+            return
+        try:
+            import boto3
+            from botocore.config import Config
+        except ImportError:
+            print("boto3 not installed: R2 reads are skipped this run", file=sys.stderr)
+            return
+        self.s3 = boto3.client(
+            "s3",
+            endpoint_url=f"https://{account}.r2.cloudflarestorage.com",
+            aws_access_key_id=key,
+            aws_secret_access_key=secret,
+            region_name="auto",
+            config=Config(retries={"max_attempts": 3}, signature_version="s3v4"),
+        )
+        self.available = True
+
+    def size(self, key: str) -> int | None:
+        try:
+            head = self.s3.head_object(Bucket=self.bucket, Key=key)
+        except Exception:  # noqa: BLE001 - absence is the answer, not an error
+            return None
+        return int(head.get("ContentLength") or 0)
+
+    def download(self, key: str, target: Path) -> None:
+        self.s3.download_file(self.bucket, key, str(target))
+
+    def upload(self, key: str, source: Path) -> None:
+        self.s3.upload_file(str(source), self.bucket, key, ExtraArgs={"ContentType": "video/mp4"})
 
 
 def object_key(media_url: str) -> str:
@@ -192,6 +278,8 @@ def main() -> int:
         return 0
 
     b2 = B2()
+    r2 = R2()
+    print(f"stores: r2={'yes' if r2.available else 'no'}, b2=yes")
     done = failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
@@ -199,12 +287,45 @@ def main() -> int:
             post_id = int(post["id"])
             try:
                 key = object_key(post["mediaUrl"])
+                out_key = marked_key(key)
+                print(f"post {post_id}: {key}")
+
+                # A copy the app registered but nobody confirmed. Look before
+                # re-encoding: the object is very often already there, and an
+                # ffmpeg pass over footage that needs nothing is the most
+                # expensive way to write one number into a row.
+                if post.get("unverified"):
+                    size_here = r2.size(out_key) if r2.available else None
+                    if not size_here:
+                        size_here = b2.size(out_key)
+                    if size_here:
+                        ok = rpc("register_post_download", {
+                            "p_post_id": post_id,
+                            "p_object_key": out_key,
+                            "p_bytes": size_here,
+                        })
+                        print(f"  copy confirmed at {out_key} ({size_here / 1e6:.2f} MB), registered: {ok}")
+                        done += 1
+                        continue
+                    print("  registered copy is not in either store: making it")
+
                 handle = handle_for(int(post["authorId"]))
-                print(f"post {post_id}: {key} (handle @{handle})")
+                print(f"  handle @{handle}")
 
                 source = tmpdir / f"{post_id}-original"
                 target = tmpdir / f"{post_id}-marked.mp4"
-                b2.download(key, source)
+                # R2 first, exactly as the Worker reads. A clip posted since the
+                # move is only in R2, and a job that looks in B2 alone reports
+                # "not found" for a file that is right there.
+                fetched = False
+                if r2.available and r2.size(key):
+                    r2.download(key, source)
+                    fetched = True
+                elif b2.size(key):
+                    b2.download(key, source)
+                    fetched = True
+                if not fetched:
+                    raise FileNotFoundError(f"original {key} is in neither store")
 
                 result = subprocess.run(
                     [PYTHON, str(MARKER), str(source), str(target), "--handle", f"@{handle.lstrip('@')}"],
@@ -215,8 +336,12 @@ def main() -> int:
                     failed += 1
                     continue
 
-                out_key = marked_key(key)
-                b2.upload(out_key, target)
+                # Written to R2 when it is reachable, beside the original; the
+                # Worker reads R2 first, so this is the copy it will serve.
+                if r2.available:
+                    r2.upload(out_key, target)
+                else:
+                    b2.upload(out_key, target)
                 bytes_written = target.stat().st_size
                 ok = rpc("register_post_download", {
                     "p_post_id": post_id,
