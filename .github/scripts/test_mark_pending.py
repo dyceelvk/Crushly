@@ -68,6 +68,15 @@ sql = (ROOT / 'supabase/migrations/20261113120000_own_post_download.sql').read_t
 check('the database also replaces the extension with -marked.mp4',
       'regexp_replace' in sql and "-marked.mp4'" in sql)
 
+# The bucket matters as much as the order: member media is bound to its own
+# bucket, and an R2 client pointed at the APK bucket reports every clip missing.
+wrangler = (ROOT / 'cloudflare/media-worker/wrangler.toml').read_text()
+media_bucket = re.search(r'binding\s*=\s*"MEDIA"\s*\nbucket_name\s*=\s*"([^"]+)"', wrangler)
+check('the job reads the bucket the Worker binds member media to',
+      media_bucket is not None and media_bucket.group(1) == 'holupp-media')
+check('and defaults to that bucket, not the release one',
+      'get("R2_MEDIA_BUCKET", "holupp-media")' in (ROOT / 'scripts/mark_pending_clips.py').read_text())
+
 # And the job must be given the unconfirmed rows back, or the copy nobody checked
 # is never looked at again.
 migration = (ROOT / 'supabase/migrations/20261115120000_marked_copy_is_the_uploaded_file.sql').read_text()

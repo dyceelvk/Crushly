@@ -205,7 +205,11 @@ class R2:
 
     def __init__(self) -> None:
         self.available = False
-        self.bucket = os.environ.get("R2_BUCKET", "holupp").strip() or "holupp"
+        # Member media, not the APK channel: the Worker binds member media to
+        # `holupp-media` (wrangler.toml, binding MEDIA) and the APK to `holupp`.
+        # Reading the release bucket for a clip finds nothing, which is how a
+        # job that "can see R2" still reported every original as missing.
+        self.bucket = os.environ.get("R2_MEDIA_BUCKET", "holupp-media").strip() or "holupp-media"
         account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
         key = os.environ.get("R2_ACCESS_KEY_ID", "").strip()
         secret = os.environ.get("R2_SECRET_ACCESS_KEY", "").strip()
