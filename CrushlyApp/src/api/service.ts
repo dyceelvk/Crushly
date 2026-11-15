@@ -1025,9 +1025,13 @@ export async function createPost(input: {
        * network at all, which is the difference between a tap that works on a
        * bus and a tap that says "try again in a minute".
        */
-      if (markedTempUri) await keepMarkedCopy(created.id, markedTempUri);
+      const kept = markedTempUri ? await keepMarkedCopy(created.id, markedTempUri) : false;
+      // Kept for Save, or it was never going to be: either way nothing of ours
+      // is left sitting in the cache after the post is done with it.
+      if (markedTempUri && !kept) removeMarkedClip(markedTempUri);
       return { ...created, downloadUrl: `/d/${created.id}` };
     } catch {
+      if (markedTempUri) removeMarkedClip(markedTempUri);
       return created;
     }
   }

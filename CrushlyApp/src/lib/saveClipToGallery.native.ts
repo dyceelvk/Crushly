@@ -53,7 +53,19 @@ export async function saveClipFile(url: string, name: string, postId?: number): 
   if (postId) {
     const local = await markedCopyFor(postId);
     if (local) {
-      await MediaLibrary.Asset.create(local);
+      /*
+       * The same two-attempt hand-off the download path uses, for the same
+       * reason: `Asset.create` is the current API, and a device that upgraded
+       * across a media-library version can have one work and not the other.
+       * A local file must never be the only attempt, or the fast path becomes a
+       * slower failure than the one it replaced.
+       */
+      try {
+        await MediaLibrary.Asset.create(local);
+      } catch {
+        const legacy = await import('expo-media-library/legacy');
+        await legacy.saveToLibraryAsync(local);
+      }
       // The gallery owns its own copy now; the cached one has done its job.
       await FileSystem.deleteAsync(local, { idempotent: true }).catch(() => undefined);
       return 'saved';
