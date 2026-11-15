@@ -1,11 +1,11 @@
 {
-  "version": "1.0.117",
-  "versionCode": 117,
+  "version": "1.0.118",
+  "versionCode": 118,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.117-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.117/holUpp-1.0.117-RielOS.apk",
-  "notes": "Onboarding finishes. Step 5 of 6 saved your preferences, then tried to open a screen that was never registered with the navigator — nothing threw, so the Continue button just stopped. Every new member stopped there, on the web and on the phone. The last step is registered now, and onboarding completes in place if it ever goes missing again.",
-  "bytes": 96991258,
-  "sha256": "561deb6ba2276283862b8f04aed8dbb667214d129f8f392946ae594b1a50da01",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.117/holUpp-1.0.117-RielOS.apk"
+  "file": "holUpp-1.0.118-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.118/holUpp-1.0.118-RielOS.apk",
+  "notes": "Saving a clip works. The saved copy the app offered you was not the copy it had uploaded, so every save answered 'not ready yet', and the job that repairs those copies had been reading the wrong storage since media moved. Both fixed. A clip you posted now saves straight from your phone, and clips that were already stuck save too.",
+  "bytes": 96998478,
+  "sha256": "c622317883c2b4fb237eccff279897e345f45c3114b8d2737bc8a7e7af161ac9",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.118/holUpp-1.0.118-RielOS.apk"
 }
