@@ -40,7 +40,7 @@ const GOOGLE_SIGN_IN_OFF = process.env.EXPO_PUBLIC_GOOGLE_SIGN_IN === '0';
  * opens a Custom Tab and returns through `crushly://auth-callback`; in a browser
  * it is an ordinary redirect back to the same page.
  */
-function GoogleOption({ onPress, busy }: { onPress: () => void; busy: boolean }) {
+function GoogleOption({ onPress, busy, creates = false }: { onPress: () => void; busy: boolean; creates?: boolean }) {
   const { colors } = useTheme();
   return (
     <View style={{ gap: space.sm }}>
@@ -51,8 +51,19 @@ function GoogleOption({ onPress, busy }: { onPress: () => void; busy: boolean })
         icon="logo-google"
         onPress={onPress}
         loading={busy}
-        accessibilityHint="Signs in with your Google account, no email code needed"
+        accessibilityHint={
+          creates
+            ? 'Creates your holUpp account with your Google name and photo, no email code needed'
+            : 'Signs in with your Google account, no email code needed'
+        }
       />
+      {/* The line about what Google does belongs under the Google button, not
+          under the divider — below the divider it reads as a note about email. */}
+      {creates ? (
+        <Txt variant="small" color="textMuted" align="center">
+          This creates your holUpp account. Your name and photo come from Google.
+        </Txt>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
         <View style={{ flex: 1, height: stroke.hairline, backgroundColor: colors.border }} />
         <Txt variant="caption" color="textMuted">
@@ -570,6 +581,20 @@ export function SignUpScreen({ navigation, route }: ScreenProps<'SignUp'>) {
       }
     >
       {!isConfigured ? <NotConfiguredNotice /> : null}
+      {/*
+        Create an account with Google, not just sign in with one.
+
+        This screen already built the Google handler and never drew the button, so
+        somebody with no account could only find Google on sign-in, where it looks
+        like the wrong door. The round trip is identical: Supabase creates the
+        account when the Google identity is new, handle_new_user fills the profile
+        from the Google name, and the app lands on onboarding.
+      */}
+      {google.enabled ? (
+        <View style={{ marginBottom: rhythm.group }}>
+          <GoogleOption creates onPress={() => void google.start()} busy={google.busy} />
+        </View>
+      ) : null}
       {errors.form ? <Banner message={errors.form} /> : null}
       <View style={{ gap: rhythm.group }}>
         <Input

@@ -185,3 +185,31 @@ drop trigger if exists push_on_message on public.messages;
 create trigger push_on_message
   after insert on public.messages
   for each row execute function public.push_dispatch_trigger();
+
+/* ------------------------------------------------------- google sign-up name */
+
+-- A Google sign-up arrives with a name already (raw_user_meta_data.full_name). It
+-- was being thrown away, so a new member met an empty name field in onboarding.
+-- Kept here so a fresh database matches production.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_id bigint;
+  v_name text;
+begin
+  v_name := coalesce(
+    nullif(btrim(new.raw_user_meta_data->>'full_name'), ''),
+    nullif(btrim(new.raw_user_meta_data->>'name'), ''),
+    ''
+  );
+  insert into profiles (auth_user_id, email, name, created_at, updated_at, last_active_at)
+  values (new.id, coalesce(new.email, ''), v_name, public.now_ms(), public.now_ms(), public.now_ms())
+  returning id into new_id;
+  insert into preferences (user_id) values (new_id);
+  insert into privacy (user_id) values (new_id);
+  insert into notification_settings (user_id) values (new_id);
+  return new;
+end $$;
