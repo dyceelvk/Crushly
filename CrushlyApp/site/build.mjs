@@ -900,13 +900,22 @@ function privacyPage() {
 <section class="band">
   <div class="wrap">
     <div class="prose reveal">
-      <p class="lede">Plain language, no clauses designed to be skipped. Last updated 13 November 2026.</p>
+      <p class="lede">Plain language, no clauses designed to be skipped. Last updated 16 November 2026.</p>
 
       <h2>What we collect</h2>
       <ul>
         <li><strong>What you give us:</strong> your email, your handle, your profile details, and the posts, photos, clips and messages you choose to share.</li>
         <li><strong>What the app needs to work:</strong> the device type and Android version, so a bug can be reproduced, and the timestamps of what you post.</li>
         <li><strong>What we do not collect:</strong> your contacts, your precise location unless you turn on <a href="/around">Around</a>, and nothing from other apps on your phone.</li>
+      </ul>
+
+      <h2>Signing in with Google</h2>
+      <p>holUpp lets you sign in with a Google account instead of a password. When you do, Google tells us three things and nothing else: <strong>your name, your email address and your profile photo</strong>. We use them to create your holUpp account and to show your picture next to your name.</p>
+      <ul>
+        <li>We do <strong>not</strong> receive your Gmail, your Google Drive, your calendar, your contacts, or any other Google data. holUpp has never requested those permissions.</li>
+        <li>We do not post anything to your Google account, and we cannot read your Google password.</li>
+        <li>Google receives the information that you signed in to holUpp — as it would for any site using Google Sign-In — but not what you do inside holUpp afterwards.</li>
+        <li>You can stop this at any time by signing out and using an email sign-in code instead. To remove the link entirely, delete your holUpp account: see <a href="#deleting">Deleting your data</a>.</li>
       </ul>
 
       <h2>Why we keep it</h2>
@@ -923,11 +932,18 @@ function privacyPage() {
       <h2>Search engines</h2>
       <p>Only the public marketing pages on holupp.net are indexed. Your profile, your posts, your conversations and every signed-in screen are excluded — they carry a noindex directive and are never served to a crawler. See the note on our <a href="/about">About</a> page.</p>
 
-      <h2>Deleting your data</h2>
+      <h2 id="deleting">Deleting your data</h2>
       <p>Deleting a post deletes the row and the file. Deleting your account deletes your profile, your posts, your media and your messages. Deletion is immediate and is not a soft delete — the space it took is reclaimed.</p>
 
-      <h2>Where it is stored</h2>
+      <h2>Where it is stored, and who processes it</h2>
       <p>Account and message records live in a Postgres database; photos, clips and Moment media live in private object storage. Both are encrypted in transit, and media is served through an authenticated endpoint rather than a public URL.</p>
+      <p>We do not sell data and we do not share it for advertising. A small number of service providers process it strictly on our instructions, each for one job:</p>
+      <ul>
+        <li><strong>Supabase</strong> — database, file storage and sign-in sessions.</li>
+        <li><strong>Cloudflare</strong> — delivering media and the app download.</li>
+        <li><strong>Google</strong> — only if you choose Google Sign-In, and only for the sign-in itself.</li>
+        <li><strong>Didit</strong> — only if you apply for a verified badge: it checks the selfie and ID you submit, and holUpp stores the result of that check, not the documents.</li>
+      </ul>
 
       <h2>Contact</h2>
       <p>Questions about this policy, or a request to see or delete your data: <a href="mailto:support@holupp.net">support@holupp.net</a>. See <a href="/contact">Contact</a>.</p>
@@ -941,7 +957,7 @@ function termsPage() {
 <section class="band">
   <div class="wrap">
     <div class="prose reveal">
-      <p class="lede">The rules, in the order you will need them. Last updated 13 November 2026.</p>
+      <p class="lede">The rules, in the order you will need them. Last updated 16 November 2026.</p>
 
       <h2>Who may use holUpp</h2>
       <p>You must be 16 or older. One account per person. You are responsible for what is posted from your account and for keeping your password to yourself.</p>
@@ -955,6 +971,9 @@ function termsPage() {
         <li>Automated scraping, bulk account creation, or using holUpp to send spam or floods of email.</li>
         <li>Uploading content you do not have the rights to.</li>
       </ul>
+
+      <h2>Signing in with Google</h2>
+      <p>If you sign in with a Google account, holUpp uses only your name, email address and profile photo, and only to create and run your holUpp account. Signing in with Google does not give holUpp access to your Gmail, Drive, contacts or any other Google service, and you remain bound by Google's own terms for your Google account.</p>
 
       <h2>What you own</h2>
       <p>You keep ownership of everything you post. You give holUpp the permission it needs to store, display and deliver that content to the people you chose — nothing more, and that permission ends when you delete the content.</p>
