@@ -15,8 +15,9 @@
  * while being *imported* on web, so importing it here would take the whole web
  * app down to a white screen. It did, once.
  */
-import { canSaveClip, clipFileName } from './clipSaveRules';
+import { canSaveClip, clipFileName, isSessionRefused } from './clipSaveRules';
 import { saveClipFile } from './saveClipToGallery';
+import { mediaDownloadHeaders, refreshMediaSession } from '../api/client';
 
 export { canSaveClip, clipFileName };
 export type { SaveablePost } from './clipSaveRules';
@@ -33,9 +34,27 @@ export async function saveClipToDevice(post: {
   downloadUrl?: string | null;
 }): Promise<SaveOutcome> {
   if (!canSaveClip(post) || !post.downloadUrl) return 'unavailable';
-  /*
-   * The post id travels with the request so the phone can answer from the marked
-   * copy it already has, instead of downloading its own clip back.
+  const url = post.downloadUrl;
+  const name = clipFileName(post.id, url);
+
+  /**
+   * Somebody else's clip is the one case that has to go to the network.
+   *
+   * The phone's own posts answer from the marked copy on disk, so they save with
+   * no request at all — which is why the report that arrived was specifically
+   * "someone else posted a video and I could not download it": that is the only
+   * path that talks to the Worker. It needs two things the old call did not
+   * guarantee. A token taken from the session *now*, rather than one cached when
+   * the app started; and exactly one retry if the Worker still says 401, after
+   * forcing a refresh. Anything else — a clip with no copy yet, a post this
+   * member may not see — is left to say what it is.
    */
-  return saveClipFile(post.downloadUrl, clipFileName(post.id, post.downloadUrl), post.id);
+  const attempt = async () => saveClipFile(url, name, post.id, await mediaDownloadHeaders(url));
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!isSessionRefused(error)) throw error;
+    await refreshMediaSession();
+    return attempt();
+  }
 }

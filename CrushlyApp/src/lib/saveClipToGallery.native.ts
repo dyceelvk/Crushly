@@ -31,8 +31,23 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import { downloadSource } from './mediaHost';
 import { markedCopyFor } from './markedCopy';
+import { SaveError, saveMessageFor } from './clipSaveRules';
 
-export async function saveClipFile(url: string, name: string, postId?: number): Promise<'saved' | 'downloaded' | 'denied'> {
+/**
+ * `fresh` is the header the save route measured a moment before the download.
+ *
+ * `downloadSource` builds headers from the token the media layer cached, and
+ * that copy can be an hour old on an app that has been open all day — the Worker
+ * answers 401 and the member is told their session expired when it did not. The
+ * caller asks the session itself, so the header that arrives here is the current
+ * one; anything it does not supply falls back to the cached token as before.
+ */
+export async function saveClipFile(
+  url: string,
+  name: string,
+  postId?: number,
+  fresh?: Record<string, string>,
+): Promise<'saved' | 'downloaded' | 'denied'> {
   // `writeOnly` is enough on Android 13+: saving needs no permission to read the
   // gallery, and asking for more than the job needs is a worse prompt.
   const permission = await MediaLibrary.requestPermissionsAsync(true, ['video']);
@@ -81,21 +96,19 @@ export async function saveClipFile(url: string, name: string, postId?: number): 
    */
   const source = downloadSource(url);
   const address = typeof source === 'string' ? source : source.uri;
-  const headers = typeof source === 'string' ? undefined : source.headers;
+  const headers = fresh ?? (typeof source === 'string' ? undefined : source.headers);
 
   const target = `${FileSystem.cacheDirectory ?? ''}${name}`;
   try {
     const result = await FileSystem.downloadAsync(address, target, headers ? { headers } : undefined);
-    if (result.status === 401) throw new Error('Your session expired. Sign in again, then save the clip.');
-    // 404 is not "you may not see this": it means the marked copy has not been
-    // found in storage yet (marking runs on the phone, then a job backfills it).
-    // Say that, so the answer is "try again in a minute" rather than a dead end.
-    if (result.status === 404) throw new Error('The mark is still being added to this clip. Try again in a minute.');
-    if (result.status !== 200) throw new Error(`The clip could not be downloaded (${result.status}). Please try again.`);
+    // The status is carried, not just the sentence: a 401 is worth one retry with
+    // a refreshed session (see `downloadClip`), and a plain Error could not be
+    // told apart from a dropped connection.
+    if (result.status !== 200) throw new SaveError(result.status, saveMessageFor(result.status));
 
     const info = await FileSystem.getInfoAsync(target);
     const bytes = info.exists && 'size' in info ? info.size : 0;
-    if (!bytes) throw new Error('The clip came back empty. Please try again.');
+    if (!bytes) throw new SaveError(0, 'The clip came back empty. Please try again.');
 
     try {
       await MediaLibrary.Asset.create(result.uri);

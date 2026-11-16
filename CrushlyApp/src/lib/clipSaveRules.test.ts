@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canSaveClip, clipFileName } from './clipSaveRules';
+import { canSaveClip, clipFileName, isSessionRefused, SaveError, saveMessageFor } from './clipSaveRules';
 
 // The rule under test is not "a download works" — it is that a download is
 // offered only when a marked copy exists, so a copy that leaves the app can
@@ -37,4 +37,24 @@ test('the saved file is named after the post, not the storage key', () => {
   // A signed URL has a query string; the extension still wins over the junk.
   assert.equal(clipFileName(7, 'https://cdn.example/x.MOV?token=abc.def'), 'holup-7.mov');
   assert.equal(clipFileName(9, 'https://cdn.example/no-extension'), 'holup-9.mp4');
+});
+
+test('a download failure says which failure it was', () => {
+  // A refused session is not "try again in a minute" — trying again without a
+  // new token does nothing.
+  assert.match(saveMessageFor(401), /session expired/i);
+  assert.match(saveMessageFor(403), /session expired/i);
+  // A copy that has not been marked yet is exactly "try again in a minute".
+  assert.match(saveMessageFor(404), /still being added/i);
+  assert.match(saveMessageFor(429), /too many/i);
+  assert.match(saveMessageFor(500), /could not be downloaded \(500\)/);
+});
+
+test('only a 401 is retried after refreshing the session', () => {
+  assert.equal(isSessionRefused(new SaveError(401, 'x')), true);
+  assert.equal(isSessionRefused(new SaveError(404, 'x')), false);
+  assert.equal(isSessionRefused(new Error('x')), false);
+  // A dropped connection is a different problem, and must not be reported as
+  // somebody's expired session.
+  assert.equal(isSessionRefused(new SaveError(0, 'x')), false);
 });

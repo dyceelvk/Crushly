@@ -31,6 +31,7 @@ export async function saveClipFile(
   url: string,
   name: string,
   _postId?: number,
+  _fresh?: Record<string, string>,
 ): Promise<'saved' | 'downloaded' | 'denied'> {
   // No gallery to write to and no local copy of a marked clip on the web: the
   // post id is accepted so both halves have one signature, and ignored.

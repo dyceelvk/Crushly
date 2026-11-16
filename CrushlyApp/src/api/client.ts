@@ -233,6 +233,34 @@ async function mediaAccessToken(): Promise<string> {
   return access;
 }
 
+/**
+ * Headers for fetching a private media file — a header, not a query parameter.
+ *
+ * `/d/<post id>` is the one download the app performs itself rather than handing
+ * to an <img>: `FileSystem.downloadAsync` on the phone. That call was made with
+ * the bare URL and **no** Authorization header, and the Worker refuses an
+ * unauthenticated download with 401 — so saving somebody else's clip failed
+ * every time, while the same clip opened fine in the player (which does send the
+ * header). The token is taken from the session at the moment of the request,
+ * `getSession` refreshing it if it has aged out, so a long-lived app does not
+ * carry an hour-old token into the download.
+ */
+export async function mediaDownloadHeaders(url: string): Promise<Record<string, string> | undefined> {
+  // Browsers carry the token in the query string instead; they cannot set
+  // headers on a fetch that the server compares to another host's cookie jar.
+  if (Platform.OS === 'web') return undefined;
+  if (!isMediaStoreUrl(url) && !/\/d\/\d+/.test(url)) return undefined;
+  const token = await mediaAccessToken();
+  return { Authorization: `Bearer ${token}` };
+}
+
+/** Force a fresh access token — used once after a 401 before giving up. */
+export async function refreshMediaSession(): Promise<void> {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) throw new ApiError(401, 'Your session has expired — sign in again.');
+  setMediaToken(data.session?.access_token ?? null);
+}
+
 async function mediaErrorMessage(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: string } | null;
   return body?.error || `We couldn’t save that file (${res.status}). Try again.`;

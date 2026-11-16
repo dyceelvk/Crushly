@@ -33,3 +33,35 @@ export function clipFileName(postId: number, url: string): string {
   const ext = (match?.[1] ?? 'mp4').toLowerCase();
   return `holup-${postId}.${ext}`;
 }
+
+/**
+ * A save that failed for a reason worth naming.
+ *
+ * The three statuses a download can come back with mean three different things,
+ * and the app used to say the same sentence for all of them: "try again", which
+ * was wrong for a refused session (trying again does nothing) and wrong for a
+ * copy that has not been produced yet (trying again in a minute is exactly
+ * right). `status` is kept on the error so the caller can act on a 401 — refresh
+ * the session and retry once — instead of showing it to the member.
+ */
+export class SaveError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'SaveError';
+    this.status = status;
+  }
+}
+
+/** What to tell a member about a download that did not return a file. */
+export function saveMessageFor(status: number): string {
+  if (status === 401 || status === 403) return 'Your session expired. Sign in again, then save the clip.';
+  if (status === 404) return 'The mark is still being added to this clip. Try again in a minute.';
+  if (status === 429) return 'Too many downloads just now. Give it a moment and try again.';
+  return `The clip could not be downloaded (${status}). Please try again.`;
+}
+
+/** A refusal that a fresh token can fix — and only those are retried. */
+export function isSessionRefused(error: unknown): boolean {
+  return error instanceof SaveError && error.status === 401;
+}
