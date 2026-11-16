@@ -20,14 +20,27 @@
  */
 
 /**
- * Where Supabase sends the app back to.
+ * The URL `auth-callback` on whichever scheme this build actually registers.
  *
- * This must appear in the project's redirect allow list — it does
- * (`crushly://auth-callback`, plus `crushly://**`) — and it must match the
- * scheme declared in `app.json` (`"scheme": "crushly"`), or Android delivers the
- * link to nothing and the member sees a browser error page.
+ * This is not cosmetic. `app.json` says `"scheme": "crushly"`, but `app.config.js`
+ * overrides it with `holup` for the secure release — and the secure release is
+ * the only build anybody installs. A redirect to the wrong scheme is delivered to
+ * no app at all: Android shows the browser's "no app can open this" page, and the
+ * member is left in a browser tab having signed in to nothing. The scheme is
+ * therefore read from the running build (`Constants.expoConfig.scheme`) rather
+ * than guessed here, and the project's redirect allow list carries both.
  */
-export const NATIVE_REDIRECT = 'crushly://auth-callback';
+export function nativeRedirectFor(configuredScheme?: string | readonly string[] | null): string {
+  const raw = Array.isArray(configuredScheme) ? configuredScheme[0] : configuredScheme;
+  const scheme = String(raw ?? '').split(':')[0].trim();
+  return `${scheme || 'holup'}://auth-callback`;
+}
+
+/** The default for this build: the secure channel's scheme. */
+export const NATIVE_REDIRECT = 'holup://auth-callback';
+
+/** Every address a Google return from this app could arrive on. */
+const RETURN_PREFIXES = ['holup://auth-callback', 'crushly://auth-callback'] as const;
 
 /** The address to open in the in-app browser. */
 export function nativeAuthorizeUrl(projectUrl: string, redirectTo: string = NATIVE_REDIRECT): string {
@@ -39,7 +52,7 @@ export function nativeAuthorizeUrl(projectUrl: string, redirectTo: string = NATI
 export function isNativeReturn(url: string | undefined | null): boolean {
   if (!url) return false;
   const text = url.trim();
-  return text.startsWith('crushly://auth-callback') || text.startsWith('crushly:///auth-callback');
+  return RETURN_PREFIXES.some((prefix) => text.startsWith(prefix) || text.startsWith(prefix.replace('://', ':///')));
 }
 
 export type NativeReturn =

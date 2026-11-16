@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, requireConfig, supabase, SUPABASE_PROJECT_URL, toApiError } from '../api/client';
 import { captchaFailureMessage, getCaptchaToken, isCaptchaError } from '../lib/captcha';
 import { emailSendMessage, signUpOutcome } from '../lib/auth';
-import { NATIVE_REDIRECT, nativeAuthorizeUrl, parseNativeReturn } from '../lib/oauthNative';
+import { nativeAuthorizeUrl, nativeRedirectFor, parseNativeReturn } from '../lib/oauthNative';
 import { keys } from '../api/hooks';
 import { getMe, webOrigin, webReturnUrl } from '../api/service';
 import type { Me } from '../api/types';
@@ -173,7 +173,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
      */
     if (Platform.OS !== 'web') {
       const { openAuthSessionAsync } = await import('expo-web-browser');
-      const result = await openAuthSessionAsync(nativeAuthorizeUrl(SUPABASE_PROJECT_URL), NATIVE_REDIRECT);
+      const { default: Constants } = await import('expo-constants');
+      // The scheme this build registered — `holup` in the secure release, which
+      // app.config.js overrides over app.json's `crushly`. A redirect to the
+      // wrong scheme is delivered to no app at all.
+      const redirect = nativeRedirectFor(Constants.expoConfig?.scheme as string | string[] | undefined);
+      const result = await openAuthSessionAsync(nativeAuthorizeUrl(SUPABASE_PROJECT_URL, redirect), redirect);
       // Dismissing the sheet is a decision, not a failure: say nothing.
       if (result.type !== 'success') return;
       const parsed = parseNativeReturn(result.url);
