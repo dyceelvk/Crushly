@@ -6,7 +6,7 @@ import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
 import { captchaFailureMessage, getCaptchaToken, isCaptchaError } from '../lib/captcha';
 import { emailSendMessage, signUpOutcome } from '../lib/auth';
 import { keys } from '../api/hooks';
-import { getMe, webOrigin } from '../api/service';
+import { getMe, webOrigin, webReturnUrl } from '../api/service';
 import type { Me } from '../api/types';
 
 import { authStatus, type AuthStatus } from '../lib/authGate';
@@ -169,7 +169,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: webOrigin() },
+      // The page they are on, not just the host: the root of holupp.net is the
+      // marketing site, so a return to the origin alone lands them outside the
+      // app with a session nothing picks up.
+      options: { redirectTo: webReturnUrl() },
     });
     // Success means the browser is already navigating; the session is adopted
     // when Supabase redirects back with detectSessionInUrl.

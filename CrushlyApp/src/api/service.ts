@@ -8,7 +8,7 @@ import { fileSize, NoSpaceError } from '../lib/compressVideo';
 import { removeCompressedClip } from '../lib/compressClip';
 import Constants from 'expo-constants';
 import { updateVersionPath } from '../lib/updateChannel';
-import { browserLocation } from '../lib/browser';
+import { browserLocation, returnUrl } from '../lib/browser';
 import { profileCompletion } from '../lib/completion';
 import {
   supabase,
@@ -1689,6 +1689,21 @@ export async function updateAccount(body: {
  */
 export function webOrigin(): string | undefined {
   return browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window)?.origin;
+}
+
+/**
+ * The page to come back to, not just the host.
+ *
+ * `webOrigin()` returns `https://www.holupp.net`, and the app is at
+ * `https://www.holupp.net/app`: the root of that host is the marketing site. So
+ * an OAuth round trip that named only the origin dropped the member on the
+ * website with a session in the URL fragment that nothing was listening for —
+ * they had signed in, and were looking at the landing page, still signed out.
+ * Naming the page they left from fixes that, and is allowed by the project's
+ * redirect list (`https://www.holupp.net/**`).
+ */
+export function webReturnUrl(): string | undefined {
+  return returnUrl(browserLocation(Platform.OS, typeof window === 'undefined' ? undefined : window));
 }
 
 export async function resendConfirmation(email: string): Promise<void> {
