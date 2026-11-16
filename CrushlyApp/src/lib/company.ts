@@ -39,7 +39,15 @@ export const jurisdictionCourts = (): string =>
 
 const COMPANY_SITE: string = ''; // ← set this when the Riel landing page goes live
 
-export const SUPPORT_EMAIL = 'rielosInc@gmail.com';
+/**
+ * The one address every route out of holUpp leads to.
+ *
+ * It was a personal Gmail while the website, the privacy policy and the terms all
+ * said support@holupp.net — so somebody writing in from the app reached a different
+ * inbox from somebody writing in from the site, and the published policy named an
+ * address the app did not use. One address, and it is the domain one.
+ */
+export const SUPPORT_EMAIL = 'support@holupp.net';
 export const SAFETY_EMAIL = SUPPORT_EMAIL;
 export const LEGAL_EMAIL = SUPPORT_EMAIL;
 export const PRIVACY_EMAIL = SUPPORT_EMAIL;
