@@ -12,15 +12,21 @@ running the app, and only the project owner can create those credentials.
 | `register_device_token` / `set_device_sound` / `unregister_device_token` | live database | applied, authenticated only |
 | Trigger on `notifications` and `messages` | live database | fires, proven by a real insert |
 | `push-dispatch` edge function | `…/functions/v1/push-dispatch` | deployed, rejects anonymous callers with 401 |
-| App registration + sign-out cleanup | `src/lib/push.ts` | shipped in 1.0.124 (inert until Firebase exists) |
+| App registration + sign-out cleanup | `src/lib/push.ts` | shipped in 1.0.125 with `google-services.json` in the build |
+| FCM service account | `push_config.fcm_service_account` (service-role only) | installed, credential proven |
 | Per-sound Android channels (`holup-alerts-<sound>`) | app + function | shipped |
 
-A real insert into `notifications` produced this row, which is the chain working:
+Proven with a deliberately fake device token, so the only variable was the
+credential. Attempt #2 logged `sent=0 failed=0` with **no error note**, which is
+only possible if Google issued an access token and FCM answered the send; the fake
+token was then removed by the dead-token path. Earlier, the same chain without the
+credential logged `note="FCM service account not configured"`.
 
-```
-source=notifications record_id=200 sent=0 failed=0
-note="FCM service account not configured"
-```
+## Still needed
+
+A real device token — i.e. the app installed and signed in on a phone. Until
+`device_tokens` has a row, every send is correctly logged as `no registered
+devices`.
 
 ## What you need to do — about three minutes
 
