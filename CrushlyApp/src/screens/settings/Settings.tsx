@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, View } from 'react-native';
+import { AppState, Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Linking } from 'react-native';
@@ -14,6 +14,7 @@ import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { Avatar } from '../../components/Photo';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { playSound, setSoundEnabled, soundEnabled, whenSoundSettingLoaded } from '../../lib/sound';
+import { alertPermission, requestAlertPermission } from '../../lib/systemAlert';
 import { EmptyState, LoadingBlock } from '../../components/States';
 import { Wordmark } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
@@ -336,6 +337,16 @@ export function NotificationSettingsScreen() {
   const { data: me } = useMe();
   const [soundsOn, setSoundsOn] = useState(soundEnabled());
   useEffect(() => whenSoundSettingLoaded(() => setSoundsOn(soundEnabled())), []);
+  // The phone decides this one, not the account: the row reports what Android
+  // says and re-reads it whenever the member comes back from Android settings.
+  const [barOk, setBarOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    const read = () => { void alertPermission().then((ok) => { if (live) setBarOk(ok); }); };
+    read();
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') read(); });
+    return () => { live = false; sub.remove(); };
+  }, []);
   const update = useUpdateNotificationSettings();
   const toast = useToast();
   if (!me) return <LoadingBlock />;
@@ -345,7 +356,7 @@ export function NotificationSettingsScreen() {
   return (
     <Screen>
       <Header title="Notification settings" back />
-      <Group footer="Sounds play while holUpp is open. Notifications that arrive while the app is closed need push delivery, which is not built yet — nothing here pretends to ring when the app is not running.">
+      <Group footer="While holUpp is open a Whisper reaches you at once. While it is closed, Android lets holUpp check about every 15 minutes — so news can still reach the notification bar, but not instantly, and this screen will not pretend otherwise.">
         {/* Sound is a device setting, not an account one: the phone in your pocket
             decides whether it rings, and it must be remembered on this phone even
             if the account is used elsewhere. */}
@@ -355,6 +366,24 @@ export function NotificationSettingsScreen() {
           icon="volume-medium-outline"
           iconTone="gold"
           toggle={{ value: soundsOn, onChange: (v) => { setSoundsOn(v); void setSoundEnabled(v); if (v) void playSound('message'); } }}
+        />
+        {/* The banner is the other half of the same promise: a chime you cannot
+            see is no better than a notification you cannot hear. */}
+        <ListRow
+          title="Show in the notification bar"
+          subtitle={
+            barOk === null ? 'Checking what this phone allows'
+              : barOk ? 'Banners drop down, and unread ones wait in the shade'
+                : 'Blocked for holUpp — tap to open Android settings'
+          }
+          icon="notifications-outline"
+          iconTone={barOk ? 'gold' : 'neutral'}
+          last
+          onPress={async () => {
+            const ok = await requestAlertPermission();
+            setBarOk(ok);
+            if (!ok) await Linking.openSettings().catch(() => {});
+          }}
         />
       </Group>
       <Group footer="These choose what reaches the notification center, whichever way it arrives.">
