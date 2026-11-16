@@ -2,9 +2,10 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, requireConfig, supabase, toApiError } from '../api/client';
+import { ApiError, requireConfig, supabase, SUPABASE_PROJECT_URL, toApiError } from '../api/client';
 import { captchaFailureMessage, getCaptchaToken, isCaptchaError } from '../lib/captcha';
 import { emailSendMessage, signUpOutcome } from '../lib/auth';
+import { NATIVE_REDIRECT, nativeAuthorizeUrl, parseNativeReturn } from '../lib/oauthNative';
 import { keys } from '../api/hooks';
 import { getMe, webOrigin, webReturnUrl } from '../api/service';
 import type { Me } from '../api/types';
@@ -161,12 +162,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     requireConfig();
+
+    /**
+     * On the phone there is no page to come back to, so the round trip is made
+     * explicit: an in-app browser opens the project's authorize endpoint, Google
+     * and Supabase do exactly what they do on the web, and Supabase sends the
+     * app back to `crushly://auth-callback` with the session in the fragment.
+     * `parseNativeReturn` reads it; nothing is adopted unless both tokens are
+     * present and an actual sign-in is in flight.
+     */
     if (Platform.OS !== 'web') {
-      // The native path needs a deep link back into the app bundle, which is a
-      // separate piece of work (expo-auth-session + a custom scheme). Rather than
-      // fail in a way nobody can read, say what to do.
-      throw new ApiError(400, 'Google sign-in is web-only for now — use email, or open holUpp in a browser.');
+      const { openAuthSessionAsync } = await import('expo-web-browser');
+      const result = await openAuthSessionAsync(nativeAuthorizeUrl(SUPABASE_PROJECT_URL), NATIVE_REDIRECT);
+      // Dismissing the sheet is a decision, not a failure: say nothing.
+      if (result.type !== 'success') return;
+      const parsed = parseNativeReturn(result.url);
+      if (!parsed) throw new ApiError(400, 'Google sign-in did not come back to holUpp. Please try again.');
+      if (parsed.kind === 'error') throw new ApiError(400, parsed.message);
+      const { error } = await supabase.auth.setSession({
+        access_token: parsed.accessToken,
+        refresh_token: parsed.refreshToken,
+      });
+      if (error) throw toApiError(error);
+      await afterAuth();
+      return;
     }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       // The page they are on, not just the host: the root of holupp.net is the
@@ -177,7 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Success means the browser is already navigating; the session is adopted
     // when Supabase redirects back with detectSessionInUrl.
     if (error) throw toApiError(error);
-  }, []);
+  }, [afterAuth]);
 
   const signUp = useCallback(
     async (email: string, password: string) => {

@@ -36,7 +36,9 @@ const GOOGLE_SIGN_IN_OFF = process.env.EXPO_PUBLIC_GOOGLE_SIGN_IN === '0';
  * It is the one sign-in path with no email in it: nothing to rate-limit, nothing
  * to land in spam, and the address comes back already verified. Placed above the
  * form because it is the shorter road, and separated by a plain "or" so the two
- * routes read as alternatives rather than a stack of buttons.
+ * routes read as alternatives rather than a stack of buttons. On a phone it
+ * opens a Custom Tab and returns through `crushly://auth-callback`; in a browser
+ * it is an ordinary redirect back to the same page.
  */
 function GoogleOption({ onPress, busy }: { onPress: () => void; busy: boolean }) {
   const { colors } = useTheme();
@@ -85,7 +87,10 @@ function useGoogleSignIn(setError: (m: string | null) => void) {
     url.hash = '';
     window.history.replaceState({}, '', `${url.pathname}${url.search}`);
   }, [setError]);
-  const enabled = !GOOGLE_SIGN_IN_OFF && Platform.OS === 'web' && Boolean(providers.data?.google);
+  // Both platforms now: the web returns to the page it left, the phone returns
+  // through `crushly://auth-callback`. The only question left is whether the
+  // project has the provider on, which is what it answers.
+  const enabled = !GOOGLE_SIGN_IN_OFF && Boolean(providers.data?.google);
   const start = async () => {
     setError(null);
     setBusy(true);
