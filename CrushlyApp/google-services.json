@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "765026997443",
+    "project_id": "holupptm",
+    "storage_bucket": "holupptm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:765026997443:android:a7a2bd470035371b253e76",
+        "android_client_info": {
+          "package_name": "app.holup.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA1Q7UOMRefEHiiGRMrTbam9sKC_0p5vec"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
