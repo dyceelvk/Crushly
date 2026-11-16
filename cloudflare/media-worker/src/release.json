@@ -1,11 +1,11 @@
 {
-  "version": "1.0.124",
-  "versionCode": 124,
+  "version": "1.0.125",
+  "versionCode": 125,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.124-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.124/holUpp-1.0.124-RielOS.apk",
-  "notes": "Pick your own notification sound. Notification settings has six to choose from — Glass, Pulse, Lumen, Bloom, Drip and Orbit — and tapping one plays it straight away so you choose by ear, not by name. Your choice is remembered on this phone, is the sound you hear for a Whisper, and is the sound the notification bar uses when holUpp is closed. This build also fixes the in-app banner so it appears as soon as something arrives while you are using holUpp.",
-  "bytes": 101626703,
-  "sha256": "12ae0f46ff9f90c4722e20a26bb25f49cdd72e7d54addc94ee596b8bde05d459",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.124/holUpp-1.0.124-RielOS.apk"
+  "file": "holUpp-1.0.125-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.125/holUpp-1.0.125-RielOS.apk",
+  "notes": "holUpp is now registered with Firebase so a Whisper can reach you while the app is closed, not only every 15 minutes. Your phone registers itself the first time you open this build, using the notification sound you picked — so pick it before you install. Nothing looks different yet: this is the plumbing that lets a notification arrive on your lock screen the moment somebody messages you.",
+  "bytes": 101629395,
+  "sha256": "012731cc7785b9acc787250590544484e81138b67a40eb373429c68fed444aa7",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.125/holUpp-1.0.125-RielOS.apk"
 }
