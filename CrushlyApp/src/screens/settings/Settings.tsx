@@ -357,7 +357,7 @@ export function NotificationSettingsScreen() {
           toggle={{ value: soundsOn, onChange: (v) => { setSoundsOn(v); void setSoundEnabled(v); if (v) void playSound('message'); } }}
         />
       </Group>
-      <Group footer="These control your in-app notification center. Push notifications arrive in a future update.">
+      <Group footer="These choose what reaches the notification center, whichever way it arrives.">
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
         <ListRow title="Add ups" subtitle="Add ups, Big Ups and people who added back" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
         <ListRow title="Moments" subtitle="Replies and reactions to your Moments" icon="aperture-outline" toggle={{ value: n.moments, onChange: set('moments') }} />
