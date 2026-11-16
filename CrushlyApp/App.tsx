@@ -24,6 +24,8 @@ import { ApiError } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { CaptchaHost } from './src/components/CaptchaHost';
 import { WebNotice, webGateActive } from './src/components/WebGate';
+import { SoundAlerts } from './src/components/SoundAlerts';
+import { loadSoundSetting } from './src/lib/sound';
 
 ExpoSplash.preventAutoHideAsync().catch(() => {});
 
@@ -89,6 +91,12 @@ function Shell() {
     SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
   }, [colors.bg]);
 
+  // The member's sound switch is read once, at start, so the first chime already
+  // respects it — a setting that only takes effect after you visit it is a bug.
+  useEffect(() => {
+    void loadSoundSetting();
+  }, []);
+
   // Transparent screen transitions and modals reveal the app canvas beneath
   // them. Keep the browser page itself in the selected scheme too; otherwise
   // the first frame of a fade can expose the browser's default white page.
@@ -124,6 +132,9 @@ function Shell() {
           <ErrorBoundary>
             <SharedPostIntent />
             <SharedSpaceIntent />
+            {/* One chime for something that arrived, and none for anything
+                already on screen: see src/lib/sound.ts for the rules. */}
+            <SoundAlerts enabled={status === 'ready' || status === 'onboarding'} />
             <RootNavigator fontsReady={fontsReady} />
           </ErrorBoundary>
         </MemberActionsProvider>

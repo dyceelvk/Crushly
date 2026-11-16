@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
@@ -13,6 +13,7 @@ import { ListRow, Group } from '../../components/ListRow';
 import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { Avatar } from '../../components/Photo';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { playSound, setSoundEnabled, soundEnabled, whenSoundSettingLoaded } from '../../lib/sound';
 import { EmptyState, LoadingBlock } from '../../components/States';
 import { Wordmark } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
@@ -333,6 +334,8 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
 
 export function NotificationSettingsScreen() {
   const { data: me } = useMe();
+  const [soundsOn, setSoundsOn] = useState(soundEnabled());
+  useEffect(() => whenSoundSettingLoaded(() => setSoundsOn(soundEnabled())), []);
   const update = useUpdateNotificationSettings();
   const toast = useToast();
   if (!me) return <LoadingBlock />;
@@ -342,6 +345,18 @@ export function NotificationSettingsScreen() {
   return (
     <Screen>
       <Header title="Notification settings" back />
+      <Group footer="Sounds play while holUpp is open. Notifications that arrive while the app is closed need push delivery, which is not built yet — nothing here pretends to ring when the app is not running.">
+        {/* Sound is a device setting, not an account one: the phone in your pocket
+            decides whether it rings, and it must be remembered on this phone even
+            if the account is used elsewhere. */}
+        <ListRow
+          title="Sounds"
+          subtitle="A soft chime when a Whisper or a notification arrives"
+          icon="volume-medium-outline"
+          iconTone="gold"
+          toggle={{ value: soundsOn, onChange: (v) => { setSoundsOn(v); void setSoundEnabled(v); if (v) void playSound('message'); } }}
+        />
+      </Group>
       <Group footer="These control your in-app notification center. Push notifications arrive in a future update.">
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
         <ListRow title="Add ups" subtitle="Add ups, Big Ups and people who added back" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />

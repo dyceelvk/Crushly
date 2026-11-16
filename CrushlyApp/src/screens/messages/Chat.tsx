@@ -6,6 +6,7 @@ import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, 
 import { Txt } from '../../components/Txt';
 import { Avatar, Photo } from '../../components/Photo';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { suppressSound } from '../../lib/sound';
 import { presenceDot, presenceLabel, presenceState } from '../../lib/presence';
 import { TypingDots } from '../../components/TypingDots';
 import { RecordingWave } from '../../components/RecordingWave';
@@ -248,6 +249,29 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
     });
     return () => subscription.remove();
   }, []);
+
+  /**
+   * No chime for the room you are sitting in.
+   *
+   * The badge poll cannot know which screen is open, and chiming at a message the
+   * member is already reading is the single most annoying thing a chat app can
+   * do — it is what makes people switch sounds off for good. So this screen says
+   * when it is on top, and the alert watcher stays quiet for whispers while it is.
+   * `blur` rather than unmount: a chat keeps its message list alive in the stack,
+   * and "not focused" is the state that matters.
+   */
+  useEffect(() => {
+    const on = () => suppressSound('message', true);
+    const off = () => suppressSound('message', false);
+    if (navigation.isFocused()) on();
+    const blur = navigation.addListener('blur', off);
+    const focus = navigation.addListener('focus', on);
+    return () => {
+      blur();
+      focus();
+      off();
+    };
+  }, [navigation]);
 
   const peer = conv?.peer;
   const canSend = conv ? conv.canSend && !conv.closed : false;

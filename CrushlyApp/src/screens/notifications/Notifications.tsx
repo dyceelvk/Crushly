@@ -17,6 +17,7 @@ import { MOMENT_REACTIONS } from '../../lib/catalog';
 import { circleNotificationText, circleRoute } from '../../lib/circleNotifications';
 import { fromHolup, notificationCategory, type NotificationCategory } from '../../lib/notificationCategories';
 import { useProfileTap } from '../../lib/useProfileTap';
+import { suppressSound } from '../../lib/sound';
 import type { ScreenProps } from '../../navigation/types';
 
 const NOTIFICATION_CATEGORIES: { id: NotificationCategory; label: string }[] = [
@@ -114,6 +115,23 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
   const categoryRail = useRef<ScrollView>(null);
   const categoryPositions = useRef<Partial<Record<NotificationCategory, { x: number; width: number }>>>({});
   const [categoryRailWidth, setCategoryRailWidth] = useState(0);
+  /**
+   * No chime while the list is on screen: you can see the thing that arrived.
+   * Same rule as a chat room — the only sound worth making is for news the
+   * member has not looked at yet.
+   */
+  useEffect(() => {
+    const on = () => suppressSound('notification', true);
+    const off = () => suppressSound('notification', false);
+    if (navigation.isFocused()) on();
+    const blur = navigation.addListener('blur', off);
+    const focus = navigation.addListener('focus', on);
+    return () => {
+      blur();
+      focus();
+      off();
+    };
+  }, [navigation]);
   useEffect(() => {
     if (tab !== 'yours') return;
     const position = categoryPositions.current[category];
