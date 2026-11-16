@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { drawPosePair, emailSendMessage, isCompleteOtp, passwordStrength, sanitizeOtp, signUpOutcome } from './auth';
+import { drawPosePair, emailSendMessage, isCompleteOtp, oauthReturnError, passwordStrength, sanitizeOtp, signUpOutcome } from './auth';
 
 test('sanitizeOtp keeps digits only and caps at 6', () => {
   assert.equal(sanitizeOtp(''), '');
@@ -89,4 +89,35 @@ test('emailSendMessage names the hourly cap instead of shrugging', () => {
   // Anything unrecognised still says something a person can do.
   assert.match(emailSendMessage(''), /wait a minute/i);
   assert.match(emailSendMessage('boom'), /wait a minute/i);
+});
+
+test('a clean return says nothing', () => {
+  assert.equal(oauthReturnError('', ''), null);
+  assert.equal(oauthReturnError('?code=abc&state=xyz', ''), null);
+  assert.equal(oauthReturnError('?screen=SignIn', '#access_token=a&refresh_token=b&type=recovery'), null);
+});
+
+test('a cancelled consent screen says it was cancelled, not that it broke', () => {
+  assert.match(oauthReturnError('?error=access_denied&state=x', '') ?? '', /cancelled/i);
+  // Supabase and Google disagree on which end the parameter lands: both are read.
+  assert.match(oauthReturnError('', '#error=access_denied') ?? '', /cancelled/i);
+});
+
+test('provider faults are named as our problem, not a provider string', () => {
+  assert.match(oauthReturnError('?error=invalid_client', '') ?? '', /not set up correctly/i);
+  assert.match(oauthReturnError('?error=temporarily_unavailable', '') ?? '', /in a minute/i);
+  assert.match(oauthReturnError('?error_code=server_error', '') ?? '', /in a minute/i);
+});
+
+test('anything else is reported, with Google\'s words tidied', () => {
+  assert.equal(
+    oauthReturnError('?error=weird&error_description=Bad+thing+happened', ''),
+    'Google sign-in did not finish: Bad thing happened',
+  );
+  assert.equal(oauthReturnError('?error=mystery', ''), 'Google sign-in did not finish. Please try again.');
+});
+
+test('the hash wins when both carry something, and empty params are ignored', () => {
+  assert.match(oauthReturnError('?error=access_denied', '#error=invalid_client') ?? '', /not set up correctly/i);
+  assert.equal(oauthReturnError('?error=', ''), null);
 });

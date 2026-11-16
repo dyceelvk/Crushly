@@ -7,7 +7,7 @@ import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import * as service from '../../api/service';
 import { useAuthProviders } from '../../api/providers';
-import { emailSendMessage, sanitizeOtp, passwordStrength } from '../../lib/auth';
+import { emailSendMessage, oauthReturnError, sanitizeOtp, passwordStrength } from '../../lib/auth';
 import { errorLine } from '../../lib/errors';
 import { ApiError, isConfigured } from '../../api/client';
 import { useAuth } from '../../state/auth';
@@ -17,10 +17,18 @@ import type { ScreenProps } from '../../navigation/types';
 
 const DEMO_ENABLED = process.env.EXPO_PUBLIC_DEMO_LOGIN === '1';
 
-/** Gmail confirmation codes and links are email/password verification, not OAuth.
- * Google authentication stays hidden until the product explicitly re-enables it.
+/**
+ * Google is ON.
+ *
+ * It used to be hard-coded off (`GOOGLE_SIGN_IN_OFF = true`), which meant the
+ * button was compiled out of every build: the project had the provider
+ * configured, the consent screen existed, and members still never saw the
+ * option. That switch is now the opposite way round — on unless a build
+ * deliberately turns it off with EXPO_PUBLIC_GOOGLE_SIGN_IN=0 — so the provider
+ * being enabled in Supabase is the thing that decides, which is what the
+ * `useAuthProviders()` check below already does.
  */
-const GOOGLE_SIGN_IN_OFF = true;
+const GOOGLE_SIGN_IN_OFF = process.env.EXPO_PUBLIC_GOOGLE_SIGN_IN === '0';
 
 /**
  * "Continue with Google", shown only when the project has the provider on.
@@ -59,6 +67,24 @@ function useGoogleSignIn(setError: (m: string | null) => void) {
   const { signInWithGoogle } = useAuth();
   const providers = useAuthProviders();
   const [busy, setBusy] = useState(false);
+  /**
+   * A failed Google round trip comes back as parameters in the URL, not as a
+   * thrown error — see `oauthReturnError`. Read it once on arrival, say it in
+   * one line, then take it out of the address bar so refreshing the page does
+   * not repeat the message.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const said = oauthReturnError(window.location.search, window.location.hash);
+    if (!said) return;
+    setError(said);
+    const url = new URL(window.location.href);
+    for (const key of ['error', 'error_code', 'error_description', 'state']) {
+      url.searchParams.delete(key);
+    }
+    url.hash = '';
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+  }, [setError]);
   const enabled = !GOOGLE_SIGN_IN_OFF && Platform.OS === 'web' && Boolean(providers.data?.google);
   const start = async () => {
     setError(null);

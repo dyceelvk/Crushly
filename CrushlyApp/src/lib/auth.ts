@@ -91,3 +91,48 @@ export function emailSendMessage(raw: string): string {
   }
   return 'Couldn’t send that just now — wait a minute and try again.';
 }
+
+/**
+ * The sentence a failed "Continue with Google" comes back with.
+ *
+ * Google and Supabase both return to the app by putting the failure in the URL,
+ * never by throwing: `?error=access_denied&error_description=...` for a consent
+ * screen someone closed, `#error=server_error` when the provider rejected the
+ * request. Left unread, the member lands back on the form as if nothing
+ * happened, presses the button again, and the same thing happens — which reads
+ * as "Google sign-in is broken" rather than "you cancelled it". So the return
+ * is read once, said in one plain line, and then cleared from the address bar so
+ * a refresh does not repeat it.
+ *
+ * Pure, so the mapping is tested rather than assumed. `null` means the return
+ * was clean and there is nothing to say.
+ */
+export function oauthReturnError(search: string, hash: string): string | null {
+  const read = (raw: string): URLSearchParams | null => {
+    const text = String(raw ?? '').replace(/^[?#]/, '');
+    if (!text) return null;
+    const params = new URLSearchParams(text);
+    // An empty `?error=` is a link that carries the name and no fault: it must
+    // not be turned into "sign-in failed".
+    const said = (params.get('error') || params.get('error_code') || '').trim();
+    return said ? params : null;
+  };
+  const params = read(hash) ?? read(search);
+  if (!params) return null;
+
+  const code = (params.get('error') || params.get('error_code') || '').toLowerCase();
+  const detail = params.get('error_description') || '';
+
+  if (code === 'access_denied') return 'Google sign-in was cancelled. You can try again, or sign in with your email.';
+  if (code === 'temporarily_unavailable' || code === 'server_error') {
+    return 'Google could not complete the sign-in just now. Please try again in a minute.';
+  }
+  if (code === 'invalid_client' || code === 'unauthorized_client') {
+    // True, useful, and not the member's fault — say which part is at fault
+    // rather than showing them a provider string they can do nothing with.
+    return 'Google sign-in is not set up correctly for holUpp yet. Sign in with your email for now — we have been told.';
+  }
+  // Anything else: show what Google said, tidied, rather than swallowing it.
+  const said = detail.replace(/\+/g, ' ').trim();
+  return said ? `Google sign-in did not finish: ${said}` : 'Google sign-in did not finish. Please try again.';
+}
