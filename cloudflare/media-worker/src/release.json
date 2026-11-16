@@ -1,11 +1,11 @@
 {
-  "version": "1.0.119",
-  "versionCode": 119,
+  "version": "1.0.120",
+  "versionCode": 120,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.119-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.119/holUpp-1.0.119-RielOS.apk",
-  "notes": "Saving a clip works. The saved copy the app offered you was not the copy it had uploaded, so every save answered 'not ready yet', and the job that repairs those copies had been reading the wrong storage since media moved. Both fixed. A clip you posted now saves straight from your phone, and clips that were already stuck save too.",
-  "bytes": 96998870,
-  "sha256": "737b87418edb40d4b5235ab8b2e539ab54424c72ba7aefbb15615256d2ff51d3",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.119/holUpp-1.0.119-RielOS.apk"
+  "file": "holUpp-1.0.120-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.120/holUpp-1.0.120-RielOS.apk",
+  "notes": "Saving somebody else's clip works. Your own clips were saved from the file the phone had already made, but a clip posted by someone else has to be fetched, and that request was using a sign-in token from when the app started. Once it aged out the server refused it and the app blamed your session. The token is now taken fresh as you tap Save, and if the server still refuses, the app renews the session once and tries again before it says anything.",
+  "bytes": 97003626,
+  "sha256": "b8d8138ceb51721b642c2bad26b7de717fcf0924923cfc629300080774971efa",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.120/holUpp-1.0.120-RielOS.apk"
 }
