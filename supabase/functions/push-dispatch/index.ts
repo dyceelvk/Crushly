@@ -260,8 +260,31 @@ async function sendTo(token: Token, payload: Payload, access: string, projectId:
   return 'fail';
 }
 
+/**
+ * The caller must prove it is our own database.
+ *
+ * The shared secret is generated inside Postgres and only ever lives in
+ * `push_config` and in the request the trigger makes — it is never an environment
+ * variable, never in the app, and cannot be read by a client. The service role key
+ * is what this function uses to read it back.
+ */
+async function callerIsOurDatabase(req: Request): Promise<boolean> {
+  const presented = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (!presented) return false;
+  const { data } = await db.from('push_config').select('dispatch_key').eq('id', 1).maybeSingle();
+  const expected = data?.dispatch_key;
+  if (!expected) return false;
+  // Length-independent comparison: a timing signal should not tell anybody how much
+  // of the secret they guessed right.
+  if (presented.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < presented.length; i += 1) diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('method not allowed', { status: 405 });
+  if (!(await callerIsOurDatabase(req))) return Response.json({ error: 'forbidden' }, { status: 401 });
 
   let body: { source?: string; record?: Record<string, unknown> } = {};
   try {
