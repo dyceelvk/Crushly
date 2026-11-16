@@ -1,31 +1,29 @@
-/**
- * holUpp push dispatch — the server half of "it rang while the app was closed".
- *
- * A database trigger on `notifications` and `messages` POSTs the new row here.
- * This function decides who is told, in what words, on which channel, and hands
- * the message to Firebase Cloud Messaging, which is the only thing that can wake a
- * phone that is not running holUpp.
- *
- * Rules it follows, mirroring the app so the two never disagree:
- *
- *  · Never to the person who did it. A message you sent does not notify you.
- *  · Respect the member's switches in `notification_settings` (messages, crushes,
- *    moments, keeps, recommendations). Switched off there means no push at all.
- *  · The sound is the phone's own choice, stored on the token row, because a
- *    channel's sound is fixed when Android creates it.
- *  · A token Firebase rejects is deleted, not retried forever.
- *  · No credentials means no push — and a recorded reason, not a silent nothing.
- *
- * Secrets: FCM_SERVICE_ACCOUNT, the service-account JSON from the Firebase
- * console (the whole file, as one string).
- */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// holUpp push dispatch — the server half of "it rang while the app was closed".
+//
+// A database trigger on `notifications` and `messages` POSTs the new row here.
+// This function decides who is told, in what words, on which channel, and hands the
+// message to Firebase Cloud Messaging — the only thing that can wake a phone that is
+// not running holUpp.
+//
+// Rules it follows, mirroring the app so the two never disagree:
+//
+//  · Never to the person who did it. A message you sent does not notify you.
+//  · Respect the member's switches in `notification_settings`.
+//  · The sound is the phone's own choice, stored on the token row, because Android
+//    fixes a channel's sound when the channel is created.
+//  · A token Firebase rejects is deleted, not retried forever.
+//  · No credentials means no push — and a recorded reason, not a silent nothing.
+//
+// No imports at all, deliberately: this is a webhook that runs on every message, and
+// a module fetched from a CDN at boot is one more way for it to fail to start. The
+// database is reached over PostgREST with `fetch`, which is built in.
+//
+// Secret: FCM_SERVICE_ACCOUNT — the service-account JSON from the Firebase console,
+// the whole file as one string.
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SA_JSON = Deno.env.get('FCM_SERVICE_ACCOUNT') ?? '';
-
-const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 interface ServiceAccount {
   project_id: string;
@@ -48,6 +46,47 @@ interface Payload {
   recipientIds: number[];
 }
 
+/* --------------------------------------------------------------- the database */
+
+async function rest(path: string, init: RequestInit = {}): Promise<Response> {
+  return await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
+  });
+}
+
+async function one<T>(path: string): Promise<T | null> {
+  const res = await rest(path);
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0 ? (rows[0] as T) : null;
+}
+
+async function many<T>(path: string): Promise<T[]> {
+  const res = await rest(path);
+  if (!res.ok) return [];
+  const rows = await res.json();
+  return Array.isArray(rows) ? (rows as T[]) : [];
+}
+
+async function logAttempt(row: Record<string, unknown>): Promise<void> {
+  // A log that can fail the send is not a log, it is a second outage.
+  try {
+    await rest('push_attempts', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ created_at: Date.now(), ...row }),
+    });
+  } catch {
+    /* nothing to be done about it here */
+  }
+}
+
 /* ------------------------------------------------------------------- FCM auth */
 
 let cachedToken: { value: string; expiresAt: number; projectId: string } | null = null;
@@ -67,6 +106,12 @@ function pemToDer(pem: string): Uint8Array {
   return out;
 }
 
+/**
+ * A Google access token, minted from the service account's own key.
+ *
+ * RS256 with WebCrypto: the assertion is signed locally, so the only network call is
+ * the token exchange, and there is no library in the path to be broken or out of date.
+ */
 async function accessToken(sa: ServiceAccount): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   if (cachedToken && cachedToken.expiresAt - 60 > now && cachedToken.projectId === sa.project_id) {
@@ -81,8 +126,6 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
     exp: now + 3600,
   }));
   const unsigned = `${header}.${claim}`;
-  // RS256 with the account's own key: nothing here needs a library, and a
-  // dependency in a webhook path is one more thing that can be unavailable.
   const key = await crypto.subtle.importKey(
     'pkcs8',
     pemToDer(sa.private_key),
@@ -112,7 +155,7 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
   return cachedToken.value;
 }
 
-/* ------------------------------------------------------------------ wording */
+/* -------------------------------------------------------------------- wording */
 
 function titleFor(kind: string): string {
   switch (kind) {
@@ -142,7 +185,7 @@ function settingFor(kind: string): 'messages' | 'crushes' | 'moments' | 'keeps' 
   return null;
 }
 
-/* ------------------------------------------------------------------ payload */
+/* -------------------------------------------------------------------- payload */
 
 async function buildPayload(source: string, record: Record<string, unknown>): Promise<Payload | null> {
   const recordId = Number(record.id ?? 0) || null;
@@ -152,11 +195,9 @@ async function buildPayload(source: string, record: Record<string, unknown>): Pr
     const senderProfile = Number(record.sender_id);
     if (!conversationId || !senderProfile) return null;
     if ((record.kind ?? '') === 'call') return null; // a ringing call is not a notification
-    const { data: conv } = await db
-      .from('conversations')
-      .select('user_a,user_b,closed')
-      .eq('id', conversationId)
-      .maybeSingle();
+    const conv = await one<{ user_a: number; user_b: number; closed: boolean }>(
+      `conversations?id=eq.${conversationId}&select=user_a,user_b,closed`,
+    );
     if (!conv || conv.closed) return null;
     const recipient = Number(conv.user_a) === senderProfile ? Number(conv.user_b) : Number(conv.user_a);
     if (!recipient || recipient === senderProfile) return null;
@@ -165,6 +206,8 @@ async function buildPayload(source: string, record: Record<string, unknown>): Pr
       : 'Sent you a Whisper';
     return {
       title: 'New Whisper',
+      // The message text itself, cut short. A Whisper is the one thing worth reading
+      // on a lock screen; the rest are titles.
       body: body.slice(0, 160),
       route: 'messages',
       source,
@@ -177,10 +220,9 @@ async function buildPayload(source: string, record: Record<string, unknown>): Pr
     const recipient = Number(record.user_id);
     const actor = record.actor_id == null ? null : Number(record.actor_id);
     if (!recipient) return null;
-    // The one rule that matters most: never tell somebody about their own action.
     if (actor && actor === recipient) return null;
     const kind = String(record.kind ?? '');
-    if (kind === 'message') return null; // Whispers travel through the messages path
+    if (kind === 'message') return null; // Whispers travel the messages path
     return {
       title: titleFor(kind),
       body: String(record.body ?? '').slice(0, 200) || 'Something happened on holUpp',
@@ -194,39 +236,24 @@ async function buildPayload(source: string, record: Record<string, unknown>): Pr
   return null;
 }
 
-/* ------------------------------------------------------------------- sending */
-
-async function tokensFor(recipientIds: number[]): Promise<Map<number, Token[]>> {
-  const byRecipient = new Map<number, Token[]>();
-  const { data } = await db
-    .from('device_tokens')
-    .select('profile_id,token,sound,platform')
-    .in('profile_id', recipientIds);
-  for (const row of data ?? []) {
-    const list = byRecipient.get(row.profile_id) ?? [];
-    list.push({ token: row.token, sound: row.sound, platform: row.platform });
-    byRecipient.set(row.profile_id, list);
-  }
-  return byRecipient;
-}
+/* -------------------------------------------------------------------- sending */
 
 async function allows(recipientId: number, kind: string | null): Promise<boolean> {
   if (!kind) return true;
   const setting = settingFor(kind);
   if (!setting) return true;
-  const { data } = await db
-    .from('notification_settings')
-    .select(setting)
-    .eq('user_id', recipientId)
-    .maybeSingle();
-  // No row means the member never changed anything, and the app's own default is
-  // "on". Treating a missing row as "off" would silently mute new accounts.
-  if (!data) return true;
-  return (data as Record<string, boolean>)[setting] !== false;
+  const row = await one<Record<string, boolean>>(
+    `notification_settings?user_id=eq.${recipientId}&select=${setting}`,
+  );
+  // No row means the member never changed anything and the app's default is on.
+  // Reading that as "off" would silently mute every new account.
+  if (!row) return true;
+  return row[setting] !== false;
 }
 
 async function sendTo(token: Token, payload: Payload, access: string, projectId: string): Promise<'ok' | 'gone' | 'fail'> {
-  // Channels are per sound, because Android fixes a channel's sound at creation.
+  // One channel per chime, because Android fixes a channel's sound at creation and
+  // the sound is the phone's choice, not ours.
   const channel = `holup-alerts-${token.sound ?? 'glass'}`;
   const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
     method: 'POST',
@@ -238,45 +265,39 @@ async function sendTo(token: Token, payload: Payload, access: string, projectId:
         data: { route: payload.route, source: payload.source, recordId: String(payload.recordId ?? '') },
         android: {
           priority: 'HIGH',
-          notification: {
-            channel_id: channel,
-            // Tapping opens the app; the app then reads `route` and lands on the
-            // chat or the Notifications list rather than the home feed.
-            click_action: 'OPEN_APP',
-          },
+          notification: { channel_id: channel, click_action: 'OPEN_APP' },
         },
-        apns: { payload: { aps: { sound: 'default', 'mutable-content': 0 } } },
+        apns: { payload: { aps: { sound: 'default' } } },
       },
     }),
   });
   if (res.ok) return 'ok';
   const text = await res.text();
-  // 404 UNREGISTERED / 400 INVALID_ARGUMENT for a dead token: delete it instead of
-  // retrying it on every future message.
+  // A token Google no longer knows is deleted rather than retried on every future
+  // message: dead tokens are how a push system slowly becomes a slow push system.
   if (res.status === 404 || text.includes('UNREGISTERED') || text.includes('INVALID_ARGUMENT')) {
-    await db.from('device_tokens').delete().eq('token', token.token);
+    await rest(`device_tokens?token=eq.${encodeURIComponent(token.token)}`, { method: 'DELETE' });
     return 'gone';
   }
   return 'fail';
 }
 
+/* --------------------------------------------------------------------- auth */
+
 /**
  * The caller must prove it is our own database.
  *
  * The shared secret is generated inside Postgres and only ever lives in
- * `push_config` and in the request the trigger makes — it is never an environment
- * variable, never in the app, and cannot be read by a client. The service role key
- * is what this function uses to read it back.
+ * `push_config` and in the request the trigger makes — never an environment
+ * variable, never in the app, and unreadable by a client.
  */
 async function callerIsOurDatabase(req: Request): Promise<boolean> {
   const presented = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!presented) return false;
-  const { data } = await db.from('push_config').select('dispatch_key').eq('id', 1).maybeSingle();
-  const expected = data?.dispatch_key;
-  if (!expected) return false;
-  // Length-independent comparison: a timing signal should not tell anybody how much
-  // of the secret they guessed right.
-  if (presented.length !== expected.length) return false;
+  const config = await one<{ dispatch_key: string }>('push_config?id=eq.1&select=dispatch_key');
+  const expected = config?.dispatch_key;
+  if (!expected || presented.length !== expected.length) return false;
+  // Length-independent comparison: a timing signal must not reveal a guessed prefix.
   let diff = 0;
   for (let i = 0; i < presented.length; i += 1) diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
   return diff === 0;
@@ -301,35 +322,34 @@ Deno.serve(async (req) => {
 
   const kindGuess = source === 'messages' ? 'message' : String(record.kind ?? '');
 
-  // Preferences first: a push is a stranger arriving on somebody's lock screen, so
-  // a switch that is off must mean silence before any work is done.
   const allowed: number[] = [];
   for (const id of payload.recipientIds) {
     if (await allows(id, kindGuess)) allowed.push(id);
   }
   if (allowed.length === 0) {
-    await db.from('push_attempts').insert({
+    await logAttempt({
       recipient_id: payload.recipientIds[0], source, record_id: payload.recordId,
       title: payload.title, body: payload.body, sent: 0, failed: 0, note: 'muted by member settings',
     });
     return Response.json({ skipped: 'muted' });
   }
 
-  const tokens = await tokensFor(allowed);
-  const all = [...tokens.values()].flat();
+  const rows = await many<Token & { profile_id: number }>(
+    `device_tokens?profile_id=in.(${allowed.join(',')})&select=profile_id,token,sound,platform`,
+  );
 
   if (!SA_JSON) {
-    // Honest failure: the event happened, nobody could be woken, and the reason is
-    // written down where it can be seen.
-    await db.from('push_attempts').insert({
+    // The event happened and nobody could be woken: say so where it can be seen,
+    // rather than returning success and letting the silence look like a bug.
+    await logAttempt({
       recipient_id: allowed[0], source, record_id: payload.recordId,
-      title: payload.title, body: payload.body, sent: 0, failed: all.length,
+      title: payload.title, body: payload.body, sent: 0, failed: rows.length,
       note: 'FCM service account not configured',
     });
-    return Response.json({ sent: 0, reason: 'fcm_not_configured' }, { status: 200 });
+    return Response.json({ sent: 0, reason: 'fcm_not_configured' });
   }
-  if (all.length === 0) {
-    await db.from('push_attempts').insert({
+  if (rows.length === 0) {
+    await logAttempt({
       recipient_id: allowed[0], source, record_id: payload.recordId,
       title: payload.title, body: payload.body, sent: 0, failed: 0, note: 'no registered devices',
     });
@@ -340,9 +360,9 @@ Deno.serve(async (req) => {
   try {
     sa = JSON.parse(SA_JSON);
   } catch {
-    await db.from('push_attempts').insert({
+    await logAttempt({
       recipient_id: allowed[0], source, record_id: payload.recordId,
-      sent: 0, failed: all.length, note: 'FCM_SERVICE_ACCOUNT is not valid JSON',
+      sent: 0, failed: rows.length, note: 'FCM_SERVICE_ACCOUNT is not valid JSON',
     });
     return Response.json({ error: 'bad service account' }, { status: 500 });
   }
@@ -351,22 +371,22 @@ Deno.serve(async (req) => {
   try {
     access = await accessToken(sa);
   } catch (e) {
-    await db.from('push_attempts').insert({
+    await logAttempt({
       recipient_id: allowed[0], source, record_id: payload.recordId,
-      sent: 0, failed: all.length, note: `oauth failed: ${(e as Error).message}`.slice(0, 300),
+      sent: 0, failed: rows.length, note: `oauth failed: ${(e as Error).message}`.slice(0, 300),
     });
     return Response.json({ error: 'oauth failed' }, { status: 502 });
   }
 
   let sent = 0;
   let failed = 0;
-  for (const token of all) {
-    const result = await sendTo(token, payload, access, sa.project_id);
+  for (const row of rows) {
+    const result = await sendTo(row, payload, access, sa.project_id);
     if (result === 'ok') sent += 1;
     else if (result === 'fail') failed += 1;
   }
 
-  await db.from('push_attempts').insert({
+  await logAttempt({
     recipient_id: allowed[0], source, record_id: payload.recordId,
     title: payload.title, body: payload.body, sent, failed, note: null,
   });
