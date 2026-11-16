@@ -6,6 +6,7 @@ import { ApiError, requireConfig, supabase, SUPABASE_PROJECT_URL, toApiError } f
 import { captchaFailureMessage, getCaptchaToken, isCaptchaError } from '../lib/captcha';
 import { emailSendMessage, signUpOutcome } from '../lib/auth';
 import { nativeAuthorizeUrl, nativeRedirectFor, parseNativeReturn } from '../lib/oauthNative';
+import { unregisterPushToken } from '../lib/push';
 import { keys } from '../api/hooks';
 import { getMe, webOrigin, webReturnUrl } from '../api/service';
 import type { Me } from '../api/types';
@@ -299,6 +300,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    // Before the session goes: a phone that keeps its push token after sign-out
+    // would deliver this account's Whispers to the next person who opens it.
+    await unregisterPushToken();
     try {
       await supabase.auth.signOut();
     } catch {
