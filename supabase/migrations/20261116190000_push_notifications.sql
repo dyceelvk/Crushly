@@ -121,6 +121,11 @@ create table if not exists public.push_config (
   dispatch_key text not null,
   enabled      boolean not null default true
 );
+-- The service account lives here as well as (optionally) in an environment
+-- variable, because this is a store the project can actually write to. RLS plus a
+-- full revoke keeps it as unreachable from a client as any secret.
+alter table public.push_config add column if not exists fcm_service_account jsonb;
+alter table public.push_config add column if not exists fcm_account_id text;
 alter table public.push_config enable row level security;
 revoke all on public.push_config from anon, authenticated;
 

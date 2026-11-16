@@ -23,7 +23,52 @@
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const SA_JSON = Deno.env.get('FCM_SERVICE_ACCOUNT') ?? '';
+/**
+ * The service account, given either as raw JSON or as base64 of it.
+ *
+ * Base64 is supported because a private key is 1700 characters of PEM with
+ * newlines in it, and a key mangled by whichever tool carried it produces an OAuth
+ * failure that looks exactly like a permissions problem. Base64 has no quotes, no
+ * backslashes and no newlines to survive.
+ */
+function serviceAccountFromEnv(): string {
+  const raw = (Deno.env.get('FCM_SERVICE_ACCOUNT') ?? '').trim();
+  if (!raw || raw.startsWith('{')) return raw;
+  try {
+    return atob(raw);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The service account, from the environment or, failing that, from `push_config`.
+ *
+ * `push_config` is service-role only — no grant to anon or authenticated — so the
+ * key is exactly as unreachable from a client there as it is in an environment
+ * variable. It lives in the database as well because that is a store this project
+ * can actually write to, and a credential that cannot be installed is not a
+ * credential.
+ */
+let cachedSaText: string | null = null;
+
+async function serviceAccount(): Promise<ServiceAccount | null> {
+  if (cachedSaText === null) {
+    cachedSaText = serviceAccountFromEnv();
+    if (!cachedSaText) {
+      const row = await one<{ fcm_service_account: ServiceAccount | null }>(
+        'push_config?id=eq.1&select=fcm_service_account',
+      );
+      if (row?.fcm_service_account) cachedSaText = JSON.stringify(row.fcm_service_account);
+    }
+  }
+  if (!cachedSaText) return null;
+  try {
+    return JSON.parse(cachedSaText) as ServiceAccount;
+  } catch {
+    return null;
+  }
+}
 
 interface ServiceAccount {
   project_id: string;
@@ -338,7 +383,8 @@ Deno.serve(async (req) => {
     `device_tokens?profile_id=in.(${allowed.join(',')})&select=profile_id,token,sound,platform`,
   );
 
-  if (!SA_JSON) {
+  const sa = await serviceAccount();
+  if (!sa) {
     // The event happened and nobody could be woken: say so where it can be seen,
     // rather than returning success and letting the silence look like a bug.
     await logAttempt({
@@ -354,17 +400,6 @@ Deno.serve(async (req) => {
       title: payload.title, body: payload.body, sent: 0, failed: 0, note: 'no registered devices',
     });
     return Response.json({ sent: 0, reason: 'no_devices' });
-  }
-
-  let sa: ServiceAccount;
-  try {
-    sa = JSON.parse(SA_JSON);
-  } catch {
-    await logAttempt({
-      recipient_id: allowed[0], source, record_id: payload.recordId,
-      sent: 0, failed: rows.length, note: 'FCM_SERVICE_ACCOUNT is not valid JSON',
-    });
-    return Response.json({ error: 'bad service account' }, { status: 500 });
   }
 
   let access: string;
