@@ -361,7 +361,7 @@ export function NotificationSettingsScreen() {
   return (
     <Screen>
       <Header title="Notification settings" back />
-      <Group footer="While holUpp is open a Whisper reaches you at once. While it is closed, Android lets holUpp check about every 15 minutes — so news can still reach the notification bar, but not instantly, and this screen will not pretend otherwise.">
+      <Group footer="While holUpp is open a Whisper reaches you at once. While it is closed, holUpp checks about every 15 minutes — and once push delivery is switched on for this build, it arrives instantly instead. This screen will not claim faster than what is true.">
         {/* Sound is a device setting, not an account one: the phone in your pocket
             decides whether it rings, and it must be remembered on this phone even
             if the account is used elsewhere. */}
