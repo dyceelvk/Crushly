@@ -1,11 +1,11 @@
 {
-  "version": "1.0.125",
-  "versionCode": 125,
+  "version": "1.0.127",
+  "versionCode": 127,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.125-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.125/holUpp-1.0.125-RielOS.apk",
-  "notes": "holUpp is now registered with Firebase so a Whisper can reach you while the app is closed, not only every 15 minutes. Your phone registers itself the first time you open this build, using the notification sound you picked — so pick it before you install. Nothing looks different yet: this is the plumbing that lets a notification arrive on your lock screen the moment somebody messages you.",
-  "bytes": 101629395,
-  "sha256": "012731cc7785b9acc787250590544484e81138b67a40eb373429c68fed444aa7",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.125/holUpp-1.0.125-RielOS.apk"
+  "file": "holUpp-1.0.127-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.127/holUpp-1.0.127-RielOS.apk",
+  "notes": "You can create your account with Google now, not only sign in with one. Tap Continue with Google on the create-account screen and your holUpp account is made with the name and photo already on your Google profile, so onboarding greets you by your own name. Messages to support now go to support@holupp.net.",
+  "bytes": 101629743,
+  "sha256": "a3c4c6bba2c04e347c351db723fa575bcf313c3dcaff37f4904450830916768b",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.127/holUpp-1.0.127-RielOS.apk"
 }
