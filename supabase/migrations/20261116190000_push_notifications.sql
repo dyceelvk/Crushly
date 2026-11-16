@@ -124,7 +124,16 @@ create table if not exists public.push_config (
 alter table public.push_config enable row level security;
 revoke all on public.push_config from anon, authenticated;
 
-create extension if not exists pg_net;
+-- `pg_net` is what the trigger uses to make the HTTP call. It is present on Supabase
+-- and absent from a bare Postgres, which is what CI applies these migrations to —
+-- so its absence must not fail the migration. Without it the trigger still compiles
+-- and simply returns early, and the app's own poll keeps working.
+do $$
+begin
+  create extension if not exists pg_net;
+exception when others then
+  raise notice 'pg_net unavailable (%): push trigger will not queue', sqlerrm;
+end $$;
 
 -- One trigger function for both tables: it does not decide anything about who is
 -- told or what it says — that judgement lives in `push-dispatch`, where it can be
