@@ -15,6 +15,9 @@ import { Avatar } from '../../components/Photo';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { playSound, setSoundEnabled, soundEnabled, whenSoundSettingLoaded } from '../../lib/sound';
 import { alertPermission, requestAlertPermission } from '../../lib/systemAlert';
+import { SOUND_CHOICES, soundName } from '../../lib/soundChoices';
+import { setSoundChoice, soundChoice } from '../../lib/sound';
+import { ActionSheet } from '../../components/BottomSheet';
 import { EmptyState, LoadingBlock } from '../../components/States';
 import { Wordmark } from '../../components/Logo';
 import { useToast } from '../../components/Toast';
@@ -336,7 +339,9 @@ export function AccountScreen({ navigation }: ScreenProps<'Account'>) {
 export function NotificationSettingsScreen() {
   const { data: me } = useMe();
   const [soundsOn, setSoundsOn] = useState(soundEnabled());
-  useEffect(() => whenSoundSettingLoaded(() => setSoundsOn(soundEnabled())), []);
+  const [choice, setChoice] = useState(soundChoice());
+  const [picking, setPicking] = useState(false);
+  useEffect(() => whenSoundSettingLoaded(() => { setSoundsOn(soundEnabled()); setChoice(soundChoice()); }), []);
   // The phone decides this one, not the account: the row reports what Android
   // says and re-reads it whenever the member comes back from Android settings.
   const [barOk, setBarOk] = useState<boolean | null>(null);
@@ -367,6 +372,16 @@ export function NotificationSettingsScreen() {
           iconTone="gold"
           toggle={{ value: soundsOn, onChange: (v) => { setSoundsOn(v); void setSoundEnabled(v); if (v) void playSound('message'); } }}
         />
+        {/* Six chimes, chosen by ear. Tapping a row plays it *and* keeps it, which
+            is the only way to pick a sound: reading the names tells you nothing. */}
+        <ListRow
+          title="Sound"
+          subtitle={soundName(choice)}
+          icon="musical-notes-outline"
+          value={soundsOn ? soundName(choice) : 'Off'}
+          onPress={() => setPicking(true)}
+          last
+        />
         {/* The banner is the other half of the same promise: a chime you cannot
             see is no better than a notification you cannot hear. */}
         <ListRow
@@ -386,6 +401,27 @@ export function NotificationSettingsScreen() {
           }}
         />
       </Group>
+      <ActionSheet
+        visible={picking}
+        onClose={() => setPicking(false)}
+        title="Notification sound"
+        actions={SOUND_CHOICES.map((option) => ({
+          label: option.name,
+          hint: option.id === choice ? `${option.blurb} · selected` : option.blurb,
+          icon: <Ionicons
+            name={option.id === choice ? 'checkmark-circle' : 'play-circle-outline'}
+            size={22}
+            color={option.id === choice ? '#E8B54B' : '#9a938c'}
+          />,
+          onPress: () => {
+            setChoice(option.id);
+            void setSoundChoice(option.id);
+            // Hear the one you just chose, immediately — even with Sounds off,
+            // because asking to hear it is a different thing from being alerted.
+            void playSound('message', { previewOf: option.id });
+          },
+        }))}
+      />
       <Group footer="These choose what reaches the notification center, whichever way it arrives.">
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
         <ListRow title="Add ups" subtitle="Add ups, Big Ups and people who added back" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />

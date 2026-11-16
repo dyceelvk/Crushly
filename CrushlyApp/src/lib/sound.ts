@@ -9,10 +9,13 @@
  * Deliberate choices, because a notification sound is the easiest thing in an app
  * to get wrong:
  *
- *  · **Short and soft.** A message is a two-note rise (0.46s), a notification a
- *    single note with a shimmer (0.7s). Both are over before the next one can
- *    overlap them. A loud or long alert is the one people switch off — and then
- *    there are no sounds at all, which is the bug this file exists to fix.
+ *  · **Short and soft.** Every chime is under a second and peak-normalised well
+ *    below full scale, so one is over before the next can overlap it. A loud or
+ *    long alert is the one people switch off — and then there are no sounds at
+ *    all, which is the bug this file exists to fix.
+ *  · **The member's choice.** Six chimes ship (`soundChoices.ts`) and the one
+ *    picked in Notification settings is the one used everywhere — including in
+ *    the notification bar while the app is closed.
  *  · **Never while you are reading it.** The chat screen and the notifications
  *    screen register themselves as suppressed, so a message you are looking at
  *    does not chime at you, and the sound you hear always means something you
@@ -30,15 +33,40 @@
 import { AppState, Platform } from 'react-native';
 import { storage } from './storage';
 import { shouldPlay, type PlayContext } from './soundRules';
+import { DEFAULT_SOUND, isSoundChoice } from './soundChoices';
 
 export type SoundKind = 'message' | 'notification';
+export type { SoundChoice } from './soundChoices';
+export { SOUND_CHOICES, soundName, DEFAULT_SOUND } from './soundChoices';
+
+/**
+ * Which file each choice is. The map lives here because `require` of an audio
+ * asset is a bundler concern, and the picker must not carry it.
+ */
+const FILES: Record<string, number> = {
+  glass: require('../../assets/sounds/glass.wav'),
+  pulse: require('../../assets/sounds/pulse.wav'),
+  lumen: require('../../assets/sounds/lumen.wav'),
+  bloom: require('../../assets/sounds/bloom.wav'),
+  drip: require('../../assets/sounds/drip.wav'),
+  orbit: require('../../assets/sounds/orbit.wav'),
+};
+
+/** The chosen sound, for the notification channel and for anything that needs it. */
+export function soundChoice(): string {
+  return choiceOn;
+}
+
+export function soundFileFor(id: string): number {
+  return FILES[id] ?? FILES[DEFAULT_SOUND];
+}
 
 /** Set once the player is warm, so the first chime is not the one that fails. */
 let modeReady = false;
 
 type Player = { seekTo: (s: number) => Promise<void>; play: () => void };
 
-const players: Partial<Record<SoundKind, Player>> = {};
+const players: Partial<Record<string, Player>> = {};
 
 /**
  * Created on first use, not at import.
@@ -49,20 +77,16 @@ const players: Partial<Record<SoundKind, Player>> = {};
  * `expo-audio` at the top: the web bundle must not evaluate it before it is
  * needed, and a failed import must cost a chime, not the app.
  */
-async function playerFor(kind: SoundKind): Promise<Player | null> {
-  if (players[kind]) return players[kind] ?? null;
+async function playerFor(choice: string): Promise<Player | null> {
+  if (players[choice]) return players[choice] ?? null;
   try {
     const audio = await import('expo-audio');
     // A sound played while the phone is on silent mode still needs to be audible
     // on iOS (where "silent" means the ringer switch), and it must never stop
     // somebody's music: this app is a background companion, not a channel.
     await audio.setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' });
-    const source =
-      kind === 'message'
-        ? require('../../assets/sounds/message.wav')
-        : require('../../assets/sounds/notification.wav');
-    const player = audio.createAudioPlayer(source) as unknown as Player;
-    players[kind] = player;
+    const player = audio.createAudioPlayer(soundFileFor(choice)) as unknown as Player;
+    players[choice] = player;
     modeReady = true;
     return player;
   } catch {
@@ -75,6 +99,7 @@ async function playerFor(kind: SoundKind): Promise<Player | null> {
 /* ------------------------------------------------------------------- switch */
 
 const SOUND_KEY = 'holup:sound';
+const CHOICE_KEY = 'holup:soundChoice';
 
 /**
  * On unless it has been turned off. Silence is the surprising default for a chat
@@ -82,6 +107,7 @@ const SOUND_KEY = 'holup:sound';
  * will look.
  */
 let soundOn = true;
+let choiceOn = DEFAULT_SOUND;
 let loaded = false;
 let onLoaded: (() => void) | null = null;
 
@@ -92,9 +118,19 @@ export function soundEnabled(): boolean {
 export async function loadSoundSetting(): Promise<void> {
   if (loaded) return;
   loaded = true;
-  const raw = await storage.get(SOUND_KEY);
+  const [raw, choice] = await Promise.all([storage.get(SOUND_KEY), storage.get(CHOICE_KEY)]);
   if (raw === 'off') soundOn = false;
+  // An id from a build that shipped a sound we no longer have falls back rather
+  // than playing nothing at all.
+  if (isSoundChoice(choice)) choiceOn = choice as string;
   onLoaded?.();
+}
+
+/** Chooses a sound. Persisted on this phone, like the switch. */
+export async function setSoundChoice(id: string): Promise<void> {
+  if (!isSoundChoice(id)) return;
+  choiceOn = id;
+  await storage.set(CHOICE_KEY, id);
 }
 
 export async function setSoundEnabled(on: boolean): Promise<void> {
@@ -134,17 +170,26 @@ export function isSuppressed(kind: SoundKind): boolean {
 
 let lastPlayedAt = 0;
 
-export async function playSound(kind: SoundKind): Promise<void> {
+/**
+ * Plays the chosen chime.
+ *
+ * `preview` is the member tapping a row in the picker: they asked to hear it, so
+ * the suppression and the one-a-second floor do not apply — but a muted phone or
+ * a backgrounded app still does, because nothing should make a noise from the
+ * background.
+ */
+export async function playSound(kind: SoundKind, opts: { previewOf?: string } = {}): Promise<void> {
+  const choice = isSoundChoice(opts.previewOf) ? (opts.previewOf as string) : choiceOn;
   const ctx: PlayContext = {
-    enabled: soundOn,
-    suppressed: isSuppressed(kind),
+    enabled: opts.previewOf ? true : soundOn,
+    suppressed: opts.previewOf ? false : isSuppressed(kind),
     appActive: AppState.currentState === 'active',
     now: Date.now(),
-    lastPlayedAt,
+    lastPlayedAt: opts.previewOf ? 0 : lastPlayedAt,
   };
   if (!shouldPlay(ctx)) return;
-  lastPlayedAt = ctx.now;
-  const player = await playerFor(kind);
+  if (!opts.previewOf) lastPlayedAt = ctx.now;
+  const player = await playerFor(choice);
   if (!player) return;
   try {
     // Rewind first: a player that has already finished is parked at the end, and
@@ -164,6 +209,7 @@ export const soundSupported = Platform.OS === 'android' || Platform.OS === 'ios'
 export function __resetSoundStateForTests(): void {
   lastPlayedAt = 0;
   soundOn = true;
+  choiceOn = DEFAULT_SOUND;
   loaded = false;
   suppressed.clear();
   modeReady = false;

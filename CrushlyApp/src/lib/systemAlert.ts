@@ -20,12 +20,19 @@
 import { Platform } from 'react-native';
 import type { NotificationBehavior } from 'expo-notifications';
 import type { NotificationKind } from '../api/types';
+import { soundChoice } from './sound';
 import type { AlertRoute } from './alertContent';
 
 const FOREGROUND_CHANNEL = 'holup-foreground';
-const BACKGROUND_CHANNEL = 'holup-alerts';
+/**
+ * One channel per chime, because Android fixes a channel's sound when the channel
+ * is first created and never changes it. Creating `holup-alerts` once with
+ * whatever was chosen that day would freeze that sound forever; a channel per
+ * choice lets the member change their mind.
+ */
+const backgroundChannel = (choice: string) => `holup-alerts-${choice}`;
 /** Raw resources copied into res/raw by plugins/withNotificationSounds.js. */
-const BACKGROUND_SOUND = 'holup_notification';
+const backgroundSound = (choice: string) => `holup_${choice}`;
 
 type NotificationsModule = typeof import('expo-notifications');
 
@@ -109,9 +116,11 @@ export async function requestAlertPermission(): Promise<boolean> {
 /* ----------------------------------------------------------------- channels */
 
 let channelsReady = false;
+/** Channels are created lazily per choice, so a new choice needs one more. */
+const madeChannels = new Set<string>();
 
 async function channels(n: NotificationsModule): Promise<void> {
-  if (Platform.OS !== 'android' || channelsReady) return;
+  if (Platform.OS !== 'android') return;
   try {
     await n.setNotificationChannelAsync(FOREGROUND_CHANNEL, {
       name: 'holUpp',
@@ -124,15 +133,20 @@ async function channels(n: NotificationsModule): Promise<void> {
       enableVibrate: true,
       lockscreenVisibility: n.AndroidNotificationVisibility.PRIVATE,
     });
-    await n.setNotificationChannelAsync(BACKGROUND_CHANNEL, {
-      name: 'holUpp (while closed)',
-      description: 'Whispers and notifications that arrived while holUpp was closed.',
-      importance: n.AndroidImportance.HIGH,
-      sound: `${BACKGROUND_SOUND}.wav`,
-      vibrationPattern: [0, 120, 80, 120],
-      enableVibrate: true,
-      lockscreenVisibility: n.AndroidNotificationVisibility.PRIVATE,
-    });
+    const choice = soundChoice();
+    const channel = backgroundChannel(choice);
+    if (!madeChannels.has(channel)) {
+      await n.setNotificationChannelAsync(channel, {
+        name: 'holUpp (while closed)',
+        description: 'Whispers and notifications that arrived while holUpp was closed.',
+        importance: n.AndroidImportance.HIGH,
+        sound: `${backgroundSound(choice)}.wav`,
+        vibrationPattern: [0, 120, 80, 120],
+        enableVibrate: true,
+        lockscreenVisibility: n.AndroidNotificationVisibility.PRIVATE,
+      });
+      madeChannels.add(channel);
+    }
     channelsReady = true;
   } catch {
     /* channels are best effort; the notification still posts */
@@ -151,6 +165,8 @@ export interface PostOptions {
   kind: NotificationKind | null;
   /** True when nothing of ours is running to play a chime. */
   background?: boolean;
+  /** Which chime the background channel should use. Defaults to the member's. */
+  sound?: string;
 }
 
 /**
@@ -171,11 +187,13 @@ export async function postAlert(opts: PostOptions): Promise<boolean> {
       content: {
         title: opts.title,
         body: opts.body,
-        sound: opts.background ? `${BACKGROUND_SOUND}.wav` : false,
+        sound: opts.background ? `${backgroundSound(opts.sound ?? soundChoice())}.wav` : false,
         data: { route: opts.route, kind: opts.kind ?? 'unknown' },
         ...(onChannel ? { priority: n.AndroidNotificationPriority.HIGH } : {}),
       },
-      trigger: onChannel ? { channelId: opts.background ? BACKGROUND_CHANNEL : FOREGROUND_CHANNEL } : null,
+      trigger: onChannel
+        ? { channelId: opts.background ? backgroundChannel(opts.sound ?? soundChoice()) : FOREGROUND_CHANNEL }
+        : null,
     });
     return true;
   } catch {

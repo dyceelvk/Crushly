@@ -18,6 +18,7 @@ import { storage } from './storage';
 import { systemAlertFor } from './alertContent';
 import type { Badges, NotificationKind } from '../api/types';
 import { postAlert } from './systemAlert';
+import { soundChoice } from './sound';
 
 export const BACKGROUND_TASK = 'holup-check-alerts';
 const SNAPSHOT_KEY = 'holup:alertSnapshot';
@@ -68,6 +69,7 @@ export async function checkAlerts(since: Snapshot | null = null): Promise<Snapsh
         id: alert.id,
         kind: (badges.latestNotification?.kind as NotificationKind | null) ?? null,
         background: true,
+        sound: soundChoice(),
       });
     }
     await saveSnapshot(next);

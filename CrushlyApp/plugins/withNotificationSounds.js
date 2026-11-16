@@ -15,10 +15,12 @@ const path = require('path');
  * Only the background channel uses them: while the app is open the in-app chime
  * is the sound, and playing both would be two sounds for one message.
  */
-const SOUNDS = [
-  { from: 'assets/sounds/message.wav', to: 'holup_message.wav' },
-  { from: 'assets/sounds/notification.wav', to: 'holup_notification.wav' },
-];
+// Every choice the picker offers gets a raw resource, named the way
+// `src/lib/systemAlert.ts` asks for it (`holup_<id>`), so switching the sound in
+// settings also switches the sound of a notification that arrives while the app
+// is closed.
+const CHOICES = ['glass', 'pulse', 'lumen', 'bloom', 'drip', 'orbit'];
+const SOUNDS = CHOICES.map((id) => ({ from: `assets/sounds/${id}.wav`, to: `holup_${id}.wav` }));
 
 function withNotificationSounds(config) {
   return withDangerousMod(config, [
