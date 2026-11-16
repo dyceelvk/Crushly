@@ -1,11 +1,11 @@
 {
-  "version": "1.0.121",
-  "versionCode": 121,
+  "version": "1.0.122",
+  "versionCode": 122,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.121-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.121/holUpp-1.0.121-RielOS.apk",
-  "notes": "Continue with Google now works in the app, not just in a browser. It opens a sign-in sheet, Google confirms who you are, and holUpp takes you straight back in — no email code needed. If you close the sheet, nothing happens and you can try again or use your email.",
-  "bytes": 97170765,
-  "sha256": "75e9a0b187b2dc19815d43b494993bc94fef1ed9ffb1df0828ba4cfbabe3fead",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.121/holUpp-1.0.121-RielOS.apk"
+  "file": "holUpp-1.0.122-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.122/holUpp-1.0.122-RielOS.apk",
+  "notes": "holUpp makes a sound now. A soft two-note chime when a Whisper arrives and a single note when a notification does — it never rings for your own actions, never rings while the app is closed, and stays quiet for the screen you are already looking at. Turn Sounds off in Notification settings if you would rather have silence.",
+  "bytes": 97281437,
+  "sha256": "bce79b82a87d20282a80db16068b4533ec50f8e12513528ad84add74f8ede2f2",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.122/holUpp-1.0.122-RielOS.apk"
 }
