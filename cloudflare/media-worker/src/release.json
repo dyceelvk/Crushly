@@ -1,11 +1,11 @@
 {
-  "version": "1.0.122",
-  "versionCode": 122,
+  "version": "1.0.123",
+  "versionCode": 123,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.122-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.122/holUpp-1.0.122-RielOS.apk",
-  "notes": "holUpp makes a sound now. A soft two-note chime when a Whisper arrives and a single note when a notification does — it never rings for your own actions, never rings while the app is closed, and stays quiet for the screen you are already looking at. Turn Sounds off in Notification settings if you would rather have silence.",
-  "bytes": 97281437,
-  "sha256": "bce79b82a87d20282a80db16068b4533ec50f8e12513528ad84add74f8ede2f2",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.122/holUpp-1.0.122-RielOS.apk"
+  "file": "holUpp-1.0.123-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.123/holUpp-1.0.123-RielOS.apk",
+  "notes": "Whispers and notifications now drop down at the top of the screen and stay in the notification bar until you open them, and tapping one takes you to that chat or to Notifications. While holUpp is open they arrive at once; while it is closed, Android lets holUpp check about every 15 minutes, so news can still reach you there. Notification settings has a new row that shows whether this phone is allowing it.",
+  "bytes": 101152771,
+  "sha256": "c9540dddf68e1618b8ba05fb29bd66d555e9c4b5721defd5bd5bfb4872c51508",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.123/holUpp-1.0.123-RielOS.apk"
 }
