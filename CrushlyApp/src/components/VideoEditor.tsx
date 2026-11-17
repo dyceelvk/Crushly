@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { DeleteSheet } from './DeleteSheet';
 import {
   Animated,
   Modal,
@@ -158,6 +159,15 @@ export function VideoEditorModal({
   const [playing, setPlaying] = useState(false);
   const [tool, setTool] = useState<ToolId | null>(initialTool ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /*
+   * What the editor's bins are asking about.
+   *
+   * A clip, a caption, a sticker and the sound each removed themselves on the
+   * press, and none of them can be got back — the editor has no undo. The bin in
+   * the timeline sits next to Split and Duplicate, so a thumb aiming for one of
+   * those can take a clip out of the edit. `null` means nothing is being asked.
+   */
+  const [doomed, setDoomed] = useState<Doomed | null>(null);
 
   const player = useVideoPlayer(visible && sourceUri ? sourceUri : null, (p) => {
     p.loop = false;
@@ -399,9 +409,15 @@ export function VideoEditorModal({
     if (pieceCount < 2) return;
     const target = selectedPiece ?? segmentsOf(edit)[playheadIndex];
     if (!target) return;
-    update(removePiece(edit, target.id, category));
-    setSelectedId(null);
-    haptic.tap();
+    setDoomed({
+      what: 'clip',
+      detail: 'The clip comes out of the edit. The rest of the timeline closes up behind it.',
+      run: () => {
+        update(removePiece(edit, target.id, category));
+        setSelectedId(null);
+        haptic.tap();
+      },
+    });
   };
 
   const duplicateNow = () => {
@@ -477,6 +493,7 @@ export function VideoEditorModal({
           update={update}
           colors={colors}
           category={category}
+          ask={setDoomed}
         />
       ) : null}
       {tool === 'filters' ? <FiltersPanel edit={edit} update={update} /> : null}
@@ -491,9 +508,10 @@ export function VideoEditorModal({
           onSelect={setSelectedId}
           update={update}
           category={category}
+          ask={setDoomed}
         />
       ) : null}
-      {tool === 'music' ? <MusicPanel edit={edit} update={update} onPick={pickMusic} /> : null}
+      {tool === 'music' ? <MusicPanel edit={edit} update={update} onPick={pickMusic} ask={setDoomed} /> : null}
     </>
   );
 
@@ -697,6 +715,19 @@ export function VideoEditorModal({
             {toolRail}
           </View>
         )}
+
+        {/* Every bin in the editor asks this first. The editor can undo, but Undo
+            is a button you have to notice — the bin is a button a thumb can hit
+            by accident while reaching for Split. */}
+        <DeleteSheet
+          visible={doomed !== null}
+          detail={doomed?.detail}
+          successTitle={doomed ? `Removed the ${doomed.what}` : undefined}
+          onCancel={() => setDoomed(null)}
+          onConfirm={() => {
+            doomed?.run();
+          }}
+        />
       </View>
     </Modal>
   );
@@ -707,6 +738,9 @@ function clock(seconds: number): string {
   const s = Math.max(0, seconds);
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
+
+/** What an editor bin is asking about before it removes anything. */
+type Doomed = { what: string; detail: string; run: () => void };
 
 function PanelNote({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
@@ -903,6 +937,7 @@ function CaptionsPanel({
   update,
   colors,
   category,
+  ask,
 }: {
   edit: VideoEdit;
   caption: VideoEdit['captions'][number] | null;
@@ -911,6 +946,7 @@ function CaptionsPanel({
   update: (e: VideoEdit, mergeKey?: string | null) => void;
   colors: ReturnType<typeof useTheme>['colors'];
   category: EditCategory;
+  ask: (d: Doomed) => void;
 }) {
   const limit = EDIT_LIMITS[category].maxCaptions;
   const width = clipLength(edit);
@@ -1058,10 +1094,16 @@ function CaptionsPanel({
             size="sm"
             variant="danger"
             icon="trash-outline"
-            onPress={() => {
-              update({ ...edit, captions: edit.captions.filter((c) => c.id !== caption.id) });
-              onSelect(null);
-            }}
+            onPress={() =>
+              ask({
+                what: 'text',
+                detail: 'The words come off the clip. You can type them again from the Text tool.',
+                run: () => {
+                  update({ ...edit, captions: edit.captions.filter((c) => c.id !== caption.id) });
+                  onSelect(null);
+                },
+              })
+            }
           />
         </View>
       ) : null}
@@ -1315,6 +1357,7 @@ function StickersPanel({
   onSelect,
   update,
   category,
+  ask,
 }: {
   edit: VideoEdit;
   sticker: VideoEdit['stickers'][number] | null;
@@ -1322,6 +1365,7 @@ function StickersPanel({
   onSelect: (id: string | null) => void;
   update: (e: VideoEdit, mergeKey?: string | null) => void;
   category: EditCategory;
+  ask: (d: Doomed) => void;
 }) {
   const { colors } = useTheme();
   const width = clipLength(edit);
@@ -1407,10 +1451,16 @@ function StickersPanel({
             size="sm"
             variant="danger"
             icon="trash-outline"
-            onPress={() => {
-              update({ ...edit, stickers: edit.stickers.filter((s) => s.id !== sticker.id) });
-              onSelect(null);
-            }}
+            onPress={() =>
+              ask({
+                what: 'sticker',
+                detail: 'The sticker comes off the clip.',
+                run: () => {
+                  update({ ...edit, stickers: edit.stickers.filter((s) => s.id !== sticker.id) });
+                  onSelect(null);
+                },
+              })
+            }
           />
         </View>
       ) : null}
@@ -1422,10 +1472,12 @@ function MusicPanel({
   edit,
   update,
   onPick,
+  ask,
 }: {
   edit: VideoEdit;
   update: (e: VideoEdit, mergeKey?: string | null) => void;
   onPick: () => void;
+  ask: (d: Doomed) => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -1455,7 +1507,13 @@ function MusicPanel({
             size="sm"
             variant="danger"
             icon="trash-outline"
-            onPress={() => update({ ...edit, music: null })}
+            onPress={() =>
+              ask({
+                what: 'sound',
+                detail: 'The music comes off this clip. Pick it again from the sound panel.',
+                run: () => update({ ...edit, music: null }),
+              })
+            }
           />
         </View>
       ) : (

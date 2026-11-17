@@ -13,6 +13,7 @@ import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { FollowButton } from '../../components/FollowButton';
+import { DeleteSheet } from '../../components/DeleteSheet';
 import { ConfirmSheet } from '../../components/BottomSheet';
 import { ViewersSheet } from '../../components/ViewersSheet';
 import { EmptyState } from '../../components/States';
@@ -331,19 +332,20 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
     }
   };
 
+  /**
+   * Delete the Moment.
+   *
+   * It no longer reports its own success or failure: the dialog does, because it
+   * is the thing that asked. A failure returns as a thrown error so the dialog
+   * can stay open instead of closing over a Moment that is still there.
+   */
   const remove = async () => {
     if (!moment) return;
-    setConfirmDelete(false);
-    try {
-      await deleteMoment(moment.id);
-      const left = group!.moments.filter((m) => m.id !== moment.id);
-      if (!left.length) return close();
-      setGroups([{ ...group!, moments: left }]);
-      setMi(Math.min(mi, left.length - 1));
-      toast({ kind: 'success', title: 'Moment deleted', message: 'Gone from our servers.' });
-    } catch (e) {
-      toast({ kind: 'error', title: 'Couldn’t delete', message: (e as Error).message });
-    }
+    await deleteMoment(moment.id);
+    const left = group!.moments.filter((m) => m.id !== moment.id);
+    if (!left.length) return close();
+    setGroups([{ ...group!, moments: left }]);
+    setMi(Math.min(mi, left.length - 1));
   };
 
   const reactionsLine = useMemo(() => {
@@ -405,7 +407,18 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
+        {/* The picture never answers a finger.
+            A shared post's wrapper is a full-screen box at `card`, which is
+            *above* the gesture surface — so every tap on a Moment that came from
+            a post was swallowed by an invisible rectangle: left did not go back,
+            right did not go forward, holding did not pause, and swiping down did
+            not close. A video post was the worst of them, because it also played,
+            so the screen looked alive while none of its controls answered.
+            `none` hands every touch straight to the pager below. The way into the
+            post is the explicit chip in the bottom bar, not a whole screen that
+            silently eats the gestures. */}
         <View
+          pointerEvents="none"
           style={[
             { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
             isPost
@@ -426,6 +439,11 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
             showAuthor
             keepPlayerMounted={moment.kind === 'video'}
             autoPlay={moment.kind === 'video' && !paused}
+            /* The card is a picture here, never a button: the whole screen is
+               the gesture surface, so nothing inside it may claim a tap. The
+               clip still plays (`play`) — only the press is gone. */
+            tappable={false}
+            play
           />
         </View>
 
@@ -552,6 +570,32 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
           pointerEvents="box-none"
           style={{ paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.md), zIndex: VIEWER_LAYERS.chrome }}
         >
+          {isPost && moment.post ? (
+            /* The one thing on this screen that opens something else, in the
+               chrome where a tap is expected to go somewhere. It replaces a card
+               that took every touch and offered the post only sometimes. */
+            <View style={{ alignItems: 'center', paddingBottom: space.sm }} pointerEvents="box-none">
+              <Pressable
+                onPress={() =>
+                  navigation.navigate(moment.post!.mediaUrl ? 'PostViewer' : 'TextPost', { postId: moment.post!.id })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`View ${moment.post.authorName}’s post`}
+                accessibilityHint="Opens the whole post this Moment shares"
+                hitSlop={8}
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', gap: 7,
+                  paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999,
+                  backgroundColor: 'rgba(12,12,14,0.72)',
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+                  opacity: pressed ? 0.75 : 1,
+                })}
+              >
+                <Ionicons name="open-outline" size={16} color="#fff" />
+                <Txt variant="bodyStrong" color="#fff">View this post</Txt>
+              </Pressable>
+            </View>
+          ) : null}
           {mine ? (
             <View style={{ gap: 4, paddingVertical: space.xs }}>
               <Pressable onPress={() => setViewersOpen(true)} accessibilityRole="button" accessibilityLabel={`Seen by ${moment.viewCount ?? 0}. See viewers`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 6 }}>
@@ -619,12 +663,9 @@ export function MomentViewerScreen({ route, navigation }: ScreenProps<'MomentVie
       </View>
 
       {mine ? <ViewersSheet kind="moment" id={moment.id} visible={viewersOpen} onClose={() => setViewersOpen(false)} reactions={moment.reactions ?? []} /> : null}
-      <ConfirmSheet
+      <DeleteSheet
         visible={confirmDelete}
-        title="Delete this Moment?"
-        message="It’s deleted from our servers straight away — the Moment and its photo or clip. It disappears for everyone right away."
-        confirmLabel="Delete"
-        destructive
+        detail="The Moment and its photo or clip are removed from our servers straight away, for everyone."
         onConfirm={remove}
         onCancel={() => setConfirmDelete(false)}
       />

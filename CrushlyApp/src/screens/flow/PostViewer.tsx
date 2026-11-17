@@ -31,6 +31,7 @@ import { EditPostSheet } from '../../components/EditPostSheet';
 import { useMemberActions } from '../../state/memberActions';
 import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
+import { DeleteSheet } from '../../components/DeleteSheet';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
 import {
@@ -555,16 +556,12 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
     }
   }, [post, keep, toast]);
 
+  /** Throws on failure so the dialog that asked can say so and stay open. */
   const deletePost = useCallback(async () => {
     if (!post) return;
-    try {
-      await remove.mutateAsync(post.id);
-      toast({ kind: 'success', title: 'Post deleted', message: 'Gone from our servers.' });
-      close();
-    } catch (e) {
-      toast({ kind: 'error', title: 'Not deleted', message: (e as Error).message });
-    }
-  }, [post, remove, close, toast]);
+    await remove.mutateAsync(post.id);
+    close();
+  }, [post, remove, close]);
 
   const memberForActions = {
     id: post?.author.id ?? 0,
@@ -1022,16 +1019,10 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
       </BottomSheet>
 
       {/* Delete asks once, from the dots menu, rather than firing on a tap. */}
-      <ConfirmSheet
+      <DeleteSheet
         visible={confirmDelete}
-        title="Delete this post?"
-        message="It’s deleted from our servers straight away — the post and its photo or clip. It disappears for everyone, and this can’t be undone."
-        confirmLabel="Delete"
-        destructive
-        onConfirm={() => {
-          setConfirmDelete(false);
-          void deletePost();
-        }}
+        detail="The post and its photo or clip are removed from our servers straight away, for everyone."
+        onConfirm={deletePost}
         onCancel={() => setConfirmDelete(false)}
       />
 

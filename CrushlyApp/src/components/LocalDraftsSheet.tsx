@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { BottomSheet, ConfirmSheet } from './BottomSheet';
+import { BottomSheet } from './BottomSheet';
+import { DeleteSheet } from './DeleteSheet';
 import { Button } from './Button';
 import { Txt } from './Txt';
 import { useToast } from './Toast';
@@ -36,11 +37,17 @@ export function LocalDraftsSheet({ visible, owner, kind, onClose, onOpen }: {
           </View>
         ))}
       </BottomSheet>
-      <ConfirmSheet visible={!!remove} title="Delete this draft?" message="This removes the phone copy. It cannot be undone." confirmLabel="Delete draft" destructive onCancel={() => setRemove(null)} onConfirm={() => {
-        const draft = remove; setRemove(null);
-        if (!draft) return;
-        void deleteLocalDraft(owner, draft.id).then(refresh).catch(() => toast({ kind: 'error', title: 'Draft not deleted', message: 'Please try again.' }));
-      }} />
+      <DeleteSheet
+        visible={!!remove}
+        detail="This removes the copy saved on this phone. The post was never published."
+        onCancel={() => setRemove(null)}
+        onConfirm={async () => {
+          const draft = remove;
+          if (!draft) return;
+          await deleteLocalDraft(owner, draft.id);
+          refresh();
+        }}
+      />
     </>
   );
 }

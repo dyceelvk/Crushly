@@ -14,6 +14,7 @@ import { ShareToWhisper } from '../ShareToWhisper';
 import { EditedClip } from '../EditedClip';
 import { useToast } from '../Toast';
 import { CommentsSheet } from './CommentsSheet';
+import { DeleteSheet } from '../DeleteSheet';
 import { useDeletePost, useLiveMomentUsers, useMe, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { mediaUrl } from '../../api/client';
@@ -101,6 +102,10 @@ export function PostCard({
   const authorName = p.mine && secondPerson ? 'You' : p.author.name;
 
   const [commentsOpen, setCommentsOpen] = useState(false);
+  /* Deleting a post asks first, like every other bin in the app. This one used
+     to delete on the press: `remove.mutate(p.id)` sat directly in the onPress,
+     so a thumb that landed on the bin while scrolling took the post with it. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const like = useReactToPost();
   const pick = useSavePost();
 
@@ -176,7 +181,7 @@ export function PostCard({
             label="Delete post"
             variant="plain"
             size={36}
-            onPress={() => remove.mutate(p.id, { onError: (e) => toast({ kind: 'error', title: 'Not deleted', message: (e as Error).message }) })}
+            onPress={() => setConfirmDelete(true)}
             color={colors.textMuted}
           />
         ) : (
@@ -336,6 +341,15 @@ export function PostCard({
       {/* One comment sheet for the whole app. A Circle used to open the post in
           place with its own comment body underneath, which meant the same
           conversation looked different depending on which list you found it in. */}
+      <DeleteSheet
+        visible={confirmDelete}
+        detail="The post and its photo or clip are removed for everyone who can see it."
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          await remove.mutateAsync(p.id);
+        }}
+      />
+
       <CommentsSheet
         post={p}
         visible={commentsOpen || expanded}

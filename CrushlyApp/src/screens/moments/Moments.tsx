@@ -27,7 +27,7 @@ import type { RootStackParamList } from '../../navigation/types';
 
 /** Preview of a Moment: the photo, or the styled text on its gradient. */
 export function MomentPreview({
-  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true, tappable = true, showAuthor = false, onReveal,
+  moment, style, textSize = 15, lines = 6, autoPlay = false, keepPlayerMounted = false, caption = true, showText = true, tappable = true, play, showAuthor = false, onReveal,
 }: {
   moment?: Moment;
   style?: object;
@@ -38,6 +38,17 @@ export function MomentPreview({
   caption?: boolean;
   showText?: boolean;
   tappable?: boolean;
+  /**
+   * Whether a shared post's clip plays here.
+   *
+   * Separate from `tappable` because the two stopped being the same question.
+   * Inside the Moment viewer the card must play (it is the thing you came to
+   * watch) and must not be pressable (the whole screen is the gesture surface,
+   * and a card that takes the tap is what made tap-left, tap-right and
+   * hold-to-pause dead on every Moment that came from a post).
+   * Defaults to `tappable`, so every other caller is unchanged.
+   */
+  play?: boolean;
   /**
    * Whether the card may name the person who made a shared post, and let you
    * open their Space from here.
@@ -67,6 +78,7 @@ export function MomentPreview({
         textSize={textSize}
         lines={lines}
         tappable={tappable}
+        play={play}
         showAuthor={showAuthor}
         onReveal={onReveal}
       />
@@ -167,6 +179,7 @@ function MomentPostCard({
   textSize = 15,
   lines = 6,
   tappable = true,
+  play = tappable,
   showAuthor = false,
   onReveal,
 }: {
@@ -176,6 +189,8 @@ function MomentPostCard({
   lines?: number;
   /** Off in a tile: the tile has its own tap (open the Moment). */
   tappable?: boolean;
+  /** Whether the clip plays. Defaults to `tappable`; the viewer plays it unpressable. */
+  play?: boolean;
   /** Off outside the Moment: the card is the thing, not a way to somebody else. */
   showAuthor?: boolean;
   /** Told when the "View this post" line appears, so a timeline can hold still. */
@@ -256,7 +271,7 @@ function MomentPostCard({
              * paused first frame is what every other grid in the app shows
              * (`ClipThumb`), and it is always there.
              */
-            tappable ? (
+            play ? (
               <EditedClip
                 uri={mediaSource(mediaUrl(post.mediaUrl))}
                 live={null}

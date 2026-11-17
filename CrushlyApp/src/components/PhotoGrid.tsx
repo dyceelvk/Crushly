@@ -6,6 +6,7 @@ import { Photo } from './Photo';
 import { PressableScale } from './PressableScale';
 import { Txt } from './Txt';
 import { ActionSheet } from './BottomSheet';
+import { DeleteSheet } from './DeleteSheet';
 import { useToast } from './Toast';
 import { useDeletePhoto, useReorderPhotos, useUploadPhoto } from '../api/hooks';
 import { pickImage } from '../lib/media';
@@ -24,6 +25,8 @@ export function PhotoGrid({ photos, width }: { photos: PhotoT[]; width: number }
   const reorder = useReorderPhotos();
   const [selected, setSelected] = useState<PhotoT | null>(null);
   const [uploadingSlot, setUploadingSlot] = useState<number | null>(null);
+  /** A photo leaves your Space only after the question. */
+  const [doomed, setDoomed] = useState<PhotoT | null>(null);
 
   const gap = 10;
   const small = (width - gap * 2) / 3;
@@ -126,10 +129,23 @@ export function PhotoGrid({ photos, width }: { photos: PhotoT[]; width: number }
             destructive: true,
             onPress: () => {
               if (!selected) return;
-              remove.mutate(selected.id, { onError: (e) => toast({ kind: 'error', title: 'Photo kept', message: (e as Error).message }) });
+              const photo = selected;
+              setDoomed(photo);
             },
           },
         ]}
+      />
+
+      <DeleteSheet
+        visible={doomed !== null}
+        detail="The photo comes off your Space and out of our storage."
+        successTitle="Photo removed"
+        errorTitle="Photo kept"
+        onCancel={() => setDoomed(null)}
+        onConfirm={async () => {
+          if (!doomed) return;
+          await remove.mutateAsync(doomed.id);
+        }}
       />
     </View>
   );

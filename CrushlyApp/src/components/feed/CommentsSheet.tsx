@@ -21,7 +21,8 @@ import { LinkText } from '../LinkText';
 import { useToast } from '../Toast';
 import { Suggestions } from '../Suggestions';
 import { useMentionInput } from '../useMentionInput';
-import { ConfirmSheet } from '../BottomSheet';
+import { DeleteSheet } from '../DeleteSheet';
+import { useProfileTap } from '../../lib/useProfileTap';
 import {
   useCommentOnPost,
   useDeletePostComment,
@@ -85,6 +86,18 @@ export function CommentsSheet({
   const keyboard = useAndroidKeyboardOverlap();
   const { data: me } = useMe();
   const toast = useToast();
+  /*
+   * A person in a comment is a person you can open.
+   *
+   * This used to depend on the caller passing `onOpenAuthor`, and three of the
+   * four places that open comments never did — so tapping an avatar here did
+   * nothing at all, and the only way to reach somebody was Search. The fallback
+   * is the app's one profile-tap handler, so a name in a comment now opens their
+   * Space exactly like a name anywhere else. A caller may still override it,
+   * which is what a screen that has to close itself first already does.
+   */
+  const tapProfile = useProfileTap();
+  const openAuthor = onOpenAuthor ?? ((id: number) => { onClose(); tapProfile(id); });
 
   const postId = post?.id ?? null;
   /*
@@ -217,22 +230,35 @@ export function CommentsSheet({
         }}
       >
         <Pressable
-          onPress={() => onOpenAuthor?.(comment.author.id)}
+          onPress={() => openAuthor(comment.author.id)}
           accessibilityRole="button"
           accessibilityLabel={`Open ${comment.author.name}`}
-          disabled={!onOpenAuthor}
+          accessibilityHint="Opens their Space"
+          hitSlop={6}
         >
           <Avatar uri={comment.author.photos?.[0]?.url} name={comment.author.name} size={depth ? 30 : 38} />
         </Pressable>
 
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <Txt
-              style={{ fontFamily: fonts.bold, fontSize: 13, color: NOIR.secondary }}
-              numberOfLines={1}
-            >
-              {comment.mine ? 'You' : comment.author.name}
-            </Txt>
+            {/* Your own name is not a door — you are already here. */}
+            {comment.mine ? (
+              <Txt style={{ fontFamily: fonts.bold, fontSize: 13, color: NOIR.secondary }} numberOfLines={1}>
+                You
+              </Txt>
+            ) : (
+              <Pressable
+                onPress={() => openAuthor(comment.author.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${comment.author.name}`}
+                accessibilityHint="Opens their Space"
+                hitSlop={6}
+              >
+                <Txt style={{ fontFamily: fonts.bold, fontSize: 13, color: NOIR.secondary }} numberOfLines={1}>
+                  {comment.author.name}
+                </Txt>
+              </Pressable>
+            )}
             {!comment.mine && !comment.hidden && post?.audience === 'everyone' ? <FollowButton id={comment.author.id} name={comment.author.name} compact /> : null}
             {label ? (
               <>
@@ -317,9 +343,10 @@ export function CommentsSheet({
         likers.map((liker, i) => (
           <Pressable
             key={`${liker.author.id}-${i}`}
-            onPress={() => onOpenAuthor?.(liker.author.id)}
-            disabled={!onOpenAuthor}
+            onPress={() => openAuthor(liker.author.id)}
             accessibilityRole="button"
+            accessibilityLabel={`Open ${liker.author.name}`}
+            accessibilityHint="Opens their Space"
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 9 }}
           >
             <Avatar uri={liker.author.photos?.[0]?.url} name={liker.author.name} size={38} />
@@ -545,18 +572,14 @@ export function CommentsSheet({
       </KeyboardAvoidingView>
       </View>
     </Modal>
-      <ConfirmSheet
+      <DeleteSheet
         visible={doomed !== null}
-        title="Delete this comment?"
-        message="It goes for everyone, replies included. You can say it again, but it starts over."
-        confirmLabel="Delete it"
-        destructive
-        loading={removeComment.isPending}
+        detail="The comment goes for everyone, replies included."
         onCancel={() => setDoomed(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           const target = doomed;
-          setDoomed(null);
-          if (target) void removeComment.mutate(target.id);
+          if (!target) return;
+          await removeComment.mutateAsync(target.id);
         }}
       />
     </>

@@ -30,6 +30,7 @@ import { policyLabel } from '../../lib/circleAccess';
 import { timeAgo } from '../../lib/format';
 import type { CircleJoinPolicy } from '../../api/types';
 import type { RootStackParamList } from '../../navigation/types';
+import { DeleteSheet } from '../../components/DeleteSheet';
 
 type Tab = 'members' | 'requests' | 'invited' | 'declined';
 
@@ -69,6 +70,8 @@ export function CircleManageScreen() {
   const [tab, setTab] = useState<Tab>(openOn ?? 'members');
   const swipe = useSwipeTabs({ options: ['members', 'requests', 'invited', 'declined'] as Tab[], value: tab, onChange: setTab, width: contentWidth });
   const [inviting, setInviting] = useState(false);
+  /** The member the bin is asking about. Nothing leaves the Circle until the yes. */
+  const [removing, setRemoving] = useState<{ id: number; name: string } | null>(null);
   const [query, setQuery] = useState('');
   /** People invited since this sheet opened, so the row flips at once. */
   const [justInvited, setJustInvited] = useState<Set<number>>(new Set());
@@ -236,17 +239,10 @@ export function CircleManageScreen() {
                     </View>
                     {m.role === 'owner' ? null : (
                       <Pressable
-                        onPress={() =>
-                          remove.mutate(
-                            { circleId, memberId: m.member.id },
-                            {
-                              onSuccess: () => toast({ kind: 'info', title: `${m.member.name} is out` }),
-                              onError: (e) => toast({ kind: 'error', title: 'Couldn’t remove them', message: (e as Error).message }),
-                            },
-                          )
-                        }
+                        onPress={() => setRemoving({ id: m.member.id, name: m.member.name })}
                         accessibilityRole="button"
                         accessibilityLabel={`Remove ${m.member.name}`}
+                        accessibilityHint="Asks before removing them"
                         hitSlop={8}
                         style={{ padding: 6 }}
                       >
@@ -465,6 +461,17 @@ export function CircleManageScreen() {
           )}
         </View>
       </BottomSheet>
+
+      <DeleteSheet
+        visible={removing !== null}
+        detail={removing ? `${removing.name} loses access to this Circle and its posts.` : undefined}
+        successTitle="Member removed"
+        onCancel={() => setRemoving(null)}
+        onConfirm={async () => {
+          if (!removing) return;
+          await remove.mutateAsync({ circleId, memberId: removing.id });
+        }}
+      />
     </View>
   );
 }

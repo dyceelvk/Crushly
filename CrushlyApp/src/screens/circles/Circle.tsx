@@ -15,6 +15,7 @@ import { Segmented } from '../../components/Segmented';
 import { SwipeTabs } from '../../components/SwipeTabs';
 import { Dimensions } from 'react-native';
 import { BottomSheet } from '../../components/BottomSheet';
+import { DeleteSheet } from '../../components/DeleteSheet';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
 import { Input } from '../../components/Input';
@@ -605,6 +606,8 @@ function RoomPeople({
   const add = useAddCircleMember();
   const crushes = useCrushes();
   const [adding, setAdding] = useState(false);
+  /** The member the bin is asking about. Nothing is removed until the yes. */
+  const [removing, setRemoving] = useState<{ id: number; name: string } | null>(null);
 
   const inRoom = new Set(members.map((m) => m.member.id));
   const candidates = (crushes.data?.mutual ?? []).filter((m) => !inRoom.has(m.id));
@@ -643,19 +646,24 @@ function RoomPeople({
               title="Remove"
               size="sm"
               variant="secondary"
-              loading={remove.isPending}
-              onPress={() =>
-                remove.mutate(
-                  { circleId, memberId: m.member.id },
-                  { onError: (e) => toast({ kind: 'error', title: 'Not removed', message: (e as Error).message }) },
-                )
-              }
+              onPress={() => setRemoving({ id: m.member.id, name: m.member.name })}
             />
           ) : null}
         </View>
       ))}
 
       <Button title="Bring somebody in" size="md" variant="secondary" icon="person-add-outline" onPress={() => setAdding(true)} />
+
+      <DeleteSheet
+        visible={removing !== null}
+        detail={removing ? `${removing.name} loses access to this Circle and its posts.` : undefined}
+        successTitle="Member removed"
+        onCancel={() => setRemoving(null)}
+        onConfirm={async () => {
+          if (!removing) return;
+          await remove.mutateAsync({ circleId, memberId: removing.id });
+        }}
+      />
 
       <BottomSheet visible={adding} onClose={() => setAdding(false)} title="Bring somebody in">
         <View style={{ gap: space.md }}>
@@ -717,17 +725,9 @@ function CircleMenu({
   const leave = useLeaveCircle();
   const rename = useRenameCircle();
   const [renaming, setRenaming] = useState(false);
+  /** Whether the Circle itself is going. */
+  const [leaving, setLeaving] = useState(false);
   const [draft, setDraft] = useState(name);
-
-  const go = (fn: () => Promise<unknown>, done: string) => {
-    void fn()
-      .then(() => {
-        onClose();
-        toast({ kind: 'success', title: done });
-        if (done.startsWith('You’ve left')) onLeft();
-      })
-      .catch((e) => toast({ kind: 'error', title: 'That didn’t work', message: (e as Error).message }));
-  };
 
   return (
     <>
@@ -751,7 +751,7 @@ function CircleMenu({
             size="md"
             icon="log-out-outline"
             loading={leave.isPending}
-            onPress={() => go(async () => { await leave.mutateAsync(circleId); return true; }, 'You’ve left the Circle')}
+            onPress={() => setLeaving(true)}
           />
           <Txt variant="small" color="textMuted">
             {isOwner
@@ -760,6 +760,22 @@ function CircleMenu({
           </Txt>
         </View>
       </BottomSheet>
+
+      <DeleteSheet
+        visible={leaving}
+        detail={
+          isOwner
+            ? 'You leave this Circle and it passes to whoever has been in it longest.'
+            : 'You leave this Circle. Anyone still in it can bring you back.'
+        }
+        successTitle="You’ve left the Circle"
+        onCancel={() => setLeaving(false)}
+        onConfirm={async () => {
+          await leave.mutateAsync(circleId);
+          onClose();
+          onLeft();
+        }}
+      />
 
       <BottomSheet visible={renaming} onClose={() => setRenaming(false)} title="Rename Circle">
         <View style={{ gap: space.md }}>

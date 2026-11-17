@@ -13,6 +13,7 @@ import { RecordingWave } from '../../components/RecordingWave';
 import { VerifiedBadge } from '../../components/Badges';
 import { IconButton } from '../../components/IconButton';
 import { ActionSheet } from '../../components/BottomSheet';
+import { DeleteSheet } from '../../components/DeleteSheet';
 import { ErrorState, LoadingBlock } from '../../components/States';
 import { CrushIcon } from '../../components/Logo';
 import { MessageBubble } from '../../components/MessageBubble';
@@ -142,6 +143,8 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   const [tray, setTray] = useState(false);
   /** The message waiting on a yes/no before it leaves the server for good. */
   const [deleteFor, setDeleteFor] = useState<Message | null>(null);
+  /** A recording thrown away is a delete: it is asked the same way. */
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [actionFor, setActionFor] = useState<Message | null>(null);
   /**
@@ -728,7 +731,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: space.sm, paddingTop: 8, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
               {recording ? (
                 <>
-                  <IconButton icon="trash-outline" label="Discard recording" onPress={() => stopRecording(false)} color={colors.danger} />
+                  <IconButton icon="trash-outline" label="Discard recording" onPress={() => setConfirmDiscard(true)} color={colors.danger} />
                   <View style={{ flex: 1, height: 44, borderRadius: 22, backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10 }} accessibilityLiveRegion="polite">
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.crush }} />
                     <Txt variant="bodyStrong">{durationLabel(Math.round((recState.durationMillis || 0) / 1000))}</Txt>
@@ -907,28 +910,39 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
         ) : null}
       </ReactionPopup>
 
-      {/* One question, one answer, and then it is gone. */}
-      <ActionSheet
+      {/* One question, one answer, and then it is gone — the same question every
+          other bin in holUpp asks. It used to be a one-row action sheet, which is
+          a second dialog for a single choice; and its failure path closed the
+          sheet over a Whisper that was still there. */}
+      <DeleteSheet
         visible={!!deleteFor}
-        onClose={() => setDeleteFor(null)}
-        title="Delete this Whisper?"
-        actions={[
-          {
-            label: 'Delete from the server',
-            hint: deleteFor?.kind === 'photo' ? 'Gone for both of you. Today\u2019s photo stays used.' : 'Gone for both of you.',
-            icon: <Ionicons name="trash-outline" size={22} color={colors.danger} />,
-            destructive: true,
-            immediateOnWeb: true,
-            onPress: async () => {
-              const m = deleteFor;
-              setDeleteFor(null);
-              if (!m) return;
-              const r = await chat.remove(m.id);
-              if (r.ok) toast({ kind: 'success', title: 'Deleted', message: 'Removed from the server.' });
-              else toast({ kind: 'error', title: 'Not deleted', message: 'It is still there. Try again.' });
-            },
-          },
-        ]}
+        detail={
+          deleteFor?.kind === 'photo'
+            ? 'It is gone for both of you. Today’s photo stays used up.'
+            : deleteFor?.kind === 'voice'
+              ? 'It is gone for both of you, and the recording is removed from our servers.'
+              : 'It is gone for both of you, from our servers.'
+        }
+        errorTitle="Not deleted"
+        onCancel={() => setDeleteFor(null)}
+        onConfirm={async () => {
+          const m = deleteFor;
+          if (!m) return;
+          const r = await chat.remove(m.id);
+          if (!r.ok) throw new Error('remove failed');
+        }}
+      />
+
+      {/* Discarding a recording you have already made is a delete too: the audio
+          is thrown away and cannot be got back. */}
+      <DeleteSheet
+        visible={confirmDiscard}
+        detail="The recording is thrown away. You can record again."
+        successTitle="Recording discarded"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={async () => {
+          await stopRecording(false);
+        }}
       />
 
       {/* Share a profile */}
