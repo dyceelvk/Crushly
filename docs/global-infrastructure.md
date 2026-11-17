@@ -191,18 +191,57 @@ approved campaign exist.
 
 ## 5. Verification and release state
 
-The migration files in this branch were re-derived from the live project after a sandbox reset and
-then checked against it: **all 28 tables and all 31 functions declared in
-`supabase/migrations/2026111709*.sql` exist in production**, and the registry holds 276 rows, the
-eligibility rules 7, the policy 1.
+Migrations: the files were re-derived from the live project after a sandbox reset and then checked
+back against it — **all 28 tables and all 31 functions declared in
+`supabase/migrations/2026111709*.sql` exist in production**, the registry holds 276 rows, the
+eligibility rules 7, the policy 1. CI also applies every migration **twice** to prove they are
+re-runnable, and that step passes.
 
-App side: `npx tsc --noEmit` is clean, and the full suite passes — 539 tests plus the auxiliary
-suites, including the 10 new region tests.
+App: `npx tsc --noEmit` is clean and the full suite passes — 539 tests plus the auxiliary suites,
+including the 10 new region tests. CI's "Typecheck, test & web build" job is green on this commit.
+
+CI status, stated plainly: the **CI workflow as a whole is red, and was red before this work** — the
+two failing jobs fail identically on `93b305a` (the shipped 1.0.129):
+
+| Job | On 93b305a | Now |
+|---|---|---|
+| Typecheck, test & web build | success | **success** |
+| Media Worker bundles & config | success | **success** |
+| The offered build says what it changed | success | **success** |
+| Database migrations & RLS smoke | failure | failure, **different reason** |
+| Verification browser regression (offline) | failure | failure (unchanged) |
+
+The database job used to fail inside `seed.sql` with `Whisper unavailable` raised by
+`holup_whisper_insert_guard`. It still does — that is a pre-existing seed-versus-guard conflict, not
+something this work touched, and it is the next thing to fix before CI can be green.
+
+One real defect this work *did* find and fix: nine tables (`holup_admin_members`, `holup_admin_audit`,
+`holup_account_actions`, `holup_advertisers`, `holup_ad_campaigns`, `holup_ads_settings`,
+`holup_payment_providers`, `holup_payment_settings`, `holup_payment_transactions`) existed only in the
+live database and had never been written into `supabase/migrations`. Production was fine; a database
+built from the repository was not. They are now recorded in
+`20261117080000_platform_console_tables.sql`, taken from the live catalogue.
+
+Two further defects surfaced once those tables were in place, both fixed in production and in the
+files:
+
+* `holup_admin_members` carried **two** role constraints at once — the console's
+  (`administrator`, `moderator`, `analyst`, …) and the new one (`security_admin`,
+  `fraud_investigator`, …). Their intersection was `super_admin` alone, so five of the six roles the
+  specification asks for could not be assigned to anybody. Now one constraint carrying both
+  vocabularies.
+* `holup_enforce_action` wrote `'WARN'` / `'SUSPEND'` into a column whose check accepts
+  `warn/restrict/suspend/ban/restore/unrestrict`. Every enforcement action would have failed on
+  insert. The function now accepts the readable uppercase form and stores the column's vocabulary.
+
+Verified against the live project in a rolled-back transaction: warn succeeds; a permanent suspend is
+refused with `409 review_required` until a case exists; opening a case, closing it with findings, then
+suspending succeeds; all four steps land in `holup_admin_audit`.
 
 The APK has **not** been rebuilt. These changes are database, edge function and client-library only;
-nothing in them is visible to a member until the Flow ad renderer and the admin screens exist, so
-shipping a new binary now would carry no user-visible change. The next APK should be cut together with
-those surfaces, or with the first real advertiser campaign.
+nothing in them is visible to a member until the Flow ad renderer and the admin screens exist, so a new
+binary now would carry no user-visible change. The next APK should be cut together with those surfaces,
+or with the first real advertiser campaign.
 
 ## 6. Files written
 
