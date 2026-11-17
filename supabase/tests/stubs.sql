@@ -20,6 +20,13 @@ $$;
 create function extensions.crypt(pw text, salt text) returns text language sql immutable as $$
   select left(salt, 29) || md5(pw || left(salt, 29))
 $$;
+-- The creator ledger hash-chains its rows through extensions.digest (pgcrypto on
+-- real Supabase). This build has no pgcrypto, so stand in md5: the tests only
+-- need a deterministic 32-byte-per-row digest, not cryptographic parity with
+-- production.
+create or replace function extensions.digest(data text, algo text) returns bytea language sql immutable as $$
+  select decode(md5(data), 'hex')
+$$;
 
 create schema if not exists auth;
 create table auth.users (

@@ -180,12 +180,20 @@ begin
 end $$;
 
 -- ------------------------------------------------------------------ RBAC ---
--- The six roles the specification names. Anything else is not a role.
+-- The six roles the specification names, plus the five the existing console
+-- already uses. Both lists have to be allowed by the *same* constraint: a
+-- pre-existing holup_admin_members_role_check allowed only the console's roles,
+-- so with both constraints in force their intersection was super_admin alone and
+-- the five new roles could not be assigned at all.
 alter table public.holup_admin_members drop constraint if exists holup_admin_members_role_valid;
+alter table public.holup_admin_members drop constraint if exists holup_admin_members_role_check;
 alter table public.holup_admin_members
-  add constraint holup_admin_members_role_valid check (role in (
+  add constraint holup_admin_members_role_check check (role in (
+    -- introduced by this work
     'super_admin','security_admin','fraud_investigator',
-    'monetisation_admin','advertising_admin','analytics_admin'));
+    'monetisation_admin','advertising_admin','analytics_admin',
+    -- already used by the Control Centre
+    'administrator','verification_officer','moderator','analyst','support_officer'));
 
 -- What each role may open. Read server-side; every function enforces the same
 -- list, so a console bug cannot widen access.
@@ -381,6 +389,10 @@ begin
   if not public.holup_has_admin_role(array['super_admin','security_admin']) then
     perform public.crushly_fail(403, 'forbidden', 'You cannot enforce.');
   end if;
+  -- Accept the readable uppercase form, store the vocabulary the existing
+  -- holup_account_actions_action_check already enforces (warn/restrict/suspend/
+  -- ban/restore/unrestrict). Writing 'WARN' here used to violate that check and
+  -- make every enforcement attempt fail.
   if p_action not in ('WARN','RESTRICT','SUSPEND','REINSTATE') then
     perform public.crushly_fail(400, 'bad_action', 'Unknown action.');
   end if;
@@ -399,7 +411,12 @@ begin
   end if;
 
   insert into holup_account_actions (member_id, action, reason, until_at, detail, actor, actor_label, created_at)
-  values (p_profile_id, p_action, p_reason, p_until_at,
+  values (p_profile_id,
+          case p_action when 'WARN' then 'warn'
+                        when 'RESTRICT' then 'restrict'
+                        when 'SUSPEND' then 'suspend'
+                        when 'REINSTATE' then 'restore' end,
+          p_reason, p_until_at,
           jsonb_build_object('case_id', p_case_id), auth.uid(), public.holup_admin_role(), public.now_ms())
   returning id into v_id;
 
