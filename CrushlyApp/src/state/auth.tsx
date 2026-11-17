@@ -9,6 +9,7 @@ import { nativeAuthorizeUrl, nativeRedirectFor, parseNativeReturn } from '../lib
 import { unregisterPushToken } from '../lib/push';
 import { keys } from '../api/hooks';
 import { getMe, webOrigin, webReturnUrl } from '../api/service';
+import { reportRegion } from '../lib/region';
 import type { Me } from '../api/types';
 
 import { authStatus, type AuthStatus } from '../lib/authGate';
@@ -78,6 +79,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Adopt whatever session supabase-js now holds (startup, sign-in, or an email link landing). */
   const adoptSession = useCallback(async () => {
     setSignedIn(true);
+    /**
+     * Region identification happens here, and only here in the auth flow: the
+     * member is signed in, so the server can attribute the connection, and this
+     * is the moment the app is opened or the session is refreshed — exactly when
+     * the spec says detection should run. It is fired and forgotten: nothing
+     * below waits for it, and a failure is silent. `lib/region` throttles
+     * repeated opens, so this is one request per half hour at most.
+     */
+    void reportRegion('SESSION_REFRESH', { platform: Platform.OS });
     try {
       const current = await getMe();
       qc.setQueryData(keys.me, current);
@@ -124,6 +134,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const afterAuth = useCallback(
     async () => {
+      // A sign-in (or a fresh sign-up) is a distinct event, so it is recorded as
+      // one rather than folded into the session refresh above.
+      void reportRegion('LOGIN', { platform: Platform.OS, force: true });
       const current = await getMe();
       qc.setQueryData(keys.me, current);
       setMeState(current);
