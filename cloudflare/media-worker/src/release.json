@@ -1,11 +1,11 @@
 {
-  "version": "1.0.127",
-  "versionCode": 127,
+  "version": "1.0.128",
+  "versionCode": 128,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.127-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.127/holUpp-1.0.127-RielOS.apk",
-  "notes": "You can create your account with Google now, not only sign in with one. Tap Continue with Google on the create-account screen and your holUpp account is made with the name and photo already on your Google profile, so onboarding greets you by your own name. Messages to support now go to support@holupp.net.",
-  "bytes": 101629743,
-  "sha256": "a3c4c6bba2c04e347c351db723fa575bcf313c3dcaff37f4904450830916768b",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.127/holUpp-1.0.127-RielOS.apk"
+  "file": "holUpp-1.0.128-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.128/holUpp-1.0.128-RielOS.apk",
+  "notes": "Tapping left and right inside a Moment works again, hold-to-pause works, and swiping down closes it — this was broken on any Moment made from a post. Tapping somebody's name in a comment now opens their Space, not only tapping their picture. And nothing deletes on a single tap any more: every bin in holUpp asks first, and Cancel really does leave it alone.",
+  "bytes": 101638551,
+  "sha256": "02ac4a84fa24b32bbc9ac73be37657b81d68240c39c89c5e84341ccc91651e54",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.128/holUpp-1.0.128-RielOS.apk"
 }
