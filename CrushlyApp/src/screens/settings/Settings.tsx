@@ -29,7 +29,8 @@ import { useTheme, type Appearance } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import { timeAgoLong } from '../../lib/format';
 import { errorLine } from '../../lib/errors';
-import { COMPANY_NAME } from '../../lib/company';
+import { COMPANY_CONTACT_EMAIL, COMPANY_NAME, COMPANY_SITE, OWNERSHIP_EXPLANATION, OWNERSHIP_SENTENCE, SUPPORT_EMAIL } from '../../lib/company';
+import { companyRow, openOutside, visitCompanyRow } from '../../lib/companyLinks';
 import { androidUpdateStatus } from '../../lib/updateDisplay';
 import { requestHolupUpdate } from '../../components/UpdateGate';
 import type { ScreenProps } from '../../navigation/types';
@@ -43,6 +44,12 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const { appearance } = useTheme();
   const toast = useToast();
   const [confirmOut, setConfirmOut] = useState(false);
+  /* "Who owns holUpp?" — the question, answered on the screen it is asked from. */
+  const [whoOwns, setWhoOwns] = useState(false);
+  /* Null when no company website is configured — the rows simply do not appear,
+     rather than opening a browser on a domain nobody controls. */
+  const company = companyRow();
+  const visit = visitCompanyRow();
   const [busy, setBusy] = useState(false);
   const version = Constants.expoConfig?.version ?? '1.0.0';
   const versionCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
@@ -157,13 +164,100 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
       </Group>
 
+      {/*
+        Who makes this app, said where people look for it.
+
+        A product that names no company reads as either a hobby or something to
+        be suspicious of, and people look for this in Settings before they look
+        anywhere else — it is where every app they already trust puts it. Three
+        rows, and then the same sentence again under the wordmark where the eye
+        lands anyway.
+      */}
+      <Group title="Company" footer={OWNERSHIP_SENTENCE}>
+        {company ? (
+          <ListRow
+            title={company.title}
+            subtitle={company.subtitle}
+            icon="business-outline"
+            accessibilityHint={`Opens ${COMPANY_SITE} in your browser`}
+            onPress={() => void openOutside(company.url)}
+          />
+        ) : null}
+        <ListRow
+          title="Who owns holUpp?"
+          subtitle={`${COMPANY_NAME} does — tap to read how`}
+          icon="information-circle-outline"
+          onPress={() => setWhoOwns(true)}
+        />
+        {visit ? (
+          <ListRow
+            title={visit.title}
+            subtitle={visit.subtitle}
+            icon="open-outline"
+            accessibilityHint={`Opens ${visit.url} in your browser`}
+            onPress={() => void openOutside(visit.url)}
+            last
+          />
+        ) : null}
+      </Group>
+
       <Button title="Sign out" variant="secondary" onPress={() => setConfirmOut(true)} style={{ marginTop: space.xl }} />
-      <View style={{ alignItems: 'center', marginTop: space.xl, gap: 4 }}>
+      <View style={{ alignItems: 'center', marginTop: space.xl, gap: 6 }}>
         <Wordmark size={18} />
-        <Txt variant="caption" color="textMuted">
-          A {COMPANY_NAME} product
+        <Txt variant="caption" color="textMuted" align="center">
+          {OWNERSHIP_SENTENCE}
         </Txt>
+        {visit ? (
+          <Pressable
+            onPress={() => void openOutside(visit.url)}
+            accessibilityRole="link"
+            accessibilityLabel={visit.title}
+            accessibilityHint={`Opens ${visit.url} in your browser`}
+            hitSlop={8}
+          >
+            <Txt variant="caption" color="primary">
+              {visit.title}
+            </Txt>
+          </Pressable>
+        ) : null}
       </View>
+
+      <BottomSheet
+        visible={whoOwns}
+        onClose={() => setWhoOwns(false)}
+        title="Who owns holUpp?"
+        subtitle={OWNERSHIP_SENTENCE}
+      >
+        <View style={{ gap: space.md }}>
+          {OWNERSHIP_EXPLANATION.map((para) => (
+            <Txt key={para.slice(0, 24)} variant="body" color="textSecondary">
+              {para}
+            </Txt>
+          ))}
+          {visit ? (
+            <Button
+              title={`Visit ${COMPANY_NAME} ↗`}
+              icon="open-outline"
+              onPress={() => {
+                setWhoOwns(false);
+                void openOutside(visit.url);
+              }}
+            />
+          ) : null}
+          <Button
+            title="Email the company"
+            variant="secondary"
+            icon="mail-outline"
+            onPress={() => void openOutside(`mailto:${COMPANY_CONTACT_EMAIL}`)}
+          />
+          <Button
+            title="Email holUpp support"
+            variant="ghost"
+            icon="mail-outline"
+            onPress={() => void openOutside(`mailto:${SUPPORT_EMAIL}`)}
+          />
+        </View>
+      </BottomSheet>
 
       <ConfirmSheet
         visible={confirmOut}

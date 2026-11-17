@@ -213,6 +213,15 @@ function layout(page) {
       logo: { '@type': 'ImageObject', url: `${SITE}/site/holup-mark.png`, width: 401, height: 286 },
       description: 'holUpp is a social ecosystem for discovering people, sharing Moments and building connections.',
       email: 'support@holupp.net',
+      /* Who is behind the product, as structured data rather than only as a
+         sentence in the footer: a search engine should be able to answer
+         "who owns holUpp" without guessing from prose. */
+      parentOrganization: {
+        '@type': 'Organization',
+        name: 'RielOS',
+        url: 'https://rielincos.com',
+        email: 'hello@rielincos.com',
+      },
       sameAs: [`${SITE}/`],
     },
     {
@@ -388,6 +397,8 @@ ${bodyHtml}
       <div class="footer-col">
         <h4>Company</h4>
         <ul>
+          <li><a href="https://rielincos.com" rel="noopener">Our Company</a></li>
+          <li><a href="https://rielincos.com" rel="noopener">Visit RielOS ↗</a></li>
           <li><a href="/app" rel="nofollow">Continue on Web</a></li>
           <li><a href="/privacy">Privacy Policy</a></li>
           <li><a href="/terms">Terms of Service</a></li>
@@ -398,6 +409,7 @@ ${bodyHtml}
     </div>
     <div class="footer-base">
       <span>© ${new Date().getFullYear()} holUpp · holupp.net</span>
+      <span>holUpp is owned, developed and operated by <a href="https://rielincos.com" rel="noopener">RielOS</a>.</span>
       <span>Built for people, not for an algorithm.</span>
     </div>
   </div>
@@ -569,6 +581,16 @@ function aboutPage() {
       <p>Whispers are text, voice notes and photos between two people. No video in private chat — that is a decision about consent and pressure, not a missing feature.</p>
       <h3>Small and honest</h3>
       <p>Where a control can only do one of two things, it says which one it is doing. A button that silently does nothing is worse than a button that explains why it cannot.</p>
+    </div>
+
+    <div class="prose reveal" style="margin-top:34px">
+      <h2>Who owns holUpp</h2>
+      <p>holUpp is owned, developed and operated by <a href="https://rielincos.com" rel="noopener">RielOS</a>, an independent
+      technology group. One team builds the app, this website and the servers behind them — so when something is wrong,
+      there is one place to take it and one company answerable for it.</p>
+      <p>RielOS says the same thing about itself at <a href="https://rielincos.com" rel="noopener">rielincos.com</a>, and
+      writes back from <a href="mailto:hello@rielincos.com">hello@rielincos.com</a>. Support for the product itself is at
+      <a href="mailto:support@holupp.net">support@holupp.net</a>.</p>
     </div>
 
     <div class="grid g3 reveal" style="margin-top:46px">
