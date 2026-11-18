@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { FlatList, Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { useSwipeTabs } from '../../components/SwipeTabs';
-import { Avatar } from '../../components/Photo';
+import { Avatar, Photo } from '../../components/Photo';
+import { ClipThumb } from '../../components/ClipThumb';
+import { mediaUrl } from '../../api/client';
 import { IconButton } from '../../components/IconButton';
 import { EmptyState, ErrorState, LoadingBlock } from '../../components/States';
 import { useLayout } from '../../components/Layout';
@@ -160,6 +162,16 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
    * a feed and hoping they find it is the same as not answering the tap.
    */
   const open = (n: AppNotification) => {
+    // An announcement carries its own destination — the post or page it is about.
+    // Opening the notification list again would answer the tap with the thing
+    // that was just tapped.
+    if (n.linkUrl) {
+      const target = n.linkUrl;
+      const post = target.match(/^https?:\/\/(www\.)?holupp\.net\/post\/(\d+)/i);
+      if (post) return navigation.navigate('PostViewer', { postId: Number(post[2]) });
+      void Linking.openURL(target);
+      return;
+    }
     switch (n.kind) {
       case 'message':
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
@@ -253,6 +265,27 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
                     <Txt variant="small" color="textSecondary" numberOfLines={2} style={{ marginTop: 2 }}>
                       {t.detail}
                     </Txt>
+                  ) : null}
+                  {n.mediaUrl ? (
+                    <View style={{ marginTop: 8, borderRadius: 12, overflow: 'hidden', maxWidth: 300 }}>
+                      {String(n.mediaType || '').startsWith('video/') ? (
+                        <Pressable
+                          onPress={() => { const u = mediaUrl(n.mediaUrl); if (u) void Linking.openURL(u); }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Play the attached clip"
+                        >
+                          <ClipThumb uri={n.mediaUrl} style={{ width: '100%', height: 160 }} />
+                          <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="play-circle" size={44} color="#ffffff" />
+                          </View>
+                        </Pressable>
+                      ) : (
+                        <Photo uri={n.mediaUrl} style={{ width: '100%', height: 160 }} fit="cover" alt="Announcement picture" />
+                      )}
+                    </View>
+                  ) : null}
+                  {n.linkUrl ? (
+                    <Txt variant="small" color="gold" style={{ marginTop: 6 }}>{n.linkLabel || 'Open'}</Txt>
                   ) : null}
                   <Txt variant="caption" color="textMuted" style={{ marginTop: 2 }}>
                     {timeAgo(n.createdAt)} ago

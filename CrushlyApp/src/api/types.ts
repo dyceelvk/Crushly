@@ -676,6 +676,12 @@ export type AppNotification = {
   refId: number | null;
   createdAt: number;
   read: boolean;
+  /** A picture or clip attached by the Control Centre, already a media path or URL. */
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  /** Where a tap should land: a post, a profile, a page. */
+  linkUrl?: string | null;
+  linkLabel?: string | null;
   actor: { id: number; name: string; verified: boolean; photo: string | null } | null;
 };
 
