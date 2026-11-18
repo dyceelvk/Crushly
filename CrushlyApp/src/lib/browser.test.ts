@@ -27,7 +27,7 @@ test('an OAuth return names the page, not just the host', () => {
   // The app is at /app on a host whose root is the marketing site.
   assert.equal(returnUrl({ origin: 'https://www.holupp.net', pathname: '/app' }), 'https://www.holupp.net/app');
   // Deployments that serve the app at the root stay at the root.
-  assert.equal(returnUrl({ origin: 'https://holupapp.vercel.app', pathname: '/' }), 'https://holupapp.vercel.app');
+  assert.equal(returnUrl({ origin: 'https://holupp.net', pathname: '/' }), 'https://holupp.net');
   // Trailing slashes and a missing pathname both behave.
   assert.equal(returnUrl({ origin: 'https://www.holupp.net', pathname: '/app/' }), 'https://www.holupp.net/app');
   assert.equal(returnUrl({ origin: 'https://www.holupp.net' }), 'https://www.holupp.net');

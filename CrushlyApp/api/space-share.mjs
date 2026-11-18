@@ -7,7 +7,7 @@
 // address the reader actually has — and a link minted today advertises the
 // domain. Anything else in the Host header is ignored.
 const SITE = 'https://holupp.net';
-const HOSTS = new Set(['holupp.net', 'www.holupp.net', 'holupapp.vercel.app', 'mecrushly.vercel.app']);
+const HOSTS = new Set(['holupp.net', 'www.holupp.net', 'mecrushly.vercel.app']);
 /** The origin this request arrived on, if it is one of ours. */
 export function originOf(req) {
   const host = String(req?.headers?.host ?? '').toLowerCase().split(':')[0];

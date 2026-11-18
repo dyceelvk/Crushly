@@ -42,10 +42,8 @@ module.exports = () => {
           { scheme: 'https', host: 'holupp.net', pathPrefix: '/s/' },
           { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/v/' },
           { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/s/' },
-          // The address every link carried before the domain existed. An install
-          // that shipped with it must keep answering the links already out there.
-          { scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/v/' },
-          { scheme: 'https', host: 'holupapp.vercel.app', pathPrefix: '/s/' },
+          // The retired hostname is deliberately gone: it belongs to no project,
+          // so an install claiming it would only ever open a page that 404s.
         ] }],
     },
     plugins: [...base.plugins, './plugins/withSecureAndroidSigning'],

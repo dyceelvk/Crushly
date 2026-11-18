@@ -1060,15 +1060,38 @@ const ROBOTS = `# holUpp — https://holupp.net
 # download page. Signed-in surfaces are never listed as disallowed because a
 # blocked page cannot show a crawler its own noindex — and every private route
 # carries one. See /privacy for what is and is not indexed.
+#
+# Three routes are kept out on purpose: /app is the signed-in shell, and /v/,
+# /s/ and /u/ are pointers at individual members. They are reachable by whoever
+# is given the link, and they are nobody's search result.
 
 User-agent: *
 Allow: /
 Disallow: /app
 Disallow: /v/
 Disallow: /s/
+Disallow: /u/
 
 Sitemap: ${SITE}/sitemap.xml
 `;
+
+/**
+ * A file that tells a search engine to forget one URL.
+ *
+ * `noindex` already keeps a page out of an index; this asks for removal as well,
+ * which is the difference between never being listed and being removed quickly.
+ * It is not a guarantee — only the search engine decides — but it is the strongest
+ * thing a site can say. Listed here rather than typed into a dashboard so the
+ * retired hostname is asked about every time the site is built.
+ */
+const RETIRED_HOSTS = ['holupapp.vercel.app'];
+const REMOVAL = RETIRED_HOSTS.map((host) => `User-agent: *
+Disallow: /
+
+# Retired hostname ${host}: it belongs to no project and serves nothing. Ask for
+# the URL itself to be dropped rather than merely re-crawled.
+Noindex: https://${host}/
+`).join('\n');
 
 async function main() {
   try {
@@ -1118,6 +1141,11 @@ async function main() {
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
   );
   await writeFile(path.join(DIST, 'robots.txt'), ROBOTS);
+  // One removal file per retired hostname, at the path the engine looks for:
+  // /<hostname>.txt mirrors https://<hostname>/robots.txt.
+  for (const host of RETIRED_HOSTS) {
+    await writeFile(path.join(DIST, `${host}.txt`), REMOVAL);
+  }
 
 
   await writeFile(

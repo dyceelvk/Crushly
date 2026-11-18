@@ -38,7 +38,7 @@ function bucketWith(size: number | null) {
   };
 }
 
-const get = (path = '/download') => new Request(`https://media.test${path}`, { headers: { Origin: 'https://holupapp.vercel.app' } });
+const get = (path = '/download') => new Request(`https://media.test${path}`, { headers: { Origin: 'https://holupp.net' } });
 
 test('the release is served from R2 without touching B2', async () => {
   const env = { RELEASES: bucketWith(release.bytes) } as never;
@@ -71,7 +71,7 @@ test('a HEAD on R2 answers with the advertised length and no body', async () => 
 test('the download is readable from another origin', async () => {
   const env = { RELEASES: bucketWith(release.bytes) } as never;
   const res = await worker.fetch(get(), env, {} as never);
-  assert.equal(res.headers.get('access-control-allow-origin'), 'https://holupapp.vercel.app');
+  assert.equal(res.headers.get('access-control-allow-origin'), 'https://holupp.net');
 });
 
 /** Run `body` with every outbound fetch failing, so no fallback can quietly work. */

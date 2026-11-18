@@ -16,12 +16,12 @@ test('a Space with no usable handle cannot be shared, rather than sharing nothin
 test('our own links are read back, on every host we have used', () => {
   assert.equal(sharedProfile('https://holupp.net/u/jomablaq2'), 'jomablaq2');
   assert.equal(sharedProfile('https://www.holupp.net/u/jomablaq2/'), 'jomablaq2');
-  assert.equal(sharedProfile('https://holupapp.vercel.app/u/jomablaq2'), 'jomablaq2');
+  assert.equal(sharedProfile('https://mecrushly.vercel.app/u/jomablaq2'), 'jomablaq2');
   assert.equal(sharedProfile('holup://space/jomablaq2'), 'jomablaq2');
 });
 
 test('a lookalike or a stray path is not a Space link', () => {
-  for (const bad of ['https://evil.example/u/jomablaq2', 'https://holupp.net/u/1', 'https://holupp.net/v/12', 'not a url', null]) {
+  for (const bad of ['https://evil.example/u/jomablaq2', 'https://holupp.net/u/1', 'https://holupp.net/v/12', 'https://holupapp.vercel.app/u/jomablaq2', 'not a url', null]) {
     assert.equal(sharedProfile(bad as string), null, String(bad));
   }
 });

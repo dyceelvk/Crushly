@@ -38,8 +38,8 @@ test('a card on the new domain advertises the new domain, and an old link keeps 
   assert.ok(renderShare(post, null, 'https://holupp.net').includes('content="https://holupp.net/v/123"'));
   // A link shared before the domain existed still unfurls, pointing at itself,
   // rather than quietly sending the reader somewhere that does not resolve yet.
-  assert.equal(originOf({ headers: { host: 'holupapp.vercel.app' } }), 'https://holupapp.vercel.app');
-  assert.ok(renderShare(post, null, 'https://holupapp.vercel.app').includes('content="https://holupapp.vercel.app/v/123"'));
+  assert.equal(originOf({ headers: { host: 'mecrushly.vercel.app' } }), 'https://mecrushly.vercel.app');
+  assert.equal(originOf({ headers: { host: 'holupapp.vercel.app' } }), 'https://holupp.net');
   // Any other Host header is not echoed back into the page.
   assert.equal(originOf({ headers: { host: 'evil.example' } }), 'https://holupp.net');
   assert.equal(originOf({}), 'https://holupp.net');

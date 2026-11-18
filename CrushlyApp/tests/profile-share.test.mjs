@@ -28,7 +28,8 @@ test('a hidden Space says nothing about why it is hidden', () => {
 
 test('the card advertises the host it was served on', () => {
   assert.equal(originOf({ headers: { host: 'holupp.net' } }), 'https://holupp.net');
-  assert.equal(originOf({ headers: { host: 'holupapp.vercel.app' } }), 'https://holupapp.vercel.app');
+  // A retired hostname is not ours: its card would point at a page that 404s.
+  assert.equal(originOf({ headers: { host: 'holupapp.vercel.app' } }), 'https://holupp.net');
   assert.equal(originOf({ headers: { host: 'evil.example' } }), 'https://holupp.net');
   assert.ok(renderProfile({ username: 'joma' }, null, 'https://www.holupp.net').includes('content="https://www.holupp.net/u/joma"'));
 });

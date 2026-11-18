@@ -10,7 +10,7 @@
 // chooses it, it appears in their Space, and it can be changed. A sequential id
 // never appears, so a link cannot be used to walk the member list.
 const SITE = 'https://holupp.net';
-const HOSTS = new Set(['holupp.net', 'www.holupp.net', 'holupapp.vercel.app', 'mecrushly.vercel.app']);
+const HOSTS = new Set(['holupp.net', 'www.holupp.net', 'mecrushly.vercel.app']);
 const CARD_PATH = '/brand/share-card.png';
 const THEME = '#2A0F2B';
 const HANDLE = /^[a-z0-9_.]{2,30}$/;
