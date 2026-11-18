@@ -105,6 +105,11 @@ export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABAS
   // relationship cutover uses it to reject old-client relationship mutations
   // instead of allowing them to silently create, reopen, or close new state.
   global: {
+    /* The header stays on the client so requests read as one contract, but the
+       fetch wrapper below removes it from /functions/v1/ calls: those endpoints
+       declare their own Access-Control-Allow-Headers, and none of them list it,
+       so a preflight naming it is refused and the call never leaves the browser.
+       RPCs keep it, which is where the server actually looks for it. */
     headers: relationshipContractHeaders(),
     fetch: browserDayFetch((input, init) => fetch(input as RequestInfo, init)),
   },
@@ -130,9 +135,23 @@ function browserDayFetch(base: typeof fetch): typeof fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     if (Platform.OS !== 'web') return base(input, init);
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-    // Only calls that can write carry the statement. Reads stay identity-free.
-    if (!url.includes('/rest/v1/rpc/')) return base(input, init);
+    const toEdgeFunction = url.includes('/functions/v1/');
+
+    if (!toEdgeFunction && !url.includes('/rest/v1/rpc/')) return base(input, init);
+
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+
+    /* Edge functions are third parties to this app: the browser must be allowed
+       to send every header before the request is made, and the functions only
+       allow the defaults. The contract marker is not one of them, and it means
+       nothing to a function anyway, so it comes off here rather than being added
+       to a dozen allow-lists. */
+    if (toEdgeFunction) {
+      headers.delete('x-holup-contract');
+      return base(input, { ...init, headers });
+    }
+
+    // Only calls that can write carry the statement. Reads stay identity-free.
     headers.set(BROWSER_DAY_HEADER, '1');
     return base(input, { ...init, headers });
   }) as typeof fetch;
