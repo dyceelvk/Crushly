@@ -1,6 +1,7 @@
 /** Offline browser checks: mock APIs; no real accounts or uploads. */
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { openApp, enterApp } from './app-entry';
 import { join } from 'node:path';
 const API = 'https://verification-test.supabase.co';
 // A fixed 32-hex token, so the share assertions are deterministic offline.
@@ -91,7 +92,7 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
   });
 }
 test('search categories, filters and result routes work on a phone-sized web screen', async ({ page }) => {
-  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await openApp(page, '/');
   await page.getByRole('button', { name: 'Search holUpp' }).first().click({ timeout: 30000 });
   await page.getByPlaceholder('Search holUpp').fill('holiday');
   for (const label of ['Top', 'Clips', 'Photos', 'People', 'Sounds', 'Places', 'Hashtags', 'Moments']) {
@@ -117,7 +118,7 @@ test('search categories, filters and result routes work on a phone-sized web scr
   expect(Number(calls.at(-1)?.p_since)).toBeGreaterThan(Date.now() - 8 * 86400000);
 });
 test('banner chooser uploads and removes a separate banner without changing profile photos', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Edit Space' }).click();
   await expect(page.getByText('Space banner', { exact: true })).toBeVisible();
@@ -132,7 +133,7 @@ test('banner chooser uploads and removes a separate banner without changing prof
 
 test('filters keep the Apply control on a short phone', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByRole('button', { name: 'Search holUpp' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Search options' }).click();
   await page.getByRole('button', { name: 'Filters', exact: true }).click();
@@ -147,8 +148,8 @@ test('filters keep the Apply control on a short phone', async ({ page }) => {
 
 test('comments remain text-only with replies, emoji and mentions', async ({ page }) => {
   const sent: Record<string, unknown>[] = [];
-  await offline(page, [], sent); await page.goto('/');
-  await page.getByText('Crushes', { exact: true }).first().click({ timeout: 30000 });
+  await offline(page, [], sent); await openApp(page, '/');
+  await page.getByRole('tab', { name: 'Home', exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: /Comments, 1 comment/ }).first().click();
   await expect(page.getByText('Hello there', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Reply', exact: true }).first().click();
@@ -166,7 +167,7 @@ test('comments remain text-only with replies, emoji and mentions', async ({ page
 
 
 test('trends from comments lead to real searches', async ({ page }) => {
-  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await openApp(page, '/');
   await page.getByRole('button', { name: 'Search holUpp' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Search #commentfixture' }).click();
   await expect.poll(() => calls.at(-1)?.p_query).toBe('commentfixture');
@@ -174,14 +175,14 @@ test('trends from comments lead to real searches', async ({ page }) => {
 });
 
 test('a web post link opens after authentication and shows count only to non-owner', async ({ page }) => {
-  await offline(page, []); await page.goto('/?post=11');
+  await offline(page, []); await openApp(page, '/?post=11');
   await expect(page.getByText('hello #holiday').last()).toBeVisible({ timeout: 30000 });
   await expect(page.getByLabel('2 views', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /see viewers/i })).toHaveCount(0);
 });
 
 test('owner can open the viewer list', async ({ page }) => {
-  await offline(page, []); await page.goto('/?post=12');
+  await offline(page, []); await openApp(page, '/?post=12');
   await page.getByRole('button', { name: '2 views, see viewers' }).click({ timeout: 30000 });
   await expect(page.getByText('Only you can see who viewed this.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
@@ -189,7 +190,7 @@ test('owner can open the viewer list', async ({ page }) => {
 });
 
 test('verified admin can access the server-backed feature controls', async ({ page }) => {
-  await offline(page, [], [], true); await page.goto('/');
+  await offline(page, [], [], true); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByText('holUpp admin', { exact: true }).click();
@@ -209,7 +210,7 @@ test('verified admin can access the server-backed feature controls', async ({ pa
 
 
 test('a post owner can select Private while editing', async ({ page }) => {
-  const calls: Record<string, unknown>[] = []; await offline(page, [], calls); await page.goto('/?post=12');
+  const calls: Record<string, unknown>[] = []; await offline(page, [], calls); await openApp(page, '/?post=12');
   await page.getByRole('button', { name: 'More for this post' }).click({ timeout: 30000 });
   await page.getByText('Edit the words', { exact: true }).click();
   await page.getByText('Private', { exact: true }).last().click();
@@ -219,7 +220,7 @@ test('a post owner can select Private while editing', async ({ page }) => {
 
 test('external sharing copies a real public post URL', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await offline(page, []); await page.goto('/?post=11');
+  await offline(page, []); await openApp(page, '/?post=11');
   await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Copy post link' }).click();
   await expect(page.getByText('Link copied')).toBeVisible();
@@ -228,7 +229,7 @@ test('external sharing copies a real public post URL', async ({ page, context })
 
 
 test('Flow full-screen pager moves forwards and backwards', async ({ page }) => {
-  const views: number[] = []; await offline(page, [], [], false, true, views); await page.goto('/?post=11');
+  const views: number[] = []; await offline(page, [], [], false, true, views); await openApp(page, '/?post=11');
   await expect(page.getByText('Pager item 11').last()).toBeVisible({ timeout: 30000 });
   await expect.poll(() => views.includes(11), { timeout: 10000 }).toBe(true);
   expect(views).not.toContain(13);
@@ -244,7 +245,7 @@ test('Flow full-screen pager moves forwards and backwards', async ({ page }) => 
 
 
 test('ordinary members do not see an admin entry', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByText('Account & security')).toBeVisible();
@@ -253,7 +254,7 @@ test('ordinary members do not see an admin entry', async ({ page }) => {
 
 
 test('active Flow video plays and stops when moving to the next page', async ({ page }) => {
-  await offline(page, [], [], false, true, [], true); await page.goto('/?post=11');
+  await offline(page, [], [], false, true, [], true); await openApp(page, '/?post=11');
   const state = async () => page.locator('video').evaluateAll((items) => items.map((e) => ({src: e.currentSrc || e.src, paused: e.paused, time: e.currentTime, fit: getComputedStyle(e).objectFit})));
   await expect.poll(async () => (await state()).some(v => v.src.includes('/11.webm') && v.fit === 'contain' && !v.paused && v.time > 0.2), { timeout: 20000 }).toBe(true);
   await page.mouse.move(190, 420); await page.mouse.wheel(0, 850);
@@ -265,7 +266,7 @@ test('active Flow video plays and stops when moving to the next page', async ({ 
 
 test('Space bio link opens inside holUpp and own Space link copies from three dots', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
   const bioLink = page.getByRole('link', { name: /Open link to example.com\/about inside holUpp/ }).first();
   await expect(bioLink).toBeVisible({ timeout: 30000 });
@@ -280,8 +281,8 @@ test('Space bio link opens inside holUpp and own Space link copies from three do
 });
 
 test('comment link closes sheet and opens inside holUpp without punctuation', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
-  await page.getByText('Crushes', { exact: true }).first().click({ timeout: 30000 });
+  await offline(page, []); await openApp(page, '/');
+  await page.getByRole('tab', { name: 'Home', exact: true }).last().click({ timeout: 30000 });
   await page.getByRole('button', { name: /Comments, 1 comment/ }).first().click();
   await page.getByRole('link', { name: 'Open link to example.com/comment inside holUpp' }).click();
   await expect(page.getByText('Inside holUpp', { exact: true })).toBeVisible();
@@ -289,8 +290,8 @@ test('comment link closes sheet and opens inside holUpp without punctuation', as
 });
 
 test('post composer link control inserts a web address', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
-  await page.getByRole('button', { name: 'Create post' }).first().click({ timeout: 30000 });
+  await offline(page, []); await openApp(page, '/');
+  await page.getByRole('button', { name: 'Create a post' }).first().click({ timeout: 30000 });
   await page.getByRole('button', { name: /Post\. Words, photos and clips/ }).click();
   await page.getByRole('button', { name: 'Add link to post' }).click();
   await page.getByLabel('Web address').fill('example.com/path');
@@ -300,10 +301,10 @@ test('post composer link control inserts a web address', async ({ page }) => {
 
 
 test('Space has working app navigation and real stats', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({timeout:30000});
   await expect(page.getByText('Post likes', {exact:false})).toBeVisible();
-  for (const label of ['Home', 'Connections', 'Create post', 'Whispers', 'Notifications']) {
+  for (const label of ['Home', 'Connections', 'Create a post', 'Whispers', 'Notifications']) {
     await expect(page.getByRole('button', {name: label, exact:true})).toBeVisible();
   }
   await page.getByRole('button', {name:'Connections', exact:true}).click();
@@ -311,7 +312,7 @@ test('Space has working app navigation and real stats', async ({ page }) => {
 });
 
 test('owner can open the approved Homies list', async ({ page }) => {
-  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({timeout:30000});
   await page.getByRole('button', { name: '2 Homies. View people' }).click();
   await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
@@ -319,8 +320,10 @@ test('owner can open the approved Homies list', async ({ page }) => {
 });
 
 test('Connections is one bottom button, not a swipe destination in Home', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
-  await expect(page.getByRole('tab', { name: 'Crushes', exact: true })).toBeVisible({timeout:30000});
+  await offline(page, []); await openApp(page, '/');
+  // The bottom bar's first tab is Home now — it was Crushes when this was written,
+  // and a renamed tab is indistinguishable from a broken app to a selector.
+  await expect(page.getByRole('tab', { name: 'Home', exact: true })).toBeVisible({timeout:30000});
   await page.getByRole('tab', { name: 'Connections', exact: true }).last().click();
   await expect(page.getByRole('tab', { name: 'Connections', exact: true }).first()).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Discovery', exact: true })).toHaveCount(0);
@@ -331,7 +334,7 @@ test('Connections is one bottom button, not a swipe destination in Home', async 
 
 test('Crushes clip has a sound button, sharing, and picture opens Flow', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await offline(page, [], [], false, false, [], true, true); await page.goto('/');
+  await offline(page, [], [], false, false, [], true, true); await openApp(page, '/');
   const clip = page.getByRole('button', { name: 'Open Ada’s clip in Flow' });
   const sound = page.getByRole('button', {name:'Unmute Ada’s clip'});
   await expect(clip).toBeVisible({timeout:30000});
@@ -368,7 +371,7 @@ test('Crushes clip has a sound button, sharing, and picture opens Flow', async (
 
 test('Crushes controls remain tappable on a narrow phone', async ({ page }) => {
   await page.setViewportSize({width:320,height:720});
-  await offline(page, [], [], false, false, [], true, true); await page.goto('/');
+  await offline(page, [], [], false, false, [], true, true); await openApp(page, '/');
   const mute=page.getByRole('button', {name:'Unmute Ada’s clip'});
   const share=page.getByRole('button', {name:'Share this post'}).first();
   await expect(mute).toBeVisible({timeout:30000});
@@ -380,7 +383,7 @@ test('Crushes controls remain tappable on a narrow phone', async ({ page }) => {
 });
 
 test('Space relationship list is a full screen with a back button and real suggestions', async ({ page }) => {
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await page.getByRole('button', {name:'3 Add Ups. View people'}).click();
   await expect(page.getByRole('button', {name:'Back to Space'})).toBeVisible();
@@ -391,7 +394,7 @@ test('Space relationship list is a full screen with a back button and real sugge
 });
 
 test('Moment hold preserves video, swipe up opens activity and down closes', async ({ page }) => {
-  await offline(page, [], [], false, false, [], false, false, true); await page.goto('/');
+  await offline(page, [], [], false, false, [], false, false, true); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await page.getByRole('tab', {name:'Moments', exact:true}).click();
   await page.getByRole('button', {name:/Play Offline test’s Moment/}).first().click();
@@ -421,7 +424,7 @@ test('Moment hold preserves video, swipe up opens activity and down closes', asy
 
 test('a private relationship list shows the access notice without requesting identities', async ({ page }) => {
   const calls: Record<string, unknown>[] = [];
-  await offline(page, calls, [], false, false, [], false, false, false, true); await page.goto('/');
+  await offline(page, calls, [], false, false, [], false, false, false, true); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await page.getByRole('button', {name:'3 Add Ups. View people'}).click();
   await expect(page.getByText('Offline test has limited who can view their Add Ups.')).toBeVisible();
@@ -430,7 +433,7 @@ test('a private relationship list shows the access notice without requesting ide
 });
 
 test('Added Up opens a real list and its visibility setting is saved', async ({page}) => {
-  const calls: Record<string, unknown>[] = []; await offline(page,calls); await page.goto('/');
+  const calls: Record<string, unknown>[] = []; await offline(page,calls); await openApp(page, '/');
   await page.getByText('Space',{exact:true}).last().click({timeout:30000});
   await page.getByRole('button',{name:'4 Added Up. View people'}).click();
   await expect(page.getByRole('button',{name:'Open Ada’s Space'})).toBeVisible();
@@ -442,7 +445,7 @@ test('Added Up opens a real list and its visibility setting is saved', async ({p
 });
 
 test('Discover suggestion Add Up calls the real follow action and reflects its result', async ({page}) => {
-  const calls: Record<string, unknown>[] = []; await offline(page,calls); await page.goto('/');
+  const calls: Record<string, unknown>[] = []; await offline(page,calls); await openApp(page, '/');
   await page.getByText('Space',{exact:true}).last().click({timeout:30000});
   await page.getByRole('button',{name:'3 Add Ups. View people'}).click();
   await page.getByRole('button',{name:'Add Up Ada'}).click();
@@ -453,7 +456,7 @@ test('Discover suggestion Add Up calls the real follow action and reflects its r
 
 test('holding a text or photo Moment freezes its progress until released', async ({page}) => {
   test.setTimeout(35000);
-  await offline(page, [], [], false, false, [], false, false, true); await page.goto('/');
+  await offline(page, [], [], false, false, [], false, false, true); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await page.getByRole('tab', {name:'Moments', exact:true}).click();
   await page.getByRole('button', {name:/Play Offline test’s Moment/}).first().click();
@@ -486,8 +489,8 @@ async function dragTouch(page: Page, fromX: number, fromY: number, toX: number, 
 }
 
 test('touch swipes move Home and Whispers pages; taps and bottom navigation still work', async ({page}) => {
-  await offline(page, []); await page.goto('/');
-  await expect(page.getByRole('tab', {name:'Crushes', exact:true})).toBeVisible({timeout:30000});
+  await offline(page, []); await openApp(page, '/');
+  await expect(page.getByRole('tab', {name:'Home', exact:true})).toBeVisible({timeout:30000});
   await expect(page.getByRole('button', {name:/Comments, 1 comment/}).first()).toBeVisible();
   await dragTouch(page, 300, 430, 70, 430);
   await expect(page.getByText('From everyone', {exact:true})).toBeVisible();
@@ -504,11 +507,11 @@ test('touch swipes move Home and Whispers pages; taps and bottom navigation stil
   await page.getByRole('tab', {name:'Connections', exact:true}).click();
   await dragTouch(page, 310, 805, 75, 805);
   await expect(page.getByRole('tab', {name:'Homies', exact:true})).toBeVisible();
-  await expect(page.getByRole('button', {name:'Create post', exact:true})).toBeVisible();
+  await expect(page.getByRole('button', {name:'Create a post', exact:true})).toBeVisible();
 });
 
 test('touch swipes switch notification and comment tabs without closing the sheet', async ({page}) => {
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByRole('button', {name:'Notifications', exact:true}).first().click({timeout:30000});
   await expect(page.getByRole('tab', {name:'Yours', exact:true})).toBeVisible();
   const yours = await page.getByRole('tab', {name:'Yours', exact:true}).boundingBox();
@@ -529,7 +532,7 @@ test('touch swipes switch notification and comment tabs without closing the shee
 });
 
 test('search and Space navigation tabs support touch swipes without changing settings', async ({page}) => {
-  const calls: Record<string, unknown>[] = []; await offline(page, calls); await page.goto('/');
+  const calls: Record<string, unknown>[] = []; await offline(page, calls); await openApp(page, '/');
   await page.getByRole('button', {name:'Search holUpp'}).first().click({timeout:30000});
   await page.getByPlaceholder('Search holUpp').fill('holiday');
   await expect(page.getByRole('tab', {name:'Top', exact:true})).toBeVisible();
@@ -537,8 +540,8 @@ test('search and Space navigation tabs support touch swipes without changing set
   await expect.poll(() => calls.at(-1)?.p_category).toBe('clips');
   await page.getByRole('button', {name:'Back', exact:true}).click();
   await page.getByText('Space', {exact:true}).last().click();
-  await expect(page.getByRole('tab', {name:'Crushes', exact:true})).toBeVisible();
-  const tab = await page.getByRole('tab', {name:'Crushes', exact:true}).boundingBox();
+  await expect(page.getByRole('tab', {name:'Home', exact:true})).toBeVisible();
+  const tab = await page.getByRole('tab', {name:'Home', exact:true}).boundingBox();
   if (!tab) throw Error('Space tab missing');
   await dragTouch(page, 300, tab.y + 20, 70, tab.y + 20);
   await expect(page.getByText('No Moments right now')).toBeVisible();
@@ -548,7 +551,7 @@ test('search and Space navigation tabs support touch swipes without changing set
 
 
 test('a horizontal clip rail keeps its own touch scroll instead of switching Home tabs', async ({page}) => {
-  await offline(page, [], [], false, false, [], false, false, false, false, true); await page.goto('/');
+  await offline(page, [], [], false, false, [], false, false, false, false, true); await openApp(page, '/');
   await page.getByRole('tab', {name:'Discovery', exact:true}).click({timeout:30000});
   const clip = page.getByRole('button', {name:/Rail clip 0/});
   await expect(clip).toBeVisible();
@@ -563,7 +566,7 @@ test('a horizontal clip rail keeps its own touch scroll instead of switching Hom
 
 
 test('Circle chat draft survives swiping to posts and back', async ({page}) => {
-  await offline(page, [], [], false, false, [], false, false, false, false, false, true); await page.goto('/');
+  await offline(page, [], [], false, false, [], false, false, false, false, false, true); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await page.getByRole('tab', {name:'Circles', exact:true}).click();
   await page.getByText('Offline room', {exact:true}).first().click();
@@ -580,7 +583,7 @@ test('Circle chat draft survives swiping to posts and back', async ({page}) => {
 test('notification categories swipe independently while the category rail still scrolls', async ({page}) => {
   const n = (id: number, kind: string, name: string) => ({id, kind, actor:{...person, id: id + 2, name}, body:'', refId: 11, read: true, createdAt:Date.now()});
   await offline(page, [], [], false, false, [], false, false, false, false, false, false, [n(1,'message','Whisperer'), n(2,'post_comment','Commenter'), n(3,'crush','Adder'), n(4,'keep','Homie'), n(5,'moment_reaction','Momenter'), n(6,'circle_joined','Circler')]);
-  await page.goto('/');
+  await openApp(page, '/');
   await page.getByRole('button', {name:'Notifications', exact:true}).first().click({timeout:30000});
   await expect(page.getByText('Whisperer sent you a Whisper.')).toBeVisible();
   await expect(page.getByText('Commenter commented on your post.')).toBeVisible();
@@ -604,20 +607,20 @@ test('notification categories swipe independently while the category rail still 
 });
 
 test('Space navigation swipe goes to Whispers without opening Create', async ({page}) => {
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await expect(page.getByRole('button', {name:'Whispers', exact:true})).toBeVisible();
   const nav = await page.getByRole('button', {name:'Whispers', exact:true}).boundingBox();
   if (!nav) throw Error('Space navigation missing');
   await dragTouch(page, 65, nav.y + nav.height / 2, 310, nav.y + nav.height / 2);
   await expect(page.getByPlaceholder('Search your Whispers')).toBeVisible();
-  await expect(page.getByRole('button', {name:'Create post', exact:true})).toBeVisible();
+  await expect(page.getByRole('button', {name:'Create a post', exact:true})).toBeVisible();
 });
 
 test('scrolling and swiping on a privacy selector never changes the setting', async ({page}) => {
   const privacyWrites: string[] = [];
   page.on('request', req => { if (req.method() === 'PATCH' && new URL(req.url()).pathname === '/rest/v1/privacy') privacyWrites.push(req.postData() || ''); });
-  await offline(page, []); await page.goto('/');
+  await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', {exact:true}).last().click({timeout:30000});
   await page.getByRole('button', {name:'Settings'}).click();
   await page.getByText('Privacy & visibility', {exact:true}).first().click();
@@ -636,7 +639,7 @@ test('scrolling and swiping on a privacy selector never changes the setting', as
 
 
 test('Homie requests are explicit and pending requests can be withdrawn', async ({page}) => {
- const calls: Record<string, unknown>[]=[]; await offline(page,calls); await page.goto('/');
+ const calls: Record<string, unknown>[]=[]; await offline(page,calls); await openApp(page, '/');
  await page.getByText('Space',{exact:true}).last().click({timeout:30000});
  await page.getByRole('button',{name:'View Homie requests'}).click();
  await expect(page.getByText('Homie requests',{exact:true}).last()).toBeVisible();
@@ -655,7 +658,7 @@ test('Homie requests are explicit and pending requests can be withdrawn', async 
 });
 
 test('Homies tab shows accepted people and requests without a remove button', async ({page}) => {
- const calls: Record<string, unknown>[]=[]; await offline(page,calls); await page.goto('/');
+ const calls: Record<string, unknown>[]=[]; await offline(page,calls); await openApp(page, '/');
  await page.getByRole('tab',{name:'Whispers',exact:true}).click({timeout:30000});
  await page.getByRole('tab',{name:'Homies',exact:true}).click();
  await expect(page.getByText('Your Homies',{exact:true})).toBeVisible();
@@ -671,7 +674,7 @@ test('Homies tab shows accepted people and requests without a remove button', as
 // work with no name on it, which is the one thing this feature must never do.
 test('the share sheet offers Save clip only when the clip has a marked copy', async ({ page }) => {
   // A clip with no marked copy: the row is absent, not disabled.
-  await offline(page, [], [], false, false, [], true); await page.goto('/?post=11');
+  await offline(page, [], [], false, false, [], true); await openApp(page, '/?post=11');
   await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
   await expect(page.getByRole('button', { name: 'Copy post link' })).toBeVisible();
   expect(await page.getByRole('button', { name: 'Save this clip to your device' }).count()).toBe(0);
@@ -682,7 +685,7 @@ test('the share sheet offers Save clip for a clip that has one', async ({ page }
   await offline(page, [], [], false, false, [], /*video*/ true, /*feedVideo*/ true,
     /*ownMoment*/ false, /*denyLists*/ false, /*railClips*/ false, /*room*/ false,
     /*notifications*/ [], /*markedCopy*/ true);
-  await page.goto('/?post=11');
+  await openApp(page, '/?post=11');
   await page.getByRole('button', { name: 'Share this post' }).first().click({ timeout: 30000 });
   const save = page.getByRole('button', { name: 'Save this clip to your device' });
   await expect(save).toBeVisible();

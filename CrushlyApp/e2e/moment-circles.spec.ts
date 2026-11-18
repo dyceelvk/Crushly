@@ -12,6 +12,7 @@
  * account. Screenshots land in `test-results/` for a human to look at.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { openApp } from './app-entry';
 
 const API = 'https://verification-test.supabase.co';
 const MEDIA = 'https://crushly-media.dyceelvk.workers.dev';
@@ -107,7 +108,7 @@ async function offline(page: Page) {
 
 async function signedIn(page: Page) {
   await offline(page);
-  await page.goto('/');
+  await openApp(page, \'/\');
   await page.waitForTimeout(2500);
 
   /*

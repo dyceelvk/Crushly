@@ -8,6 +8,7 @@
  * kind of thing a screenshot cannot prove but a bounding box can.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { openApp } from './app-entry';
 
 const API = 'https://verification-test.supabase.co';
 
@@ -138,17 +139,7 @@ async function signedIn(page: Page, notifications: unknown[] = []) {
  * in the same place either way, so this presses the pixels.
  */
 async function openConnections(page: Page) {
-  await page.goto('/');
-  // Two doors stand between a browser and the app: the one-time web notice, and
-  // the intro's "Tap anywhere to begin". Both are real screens a person clears,
-  // and neither existed when this test was written, so it was pressing a tab it
-  // could never reach.
-  const keepBrowsing = page.getByRole('button', { name: 'Keep browsing holUpp in this browser' });
-  if (await keepBrowsing.isVisible().catch(() => false)) await keepBrowsing.click();
-  await page.waitForTimeout(300);
-  const begin = page.getByText('Tap anywhere to begin', { exact: false }).first();
-  if (await begin.isVisible().catch(() => false)) await begin.click();
-  await page.waitForTimeout(1500);
+  await openApp(page);
   const tab = page.getByText('Connections', { exact: true }).first();
   await tab.waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForTimeout(1500);
