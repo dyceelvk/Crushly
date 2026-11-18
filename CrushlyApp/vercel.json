@@ -9,6 +9,10 @@
       "destination": "/api/post-share?id=:id"
     },
     {
+      "source": "/u/:id",
+      "destination": "/api/profile-share?id=:id"
+    },
+    {
       "source": "/s/:id",
       "destination": "/api/space-share?id=:id"
     },

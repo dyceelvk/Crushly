@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
 import { LinkText } from '../../components/LinkText';
 import { copySpaceLink, shareSpaceLink } from '../../lib/spaceShareActions';
+import { copyProfileLink, shareProfileLink } from '../../lib/profileShareActions';
 import { Photo, Avatar, OnlineDot } from '../../components/Photo';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
@@ -378,9 +379,30 @@ export function SpaceScreen({
 
   const lifestyle = lifestyleFacts(p);
 
+  /* Two links, because they answer two different questions.
+     `holupp.net/u/<handle>` is the public one: it opens a real page with the
+     member's name, bio and seal, and it is the link to post in a group chat.
+     The token link is the narrower one — it works even when the Space is not
+     open to everyone, and revoking it kills every copy in circulation. */
+  const sharePublic = () => { void shareProfileLink(p.username || '').then((result) => { if (result === 'copied') toast({ kind: 'success', title: 'Link copied' }); }).catch(() => toast({ kind: 'error', title: 'Couldn’t share link', message: 'This Space needs a handle first.' })); };
+  const copyPublic = () => { void copyProfileLink(p.username || '').then(() => toast({ kind: 'success', title: 'Link copied' })).catch(() => toast({ kind: 'error', title: 'Couldn’t copy link', message: 'This Space needs a handle first.' })); };
+
   const spaceActions = [
-    { label: 'Share Space', icon: <Ionicons name="share-outline" size={20} color={colors.textSecondary} />, immediateOnWeb: true, onPress: () => { void shareSpaceLink(p.id).then((result) => { if (result === 'copied') toast({ kind: 'success', title: 'Link copied' }); }).catch(() => toast({ kind: 'error', title: 'Couldn’t share link' })); } },
-    { label: 'Copy Space link', icon: <Ionicons name="copy-outline" size={20} color={colors.textSecondary} />, hint: 'Space privacy still applies', immediateOnWeb: true, onPress: () => { void copySpaceLink(p.id).then(() => toast({ kind: 'success', title: 'Link copied' })).catch(() => toast({ kind: 'error', title: 'Couldn’t copy link' })); } },
+    { label: 'Share Space', icon: <Ionicons name="share-outline" size={20} color={colors.textSecondary} />, immediateOnWeb: true, onPress: sharePublic },
+    { label: 'Copy Space link', icon: <Ionicons name="copy-outline" size={20} color={colors.textSecondary} />, hint: p.username ? `holupp.net/u/${p.username}` : 'Space privacy still applies', immediateOnWeb: true, onPress: copyPublic },
+    ...(p.username ? [{
+      label: 'Send a private link',
+      icon: <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} />,
+      hint: 'Works even if this Space is not open to everyone',
+      immediateOnWeb: true,
+      onPress: () => { void copySpaceLink(p.id).then(() => toast({ kind: 'success', title: 'Private link copied' })).catch(() => toast({ kind: 'error', title: 'Couldn’t copy link' })); },
+    }] : []),
+    ...(p.username ? [{
+      label: 'Share private link',
+      icon: <Ionicons name="paper-plane-outline" size={20} color={colors.textSecondary} />,
+      immediateOnWeb: true,
+      onPress: () => { void shareSpaceLink(p.id).then((result) => { if (result === 'copied') toast({ kind: 'success', title: 'Private link copied' }); }).catch(() => toast({ kind: 'error', title: 'Couldn’t share link' })); },
+    }] : []),
   ];
 
   return (
