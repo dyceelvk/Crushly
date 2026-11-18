@@ -98,11 +98,28 @@ function resolveClientIp(req: Request, socketIp: string | null): { ip: string | 
   const chain = (req.headers.get('x-forwarded-for') ?? '')
     .split(',').map((s) => s.trim()).filter(isIp);
 
-  const trustedHop = socketIp != null && TRUSTED_PROXY_CIDRS.some((c) => inCidr(socketIp, c));
+  // What the runtime actually reports, measured from production on 18 Nov 2026:
+  //
+  //   x-forwarded-for: 136.66.110.14, 136.66.110.14, 99.82.171.78
+  //   cf-connecting-ip: 136.66.110.14      <- the real client
+  //   socketIp: 0.0.0.0                     <- the edge's own address
+  //
+  // The tail of x-forwarded-for was 99.82.171.78 (AS16509 Amazon, Seattle), i.e.
+  // the platform's egress, which is why a member in Lagos was recorded as being
+  // in Seattle. cf-connecting-ip matched the real egress address exactly, so it
+  // is the header worth believing.
 
-  if (trustedHop) {
-    const cf = req.headers.get('cf-connecting-ip')?.trim() ?? null;
-    if (isIp(cf)) return { ip: cf, via: 'cf-connecting-ip (trusted hop)' };
+  // 1. The edge's own view of the client, if it gives one.
+  const cf = req.headers.get('cf-connecting-ip')?.trim() ?? null;
+  if (isIp(cf) && !isPrivate(cf)) return { ip: cf, via: 'cf-connecting-ip' };
+
+  // 2. The socket, when it is a real client address rather than a placeholder.
+  if (socketIp && isIp(socketIp) && !isPrivate(socketIp)) {
+    return { ip: socketIp, via: 'socket' };
+  }
+
+  // 3. A trusted hop may have told us directly.
+  if (socketIp != null && TRUSTED_PROXY_CIDRS.some((c) => inCidr(socketIp, c))) {
     for (let i = chain.length - 1; i >= 0; i -= 1) {
       if (!TRUSTED_PROXY_CIDRS.some((c) => inCidr(chain[i], c))) {
         return { ip: chain[i], via: 'x-forwarded-for (walked past trusted hops)' };
@@ -110,10 +127,13 @@ function resolveClientIp(req: Request, socketIp: string | null): { ip: string | 
     }
   }
 
-  if (chain.length > 0) return { ip: chain[chain.length - 1], via: 'x-forwarded-for (platform hop)' };
+  // 4. Last resort. The tail is the platform's word, but it is the platform's
+  //    *egress* here, so it is recorded with a `via` that says so and the row is
+  //    filtered out of regional reporting below.
+  if (chain.length > 0) return { ip: chain[chain.length - 1], via: 'x-forwarded-for (platform egress — unreliable)' };
   const real = req.headers.get('x-real-ip')?.trim() ?? null;
   if (isIp(real)) return { ip: real, via: 'x-real-ip' };
-  return { ip: socketIp, via: 'socket' };
+  return { ip: socketIp, via: 'socket (unavailable)' };
 }
 
 async function geolocate(ip: string): Promise<Geo | null> {
@@ -192,6 +212,26 @@ Deno.serve(async (req, info) => {
     : null;
   const { ip, via } = resolveClientIp(req, socketIp);
   const action = body.action ?? 'detect';
+
+  // Temporary: report exactly what this runtime received, so the hop that
+  // carries the real client address is identified from evidence rather than
+  // guessed from documentation. Removed once resolveClientIp is settled.
+  if (action === 'diagnose') {
+    if (!role || !['super_admin', 'security_admin', 'fraud_investigator'].includes(role)) {
+      return json({ error: 'forbidden' }, 403);
+    }
+    const chain = (req.headers.get('x-forwarded-for') ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+    return json({
+      socketIp,
+      via: resolveClientIp(req, socketIp).via,
+      resolved: resolveClientIp(req, socketIp).ip,
+      xForwardedFor: chain,
+      xRealIp: req.headers.get('x-real-ip'),
+      cfConnectingIp: req.headers.get('cf-connecting-ip'),
+      forwarded: req.headers.get('forwarded'),
+      trustedProxyCidrs: TRUSTED_PROXY_CIDRS,
+    });
+  }
 
   if (action === 'lookup') {
     if (!role || !['super_admin', 'security_admin', 'fraud_investigator'].includes(role)) {
