@@ -1,0 +1,194 @@
+-- 20261118160000_web_write_guard
+--
+-- Makes the 24-hour browser rule *true*, not merely drawn.
+--
+-- 20261118140000_web_clock records when somebody first used the browser and
+-- says when their day is over. That was only a verdict; nothing read it. A
+-- guard that lives in the client is a suggestion — clearing site data, or
+-- calling the RPC from a console, goes straight past it. So the refusal happens
+-- here, in the function that writes.
+--
+-- How the server knows it is a browser
+-- ------------------------------------
+-- It is told, by the one header the browser client sets
+-- (`x-holupp-browser-day`, added in `api/client.ts`) and PostgREST exposes as
+-- `request.headers`. Being told is the weak point, and it is contained by only
+-- ever *adding* restriction: the header can make a request refused, never
+-- allowed. A native app does not send it and is unaffected. A browser that
+-- omits it gains nothing new, because its first visit was already recorded by
+-- `holup_web_open` — the clock exists whether or not a later request admits
+-- where it came from. Sending an explicit `0` is treated the same as sending
+-- `1`; only absence means "not a browser".
+--
+-- What is blocked
+-- ---------------
+-- Writing: posts, Moments, messages, Circle messages, Circles, members, plus
+-- the two recording calls a browser fires while merely reading
+-- (`record_post_view`, `record_space_view`) — the read-only session should not
+-- keep writing to tables either.
+--
+-- What is never blocked: reads, and anything that removes. A member whose day
+-- is over can still delete their own post, leave a Circle, or block somebody.
+-- Taking away the ability to retreat would be indefensible.
+--
+-- The original bodies are preserved as `<name>__native`; each wrapper asserts
+-- and then calls through, so behaviour is identical once the guard passes.
+
+-- --------------------------------------------------------------- request state
+create or replace function public.holup_request_is_browser()
+returns boolean
+language plpgsql
+stable
+set search_path to 'public'
+as $function$
+declare
+  hdrs json;
+begin
+  begin
+    hdrs := nullif(current_setting('request.headers', true), '')::json;
+  exception when others then
+    hdrs := null;
+  end;
+  if hdrs is null then
+    return false;
+  end if;
+  return (hdrs ->> 'x-holupp-browser-day') is not null;
+end $function$;
+
+grant execute on function public.holup_request_is_browser() to authenticated, service_role;
+
+/**
+ * Whether writing is allowed right now, and why not.
+ *
+ * Null when allowed. `web_day_over` when this browser's 24 hours are spent.
+ *
+ * Deliberately does not create a clock row: a read-only guard should not write.
+ * A browser that never called `holup_web_open` has no day to run out of, and the
+ * next app load starts one.
+ */
+create or replace function public.holup_web_write_block()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me       bigint := public.me_id();
+  row      public.holup_web_sessions;
+  limit_ms constant bigint := 24::bigint * 3600000;
+begin
+  if me is null or not public.holup_request_is_browser() then
+    return null;
+  end if;
+  select * into row from public.holup_web_sessions where profile_id = me;
+  if not found then
+    return null;
+  end if;
+  if public.now_ms() - row.first_seen_at < limit_ms then
+    return null;
+  end if;
+  return jsonb_build_object(
+    'code', 'web_day_over',
+    'message', 'Your browser day is over. You can still read everything here — posting, Moments, clips and Whispers are in the app.',
+    'firstSeenAt', row.first_seen_at
+  );
+end $function$;
+
+revoke all on function public.holup_web_write_block() from public, anon;
+grant execute on function public.holup_web_write_block() to authenticated, service_role;
+
+-- One refusal, so every guarded function answers in the same words and the same
+-- HTTP status, and the app only has to recognise one code.
+create or replace function public.holup_assert_web_can_write()
+returns void
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  reason jsonb := public.holup_web_write_block();
+begin
+  if reason is not null then
+    perform public.crushly_fail(403, 'web_day_over', reason ->> 'message');
+  end if;
+end $function$;
+
+revoke all on function public.holup_assert_web_can_write() from public, anon;
+grant execute on function public.holup_assert_web_can_write() to authenticated, service_role;
+
+-- ============================================================ guarded writes
+--
+-- Idempotent: a name is only wrapped once, so re-running this file cannot wrap a
+-- wrapper.
+
+do $$
+declare
+  pairs constant text[][] := array[
+    array['create_post', 'p_body text default ''''::text, p_media_url text default null::text, p_audience text default ''connections''::text, p_circle_id bigint default null::bigint, p_edit jsonb default null::jsonb', 'p_body, p_media_url, p_audience, p_circle_id, p_edit'],
+    array['create_post_with_options', 'p_body text, p_media_url text, p_audience text, p_circle_id bigint, p_edit jsonb, p_comments_enabled boolean', 'p_body, p_media_url, p_audience, p_circle_id, p_edit, p_comments_enabled'],
+    array['create_post_with_location', 'p_body text, p_media_url text, p_audience text, p_circle_id bigint, p_edit jsonb, p_comments_enabled boolean, p_location text', 'p_body, p_media_url, p_audience, p_circle_id, p_edit, p_comments_enabled, p_location'],
+    array['create_moment', 'p_kind text default ''text''::text, p_body text default ''''::text, p_media_url text default null::text, p_style text default ''noir''::text, p_audience text default ''everyone''::text, p_edit jsonb default null::jsonb', 'p_kind, p_body, p_media_url, p_style, p_audience, p_edit'],
+    array['create_moment', 'p_kind text, p_body text, p_media_url text, p_style text, p_audience text, p_duration_ms bigint, p_edit jsonb', 'p_kind, p_body, p_media_url, p_style, p_audience, p_duration_ms, p_edit'],
+    array['send_message', 'p_conversation_id bigint, p_kind text default ''text''::text, p_body text default ''''::text, p_media_url text default null::text, p_meta jsonb default ''{}''::jsonb', 'p_conversation_id, p_kind, p_body, p_media_url, p_meta'],
+    array['open_conversation', 'p_target_id bigint', 'p_target_id'],
+    array['send_circle_message', 'p_circle_id bigint, p_body text default ''''::text, p_media_url text default null::text, p_kind text default ''text''::text, p_edit jsonb default null::jsonb', 'p_circle_id, p_body, p_media_url, p_kind, p_edit'],
+    array['create_circle', 'p_name text, p_about text default ''''::text, p_member_ids bigint[] default ''{}''::bigint[]', 'p_name, p_about, p_member_ids'],
+    array['add_circle_member', 'p_circle_id bigint, p_member_id bigint', 'p_circle_id, p_member_id'],
+    array['record_space_view', 'p_member_id bigint', 'p_member_id'],
+    array['record_post_view', 'p_post_id bigint, p_dwell_ms integer, p_completed boolean default false, p_position integer default null::integer', 'p_post_id, p_dwell_ms, p_completed, p_position']
+  ];
+  i integer;
+  fn text;
+  sig text;
+  call_args text;
+  res text;
+  ident text;
+begin
+  for i in 1 .. array_length(pairs, 1) loop
+    fn := pairs[i][1];
+    sig := pairs[i][2];
+    call_args := pairs[i][3];
+
+    select pg_get_function_result(p.oid), pg_get_function_identity_arguments(p.oid) into res, ident
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = fn
+       and pg_get_function_identity_arguments(p.oid) = regexp_replace(sig, ' default [^,]+', '', 'gi')
+     limit 1;
+
+    if res is null then
+      raise notice 'web_write_guard: % (%). skipped — signature not found', fn, sig;
+      continue;
+    end if;
+
+    if exists (select 1 from pg_proc q join pg_namespace nn on nn.oid = q.pronamespace
+                where nn.nspname = 'public' and q.proname = fn || '__native') then
+      -- Already wrapped. Drop the wrapper first so a changed signature can be
+      -- replaced cleanly.
+      execute format('drop function if exists public.%I(%s)', fn, ident);
+    else
+      execute format('alter function public.%I(%s) rename to %I', fn, ident, fn || '__native');
+    end if;
+
+    execute format(
+      'create or replace function public.%I(%s) returns %s language plpgsql security definer set search_path to ''public'' as $f$ begin perform public.holup_assert_web_can_write(); return public.%I__native(%s); end $f$;',
+      fn, sig, res, fn, call_args);
+  end loop;
+end $$;
+
+-- The wrappers are new objects, so they need the grants the originals had.
+grant execute on function public.create_post(text, text, text, bigint, jsonb) to authenticated, service_role;
+grant execute on function public.create_post_with_options(text, text, text, bigint, jsonb, boolean) to authenticated, service_role;
+grant execute on function public.create_post_with_location(text, text, text, bigint, jsonb, boolean, text) to authenticated, service_role;
+grant execute on function public.create_moment(text, text, text, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.create_moment(text, text, text, text, text, bigint, jsonb) to authenticated, service_role;
+grant execute on function public.send_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.open_conversation(bigint) to authenticated, service_role;
+grant execute on function public.send_circle_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.create_circle(text, text, bigint[]) to authenticated, service_role;
+grant execute on function public.add_circle_member(bigint, bigint) to authenticated, service_role;
+grant execute on function public.record_space_view(bigint) to authenticated, service_role;
+grant execute on function public.record_post_view(bigint, integer, boolean, integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';

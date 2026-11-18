@@ -49,7 +49,7 @@ import { timeAgo } from '../../lib/format';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ScreenProps, RootStackParamList } from '../../navigation/types';
-import { keys, useMe, useMoments, useMyCircles, useSpaceBanner } from '../../api/hooks';
+import { keys, useMe, useMoments, useMyCircles, useSpaceBanner, useSpaceViewCount } from '../../api/hooks';
 import type { Me } from '../../api/types';
 
 /**
@@ -274,6 +274,10 @@ export function SpaceScreen({
     queryKey: ['holup-homie-stats', meQ.data?.id, spaceId], queryFn: () => homieStats(spaceId),
     enabled: !!meQ.data?.id && spaceId > 0, staleTime: 0, refetchInterval: 30_000,
   });
+  /* How many people opened this Space. Only ever asked for your own: the
+     database would refuse the question about somebody else, so the app does not
+     ask it. The number is a door to the full list, not a statistic to admire. */
+  const spaceViews = useSpaceViewCount(0, mine && !!meQ.data?.id);
   const visibilityMutation = useMutation({ mutationFn: setAddUpListVisibility,
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] }); toast({kind: 'success', title: 'Privacy updated'}); },
     onError: (e) => toast({kind:'error', title:'Couldn’t update privacy', message:(e as Error).message}),
@@ -522,6 +526,7 @@ export function SpaceScreen({
               <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable>
               {typeof relationship.data.addedUp === 'number' ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addedUp)}</Txt> Added Up</Txt></Pressable> : null}
               {homies.data ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${homies.data.count} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(homies.data.count)}</Txt> Homies</Txt></Pressable> : homies.isError ? <Pressable accessibilityRole="button" onPress={() => void homies.refetch()}><Txt variant="small" color="textSecondary">Retry Homies</Txt></Pressable> : null}
+              {mine && typeof spaceViews.data === 'number' ? <Pressable onPress={() => navigation.navigate('SpaceViewers')} accessibilityRole="button" accessibilityLabel={`${spaceViews.data} people opened your Space. See who`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(spaceViews.data)}</Txt> Space views</Txt></Pressable> : null}
               {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
               {mine && relationship.data.backend === 'v2' ? <>
                 <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable>

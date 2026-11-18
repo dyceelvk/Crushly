@@ -38,6 +38,16 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/space_banner') body = banner;
     else if (path === '/rest/v1/rpc/set_space_banner') { const old = banner; banner = (route.request().postDataJSON() as { p_url: string | null }).p_url; body = old; }
     else if (path === '/rest/v1/rpc/holup_space_share_token') body = SHARE_TOKEN;
+    // Who viewed me. One named viewer and one who stays private — the second
+    // row is the whole point, so it is always in the fixture.
+    else if (path === '/rest/v1/rpc/space_view_count') body = 2;
+    else if (path === '/rest/v1/rpc/space_viewers') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {
+      count: 2,
+      items: [
+        { profile: person, viewedAt: Date.now() - 3600_000, views: 3 },
+        { profile: null, viewedAt: Date.now() - 7200_000, views: 1 },
+      ],
+    }; }
     else if (path === '/rest/v1/rpc/search_holup') {
       const params = route.request().postDataJSON() as Record<string, unknown>; calls.push(params);
       body = { members: params.p_category === 'top' || params.p_category === 'people' ? [person] : [], posts: ['top', 'photos'].includes(String(params.p_category)) ? [onePost] : [], moments: [], sounds: params.p_category === 'sounds' ? [{ id: 20, title: 'Holiday tune' }] : [], places: params.p_category === 'places' ? [{ name: 'Lagos' }] : [], hashtags: params.p_category === 'hashtags' ? [{ tag: 'holiday' }] : [] };
@@ -694,4 +704,33 @@ test('the share sheet offers Save clip for a clip that has one', async ({ page }
   // It sits in the same block as the other two ways out of the app.
   await expect(page.getByRole('button', { name: 'Copy post link' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Share outside holUpp' })).toBeVisible();
+});
+
+/* Who viewed my Space — the recording half has been there since the ring work;
+   this proves the owner can actually read it, and that a viewer whose profile
+   is hidden still counts without being named. */
+test('owner sees who viewed their Space, and private viewers stay unnamed', async ({ page }) => {
+  const calls: Record<string, unknown>[] = [];
+  await offline(page, calls); await openApp(page, '/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+
+  // The count is a door on the Space itself, not a hidden menu item.
+  await page.getByRole('button', { name: '2 people opened your Space. See who' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Who viewed you' })).toBeVisible();
+  // Opens on this week, which is the question most people are asking.
+  await expect(page.getByRole('tab', { name: 'This week' })).toHaveCSS('opacity', '1');
+  await expect(page.getByText('people opened your Space this week.')).toBeVisible();
+
+  // A named viewer is a real door to their Space.
+  await expect(page.getByRole('button', { name: 'Open Ada’s Space' })).toBeVisible();
+  // Somebody private is a row that says so, and nothing more.
+  await expect(page.getByText('Private member')).toBeVisible();
+  await expect(page.getByText('Their profile is private')).toBeVisible();
+
+  // The window is a real request, not a client-side filter.
+  await page.getByRole('tab', { name: 'All time' }).click();
+  await expect.poll(() => calls.filter((c) => 'p_days' in c).map((c) => c.p_days)).toContain(0);
+  // And it opened on the week, not on all time — the default is a real request.
+  expect(calls.filter((c) => 'p_days' in c).map((c) => c.p_days)).toContain(7);
 });

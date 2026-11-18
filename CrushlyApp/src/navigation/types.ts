@@ -59,6 +59,9 @@ export type RootStackParamList = {
    * on Requests, not on Members with the request one tap away.
    */
   CircleManage: { circleId: number; tab?: 'members' | 'requests' | 'invited' | 'declined' };
+  /** Who opened my Space. Owner-only, and both halves of that are enforced
+   *  server-side — the route is not the permission. */
+  SpaceViewers: undefined;
   Moments: undefined;
   MomentComposer: undefined;
   VideoTrim: { sourceUri: string; sourceDuration: number; category: 'post' | 'moment' | 'circle'; initialEdit?: VideoEdit };

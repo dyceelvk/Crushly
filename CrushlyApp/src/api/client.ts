@@ -106,9 +106,37 @@ export const supabase = createClient(SUPABASE_URL || 'http://localhost', SUPABAS
   // instead of allowing them to silently create, reopen, or close new state.
   global: {
     headers: relationshipContractHeaders(),
-    fetch: fetchWithDeadline((input, init) => fetch(input as RequestInfo, init)),
+    fetch: browserDayFetch((input, init) => fetch(input as RequestInfo, init)),
   },
 });
+
+/**
+ * Tells the server that this request came from a browser.
+ *
+ * The 24-hour browser rule has to be enforced where the write happens, which is
+ * inside the database, and the database cannot see that a request came from a
+ * browser unless it is told. This header is that statement — and because it is
+ * a statement from the client, the server treats it as an admission, never as
+ * an exemption: sending it can only ever add a restriction (see
+ * `holup_web_write_guard`). A native app does not send it, so nothing about the
+ * phone changes.
+ *
+ * It is stripped from every request on web too when the path is not a write, so
+ * a feed request is not made to look like a write.
+ */
+const BROWSER_DAY_HEADER = 'x-holupp-browser-day';
+
+function browserDayFetch(base: typeof fetch): typeof fetch {
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (Platform.OS !== 'web') return base(input, init);
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    // Only calls that can write carry the statement. Reads stay identity-free.
+    if (!url.includes('/rest/v1/rpc/')) return base(input, init);
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    headers.set(BROWSER_DAY_HEADER, '1');
+    return base(input, { ...init, headers });
+  }) as typeof fetch;
+}
 
 export class ApiError extends Error {
   status: number;

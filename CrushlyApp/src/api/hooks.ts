@@ -278,6 +278,31 @@ export const useCircleRequestState = (circleId: number, enabled = true) =>
  * `enabled` exists for the Space: a visitor's page shows *their* Circles, not
  * yours, and the two are different requests rather than two shapes of one.
  */
+/**
+ * People who opened my Space, newest first.
+ *
+ * `days` is part of the query key rather than a filter applied after the fact:
+ * "today" and "all time" are two different requests, and caching one under the
+ * other's key is how a screen ends up showing yesterday's answer.
+ */
+export const useSpaceViewers = (days = 0, enabled = true) =>
+  useInfiniteQuery({
+    queryKey: ['space-viewers', days],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => service.spaceViewers(days, pageParam),
+    getNextPageParam: (last, pages) => (last.items.length === 100 ? pages.length * 100 : undefined),
+    enabled,
+    staleTime: 30_000,
+  });
+
+export const useSpaceViewCount = (days = 0, enabled = true) =>
+  useQuery({
+    queryKey: ['space-view-count', days],
+    queryFn: () => service.spaceViewCount(days),
+    enabled,
+    staleTime: 30_000,
+  });
+
 export const useMyCircles = (enabled = true) =>
   useQuery({
     queryKey: keys.circles,

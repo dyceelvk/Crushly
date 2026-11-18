@@ -12,6 +12,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useBadges, useMarkNotificationsRead, useNotifications } from '../api/hooks';
 import { useToast } from '../components/Toast';
 import { TabBar } from './TabBar';
+import { useWebLimitState } from '../components/WebLimit';
 import { AdminScreen } from '../screens/settings/Admin';
 import { Announcement } from '../components/Announcement';
 import { View } from 'react-native';
@@ -50,6 +51,7 @@ import { CirclePreviewScreen } from '../screens/circles/CirclePreview';
 import { CircleManageScreen } from '../screens/circles/CircleManage';
 import { UserProfileScreen } from '../screens/profile/UserProfile';
 import { EditProfileScreen } from '../screens/profile/EditProfile';
+import { SpaceViewersScreen } from '../screens/profile/SpaceViewers';
 import { NotificationsScreen } from '../screens/notifications/Notifications';
 import { AccountScreen, AppearanceScreen, BlockedUsersScreen, NotificationSettingsScreen, SettingsScreen } from '../screens/settings/Settings';
 import { SafetyScreen, PrivacyScreen } from '../screens/settings/Safety';
@@ -134,12 +136,27 @@ function LiveNotifications() {
 
 function MainTabs() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const webLimit = useWebLimitState();
   return (
     <View style={{ flex: 1 }}>
       <LiveNotifications />
       <Announcement>
       <Tabs.Navigator
-        tabBar={(props) => <TabBar {...props} onCreate={() => navigation.navigate('CreatePost')} />}
+        tabBar={(props) => (
+          <TabBar
+            {...props}
+            onCreate={() => {
+              /* The browser's day is over: the button still answers, because a
+                 button that does nothing is worse than a button that explains.
+                 It opens the sentence about where writing actually lives. */
+              if (webLimit.limited) {
+                webLimit.nudge();
+                return;
+              }
+              navigation.navigate('CreatePost');
+            }}
+          />
+        )}
         screenOptions={{ headerShown: false, lazy: true }}
       >
         <Tabs.Screen name="Flows" component={FeedScreen} options={{ title: 'Home' }} />
@@ -223,6 +240,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="Admin" component={AdminScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+          <Stack.Screen name="SpaceViewers" component={SpaceViewersScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Verification" component={VerificationScreen} />
           <Stack.Screen name="Safety" component={SafetyScreen} />
           <Stack.Screen name="Privacy" component={PrivacyScreen} />

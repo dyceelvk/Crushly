@@ -758,3 +758,10 @@ export type AppUpdate = {
 /** A viewer whose profile may be hidden by their own privacy settings. */
 export type ViewerItem = { profile: Profile | null; viewedAt: number };
 export type ViewerPage = { items: ViewerItem[]; count?: number };
+/**
+ * One person who opened my Space. `views` is how many times they have come
+ * back, and `profile` is null when their own privacy settings (or a block)
+ * mean I am not allowed to see who they are — the visit is still counted.
+ */
+export type SpaceViewerItem = { profile: Profile | null; viewedAt: number; views: number };
+export type SpaceViewerPage = { items: SpaceViewerItem[]; count: number };

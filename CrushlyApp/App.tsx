@@ -24,6 +24,7 @@ import { ApiError } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { CaptchaHost } from './src/components/CaptchaHost';
 import { WebNotice, webGateActive } from './src/components/WebGate';
+import { WebLimitProvider } from './src/components/WebLimit';
 import { SoundAlerts } from './src/components/SoundAlerts';
 import { AlertTapHandler } from './src/components/AlertTapHandler';
 import { navigationRef } from './src/navigation/ref';
@@ -172,7 +173,12 @@ export default function App() {
         <ThemeProvider>
           <AuthProvider>
             <ToastProvider>
-              <Shell />
+              {/* Inside the toast and auth providers — the clock needs to know
+                  who is signed in — and above the navigator, so the tab bar's
+                  create button asks the same clock the notice does. */}
+              <WebLimitProvider>
+                <Shell />
+              </WebLimitProvider>
               {webNotice ? <WebNotice /> : null}
               {/* Offered above the app rather than inside a screen: an update is
                   not a settings-page event, and a member who never opens

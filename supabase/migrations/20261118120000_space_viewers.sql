@@ -1,0 +1,132 @@
+-- 20261118120000_space_viewers
+--
+-- "Who viewed my Space?"
+--
+-- The recording half has existed since 20261112120000: `record_space_view` writes
+-- a row every time a member opens a Space, and the migration comment is explicit
+-- that "viewed their profile" was previously unanswerable anywhere in the database.
+--
+-- What was missing is the reading half. `space_views` has no grant to
+-- `authenticated` at all — not even a select policy — so a Space owner could not
+-- ask the one question the table exists to answer. The only consumer was
+-- `moment_circles()`, for the viewer's own row set.
+--
+-- This adds the owner's read, and only the owner's. There is deliberately no
+-- function that returns "who viewed member X" to anybody but X.
+
+-- ------------------------------------------------------------- helpful indexes
+-- The owner reads by `viewed_id`, which had no index: the existing one is keyed
+-- on the viewer. Without this, every profile open would scan the whole table.
+create index if not exists space_views_viewed_idx
+  on public.space_views (viewed_id, last_seen_at desc);
+
+-- ------------------------------------------------------- one view per person
+-- `space_views` keeps a `views` counter and a `last_seen_at`, so somebody who
+-- opens your Space every morning for a week is one row with views = 7. That is
+-- right for the ring and wrong for a viewer list, which should read "today",
+-- not "seven times since Tuesday". The list below shows each person once, at
+-- their most recent visit, because showing the same face seven times is not
+-- more information.
+
+/**
+ * Who has viewed my Space.
+ *
+ * `p_days` bounds the window so the list has a beginning; 0 means all time.
+ * Rows are ordered most recent first, then by id so paging is stable when two
+ * visits share a millisecond.
+ *
+ * A viewer whose profile the owner is no longer allowed to see — blocked in
+ * either direction, deleted, gone incognito, status not active — comes back as
+ * `profile: null`. The visit still happened and the count still includes it;
+ * what changes is that the owner cannot see who it was. That is the same rule
+ * `post_viewers` and `moment_viewers` already apply through
+ * `load_visible_profile`, and it is why a blocked person cannot be found here.
+ */
+create or replace function public.space_viewers(
+  p_limit integer default 100,
+  p_offset integer default 0,
+  p_days integer default 0
+)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me      bigint := public.me_id();
+  lim     integer := least(greatest(coalesce(p_limit, 100), 1), 100);
+  off     integer := greatest(coalesce(p_offset, 0), 0);
+  since   bigint;
+  total   integer;
+  items   jsonb;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if coalesce(p_days, 0) > 0 then
+    since := public.now_ms() - (p_days::bigint * 86400000);
+  end if;
+
+  select count(*)
+    into total
+    from public.space_views sv
+   where sv.viewed_id = me
+     and (since is null or sv.last_seen_at >= since);
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'profile',  v.profile,
+           'viewedAt', v.last_seen_at,
+           'views',    v.views
+         ) order by v.last_seen_at desc, v.viewer_id desc), '[]'::jsonb)
+    into items
+    from (
+      select sv.viewer_id,
+             sv.last_seen_at,
+             sv.views,
+             public.load_visible_profile(me, sv.viewer_id, false) as profile
+        from public.space_views sv
+       where sv.viewed_id = me
+         and (since is null or sv.last_seen_at >= since)
+       order by sv.last_seen_at desc, sv.viewer_id desc
+       limit lim offset off
+    ) v;
+
+  return jsonb_build_object('count', total, 'items', items);
+end $function$;
+
+revoke all on function public.space_viewers(integer, integer, integer) from public, anon;
+grant execute on function public.space_viewers(integer, integer, integer) to authenticated, service_role;
+
+-- ------------------------------------------------------- the count, everyone
+-- The number a member can be shown without opening anything. Cheap, and it says
+-- nothing about who. Kept separate from `space_viewers` so the Space can render
+-- a count on first paint without pulling 100 profiles it may never show.
+create or replace function public.space_view_count(p_days integer default 0)
+returns integer
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me    bigint := public.me_id();
+  since bigint;
+  n     integer;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if coalesce(p_days, 0) > 0 then
+    since := public.now_ms() - (p_days::bigint * 86400000);
+  end if;
+  select count(*) into n
+    from public.space_views sv
+   where sv.viewed_id = me
+     and (since is null or sv.last_seen_at >= since);
+  return n;
+end $function$;
+
+revoke all on function public.space_view_count(integer) from public, anon;
+grant execute on function public.space_view_count(integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';

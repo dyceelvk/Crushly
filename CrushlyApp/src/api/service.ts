@@ -31,7 +31,7 @@ import { groupMomentFeed, type FeedMoment } from '../lib/moments';
 import { profileShape } from '../lib/profileShape';
 import type { LiveEdit, VideoEdit } from '../lib/videoEdit';
 import type { WhisperState } from '../lib/whisperRequest';
-import type { ViewerPage } from './types';
+import type { SpaceViewerPage, ViewerPage } from './types';
 import {
   INTENTIONS as catalogIntentions,
   INTERESTS as catalogInterests,
@@ -785,6 +785,40 @@ export async function viewerPage(kind: 'post' | 'moment', id: number, offset: nu
     p_limit: 100,
     p_offset: offset,
   });
+}
+
+/**
+ * Who viewed my Space — owner only, enforced by the database.
+ *
+ * Post and Moment viewers are keyed on one piece of content; a Space has no id
+ * to key on, because the Space *is* the person. So this is its own RPC rather
+ * than a third `kind` on `viewerPage`, and the server decides who "me" is.
+ *
+ * `days` bounds the window (0 = all time). The count comes back with the page so
+ * the header can say "12 people" before the list is scrolled.
+ */
+export async function spaceViewers(days = 0, offset = 0): Promise<SpaceViewerPage> {
+  return rpc<SpaceViewerPage>('space_viewers', { p_limit: 100, p_offset: offset, p_days: days });
+}
+
+/**
+ * The browser's 24-hour clock.
+ *
+ * `open` records a visit and returns the verdict; `status` returns the same
+ * verdict without counting. Both are server-computed — the client is told where
+ * it stands, it does not decide.
+ */
+export type WebClockState = { firstSeenAt: number | null; elapsedMs: number; remainingMs: number; blocked: boolean; opens?: number; platform?: string | null };
+export async function holupWebOpen(platform: string): Promise<WebClockState> {
+  return rpc<WebClockState>('holup_web_open', { p_platform: platform });
+}
+export async function holupWebStatus(): Promise<WebClockState> {
+  return rpc<WebClockState>('holup_web_status', {});
+}
+
+/** Just the number, for the Space's first paint. Same owner-only rule. */
+export async function spaceViewCount(days = 0): Promise<number> {
+  return rpc<number>('space_view_count', { p_days: days });
 }
 
 /** A deliberate act — like, comment, save, share, or "not interested". */
