@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 
-PACKAGE = 'app.crushly'
+PACKAGE = 'app.holup.mobile'
 ABI = 'armeabi-v7a'
 lines = []
 

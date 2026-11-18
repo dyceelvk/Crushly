@@ -9,7 +9,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-PACKAGE = 'app.crushly'
+PACKAGE = 'app.holup.mobile'
 old = next(pathlib.Path('apk-check/old').glob('*.apk'))
 out = pathlib.Path('update-walk')
 out.mkdir(exist_ok=True)
