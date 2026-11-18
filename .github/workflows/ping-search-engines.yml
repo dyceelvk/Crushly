@@ -1,0 +1,39 @@
+# Tells Bing, Yandex, Seznam and Naver about the site without anyone remembering to.
+#
+# Why a schedule rather than a deploy hook: the key is public (it is served at
+# /<key>.txt), so this workflow needs no secrets at all, and running after the
+# fact means it never announces a page the deploy has not published yet. A page
+# that changes between runs is picked up on the next one, at worst a day later,
+# which is the same promise IndexNow makes anyway.
+#
+# Google is deliberately absent: it has no push API for ordinary pages. Its
+# Indexing API accepts only JobPosting and BroadcastEvent. For Google the
+# sitemap in robots.txt plus one human pressing Request Indexing is the path.
+name: ping search engines
+
+on:
+  schedule:
+    - cron: '17 4 * * *' # 04:17 UTC daily
+  workflow_dispatch: {} # and on demand from the Actions tab
+
+jobs:
+  indexnow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Submit the live sitemap to IndexNow
+        working-directory: CrushlyApp
+        run: |
+          # The URL list comes from the live sitemap, not the repo, so a page that
+          # failed to deploy is never submitted. The key comes from the repo
+          # because it is the same public token the site serves.
+          curl -fsS https://holupp.net/sitemap.xml -o dist-sitemap.xml
+          mkdir -p dist
+          cp dist-sitemap.xml dist/sitemap.xml
+          echo "$(cat site/indexnow-key.txt)" > "dist/$(cat site/indexnow-key.txt).txt"
+          INDEXNOW_KEY=$(cat site/indexnow-key.txt) node scripts/indexnow.mjs
