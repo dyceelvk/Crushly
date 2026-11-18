@@ -45,6 +45,7 @@ SEED = ROOT.parent / 'seed.sql'
 # already there", which is what `supabase start` gives you.
 DB_URL = __import__('os').environ.get('TEST_DATABASE_URL')
 STUBS = (not DB_URL) or __import__('os').environ.get('TEST_USE_STUBS') == '1'
+stubs_path = ROOT / 'stubs.sql'
 
 # `pgserver` is only needed to conjure a throwaway Postgres. When
 # TEST_DATABASE_URL points at a server we were given, the import is dead weight
@@ -54,6 +55,59 @@ STUBS = (not DB_URL) or __import__('os').environ.get('TEST_USE_STUBS') == '1'
 pgserver = None
 if STUBS and not DB_URL:
     import pgserver
+
+
+def reapply_migrations(uri: str, skip: tuple) -> bool:
+    """Apply every migration to a throwaway database, twice, in order.
+
+    A migration run once is what production does; run twice is what a repair
+    does. Both have to work, and the honest way to prove it is a database that
+    has never seen either run.
+    """
+    import psycopg2.extensions  # local import: only this path needs it
+
+    # Swap only the database name. Splitting on the last '/' is wrong here: a
+    # DSN may put a path in its query string (?host=/tmp). Split the scheme off
+    # first, then the path.
+    scheme, _, rest = uri.partition('://')
+    authority, _, path_and_query = rest.partition('/')
+    _, sep, params = path_and_query.partition('?')
+    scratch = 'reapply_check'
+    def dsn(db):
+        return f'{scheme}://{authority}/{db}{sep}{params}'
+    admin = psycopg2.connect(dsn('postgres'), client_encoding='UTF8')
+    admin.autocommit = True
+    with admin.cursor() as cur:
+        cur.execute(f'drop database if exists {scratch}')
+        cur.execute(f'create database {scratch}')
+    admin.close()
+
+    conn = psycopg2.connect(dsn(scratch), client_encoding='UTF8')
+    conn.autocommit = True
+    ok = True
+    try:
+        with conn.cursor() as cur:
+            for path in skip:
+                cur.execute(pathlib.Path(path).read_text())
+            for pass_no in (1, 2):
+                for f in MIGRATION_FILES:
+                    if f.name in ONE_SHOT_MIGRATIONS:
+                        continue
+                    if '-- REQUIRES:' in f.read_text()[:2000]:
+                        continue
+                    if pass_no == 2 and f.name in ONE_SHOT_MIGRATIONS:
+                        continue
+                    try:
+                        cur.execute(f.read_text())
+                    except Exception as e:  # noqa: BLE001 - name the file
+                        print(f'FAILED on pass {pass_no}: {f.name}: {e}')
+                        ok = False
+                        break
+                if not ok:
+                    break
+    finally:
+        conn.close()
+    return ok
 
 
 def main() -> int:
@@ -88,20 +142,17 @@ def main() -> int:
         for f in MIGRATION_FILES:
             if not run_file(f):
                 return 1
-        # Re-apply only migrations designed for re-runs. Production's
-        # migration history runs every version once; the one-shot security
-        # migrations above must not recreate protected tables or reset data.
-        for f in MIGRATION_FILES:
-            if f.name in ONE_SHOT_MIGRATIONS:
-                continue
-            # A file that declares `-- REQUIRES:` is a correction to a database
-            # that already carries something — it is not re-runnable by design,
-            # and `scripts/validate-cutover.sh` skips it for the same reason.
-            if '-- REQUIRES:' in f.read_text()[:2000]:
-                continue
-            if not run_file(f):
-                return 1
-        print('re-runnable migrations applied twice')
+        # Prove the migrations can be applied twice — on a fresh database, not
+        # halfway through this one. Replaying them in place resurrects superseded
+        # function bodies: a file that aborts on its second run (a `create table`
+        # that is not `if not exists`) stops replaying the corrections that come
+        # after it, while the older definition it replaced was already re-applied.
+        # That is exactly how open_conversation lost its Whisper request here
+        # while production, which runs each version once, kept it.
+        REAPPLY_EXEMPT = (stubs_path,) if STUBS else ()
+        if not reapply_migrations(uri, REAPPLY_EXEMPT):
+            return 1
+        print('re-runnable migrations applied twice (fresh database)')
         if not run_file(SEED):
             return 1
         print('migrations + seed applied')

@@ -197,10 +197,23 @@ begin
     (daniel, ade,  false, null, t - 21 * h), (ade,  daniel, false, null, t - 20 * h),
     (marcus, seun, false, null, t - 71 * h), (seun, marcus, false, null, t - 70 * h);
 
+  -- Daniel and Marcus are the pair the smoke test walks through: a Crush each way
+  -- (above), a friendship the app reads as an accepted Homie, and a thread they
+  -- then keep replying in. The two Crushes are here without this row, which made
+  -- the connection a document of something the data never claimed.
   insert into connections (user_a, user_b, created_at) values
     (daniel, ryan,   t - 50 * h),
     (ade,    daniel, t - 20 * h),
-    (marcus, seun,   t - 70 * h);
+    (marcus, seun,   t - 70 * h),
+    (daniel, marcus, t - 45 * h);
+
+  -- A connection is the old surface; a Homie is the accepted relationship the
+  -- app now reads from. Migration 20261110080000 backfills Homies from the
+  -- connections that existed when it ran, which is none of these three, so the
+  -- seed has to write the accepted state itself. Leaving it out is what makes
+  -- the smoke test's "the seeded pair are Homies" assertion fail.
+  insert into public.holup_homies (user_a, user_b, accepted_at)
+  select least(user_a, user_b), greatest(user_a, user_b), created_at from connections;
 
   insert into notifications (user_id, kind, actor_id, body, created_at) values
     (daniel, 'crush',      marcus,  '', t - 2 * h),
@@ -220,42 +233,95 @@ begin
 
   -- ------------------------------------------------------------- chats
 
+  -- Messages are written as the person who sent them. The Whisper guard on
+  -- public.messages (migration 20261110080000) rejects a message whose sender is
+  -- not the signed-in member, and a seed runs as the database owner with nobody
+  -- signed in. Setting the JWT claim to the sender makes each insert look exactly
+  -- like that member sending it in the app, so the demo conversations are still
+  -- checked by the real rules rather than slipped past them.
   insert into conversations (user_a, user_b, created_at, last_message_at) values
     (daniel, ryan,   t - 31 * h, t - 30 * h + 35 * 60000),
     (ade,    daniel, t - 7 * h,  t - 6 * h + 21 * 60000),
     (marcus, seun,   t - 41 * h, t - 40 * h + 14 * 60000);
 
+  -- The cutover migration backfills a permission row for every conversation that
+  -- already existed; these conversations are created after it, so the seed writes
+  -- the same row itself. Without it the insert guard correctly refuses every
+  -- message in the thread.
+  insert into public.holup_whisper_permissions (conversation_id, requester_id, recipient_id, state)
+  select id, user_a, user_b, 'accepted' from conversations where not closed;
+
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111104', true);
   insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
-  select c.id, x.sender, 'text', x.body, x.at,
-         case when x.needs_read then x.at + 60000 else null end
-    from conversations c,
-    lateral (values
-      (ryan,   'Okay, I have to ask — where was your second photo taken? That skyline is unreal.', t - 30 * h + 7 * 60000, true),
-      (daniel, 'Ha, a rooftop in Lekki. I can show you sometime if you promise not to tell everyone.', t - 30 * h + 14 * 60000, true),
-      (ryan,   'Sworn to secrecy. Also still on my quest for the best suya in Lagos. Any leads?', t - 30 * h + 21 * 60000, true),
-      (daniel, 'You’re asking a dangerous question. Glover Road, Friday night. Bring an appetite.', t - 30 * h + 28 * 60000, true),
-      (ryan,   'It’s a date. Well — a suya date.', t - 30 * h + 35 * 60000, false)
-    ) x(sender, body, at, needs_read)
+  select c.id, ryan, 'text',
+         'Okay, I have to ask — where was your second photo taken? That skyline is unreal.',
+         t - 30 * h + 7 * 60000, t - 30 * h + 7 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(daniel, ryan) and c.user_b = greatest(daniel, ryan);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111101', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, daniel, 'text',
+         'Ha, a rooftop in Lekki. I can show you sometime if you promise not to tell everyone.',
+         t - 30 * h + 14 * 60000, t - 30 * h + 14 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(daniel, ryan) and c.user_b = greatest(daniel, ryan);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111104', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, ryan, 'text',
+         'Sworn to secrecy. Also still on my quest for the best suya in Lagos. Any leads?',
+         t - 30 * h + 21 * 60000, t - 30 * h + 21 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(daniel, ryan) and c.user_b = greatest(daniel, ryan);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111101', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, daniel, 'text',
+         'You’re asking a dangerous question. Glover Road, Friday night. Bring an appetite.',
+         t - 30 * h + 28 * 60000, t - 30 * h + 28 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(daniel, ryan) and c.user_b = greatest(daniel, ryan);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111104', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, ryan, 'text',
+         'It’s a date. Well — a suya date.',
+         t - 30 * h + 35 * 60000, null
+    from conversations c
    where c.user_a = least(daniel, ryan) and c.user_b = greatest(daniel, ryan);
 
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111101', true);
   insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
-  select c.id, x.sender, 'text', x.body, x.at,
-         case when x.needs_read then x.at + 60000 else null end
-    from conversations c,
-    lateral (values
-      (daniel, 'Your bio got me. Which building would you save in a fire?', t - 6 * h + 7 * 60000, true),
-      (ade,    'The National Theatre, no hesitation. It’s a flawed masterpiece — like most good things.', t - 6 * h + 14 * 60000, true),
-      (ade,    'Your turn. What’s the meal you’d cook to impress someone?', t - 6 * h + 21 * 60000, false)
-    ) x(sender, body, at, needs_read)
+  select c.id, daniel, 'text',
+         'Your bio got me. Which building would you save in a fire?',
+         t - 6 * h + 7 * 60000, t - 6 * h + 7 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(ade, daniel) and c.user_b = greatest(ade, daniel);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111105', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, ade, 'text',
+         'The National Theatre, no hesitation. It’s a flawed masterpiece — like most good things.',
+         t - 6 * h + 14 * 60000, t - 6 * h + 14 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(ade, daniel) and c.user_b = greatest(ade, daniel);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111105', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, ade, 'text',
+         'Your turn. What’s the meal you’d cook to impress someone?',
+         t - 6 * h + 21 * 60000, null
+    from conversations c
    where c.user_a = least(ade, daniel) and c.user_b = greatest(ade, daniel);
 
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111110', true);
   insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
-  select c.id, x.sender, 'text', x.body, x.at, x.at + 60000
-    from conversations c,
-    lateral (values
-      (seun,   'Dinner Thursday?', t - 40 * h + 7 * 60000),
-      (marcus, 'Only if I get to pick dessert.', t - 40 * h + 14 * 60000)
-    ) x(sender, body, at)
+  select c.id, seun, 'text',
+         'Dinner Thursday?',
+         t - 40 * h + 7 * 60000, t - 40 * h + 7 * 60000 + 60000
+    from conversations c
+   where c.user_a = least(marcus, seun) and c.user_b = greatest(marcus, seun);
+  perform set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111102', true);
+  insert into messages (conversation_id, sender_id, kind, body, created_at, read_at)
+  select c.id, marcus, 'text',
+         'Only if I get to pick dessert.',
+         t - 40 * h + 14 * 60000, t - 40 * h + 14 * 60000 + 60000
+    from conversations c
    where c.user_a = least(marcus, seun) and c.user_b = greatest(marcus, seun);
 
   -- ------------------------------------------------------------- moments

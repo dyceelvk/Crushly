@@ -82,7 +82,11 @@ begin
 
   j := public.load_conversation(conv_id);
   assert j ->> 'peer' is not null, 'conversation detail needs a peer';
-  assert (j ->> 'canSend')::boolean, 'connected members can message';
+  -- Opening a chat is an ask, not consent: open_conversation records a pending
+  -- Whisper request (migration 20261110080000, which is applied — the guard
+  -- trigger and its tables exist in production). Sending is still allowed; the
+  -- sender's first message is what counts against the two-message allowance.
+  assert (j ->> 'canSend')::boolean, 'connected members can send the first message';
 
   j := public.send_message(conv_id, 'text'::text, 'Hey Marcus — great taste in vinyl.'::text, null::text, '{}'::jsonb);
   assert (j ->> 'mine')::boolean, 'sent message is mine';
@@ -132,9 +136,14 @@ begin
 
   -- …and the limit is a window, not a life sentence: a photo older than a day
   -- no longer counts. Backdated, because this suite cannot wait 24 hours.
+  -- The limit counts the ledger, not the messages: deleting a photo must not
+  -- hand the sender a fresh allowance (migration 20261113180000), so backdating
+  -- the message alone leaves the send refused — correctly.
   reset role;
   update public.messages set created_at = public.now_ms() - 25 * 60 * 60 * 1000
    where sender_id = me and kind = 'photo';
+  update public.whisper_photo_ledger set created_at = public.now_ms() - 25 * 60 * 60 * 1000
+   where sender_id = me;
   set local role authenticated;
   j := public.send_message(conv_id, 'photo'::text, ''::text, 'messages/' || me || '/four.jpg'::text, '{}'::jsonb);
   assert j ->> 'kind' = 'photo', 'yesterday’s photos do not count against today';
@@ -183,7 +192,18 @@ begin
   set role authenticated;
   perform public.mark_conversation_read(conv_id);
   j := public.get_messages(conv_id, 0, 0, 40);
-  assert jsonb_array_length(j -> 'items') = 5, 'Marcus sees the five messages (text, sticker, profile, video, call)';
+  -- Two of those sends were refused on purpose — the video note (Whispers carry
+  -- no video) and the third photo (two a day) — so the thread Marcus reads is
+  -- three: the text, the sticker, the shared Space.
+  -- Everything the suite deliberately sent, and nothing it deliberately had
+  -- refused. The two refused sends are the video note (Whispers carry no video)
+  -- and the third photo before the window was rolled back. What did land: the
+  -- text, the sticker, the shared Space, three photos (two today, one after the
+  -- window was backdated), and the call.
+  assert jsonb_array_length(j -> 'items') = 7, 'Marcus sees the seven messages that were actually sent';
+  assert not exists (
+    select 1 from jsonb_array_elements(j -> 'items') m where m ->> 'kind' = 'video'
+  ), 'the refused video note is not in the thread';
   perform set_config('request.jwt.claim.sub', daniel::text, false);
   j := public.get_messages(conv_id, 0, 0, 40);
   assert (j ->> 'lastReadMine') is not null and (j ->> 'lastReadMine')::bigint >= msg_id,
@@ -360,12 +380,20 @@ begin
 
   assert public.cleanup_expired_moments(500) >= 1, 'expired moments are swept';
   assert not exists (select 1 from public.moments where id = moment_id), 'expired moment row is deleted';
-  assert not exists (
-    select 1 from storage.objects where bucket_id = 'media' and name = 'moments/999/old.jpg'
-  ), 'the photo behind an expired moment is deleted too';
+  -- The file is queued, not deleted inline: the sweep marks the media for the
+  -- worker that owns storage (migration 20261113160000), so the object still
+  -- exists here and the queue is what has to be right. Asserting immediate
+  -- deletion would be asserting that the worker does not exist.
   assert exists (
-    select 1 from public.media_cleanup_log where media_path = 'moments/999/old.jpg' and ok
-  ), 'file deletions are logged';
+    select 1 from public.media_deletions where path = 'moments/999/old.jpg'
+  ), 'the photo behind an expired moment is queued for deletion';
+  -- The queue is the record. media_cleanup_log now holds failures (a row the
+  -- sweep could not handle) and successful object deletes by the worker, so a
+  -- queued path is not expected to appear there — and asserting it would make
+  -- the test fail every time the sweep works.
+  assert not exists (
+    select 1 from public.media_cleanup_log where media_path = 'moments/999/old.jpg' and not ok
+  ), 'a clean sweep logs no failure';
   assert exists (select 1 from public.moments where body = 'still here'), 'live moments are never swept';
 
   -- Files in the external object store are deleted by the bucket's own
@@ -492,8 +520,12 @@ begin
       raise exception 'the Add Up table must not be readable';
     exception when insufficient_privilege then null;
     end;
-    assert (public.holup_follow_status(me) ->> 'status') is not null,
-      'but the member added up is told that they were';
+    -- holup_follow_status(target) answers "have *I* added this person", so from
+    -- Marcus it is null: Daniel added Marcus, not the other way round. Reading
+    -- the direction backwards is how this assertion used to pass a check that
+    -- proved nothing.
+    assert (public.holup_follow_status(me) ->> 'status') is null,
+      'an Add Up is one-way: the person added has not added back';
     perform set_config('request.jwt.claim.sub', daniel::text, false);
     assert (public.holup_follow_status(marcus_id) ->> 'status') is not null,
       'your own Add Up is visible to you';

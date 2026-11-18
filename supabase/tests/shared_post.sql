@@ -9,10 +9,21 @@ begin
   select id into did from profiles where auth_user_id=daniel;
   select id into mid from profiles where auth_user_id=marcus;
   insert into connections(user_a,user_b) values (least(did,mid),greatest(did,mid)) on conflict do nothing;
+  -- A conversation left closed by an earlier fixture is not a place to send, and
+  -- this test is about the shared post itself.
+  update conversations set closed = false where user_a=least(did,mid) and user_b=greatest(did,mid);
   perform set_config('request.jwt.claim.sub',marcus::text,true);
   set local role authenticated;
   post_id := (public.create_post('shared post fixture',null,'everyone',null,null)->>'id')::bigint;
-  conv := (public.open_conversation(did)->>'id')::bigint;
+  conv := (select id from conversations where user_a=least(did,mid) and user_b=greatest(did,mid));
+  -- The pair agreed to talk, so the fixture records that answer: since migration
+  -- 20261110080000 an unanswered conversation carries a pending Whisper request
+  -- and sharing into it is refused until the recipient answers. Written as the
+  -- owner because the permission table is deliberately not writable by members.
+  -- This test is about what a shared post contains.
+  reset role;
+  update public.holup_whisper_permissions set state = 'accepted' where conversation_id = conv;
+  set local role authenticated;
   sent := public.send_message(conv,'text','Shared a Flow post — tap to open',null,jsonb_build_object('postId',post_id));
   assert (sent->'meta'->>'postId')::bigint=post_id, 'message retains reference';
   assert sent->>'mediaUrl' is null, 'message contains no copied media';
