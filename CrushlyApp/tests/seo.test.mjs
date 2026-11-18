@@ -78,3 +78,28 @@ test('the home page says what the product is in its first paragraph', async () =
   assert.ok(html.includes('Android'), 'the platform is missing');
   assert.ok(/free/i.test(html), 'the price is missing');
 });
+
+test('the site can prove it owns the host to a search engine', async () => {
+  // IndexNow refuses a submission whose key file is not live and byte-identical.
+  // Checking it here means the failure shows up in CI, not as a silent 403 later.
+  const key = (await readFile(path.resolve(import.meta.dirname, '..', 'site', 'indexnow-key.txt'), 'utf8')).trim();
+  assert.match(key, /^[a-z0-9-]{16,255}$/i, 'the key must be 16-255 chars of a-z, 0-9, -');
+  const served = (await readFile(path.join(DIST, `${key}.txt`), 'utf8')).trim();
+  assert.equal(served, key, `${key}.txt must be served unmodified`);
+});
+
+test('the sitemap is well-formed XML, not a page', async () => {
+  // The failure this guards against is a sitemap entry pointing at HTML: Search
+  // Console reads that as "Sitemap is HTML" and drops the whole file.
+  const xml = await readFile(path.join(DIST, 'sitemap.xml'), 'utf8');
+  assert.ok(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>'), 'must declare itself XML');
+  assert.ok(xml.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'));
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert.equal(locs.length, 16);
+  for (const loc of locs) {
+    assert.ok(loc.startsWith('https://holupp.net/'), `${loc} must be on the canonical host`);
+    assert.ok(!/\.html$/.test(loc), `${loc} must not point at a .html file`);
+  }
+  const robots = await readFile(path.join(DIST, 'robots.txt'), 'utf8');
+  assert.ok(robots.includes('Sitemap: https://holupp.net/sitemap.xml'), 'robots.txt must point at it');
+});

@@ -16,6 +16,7 @@
  */
 
 import { mkdir, writeFile, cp, readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,10 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, '..');
 const DIST = path.join(APP_ROOT, 'dist');
+/* IndexNow asks a search engine to fetch a page the moment it changes. The key is
+   proof we own the host, so it is served at /<key>.txt and must match what
+   scripts/indexnow.mjs sends. It is a public token, not a credential. */
+const INDEXNOW_KEY = readFileSync(path.join(APP_ROOT, 'site', 'indexnow-key.txt'), 'utf8').trim();
 const SITE = 'https://holupp.net';
 const WORKER = 'https://crushly-media.dyceelvk.workers.dev';
 
@@ -1243,6 +1248,10 @@ async function main() {
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
   );
   await writeFile(path.join(DIST, 'robots.txt'), ROBOTS);
+  // The IndexNow key file. Search engines fetch this to confirm the host before
+  // they accept a submission, so it ships with the site rather than being pasted
+  // into a dashboard.
+  await writeFile(path.join(DIST, `${INDEXNOW_KEY}.txt`), INDEXNOW_KEY + '\n');
   // One removal file per retired hostname, at the path the engine looks for:
   // /<hostname>.txt mirrors https://<hostname>/robots.txt.
   for (const host of RETIRED_HOSTS) {
