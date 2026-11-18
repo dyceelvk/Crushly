@@ -52,6 +52,7 @@ import { CircleManageScreen } from '../screens/circles/CircleManage';
 import { UserProfileScreen } from '../screens/profile/UserProfile';
 import { EditProfileScreen } from '../screens/profile/EditProfile';
 import { SpaceViewersScreen } from '../screens/profile/SpaceViewers';
+import { RegionScreen } from '../screens/region/Region';
 import { NotificationsScreen } from '../screens/notifications/Notifications';
 import { AccountScreen, AppearanceScreen, BlockedUsersScreen, NotificationSettingsScreen, SettingsScreen } from '../screens/settings/Settings';
 import { SafetyScreen, PrivacyScreen } from '../screens/settings/Safety';
@@ -198,6 +199,10 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
       ) : status === 'resetting' ? (
         <Stack.Group screenOptions={{ animation: reduceMotion ? 'none' : 'fade' }}>
           <Stack.Screen name="SetPassword" component={SetPasswordScreen} />
+        </Stack.Group>
+      ) : status === 'region' ? (
+        <Stack.Group screenOptions={{ animation: reduceMotion ? 'none' : 'fade' }}>
+          <Stack.Screen name="Region" component={RegionScreen} />
         </Stack.Group>
       ) : status === 'onboarding' ? (
         <Stack.Group>

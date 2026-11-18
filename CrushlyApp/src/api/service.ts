@@ -797,6 +797,38 @@ export async function viewerPage(kind: 'post' | 'moment', id: number, offset: nu
  * `days` bounds the window (0 = all time). The count comes back with the page so
  * the header can say "12 people" before the list is scrolled.
  */
+/**
+ * Region, from the member's side.
+ *
+ * `located` is what makes detection a required step rather than a background
+ * nicety; `shared` is a separate decision and defaults to false, because where a
+ * member is is not other members' business unless they say so.
+ */
+export type RegionStatus = {
+  located: boolean;
+  required: boolean;
+  declared: string | null;
+  method: string | null;
+  detectedAt: number | null;
+  shared: boolean;
+};
+export async function regionStatus(): Promise<RegionStatus> {
+  return rpc<RegionStatus>('holup_region_status');
+}
+export async function setRegionSharing(share: boolean): Promise<{ shared: boolean }> {
+  return rpc<{ shared: boolean }>('holup_region_share', { p: { share } });
+}
+/**
+ * The fallback when the network cannot be located — a VPN, a provider outage, a
+ * browser on a private address. Detection is required, and it must not be
+ * possible for a failed lookup to lock somebody out of the app, so the member
+ * can state where they are instead. The server records the method as
+ * `DECLARED`, so nobody downstream mistakes it for a measurement.
+ */
+export async function declareRegion(country: string): Promise<{ located: boolean; declared: string }> {
+  return rpc<{ located: boolean; declared: string }>('holup_region_declare', { p_country: country });
+}
+
 export async function spaceViewers(days = 0, offset = 0): Promise<SpaceViewerPage> {
   return rpc<SpaceViewerPage>('space_viewers', { p_limit: 100, p_offset: offset, p_days: days });
 }

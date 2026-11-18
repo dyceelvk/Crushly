@@ -46,6 +46,8 @@ export type RootStackParamList = {
   Admin: undefined;
   EditProfile: undefined;
   Verification: undefined;
+  /** Required on first entry: holUpp needs a country, and the member decides whether to show it. */
+  Region: undefined;
   Plus: { feature?: string } | undefined;
   MomentViewer: { userId: number; mine?: boolean; momentId?: number };
   /** `create` opens the creator straight away — used by the Space's Circles tab. */

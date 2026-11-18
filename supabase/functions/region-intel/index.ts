@@ -375,6 +375,28 @@ Deno.serve(async (req, info) => {
     updated_at: nowMs,
   }, { onConflict: 'profile_id' });
 
+  /*
+   * The profile's country is what the Control Centre shows and what other parts
+   * of the platform filter on. Writing it here is what stops every user page
+   * reading "Country not recorded" — detection used to land only in
+   * holup_user_regions, which nothing else joined to.
+   *
+   * `country_source` already has a vocabulary, and it is used rather than
+   * extended: 'inferred' means the platform worked it out, 'account' means the
+   * member said so, 'admin_verified' means a person checked. Only an empty or
+   * 'inferred' country is refreshed by detection — a member's own answer stands,
+   * and an administrator's wins permanently. Detection stays required;
+   * disclosure stays the member's choice (`share_with_members`), untouched here.
+   */
+  if (detected) {
+    const source = profile.country_source ?? null;
+    if (!profile.country_code || source === 'inferred' || source === null) {
+      await admin.from('profiles')
+        .update({ country_code: detected, city: geo.city ?? null, country_source: 'inferred' })
+        .eq('id', profile.id);
+    }
+  }
+
   if (detected && detected !== region?.detected_country_code) {
     await admin.from('holup_region_history').insert({
       profile_id: profile.id,

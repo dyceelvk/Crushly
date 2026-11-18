@@ -1,14 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { browserLocation } from '../lib/browser';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, requireConfig, supabase, SUPABASE_PROJECT_URL, toApiError } from '../api/client';
 import { captchaFailureMessage, getCaptchaToken, isCaptchaError } from '../lib/captcha';
 import { emailSendMessage, signUpOutcome } from '../lib/auth';
 import { nativeAuthorizeUrl, nativeRedirectFor, parseNativeReturn } from '../lib/oauthNative';
 import { unregisterPushToken } from '../lib/push';
 import { keys } from '../api/hooks';
-import { getMe, webOrigin, webReturnUrl } from '../api/service';
+import { getMe, regionStatus, webOrigin, webReturnUrl } from '../api/service';
 import { reportRegion } from '../lib/region';
 import type { Me } from '../api/types';
 
@@ -335,7 +335,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [qc]);
 
-  const status = authStatus({ restoring, signedIn, mustSetPassword, me });
+  /*
+   * The region gate needs to know whether a country exists yet, and it must not
+   * guess. `undefined` while loading, then the server's answer: a failed lookup
+   * leaves it `null` and the member goes straight through, because requiring a
+   * measurement that depends on the network can otherwise lock somebody out.
+   */
+  const regionGate = useQuery({
+    queryKey: ['region', 'status'],
+    queryFn: regionStatus,
+    enabled: Boolean(signedIn && me),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const regionLocated = regionGate.data ? Boolean(regionGate.data.located) : null;
+
+  const status = authStatus({ restoring, signedIn, mustSetPassword, me, regionLocated });
 
   const value = useMemo(
     () => ({ status, me, signIn, signInWithGoogle, signUp, verifySignupOtp, setNewPassword, signOut, refresh, forget }),

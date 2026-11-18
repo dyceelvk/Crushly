@@ -1,7 +1,7 @@
 import type { NotificationKind } from '../api/types';
 export type NotificationCategory = 'all' | 'whispers' | 'posts' | 'addUps' | 'keptClose' | 'moments' | 'circles';
 export function fromHolup(kind: NotificationKind): boolean {
-  return kind === 'verified' || kind === 'verification_rejected';
+  return kind === 'verified' || kind === 'verification_rejected' || kind === 'support';
 }
 export function notificationCategory(kind: NotificationKind): Exclude<NotificationCategory, 'all'> | 'holup' {
   switch (kind) {
@@ -10,7 +10,7 @@ export function notificationCategory(kind: NotificationKind): Exclude<Notificati
     case 'crush': case 'deep_crush': case 'mutual': return 'addUps';
     case 'keep': return 'keptClose';
     case 'moment_reaction': return 'moments';
-    case 'verified': case 'verification_rejected': return 'holup';
+    case 'verified': case 'verification_rejected': case 'support': return 'holup';
     default: return 'circles';
   }
 }

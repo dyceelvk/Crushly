@@ -242,10 +242,20 @@ const ConversationRow = React.memo(function ConversationRow({ conv, onPress }: {
       <Avatar uri={conv.peer.photo} name={conv.peer.name} size={56} online={!!conv.peer.online} />
       <View style={{ flex: 1, minWidth: 0, borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 12, marginBottom: -12, paddingTop: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {/*
+            * A support thread is labelled by the platform, not by whoever the
+            * profile behind it is called. Before this, holUpp Support arrived
+            * in a member's list as "Holup" — a name that reads as a person,
+            * sitting among their crushes.
+            */}
           <Txt variant={unread ? 'bodyStrong' : 'body'} numberOfLines={1} style={{ flexShrink: 1 }}>
-            {conv.peer.name}
+            {conv.official ? 'holUpp Support' : conv.peer.name}
           </Txt>
-          {conv.peer.verified ? <VerifiedBadge size={14} /> : null}
+          {conv.official ? (
+            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.primarySoft }}>
+              <Txt variant="caption" color="primary">official</Txt>
+            </View>
+          ) : conv.peer.verified ? <VerifiedBadge size={14} /> : null}
           <View style={{ flex: 1 }} />
           <Txt variant="caption" color={unread ? 'gold' : 'textMuted'}>
             {when}

@@ -604,6 +604,11 @@ export type ConversationSummary = {
   updatedAt: number;
   /** Present when the backend has the Whisper request model. */
   whisper?: WhisperState | null;
+  /**
+   * holUpp Support wrote in this thread. It is still a conversation — the member
+   * can answer here — but it is not a Crush, and the list labels it so.
+   */
+  official?: boolean;
 };
 
 export type ConversationDetail = {
@@ -667,7 +672,13 @@ export type NotificationKind =
   | 'circle_declined'
   | 'circle_invite'
   /** The owner's side of the same door: somebody is now in *your* room. */
-  | 'circle_joined';
+  | 'circle_joined'
+  /**
+   * holUpp Support wrote to you. Deliberately not `message`: a Whisper is one
+   * member writing to another, and support is the platform speaking. `refId`
+   * is the conversation the note lives in, so a tap opens it to answer.
+   */
+  | 'support';
 
 export type AppNotification = {
   id: number;

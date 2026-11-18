@@ -47,6 +47,8 @@ const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphM
   circle_joined: { name: 'people-circle-outline', tone: 'success' },
   circle_declined: { name: 'close-circle-outline', tone: 'textSecondary' },
   circle_invite: { name: 'mail-outline', tone: 'gold' },
+  /* holUpp speaking. The mark, not a face. */
+  support: { name: 'shield-checkmark', tone: 'crush' },
 };
 
 /**
@@ -92,6 +94,16 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
     case 'circle_declined':
     case 'circle_invite':
       return circleNotificationText(n.kind, n.body, name);
+    /*
+     * holUpp Support, in the platform's own voice. Deliberately does not use the
+     * actor's name — there is no actor, and "Holup sent you a Whisper" is what
+     * made a support note look like a stranger's message.
+     */
+    case 'support':
+      return {
+        title: 'holUpp Support sent you a message.',
+        detail: n.body || 'Open it to read, and answer there.',
+      };
     case 'verified':
       return { title: 'Your Space is verified.', detail: 'Your check badge is now visible on your Space.' };
     case 'verification_rejected':
@@ -190,6 +202,10 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
         return n.refId ? navigation.navigate('Chat', { conversationId: n.refId }) : navigation.navigate('Main', { screen: 'Messages' });
       case 'moment_reaction':
         return navigation.navigate('Moments');
+      case 'support':
+        return n.refId
+          ? navigation.navigate('Chat', { conversationId: n.refId })
+          : navigation.navigate('Main', { screen: 'Messages' });
       case 'verified':
       case 'verification_rejected':
         return navigation.navigate('Verification');
