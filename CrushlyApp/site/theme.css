@@ -396,3 +396,33 @@ h3 { font-size: clamp(19px, 2.1vw, 23px); letter-spacing: -0.015em; }
   .phone-back, .phone-back2 { display: none; }
   .footer-base { flex-direction: column; align-items: flex-start; }
 }
+
+
+/* FAQ --------------------------------------------------------------------
+ * Native <details> on purpose: it opens without JavaScript, it is keyboard
+ * accessible for free, and its text is in the HTML whether the panel is open or
+ * closed — which is exactly what a search engine needs to read the answer.
+ */
+.faq { display: grid; gap: 10px; max-width: 820px; }
+.faq-item {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 18px;
+}
+.faq-item[open] { border-color: rgba(255, 135, 136, 0.28); }
+.faq-item summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 0;
+  font-weight: 650;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: '+'; color: #FF8788; font-weight: 700; font-size: 18px; }
+.faq-item[open] summary::after { content: '–'; }
+.faq-item p { margin: 0 0 16px; color: rgba(255, 255, 255, 0.72); line-height: 1.75; font-size: 15px; }

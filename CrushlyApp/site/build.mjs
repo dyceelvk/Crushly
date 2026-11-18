@@ -71,23 +71,26 @@ const NAV = [
 ];
 
 const FEATURES = [
-  { slug: '/flow', name: 'Flow', icon: 'flow', blurb: 'One feed of everything happening across holUpp — posts, clips and people, in the order they happened rather than the order an algorithm prefers.' },
-  { slug: '/crushes', name: 'Crushes', icon: 'crush', blurb: 'React to what somebody posted and mean it. A Crush is a real signal between two people, not a vanity counter.' },
-  { slug: '/moments', name: 'Moments', icon: 'moment', blurb: 'Photos and clips that disappear after 24 hours. Say the thing, show the day, and let it go.' },
-  { slug: '/connections', name: 'Connections', icon: 'people', blurb: 'Add Ups and mutual Crushes become connections — the people you actually talk to, kept in one place.' },
-  { slug: '/circles', name: 'Circles', icon: 'circle', blurb: 'Communities built around a shared interest, a city, a hobby or a running conversation.' },
-  { slug: '/whispers', name: 'Whispers', icon: 'whisper', blurb: 'Private conversation that opens when the interest is mutual. Text, voice notes, photos — no video.' },
-  { slug: '/space', name: 'Space', icon: 'space', blurb: 'Your profile, your identity, your posts: everything about you in one place, with your own handle.' },
-  { slug: '/around', name: 'Around', icon: 'around', blurb: 'Find people and things happening near you, without handing over your exact address.' },
+  { slug: '/flow', name: 'Flow', icon: 'flow', titleTail: 'one honest feed', blurb: 'One feed of everything happening across holUpp — posts, clips and people, in the order they happened rather than the order an algorithm prefers.' },
+  { slug: '/crushes', name: 'Crushes', icon: 'crush', titleTail: 'a real signal, not a counter', blurb: 'React to what somebody posted and mean it. A Crush is a real signal between two people, not a vanity counter.' },
+  { slug: '/moments', name: 'Moments', icon: 'moment', titleTail: 'posts that vanish in 24 hours', blurb: 'Photos and clips that disappear after 24 hours. Say the thing, show the day, and let it go.' },
+  { slug: '/connections', name: 'Connections', icon: 'people', titleTail: 'the people you actually talk to', blurb: 'Add Ups and mutual Crushes become connections — the people you actually talk to, kept in one place.' },
+  { slug: '/circles', name: 'Circles', icon: 'circle', titleTail: 'communities around what you care about', blurb: 'Communities built around a shared interest, a city, a hobby or a running conversation.' },
+  { slug: '/whispers', name: 'Whispers', icon: 'whisper', titleTail: 'private chats that start mutual', blurb: 'Private conversation that opens when the interest is mutual. Text, voice notes, photos — no video.' },
+  { slug: '/space', name: 'Space', icon: 'space', titleTail: 'your own handle and profile', blurb: 'Your profile, your identity, your posts: everything about you in one place, with your own handle.' },
+  { slug: '/around', name: 'Around', icon: 'around', titleTail: 'find people near you, privately', blurb: 'Find people and things happening near you, without handing over your exact address.' },
   { slug: '/crushes#big', name: 'Big Crushes', icon: 'big', blurb: 'The posts and people collecting the most attention right now, across the whole community.' },
 ];
 
 const PAGES = [
   {
     path: '/',
-    title: 'holUpp — Everything happens on holUpp',
+    /* A title is the one line a search result shows, so it carries what people
+       type: the product, what it is, and where to get it. 37 characters was a
+       slogan; this is the sentence that answers "what is holUpp". */
+    title: 'holUpp — social app for Android and web, free',
     description:
-      'holUpp is a social ecosystem: discover people, share Moments, join Circles and build real connections. Free on Android, and in your browser.',
+      'holUpp is a free social app for Android and the browser: post Moments that last 24 hours, join Circles, follow Flow, and turn mutual interest into real conversations.',
     h1: 'Everything happens on <span class="grad">holUpp.</span>',
     crumb: null,
     priority: '1.0',
@@ -113,9 +116,22 @@ const PAGES = [
     priority: '0.8',
     body: howPage,
   },
+  {
+    path: '/faq',
+    title: 'holUpp FAQ — pricing, Android, privacy and how it works',
+    description:
+      'Straight answers about holUpp: is it free, which phones it runs on, whether there is an iPhone app, what a Moment or a Crush is, and how to delete your account.',
+    h1: 'Questions, answered',
+    crumb: 'FAQ',
+    priority: '0.9',
+    extraHead: () => `<script type="application/ld+json">${JSON.stringify(faqLd)}</script>`,
+    body: faqPage,
+  },
   ...FEATURES.slice(0, 8).map((feature) => ({
     path: feature.slug.split('#')[0],
-    title: `${feature.name} on holUpp — ${feature.blurb.split('.')[0]}.`,
+    /* Search engines truncate around 60 characters, so the value proposition is
+       written for that width instead of being cut off mid-clause by the engine. */
+    title: `${feature.name} on holUpp — ${feature.titleTail}`,
     description: feature.blurb,
     h1: feature.name,
     crumb: feature.name,
@@ -342,6 +358,7 @@ function layout(page) {
 <link rel="preload" href="/site/theme.css" as="style">
 <link rel="stylesheet" href="/site/theme.css">
 <script type="application/ld+json">${JSON.stringify(graph.length === 1 ? graph[0] : graph)}</script>
+${typeof page.extraHead === 'function' ? page.extraHead() : (page.extraHead || '')}
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -378,6 +395,9 @@ ${bodyHtml}
         <ul>
           <li><a href="/about">About holUpp</a></li>
           <li><a href="/how-it-works">How It Works</a></li>
+          <!-- The FAQ is one click from every page in the site: a page nobody
+               links to is a page a search engine has no reason to rank. -->
+          <li><a href="/faq">FAQ</a></li>
           <li><a href="/#features">Features</a></li>
           <li><a href="/download">Download</a></li>
         </ul>
@@ -479,6 +499,7 @@ function homepage() {
         <a class="btn btn-ghost" href="/download">Get the Android App</a>
       </div>
       <p class="hero-note reveal"><span>Free to join</span><span class="dot"></span><span>Android and web</span><span class="dot"></span><span>Available worldwide</span></p>
+      <p class="reveal" style="margin-top:18px;font-size:14px;color:rgba(255,255,255,0.6)">New here? <a href="/faq" style="color:#FF8788">Read what holUpp is and how it works</a>.</p>
     </div>
     <div class="phones reveal">
       <div class="float-card float-a" aria-hidden="true">
@@ -1015,6 +1036,87 @@ function termsPage() {
   </div>
 </section>`;
 }
+
+/**
+ * The questions people actually type, answered on the page they land on.
+ *
+ * A search engine can only return a page that answers something. The FAQ is the
+ * plainest form of that, and the same text is published as FAQPage structured
+ * data so the answer can be shown under the result rather than only behind a
+ * click. Every answer here is a fact about the product, not a claim about its
+ * size — there is no invented number anywhere on this page.
+ */
+const FAQ = [
+  {
+    q: 'Is holUpp free?',
+    a: 'Yes. Joining, posting, Moments, Circles, Whispers and connections are free. There is no paid tier that unlocks the basics, and the Android app is a free download.',
+  },
+  {
+    q: 'Which phones and browsers does holUpp work on?',
+    a: 'The holUpp app runs on Android 9 and later, and installs from the official APK on the download page. It also runs in a modern browser — Chrome, Safari, Firefox or Edge — at holupp.net, with no install.',
+  },
+  {
+    q: 'Is holUpp on the App Store or Google Play?',
+    a: 'Not at present. The Android build ships as a verified APK from holupp.net/download. An iPhone app is not released, and the web app is what to use on iOS in the meantime.',
+  },
+  {
+    q: 'Do I need an account to look around?',
+    a: 'You can read the marketing pages and the download page without one. Posts, Spaces and conversations need an account, because they belong to members and follow their privacy settings.',
+  },
+  {
+    q: 'What is a Moment on holUpp?',
+    a: 'A Moment is a photo or a clip that disappears 24 hours after you post it. It is the way to show a day without leaving a permanent record of it.',
+  },
+  {
+    q: 'What is a Crush, and what is a Whisper?',
+    a: 'A Crush is a private signal that you are interested in somebody. When two people have crushed on each other, a Whisper opens — a private conversation between exactly those two people.',
+  },
+  {
+    q: 'What is a Space?',
+    a: 'A Space is your profile on holUpp: your name, your handle, your photo, your bio and your posts, all at holupp.net/u/your-handle.',
+  },
+  {
+    q: 'How do I share a post or a profile?',
+    a: 'Every post has a link — holupp.net/v/<number> — and every Space has one at holupp.net/u/<handle>. Both open a page that works for anyone, and both respect the privacy settings of whoever posted.',
+  },
+  {
+    q: 'Do you sell my data or show ads?',
+    a: 'No. holUpp does not sell member data. Advertising is a separate, explicitly labelled surface that is off until it is turned on, and it never targets anyone using private information.',
+  },
+  {
+    q: 'Who owns holUpp?',
+    a: 'holUpp is owned, developed and operated by RielOS, an independent technology group. The company site is rielincos.com.',
+  },
+  {
+    q: 'How do I delete my account?',
+    a: 'From Settings inside the app. Deletion is never immediate: it is a separate, explicit flow with a grace period, so an account cannot be lost to a mistyped tap. Write to support@holupp.net if you want it done for you.',
+  },
+  {
+    q: 'How do I get verified?',
+    a: 'Verification on holUpp is a real review of submitted evidence, not a purchase. The requirements are published in the app before you apply, and the outcome is decided by a person, with a reason given either way.',
+  },
+];
+
+function faqPage() {
+  return `
+<section class="band">
+  <div class="wrap">
+    <div class="faq">
+      ${FAQ.map((item) => `<details class="faq-item"><summary>${escape(item.q)}</summary><p>${escape(item.a)}</p></details>`).join('\n      ')}
+    </div>
+  </div>
+</section>`;
+}
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: FAQ.map((item) => ({
+    '@type': 'Question',
+    name: item.q,
+    acceptedAnswer: { '@type': 'Answer', text: item.a },
+  })),
+};
 
 function contactPage() {
   return `
