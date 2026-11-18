@@ -47,9 +47,24 @@ async function member(page: Page, initial = 'Not Started', failStart = false) {
   return { starts, polls: () => polls, approve: () => { diditStatus = 'Approved'; } };
 }
 
+
+/**
+ * The web build opens with a one-time notice ("You're on the web version") over
+ * the app, offering Keep browsing / Get the app. It is the same for every
+ * visitor, so every test that needs to reach a control below it has to dismiss
+ * it first — exactly as a person on a phone would. Doing it in one place stops
+ * each test from discovering the overlay on its own.
+ */
+async function dismissWebNotice(page: Page) {
+  const keepBrowsing = page.getByRole('button', { name: 'Keep browsing holUpp in this browser' });
+  if (await keepBrowsing.isVisible().catch(() => false)) await keepBrowsing.click();
+  await expect(keepBrowsing).toHaveCount(0);
+}
+
 test('legacy self-service is paused and existing requests are preserved', async ({ page }) => {
   const mocked = await member(page, 'In Review');
   await page.goto('/verification');
+  await dismissWebNotice(page);
   await expect(page.getByText('Verification is being updated', { exact: true })).toBeVisible();
   await expect(page.getByText(/Your existing verification request is preserved/)).toBeVisible();
   await expect(page.getByRole('button', { name: /Continue verification|Start verification|Start a new session/ })).toHaveCount(0);
@@ -62,6 +77,7 @@ for (const path of ['/verification?didit=done&status=Approved', '/?didit=done&st
   test(`return ${path} cannot award a badge from the URL or provider approval`, async ({ page }) => {
     const mocked = await member(page);
     await page.goto(path);
+    await dismissWebNotice(page);
     await expect(page.getByText('Verification is being updated', { exact: true })).toBeVisible();
     await expect.poll(mocked.polls).toBeGreaterThan(0);
     mocked.approve();
