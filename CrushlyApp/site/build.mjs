@@ -23,7 +23,10 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, '..');
-const DIST = path.join(APP_ROOT, 'dist');
+/* SITE_OUT lets a test build into a scratch directory. The Expo export is the
+   slow part of build:web; the marketing pages are not, so tests and CI can render
+   them without waiting for a bundle they do not read. */
+const DIST = path.resolve(process.env.SITE_OUT || path.join(APP_ROOT, 'dist'));
 /* IndexNow asks a search engine to fetch a page the moment it changes. The key is
    proof we own the host, so it is served at /<key>.txt and must match what
    scripts/indexnow.mjs sends. It is a public token, not a credential. */

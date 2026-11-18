@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 /**
@@ -11,7 +13,26 @@ import path from 'node:path';
  * Neither is worth writing if nothing verifies them, so this reads the built
  * HTML rather than the source that produced it.
  */
-const DIST = path.resolve(import.meta.dirname, '..', 'dist');
+/**
+ * Built here rather than assumed. Reading a checked-in dist/ would pass locally
+ * after a manual build and fail in CI, which is exactly what happened the first
+ * time this file ran: nobody's fault but the test's.
+ */
+const APP_ROOT = path.resolve(import.meta.dirname, '..');
+const DIST = path.join(APP_ROOT, '.seo-test-dist');
+
+if (!existsSync(path.join(DIST, 'index.html'))) {
+  mkdirSync(DIST, { recursive: true });
+  writeFileSync(
+    path.join(DIST, 'index.html'),
+    '<!doctype html><html><head><title>app shell</title></head><body></body></html>',
+  );
+  execFileSync(process.execPath, [path.join(APP_ROOT, 'site', 'build.mjs')], {
+    cwd: APP_ROOT,
+    env: { ...process.env, SITE_OUT: DIST },
+    stdio: 'pipe',
+  });
+}
 
 async function pages() {
   const out = [{ file: 'index.html', url: '/' }];

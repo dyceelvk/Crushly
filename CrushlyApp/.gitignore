@@ -44,3 +44,4 @@ yarn-error.*
 # The preview export lives outside dist/ so the running preview survives a
 # sandbox snapshot (dist/ and build/ are excluded from them).
 web-dist/
+.seo-test-dist/
