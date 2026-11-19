@@ -48,6 +48,24 @@ test('every category is capped at the seconds its limit allows', () => {
   }
 });
 
+/**
+ * A three-minute video is a post, not an error.
+ *
+ * The composer used to refuse any clip longer than the limit at the picker — a
+ * toast over an empty box, before the editor existed — which told a member their
+ * video was wrong when the app's own trim tool was one screen away. The editor
+ * clamps; this proves the clamping is enough, so the refusal never needed to
+ * happen.
+ */
+test('a clip far longer than the limit is trimmed down, not refused', () => {
+  const threeMinutes = clampEdit({ ...emptyEdit(180), trimStart: 0, trimEnd: 180 }, 'post');
+  assert.equal(EDIT_LIMITS.post.maxSeconds, 60);
+  assert.ok(clipLength(threeMinutes) <= 60.001, 'an over-long post clip must clamp to a minute');
+
+  const whole = clampEdit(emptyEdit(180), 'post');
+  assert.ok(clipLength(whole) <= 60.001, 'a long clip with no trim at all must still fit');
+});
+
 test('a Moment clip runs up to 25 seconds, never longer', () => {
   const e = clampEdit({ ...emptyEdit(300), trimEnd: 300 }, 'moment');
   assert.equal(EDIT_LIMITS.moment.maxSeconds, 25);

@@ -925,6 +925,21 @@ function TrimPanel({
           ? `Keeping ${formatTime(clipLength(edit))} of ${formatTime(total)} in ${pieces} pieces. These handles move the two outer ends; the cuts you made in between stay where you put them.`
           : `Keeping ${formatTime(clipLength(edit))} of ${formatTime(total)}. Trimmed-away video is hidden, not deleted, so you can always widen it again — and Split on the timeline cuts the middle out.`}
       </PanelNote>
+      {/*
+        * Say it before they find out.
+        *
+        * A clip longer than the surface allows now arrives here instead of being
+        * refused at the picker, so this is the first place a member learns there
+        * is a limit at all. Saying "a post can carry a minute — pick the minute"
+        * while the trim handles are on screen is a far better sentence than a toast
+        * over an empty composer.
+        */}
+      {total > limit.maxSeconds ? (
+        <PanelNote>
+          This clip is {formatTime(total)}. {limit.note} Drag the handles, or press
+          {` “First ${limit.maxSeconds}s” `}above, and the rest stays on your phone.
+        </PanelNote>
+      ) : null}
     </>
   );
 }

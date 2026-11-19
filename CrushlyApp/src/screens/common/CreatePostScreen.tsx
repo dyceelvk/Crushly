@@ -225,10 +225,21 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
         const isVideo = asset.type === 'video' || !!asset.mimeType?.startsWith('video/');
         const durationMs = asset.duration ?? 0;
 
-        if (isVideo && durationMs > MAX_VIDEO_SECONDS * 1000) {
-          toast({ kind: 'error', title: 'That clip is too long', message: 'Posts can carry up to one minute of video.' });
-          continue;
-        }
+        /*
+         * A long clip opens the editor. It is not refused.
+         *
+         * This used to toast "That clip is too long" and drop the file before the
+         * editor was ever opened — which told a member their video was wrong when
+         * the app's own answer was one screen away. holUpp has a workbench with
+         * Trim, Text, Filters, Adjust, Speed, Crop, Stickers and Sound, and that is
+         * exactly where an over-long clip belongs: the trim tool already clamps to
+         * the surface's limit (`clampEdit`), so a three-minute video becomes a
+         * one-minute post by cutting it, and the member keeps the part they wanted.
+         *
+         * What is still refused is a file no phone can usefully edit: over
+         * MAX_PICK_BYTES it would be several hundred megabytes of decode work in a
+         * 256 MB heap, which is the crash this composer was built to stop.
+         */
 
         const item: MediaItem = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
