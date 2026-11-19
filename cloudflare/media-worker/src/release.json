@@ -6,5 +6,5 @@
   "releaseUrl": "https://github.com/dyceelvk/Crushly/releases/download/android-test-1.0.131/holUpp-1.0.131-RielOS.apk",
   "notes": "Send a clip in a Whisper. Tap Clip in the tray, pick up to a minute of video, and it is compressed for mobile data on the way out \u2014 with a progress bar, because a silent composer looks broken. It plays inline when it arrives. Clips and photos share the same two-a-day media allowance.",
   "bytes": 101680451,
-  "sha256": "bb40f3cb65a3df1fc1f449956095c3d1551316c37f921b6d8a62a388b546f7ab"
+  "sha256": "afb96a2faae122d7e9e9d609731dc334f17125b725479c8b605aab90a36bd02e"
 }
