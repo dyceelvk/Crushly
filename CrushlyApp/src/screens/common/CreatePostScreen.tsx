@@ -36,6 +36,7 @@ import { emptyEdit, splitForUpload } from '../../lib/videoEdit';
 import { onCompressProgress } from '../../lib/compressVideo';
 import { preparedClip } from '../../lib/videoEncode';
 import { takeTrimResult } from './VideoTrimScreen';
+import { pickerSeconds } from '../../lib/momentClip';
 import { useTheme } from '../../theme/ThemeProvider';
 import { VIDEO_ENABLED } from '../../lib/features';
 import { radius, space } from '../../theme/tokens';
@@ -73,6 +74,40 @@ const BOARDS: { kind: PostKind; title: string; blurb: string; icon: keyof typeof
  * Layout follows the design: view at top, editors above tabs, tabs below
  * editors, add-text bar at the bottom.
  */
+
+/**
+ * How long a file actually is — measured, never assumed.
+ *
+ * `asset.duration` is null for a good share of Android gallery videos, and 0 is
+ * not "unknown" to the editor: `clampEdit` clamps a 0-second source to the
+ * minimum segment, so the member's clip silently became a fifth of a second.
+ * (`VideoTrimScreen` hit the same trap for Moments and its comment says so.)
+ *
+ * So the length is asked of the decoder through `expo-video`, the same player the
+ * editor and the timeline already use. Two seconds is the whole budget: if the
+ * decoder has not answered by then, the caller gets 0 and can say "unknown"
+ * rather than invent a number.
+ */
+async function measureDuration(uri: string): Promise<number> {
+  if (!uri) return 0;
+  let player: { duration?: number; release?: () => void } | null = null;
+  try {
+    const { createVideoPlayer } = await import('expo-video');
+    player = createVideoPlayer(uri) as unknown as { duration?: number; release?: () => void };
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const d = Number(player?.duration) || 0;
+      if (d > 0.2) return d;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return 0;
+  } catch {
+    return 0;
+  } finally {
+    try { player?.release?.(); } catch { /* already gone */ }
+  }
+}
+
 export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'>) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -287,11 +322,24 @@ export function CreatePostScreen({ navigation, route }: ScreenProps<'CreatePost'
             setProgressNote(null);
           }
 
-          // Videos go trim-first before anything else.
+          /*
+           * Trim-first, with a duration the editor can trust.
+           *
+           * `asset.duration` is null on some platforms and some files. Passing
+           * that through as 0 does not mean "unknown" to the editor — it means a
+           * 0.2-second source, and `clampEdit` dutifully clamps the member's
+           * clip to a fifth of a second. So the duration is measured here when
+           * the picker will not say, and if it still cannot be measured the
+           * editor is opened with the file but no length hint rather than a
+           * wrong one.
+           */
           setPendingMedia(item);
+          // The picker's number is a hint; the decoder's is the truth.
+          let known = (pickerSeconds(durationMs) ?? 0);
+          if (!known) known = await measureDuration(item.uri);
           navigation.navigate('VideoTrim', {
             sourceUri: item.uri,
-            sourceDuration: durationMs / 1000,
+            sourceDuration: known,
             category: 'post',
           });
           return; // one video at a time through the trim screen
