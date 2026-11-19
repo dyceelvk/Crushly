@@ -221,6 +221,19 @@ export function WatchScreen({ navigation }: ScreenProps<'Follow'>) {
               <View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' }}>
                 <Ionicons name="play" size={24} color="#fff" />
               </View>
+              {/*
+                * The tile says what it is even when no frame can be drawn.
+                *
+                * A poster frame is a nicety: a browser without H.264 (rare on the
+                * real web, common in test environments) or a clip whose first frame
+                * has not been extracted yet leaves an empty box, and an empty box
+                * with a play button is a promise the page cannot keep. The label is
+                * true in every case — it is a clip, and it plays in the app.
+                */}
+              <View style={{ position: 'absolute', left: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+                <Ionicons name="videocam-outline" size={12} color="#fff" />
+                <Txt variant="caption" style={{ color: '#fff' }}>Clip</Txt>
+              </View>
             </View>
           </View>
         ) : (
