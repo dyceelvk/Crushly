@@ -3,7 +3,7 @@
     "name": "holUpp",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.130",
+    "version": "1.0.131",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

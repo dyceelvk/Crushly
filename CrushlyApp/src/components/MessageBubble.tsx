@@ -10,6 +10,7 @@ import { CrushIcon } from './Logo';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius } from '../theme/tokens';
 import { EditedClip } from './EditedClip';
+import { ClipPlayer } from './ClipPlayer';
 import type { Message, ReplyQuote } from '../api/types';
 import { mediaUrl } from '../api/client';
 import { mediaSource } from '../lib/mediaHost';
@@ -198,14 +199,34 @@ function BareContent({ m }: { m: Message }) {
   }
   if (m.kind === 'video') {
     /*
-     * Video notes are retired: a Whisper sends photos and voice notes, and the
-     * server refuses a new one. Anything sent before that still has to show it
-     * was there — but this app will not play it, so there is nowhere left in a
-     * chat where a camera starts.
+     * A clip sent in a conversation. It plays in place, at the size a phone can
+     * hold, because the point of sending a clip is that the other person watches
+     * it — not that they learn one was sent.
+     *
+     * Older "video note" messages that were never played here now play too: they
+     * are the same kind, and refusing to open a clip somebody still has is not a
+     * policy, it is a dead end.
      */
+    const src = mediaUrl(m.mediaUrl);
+    const seconds = Number(m.meta?.duration ?? 0);
     return (
-      <View style={{ maxWidth: 260, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10 }}>
-        <Txt variant="body" color="textMuted">A video note. Whispers are photos and voice notes now.</Txt>
+      <View style={{ maxWidth: 280, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+        {src ? (
+          <ClipPlayer
+            uri={src}
+            style={{ width: 280, height: 280 }}
+          />
+        ) : (
+          <View style={{ width: 280, height: 180, alignItems: 'center', justifyContent: 'center' }}>
+            <Txt variant="small" color="textMuted">This clip is no longer available.</Txt>
+          </View>
+        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }}>
+          <Ionicons name="videocam" size={14} color={colors.textMuted} />
+          <Txt variant="caption" color="textMuted">
+            Clip{seconds > 0 ? ` · ${durationLabel(Math.round(seconds / 1000))}` : ''}
+          </Txt>
+        </View>
       </View>
     );
   }

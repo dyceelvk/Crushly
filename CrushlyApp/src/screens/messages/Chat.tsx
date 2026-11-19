@@ -30,6 +30,7 @@ import { fonts, radius, space } from '../../theme/tokens';
 import { STICKERS } from '../../lib/catalog';
 import { dayLabel, durationLabel } from '../../lib/format';
 import { pickImage } from '../../lib/media';
+import { pickClipForMessage } from '../../lib/pickClip';
 import { useLiveCamera } from '../../components/CameraCapture';
 import { CallSheet } from '../../components/CallSheet';
 import { useAndroidKeyboardOverlap } from '../../lib/useAndroidKeyboardOverlap';
@@ -383,12 +384,31 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
 
   const cam = useLiveCamera();
 
+  /* A clip is compressed before it is sent, which takes a moment, so the
+     composer says what is happening rather than going quiet. */
+  const [clipProgress, setClipProgress] = useState<{ fraction: number; label: string } | null>(null);
+
   const sendPhoto = async (camera: boolean) => {
     setTray(false);
     const img = await (camera ? cam.capture() : pickImage());
     if (!img) return;
     if ('error' in img) return toast({ kind: 'error', title: 'Photo not added', message: img.error });
     send({ kind: 'photo', uri: img.uri, mimeType: img.mimeType });
+  };
+
+  /**
+   * A clip. Picked, shrunk on the device, then sent as a video message — the
+   * same kind the server already stores, and which was refused in Whispers
+   * until now.
+   */
+  const sendClip = async () => {
+    setTray(false);
+    setClipProgress({ fraction: 0, label: 'Choosing' });
+    const clip = await pickClipForMessage((fraction, label) => setClipProgress({ fraction, label }));
+    setClipProgress(null);
+    if (!clip) return;
+    if ('error' in clip) return toast({ kind: 'error', title: 'Clip not added', message: clip.error });
+    send({ kind: 'video', uri: clip.uri, mimeType: clip.mimeType, duration: clip.durationMs });
   };
 
   const startRecording = async () => {
@@ -705,6 +725,7 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               <View style={{ paddingHorizontal: space.md, paddingTop: space.sm, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.sm }}>
                   <TrayButton icon="image-outline" label="Photo" onPress={() => sendPhoto(false)} />
+                  <TrayButton icon="videocam-outline" label="Clip" onPress={() => void sendClip()} />
                   <TrayButton icon="camera-outline" label="Camera" onPress={() => sendPhoto(true)} />
                   {callsEnabled ? <TrayButton icon="call-outline" label="Call" onPress={startCall} /> : null}
                   <TrayButton icon="person-circle-outline" label="Share Space" onPress={() => { setTray(false); setShareOpen(true); }} />
@@ -724,6 +745,23 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
                       <Txt style={{ fontSize: 28, lineHeight: 34 }}>{s.emoji}</Txt>
                     </Pressable>
                   ))}
+                </View>
+              </View>
+            ) : null}
+
+            {clipProgress ? (
+              <View
+                accessibilityLiveRegion="polite"
+                style={{ paddingHorizontal: space.sm, paddingTop: 8, width: '100%', maxWidth: contentWidth, alignSelf: 'center' }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={colors.gold} />
+                  <Txt variant="small" color="textSecondary">
+                    {clipProgress.label} — {Math.round(clipProgress.fraction * 100)}%
+                  </Txt>
+                </View>
+                <View style={{ height: 3, borderRadius: 2, backgroundColor: colors.card, marginTop: 6, overflow: 'hidden' }}>
+                  <View style={{ height: 3, width: `${Math.min(100, Math.max(0, clipProgress.fraction * 100))}%`, backgroundColor: colors.gold }} />
                 </View>
               </View>
             ) : null}
