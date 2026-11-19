@@ -1,11 +1,11 @@
 {
-  "version": "1.0.131",
-  "versionCode": 131,
+  "version": "1.0.132",
+  "versionCode": 132,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.131-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.131/holUpp-1.0.131-RielOS.apk",
-  "notes": "Send a clip in a Whisper. Tap Clip in the tray, pick up to a minute of video, and it is compressed for mobile data on the way out \u2014 with a progress bar, because a silent composer looks broken. It plays inline when it arrives. Clips and photos share the same two-a-day media allowance.",
-  "bytes": 101680451,
-  "sha256": "afb96a2faae122d7e9e9d609731dc334f17125b725479c8b605aab90a36bd02e",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.131/holUpp-1.0.131-RielOS.apk"
+  "file": "holUpp-1.0.132-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.132/holUpp-1.0.132-RielOS.apk",
+  "notes": "The website now opens on the room instead of a pop-up. A visitor sees public posts and can search before making an account \u2014 football, animation and entertainment lead, and when there is none of that yet holUpp's own posts stand in. Sign-up now adds Up to every official account you tick, and checks with the server that it landed.",
+  "bytes": 101696847,
+  "sha256": "d9ad2006977b89a40af12703d70bff5fb72a8e39fb2b7701e55d6b20f67315f3",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.132/holUpp-1.0.132-RielOS.apk"
 }
