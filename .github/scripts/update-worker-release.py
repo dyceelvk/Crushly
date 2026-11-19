@@ -23,6 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 APP_JSON = ROOT / 'CrushlyApp' / 'app.json'
 RELEASE_JSON = ROOT / 'cloudflare' / 'media-worker' / 'src' / 'release.json'
 REPO = 'dyceelvk/Crushly'
+RELEASE_REPO = 'dyceelvk/holupp-releases'
 
 
 def version_code(app: dict) -> int:
@@ -45,15 +46,24 @@ def main() -> int:
     version = app['expo']['version']
     code = version_code(app)
     notes = args.notes if args.notes is not None else note_for(version)
+    # The public fallback rung lives in the releases repository, not this one.
+    #
+    # `releaseFromPublic` reads `release.publicUrl`; a manifest written without it
+    # leaves the Worker with nothing behind R2, so the first time the bucket says
+    # no, /download says 503 — which is exactly what the unit test for that rung
+    # caught. Written here so every generated manifest carries it.
+    asset = f'holUpp-{version}-RielOS.apk'
+    public_url = f'https://github.com/{RELEASE_REPO}/releases/download/android-{version}/{asset}'
     release = {
         'version': version,
         'versionCode': code,
         'minVersionCode': current.get('minVersionCode', 1),
-        'file': f'holUpp-{version}-RielOS.apk',
-        'releaseUrl': f'https://github.com/{REPO}/releases/download/android-test-{version}/holUpp-{version}-RielOS.apk',
+        'file': asset,
+        'releaseUrl': public_url,
         'notes': notes,
         'bytes': args.bytes,
         'sha256': args.sha256.lower(),
+        'publicUrl': public_url,
     }
 
     # This keeps a re-run idempotent. A different asset or any new version must

@@ -752,6 +752,25 @@ export type SearchResults = {
 };
 
 /** What our own update endpoint says the current build is. */
+/**
+ * A public post as a stranger sees it.
+ *
+ * Deliberately smaller than `Post`: the anonymous endpoints send no privacy row,
+ * no distance, no presence and no relationship state, so the type has no field to
+ * carry them and nothing downstream can assume they are there.
+ */
+export type WatchPost = {
+  id: number;
+  body: string | null;
+  mediaUrl: string | null;
+  mediaKind: 'photo' | 'video' | null;
+  createdAt: number;
+  location?: string | null;
+  likeCount?: number;
+  commentCount?: number;
+  author: { id: number; name: string; username: string | null; verified: boolean; badgeTier: string; photos: { url: string }[] };
+};
+
 export type AppUpdate = {
   platform: string;
   version: string;

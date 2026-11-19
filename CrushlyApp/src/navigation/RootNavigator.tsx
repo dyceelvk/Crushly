@@ -21,6 +21,7 @@ import { notificationText } from '../screens/notifications/Notifications';
 
 import { BootCanvas } from '../screens/auth/Splash';
 import { FollowScreen } from '../screens/auth/Follow';
+import { WatchScreen } from '../screens/watch/Watch';
 import { WelcomeScreen } from '../screens/auth/Welcome';
 import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } from '../screens/auth/AuthForms';
 import {
@@ -189,7 +190,18 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
     >
       {status === 'signedOut' ? (
         <Stack.Group screenOptions={{ animation: reduceMotion ? 'none' : 'fade' }}>
-          <Stack.Screen name="Follow" component={FollowScreen} />
+          {/*
+           * A browser lands on the room; a phone lands on the welcome.
+           *
+           * Same navigator, different first screen, because the two audiences are
+           * arriving differently. Somebody on a phone installed this on purpose and
+           * is one tap from an account; somebody on a laptop followed a link and has
+           * no idea what holUpp is. Showing the second person a wall of buttons over
+           * a slogan — which is what the web did — answers a question they had not
+           * asked yet. WatchScreen shows public posts and asks for an account only
+           * when they try to do something that needs one.
+           */}
+          <Stack.Screen name="Follow" component={Platform.OS === 'web' ? WatchScreen : FollowScreen} />
           <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="SignIn" component={SignInScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="SignUp" component={SignUpScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />

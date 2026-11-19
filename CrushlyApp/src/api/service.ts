@@ -8,6 +8,7 @@ import { fileSize, NoSpaceError } from '../lib/compressVideo';
 import { removeCompressedClip } from '../lib/compressClip';
 import Constants from 'expo-constants';
 import { updateVersionPath } from '../lib/updateChannel';
+import { leadWithCategories } from '../lib/watch';
 import { browserLocation, returnUrl } from '../lib/browser';
 import { profileCompletion } from '../lib/completion';
 import {
@@ -38,7 +39,7 @@ import {
   LANGUAGES as catalogLanguages,
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
-import type {AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
+import type {WatchPost, AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
   CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
 
 /**
@@ -2321,6 +2322,27 @@ export async function profileIdByUsername(username: string): Promise<number | nu
 export async function publicFlow(): Promise<Post[]> {
   const res = await rpc<{ items: Post[] }>('public_flow_feed', { p_limit: 20 });
   return res?.items ?? [];
+}
+
+/* ------------------------------------------------- the room, without an account */
+
+/**
+ * Posts that are already public, for somebody who has not signed in.
+ *
+ * The server decides what "public" means (`public_watch_feed`), not this file: it
+ * applies the same rule `can_view_post` uses for an `everyone` audience and returns
+ * only the fields a stranger may see. Nothing here can widen that.
+ */
+export async function publicWatchFeed(limit = 12, after: number | null = null): Promise<{ items: WatchPost[]; nextCursor: number | null }> {
+  return rpc('public_watch_feed', { p_limit: limit, p_after: after });
+}
+
+/** Search for somebody who has not signed in. The three subjects lead; see lib/watch. */
+export async function publicWatchSearch(query: string, limit = 24): Promise<{ posts: WatchPost[]; members: WatchPost['author'][] }> {
+  const q = String(query ?? '').trim();
+  if (q.length < 2) return { posts: [], members: [] };
+  const found = await rpc<{ posts: WatchPost[]; members: WatchPost['author'][] }>('public_watch_search', { p_query: q, p_limit: limit });
+  return { posts: leadWithCategories(found?.posts ?? []), members: found?.members ?? [] };
 }
 
 /* ----------------------------------------------------------------- updates */

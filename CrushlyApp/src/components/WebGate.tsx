@@ -24,17 +24,23 @@ function isSharedRoute(path: string): boolean {
   return path.startsWith('/v/') || path.startsWith('/s/') || path === '/download' || path.startsWith('/download/');
 }
 
+/**
+ * The notice is gone.
+ *
+ * It was a card over the home page telling a visitor they were on the web and
+ * offering the app before they had seen a single post. That is an interstitial,
+ * and an interstitial on a site whose whole argument is "look at the room" argues
+ * against itself. The web now opens on the room (`WatchScreen`) with the app
+ * download in the footer and on `/download`, where a person who has decided they
+ * want it will look.
+ *
+ * Kept as a function, returning false, because `WebNotice` is mounted in the app
+ * shell and every caller already asks this question. Deleting the call sites would
+ * be a bigger diff for the same result, and this comment is the answer to the next
+ * person who wonders why the notice is never visible.
+ */
 export function webGateActive(): boolean {
-  if (Platform.OS !== 'web') return false;
-  if (typeof window === 'undefined') return false;
-  const path = window.location?.pathname ?? '/';
-  if (isSharedRoute(path)) return false;
-  try {
-    if (window.sessionStorage?.getItem(DISMISS_KEY) === '1') return false;
-  } catch {
-    // Storage blocked (private mode, third-party context): show it, harmless.
-  }
-  return true;
+  return false;
 }
 
 export function WebNotice() {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Glow } from '../../components/Ambient';
 import { CrushlyMark } from '../../components/Logo';
@@ -17,7 +17,7 @@ import { RangeSlider } from '../../components/Slider';
 import { ListRow, Group } from '../../components/ListRow';
 import { useToast } from '../../components/Toast';
 import { useMe, useUpdatePreferences, useUpdatePrivacy, useUpdateProfile } from '../../api/hooks';
-import { completeOnboarding, followMember, profileByUsername } from '../../api/service';
+import { completeOnboarding, followMember, followStatus, profileByUsername } from '../../api/service';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { haptic } from '../../lib/haptics';
@@ -586,9 +586,20 @@ export function OnboardingPreferencesScreen({ navigation }: ScreenProps<'Onboard
 /* 6 — Stay close to holUpp */
 
 /**
- * The company's own accounts. Both start selected, so one tap on Continue
- * follows them — but the step is an invitation, not a gate. Skipping it still
- * gets the member in, and following can be done later from either Space.
+ * The company's own accounts, and the one part of sign-up that has to be true
+ * rather than attempted.
+ *
+ * It used to be best-effort: `Promise.allSettled` swallowed every failure, so a
+ * member who ticked a box and hit a network blip arrived in the app not following
+ * anybody, with nothing said. The box said they followed holUpp; the account table
+ * said otherwise. Now each ticked account is followed and then *read back* with
+ * `followStatus` — the row only counts as done when the server agrees — retried
+ * once, and a member who still cannot be followed is told which one and can carry
+ * on without it.
+ *
+ * Skipping stays possible, because a gate that cannot be satisfied is worse than an
+ * unticked box. What a skip can no longer do is nothing at all: skipping follows
+ * every account still ticked before it lets go.
  */
 const OFFICIAL_ACCOUNTS = [
   { handle: 'holupp', fallbackName: 'Holupyall', blurb: 'Official updates, new features and what is coming next.' },
@@ -602,6 +613,8 @@ export function OnboardingFollowScreen({ navigation }: ScreenProps<'OnboardingFo
   const [profiles, setProfiles] = useState<Record<string, { id: number; name: string; photo: string | null }>>({});
   const [selected, setSelected] = useState<Set<string>>(() => new Set(OFFICIAL_ACCOUNTS.map((a) => a.handle)));
   const [finishing, setFinishing] = useState(false);
+  /** handle -> what actually happened, shown under the row so nothing is silent. */
+  const [outcome, setOutcome] = useState<Record<string, 'following' | 'done' | 'failed'>>({});
 
   useEffect(() => {
     let alive = true;
@@ -629,18 +642,55 @@ export function OnboardingFollowScreen({ navigation }: ScreenProps<'OnboardingFo
     return next;
   });
 
-  const enter = async (shouldFollow: boolean) => {
+  const enter = async (_shouldFollow: boolean) => {
     setFinishing(true);
     try {
-      if (shouldFollow) {
-        // Best-effort: a member who cannot reach the accounts right now still
-        // gets in, and can follow them later.
-        await Promise.allSettled(OFFICIAL_ACCOUNTS.filter((a) => selected.has(a.handle)).map(async (account) => {
-          const id = profiles[account.handle]?.id ?? (await profileByUsername(account.handle))?.id;
-          if (id != null) await followMember(id);
-        }));
-      }
+      // Both Continue and Skip land here. Skip is "not now" about the invitation,
+      // not a way past the accounts a member has ticked — so the follows are
+      // identical either way and the label is the only difference.
+      const failed: string[] = [];
+      await Promise.all(OFFICIAL_ACCOUNTS.filter((a) => selected.has(a.handle)).map(async (account) => {
+        setOutcome((o) => ({ ...o, [account.handle]: 'following' }));
+        const id = profiles[account.handle]?.id ?? (await profileByUsername(account.handle).catch(() => null))?.id;
+        if (id == null) {
+          setOutcome((o) => ({ ...o, [account.handle]: 'failed' }));
+          failed.push(account.handle);
+          return;
+        }
+        // Two attempts: a follow that fails once on a weak connection is usually a
+        // follow that works on the second ask, and a member should not have to
+        // discover the retry button for it.
+        let followed = false;
+        for (let attempt = 0; attempt < 2 && !followed; attempt++) {
+          try {
+            await followMember(id);
+            followed = true;
+          } catch {
+            if (attempt === 0) await new Promise((r) => setTimeout(r, 700));
+          }
+        }
+        // The row is only done when the server says it is. `followMember` resolves
+        // even when nothing changed, so the claim is checked rather than trusted.
+        if (followed) {
+          const status = await followStatus(id).catch(() => null);
+          followed = status?.status === 'active' || status?.connected === true;
+        }
+        setOutcome((o) => ({ ...o, [account.handle]: followed ? 'done' : 'failed' }));
+        if (!followed) failed.push(account.handle);
+      }));
+
       await completeOnboarding();
+      if (failed.length) {
+        // Still in — but not lied to. The Space rows carry a Follow button, and the
+        // member has just been told which ones to press.
+        toast({
+          kind: 'error',
+          title: 'Couldn’t add Up to ' + failed.map((h) => '@' + h).join(' and '),
+          message: 'You’re in. Open their Space and press Add Up — it takes one tap.',
+        });
+        setFinishing(false);
+        return;
+      }
       await refresh(); // flips the navigator to the main app
       toast({ kind: 'success', title: 'You’re on holUpp', message: 'Your space is ready. Start with a feeling.' });
     } catch (e) {
@@ -653,12 +703,12 @@ export function OnboardingFollowScreen({ navigation }: ScreenProps<'OnboardingFo
     <Shell
       step={6}
       title="Stay close to holUpp"
-      subtitle="Follow the official accounts. Updates, help and what is coming next — straight from the people who build it."
+      subtitle="Add Up to the official accounts. Updates, help and what is coming next — straight from the people who build it."
       onBack={() => navigation.goBack()}
       onNext={() => enter(true)}
       nextLabel="Start discovering"
       loading={finishing}
-      skip={() => enter(false)}
+      skip={finishing ? undefined : () => enter(false)}
     >
       <View style={{ gap: space.xs }}>
         {OFFICIAL_ACCOUNTS.map((account) => {
@@ -684,21 +734,28 @@ export function OnboardingFollowScreen({ navigation }: ScreenProps<'OnboardingFo
               <View style={{ flex: 1 }}>
                 <Txt variant="bodyStrong">{profile?.name ?? account.fallbackName}</Txt>
                 <Txt variant="small" color="textSecondary" style={{ marginTop: 1 }}>@{account.handle}</Txt>
-                <Txt variant="small" color="textMuted" style={{ marginTop: 2 }}>{account.blurb}</Txt>
+                <Txt variant="small" color={outcome[account.handle] === 'failed' ? 'danger' : 'textMuted'} style={{ marginTop: 2 }}>
+                  {outcome[account.handle] === 'following' ? 'Adding Up…'
+                    : outcome[account.handle] === 'done' ? 'Added Up — you are following them'
+                    : outcome[account.handle] === 'failed' ? 'Didn’t go through — press Add Up on their Space'
+                    : account.blurb}
+                </Txt>
               </View>
               <View style={{
                 width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
                 borderWidth: stroke.thick, borderColor: on ? colors.primary : colors.borderStrong,
                 backgroundColor: on ? colors.primary : 'transparent',
               }}>
-                {on ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+                {outcome[account.handle] === 'following'
+                  ? <ActivityIndicator size="small" color={colors.primary} />
+                  : on ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
               </View>
             </Pressable>
           );
         })}
       </View>
       <View style={{ marginTop: rhythm.group, gap: space.xs }}>
-        {['You can unfollow anytime — nothing here is permanent.', 'New features are announced here first, before anywhere else.'].map((tip) => (
+        {['Every account you tick is added Up before you continue.', 'You can unfollow anytime — nothing here is permanent.'].map((tip) => (
           <View key={tip} style={{ flexDirection: 'row', gap: space.xs }}>
             <Ionicons name="sparkles-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
             <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>{tip}</Txt>

@@ -1007,7 +1007,45 @@ export default {
 
     const { path, queryToken } = splitPath(url);
     const token = bearerToken(request, queryToken);
-    if (!token) return fail(401, 'Sign in to load this.', origin);
+
+    /*
+     * A file on a public post, for somebody who has not signed in.
+     *
+     * The web front page shows public posts to strangers, and every one of their
+     * pictures answered 401 — an empty card where a photo should be. The fix is
+     * not "make /m open": a path is guessable, and every photo in holUpp is behind
+     * a privacy row. So a read *without* a token is allowed only when it is a GET
+     * or HEAD, and only after the database says this exact URL is the media of a
+     * post the public feed would already have shown, by an author who has turned
+     * public media on. One URL at a time, exact match, nothing listable.
+     */
+    if (!token) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return fail(401, 'Sign in to load this.', origin);
+      if (!path) return fail(404, 'That file isn’t available.', origin);
+      const publicUrl = `${url.origin}/m/${path}`;
+      const allowed = await rpc<string[]>(env, env.SUPABASE_ANON_KEY, 'public_media_urls', { p_paths: [publicUrl] });
+      if (!allowed.ok || !Array.isArray(allowed.data) || !allowed.data.includes(publicUrl)) {
+        return fail(401, 'Sign in to load this.', origin);
+      }
+      // Public files are the same for everybody, so they are cached like any other
+      // shareable asset — but under the public URL, never under a member's token.
+      let upstream: Response | null = null;
+      for (const store of READ_ORDER) {
+        if (store === 'r2') upstream = await r2Get(env, path);
+        else {
+          const auth = await b2Auth(env);
+          const answer = await b2Download(env, auth, path);
+          upstream = answer.ok ? answer : null;
+        }
+        if (upstream) break;
+      }
+      if (!upstream) return fail(404, 'That file isn’t available.', origin);
+      const headers = new Headers(upstream.headers);
+      for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v);
+      headers.set('Cache-Control', mediaCacheControl(path, true));
+      return new Response(request.method === 'HEAD' ? null : upstream.body, { status: 200, headers });
+    }
+
     if (!(await memberId(env, token))) return fail(401, 'That session has expired — sign in again.', origin);
 
     /* ------------------------------------------------------------- upload */
