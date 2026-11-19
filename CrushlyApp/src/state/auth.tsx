@@ -348,7 +348,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
     retry: false,
   });
-  const regionLocated = regionGate.data ? Boolean(regionGate.data.located) : null;
+  /*
+   * Only an explicit refusal gates. `located: false` says the server looked and
+   * found nothing; a missing field, a stale backend or a failed call says nothing
+   * at all, and nothing must never be read as "required but impossible". The app
+   * was briefly gating on `Boolean(undefined)` here, which sent members who could
+   * not be located to a screen they had no way to leave — caught by the offline
+   * verification suite, which mocks the endpoint and got stuck on it.
+   */
+  const regionGateData = regionGate.data as { located?: boolean; required?: boolean } | undefined;
+  const regionLocated = regionGateData
+    ? regionGateData.located === false && regionGateData.required === true
+      ? false
+      : true
+    : null;
 
   const status = authStatus({ restoring, signedIn, mustSetPassword, me, regionLocated });
 
