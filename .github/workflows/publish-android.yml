@@ -61,7 +61,14 @@ jobs:
           if [ -z "$apk" ]; then
             apk=$(find apk -name 'app-release.apk' | head -1)
           fi
-          test -n "$apk" || { echo "::error::no APK in run ${{ inputs.run_id }} (looked for $file and app-release.apk)."; exit 1; }
+          # The test build packages its APK as Crushly-<version>-Android9plus.apk.
+          # This job refused it three times while the file it wanted was sitting in
+          # the artifact the whole time, so the name it arrives under is now one of
+          # the names it accepts.
+          if [ -z "$apk" ]; then
+            apk=$(find apk -name 'Crushly-*-Android9plus.apk' | head -1)
+          fi
+          test -n "$apk" || { echo "::error::no APK in run ${{ inputs.run_id }} (looked for $file, app-release.apk and Crushly-*-Android9plus.apk)."; exit 1; }
           if [ "$(basename "$apk")" != "$file" ]; then
             mv "$apk" "apk/$file"
             apk="apk/$file"
