@@ -1,0 +1,60 @@
+-- 20261119180000_web_sessions_table
+--
+-- The browser clock's table, written down.
+--
+-- `20261118140000_web_clock` and `20261118160000_web_write_guard` both use
+-- `public.holup_web_sessions`, and neither of them creates it: the table was put
+-- on the live database by hand while the rule was being built, so production
+-- works and a clean replay of the migrations does not. CI found it the way it
+-- should — `type "public.holup_web_sessions" does not exist` on line 78 of the
+-- write guard — which means no fresh environment could ever be built from this
+-- repository, including a restore after a disaster.
+--
+-- Written defensively: `if not exists` everywhere, so applying it to the live
+-- database (where the table is already there, with rows) changes nothing, and a
+-- replay from zero gets the same shape production has.
+--
+-- The columns are exactly the ones the live table has:
+--
+--   profile_id     one row per member
+--   first_seen_at  when the browser day started — the 24 hours are counted from
+--                  here, once, and never reset
+--   last_seen_at   the last visit, for the console's activity view
+--   last_platform  'web' today; the column exists so a second surface does not
+--                  need a migration to be distinguishable
+--   opens          how many times the browser has been opened
+--
+-- Read-only by design: RLS is on and there is no policy granting a member write
+-- access. The only writers are `holup_web_open` and the heartbeat, both
+-- SECURITY DEFINER.
+
+create table if not exists public.holup_web_sessions (
+  profile_id     bigint primary key references public.profiles(id) on delete cascade,
+  first_seen_at  bigint not null,
+  last_seen_at   bigint not null,
+  last_platform  text   not null default 'web',
+  opens          integer not null default 1
+);
+
+alter table public.holup_web_sessions enable row level security;
+
+comment on table public.holup_web_sessions is
+  'One row per member who has used holUpp in a browser. The 24-hour web day is counted from first_seen_at, once, and never resets.';
+
+comment on column public.holup_web_sessions.first_seen_at is
+  'Start of the browser day, in epoch milliseconds. Never updated after the first insert.';
+
+-- A member may read their own row (the app shows the countdown); nobody else may.
+drop policy if exists "own web session" on public.holup_web_sessions;
+create policy "own web session" on public.holup_web_sessions
+  for select to authenticated
+  using (profile_id = public.me_id());
+
+-- No function is redefined here.
+--
+-- `holup_web_open(p_platform)` already exists on the live database and does more
+-- than a naive rewrite of it would: it counts `opens` once per calendar day
+-- rather than on every reload, and returns the remaining time and the platform.
+-- Replacing it from this file would have quietly downgraded the live rule to
+-- whatever this migration happened to say. The table is the only thing missing,
+-- so the table is the only thing this adds.
