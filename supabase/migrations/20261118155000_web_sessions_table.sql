@@ -1,4 +1,4 @@
--- 20261119180000_web_sessions_table
+-- 20261118155000_web_sessions_table
 --
 -- The browser clock's table, written down.
 --
@@ -9,6 +9,11 @@
 -- should — `type "public.holup_web_sessions" does not exist` on line 78 of the
 -- write guard — which means no fresh environment could ever be built from this
 -- repository, including a restore after a disaster.
+--
+-- It is numbered 155000 rather than 180000 for one reason: `web_write_guard` runs
+-- at 160000 and declares a variable of this type, so the table has to exist by
+-- then. A migration that fixes the chain has to sort before the thing that
+-- depends on it, or it fixes nothing.
 --
 -- Written defensively: `if not exists` everywhere, so applying it to the live
 -- database (where the table is already there, with rows) changes nothing, and a
