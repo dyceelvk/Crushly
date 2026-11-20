@@ -463,7 +463,7 @@ test('a visitor sees the Space in the same shape as its owner', async ({page}) =
   await expect(page.getByRole('tab', { name: 'Crushes', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'About', exact: true })).toBeVisible();
   // The action row is Add Up, not Edit Space.
-  await expect(page.getByRole('button', { name: 'Add Up Ada' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add Up Ada' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit your Space' })).toHaveCount(0);
   // And no traffic number: it belongs to the owner alone.
   await expect(page.getByRole('button', { name: /people opened your Space/ })).toHaveCount(0);

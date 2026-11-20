@@ -3,13 +3,13 @@
     "name": "holUpp",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.135",
+    "version": "1.0.136",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2A0F2B",
     "primaryColor": "#FF8788",
-    "description": "holUpp \u2014 follow the feelings. A social space for real connection.",
+    "description": "holUpp \u2014 your world, your people, your expression. A social network for sharing, discovery and real connection.",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.crushly",
@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 135
+      "versionCode": 136
     },
     "web": {
       "favicon": "./assets/favicon.png",

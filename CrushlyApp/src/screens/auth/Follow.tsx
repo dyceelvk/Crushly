@@ -55,7 +55,7 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
     <Pressable
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel="Follow the feelings. Tap to begin."
+      accessibilityLabel="Your world. Your people. Your expression. Tap to begin."
       style={[StyleSheet.absoluteFill, { backgroundColor: noir.bg, overflow: 'hidden' }]}
     >
       <Glow size={620} color={noir.primary} opacity={0.5} style={{ position: 'absolute', top: -300, left: -240 }} />
@@ -94,14 +94,14 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
             accessibilityRole="header"
             style={{
               fontFamily: fonts.display,
-              fontSize: 54,
-              lineHeight: 60,
+              fontSize: 46,
+              lineHeight: 52,
               letterSpacing: -1.4,
               color: noir.text,
             }}
           >
-            Follow{'\n'}the{'\n'}
-            <Animated.Text style={{ fontFamily: fonts.displayItalic ?? fonts.display, color: noir.primary }}>feelings.</Animated.Text>
+            Your{'\n'}world.{'\n'}Your{'\n'}people.{'\n'}
+            <Animated.Text style={{ fontFamily: fonts.displayItalic ?? fonts.display, color: noir.primary }}>Your expression.</Animated.Text>
           </Animated.Text>
 
           {/* No animated value in here. `Txt` renders a plain Text, and an
@@ -119,7 +119,7 @@ export function FollowScreen({ navigation }: ScreenProps<'Follow'>) {
               color: noir.textSecondary,
             }}
           >
-            Not the follower count. Not the algorithm&rsquo;s opinion. What the room is actually feeling, one post at a time.
+            Share what matters. Discover people who get it. Build a social space that feels like yours.
           </Txt>
         </Animated.View>
 

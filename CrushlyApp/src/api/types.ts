@@ -6,7 +6,11 @@ export type Photo = { id: number; url: string };
 
 export type Intention = 'dating' | 'relationship' | 'friends' | 'casual' | 'new_connections' | 'not_sure';
 
+/** The broad way a member most enjoys contributing to HolUpp. */
+export type ExpressionStyle = 'visual' | 'writing' | 'conversation' | 'discovery' | 'everything';
+
 export type Lifestyle = Partial<{
+  expressionStyle: ExpressionStyle;
   work: string;
   education: string;
   height: number;

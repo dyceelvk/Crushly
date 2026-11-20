@@ -20,7 +20,7 @@ export type TabParamList = {
 export type InfoPage = 'guidelines' | 'privacy' | 'terms' | 'help' | 'safety-tips' | 'contact';
 
 export type RootStackParamList = {
-  /** The opening surface: "Follow the feelings", one tap from Welcome. */
+  /** The opening surface: a public room on web, the brand welcome on mobile. */
   Follow: undefined;
   Welcome: undefined;
   SignIn: undefined;
@@ -29,12 +29,12 @@ export type RootStackParamList = {
   SignUp: { email?: string } | undefined;
   ForgotPassword: undefined;
   SetPassword: undefined;
-  OnboardingIntentions: undefined;
+  OnboardingWelcome: undefined;
   OnboardingBasics: undefined;
-  OnboardingPhotos: undefined;
-  OnboardingAbout: undefined;
-  OnboardingPreferences: undefined;
-  OnboardingFollow: undefined;
+  OnboardingInterests: undefined;
+  OnboardingExpression: undefined;
+  OnboardingFeatures: undefined;
+  OnboardingComplete: undefined;
   Main: NavigatorScreenParams<TabParamList> | undefined;
   UserProfile: { id: number };
   Chat: { conversationId: number };

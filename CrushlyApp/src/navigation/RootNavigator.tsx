@@ -25,7 +25,8 @@ import { WatchScreen } from '../screens/watch/Watch';
 import { WelcomeScreen } from '../screens/auth/Welcome';
 import { SignInScreen, SignUpScreen, ForgotPasswordScreen, SetPasswordScreen } from '../screens/auth/AuthForms';
 import {
-  OnboardingAboutScreen, OnboardingBasicsScreen, OnboardingFollowScreen, OnboardingIntentionsScreen, OnboardingPhotosScreen, OnboardingPreferencesScreen,
+  OnboardingBasicsScreen, OnboardingCompleteScreen, OnboardingExpressionScreen, OnboardingFeaturesScreen,
+  OnboardingInterestsScreen, OnboardingWelcomeScreen,
 } from '../screens/onboarding/Onboarding';
 import { SearchScreen } from '../screens/discover/Search';
 import { FeedScreen } from '../screens/flow/FeedScreen';
@@ -218,21 +219,12 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
         </Stack.Group>
       ) : status === 'onboarding' ? (
         <Stack.Group>
-          <Stack.Screen name="OnboardingIntentions" component={OnboardingIntentionsScreen} />
+          <Stack.Screen name="OnboardingWelcome" component={OnboardingWelcomeScreen} />
           <Stack.Screen name="OnboardingBasics" component={OnboardingBasicsScreen} />
-          <Stack.Screen name="OnboardingPhotos" component={OnboardingPhotosScreen} />
-          <Stack.Screen name="OnboardingAbout" component={OnboardingAboutScreen} />
-          <Stack.Screen name="OnboardingPreferences" component={OnboardingPreferencesScreen} />
-          {/*
-           * The last step, and the only place `completeOnboarding()` runs.
-           *
-           * This route was imported in 1.0.107 and never registered, so the
-           * previous step's `navigate('OnboardingFollow')` had nowhere to go:
-           * React Navigation reports an unhandled action and the member sat on
-           * "Your preferences" with a spinner and no way forward. Every new
-           * member on web and on the phone was stuck on step 5 of 6.
-           */}
-          <Stack.Screen name="OnboardingFollow" component={OnboardingFollowScreen} />
+          <Stack.Screen name="OnboardingInterests" component={OnboardingInterestsScreen} />
+          <Stack.Screen name="OnboardingExpression" component={OnboardingExpressionScreen} />
+          <Stack.Screen name="OnboardingFeatures" component={OnboardingFeaturesScreen} />
+          <Stack.Screen name="OnboardingComplete" component={OnboardingCompleteScreen} />
           <Stack.Screen name="Info" component={InfoScreen} />
         </Stack.Group>
       ) : (

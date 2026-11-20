@@ -34,7 +34,7 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
   }, [fade, lift, tagline, reduceMotion]);
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="holUpp. Follow the feelings.">
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]} accessibilityLabel="holUpp. Your world. Your people. Your expression.">
       <Glow size={460} color={c.primary} opacity={0.8} style={{ position: 'absolute' }} />
       <Glow size={380} color={c.crush} opacity={0.5} style={{ position: 'absolute', top: -140, right: -120 }} />
       <LightSweep duration={1300} />
@@ -46,7 +46,7 @@ export function SplashScreen({ fontsReady }: { fontsReady: boolean }) {
             opacity: tagline,
           }}
         >
-          Follow the feelings.
+          Your world. Your people. Your expression.
         </Animated.Text>
       </Animated.View>
     </View>
