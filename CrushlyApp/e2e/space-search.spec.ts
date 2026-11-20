@@ -322,7 +322,6 @@ test('Space has working app navigation and real stats', async ({ page }) => {
   // says what that includes.
   await expect(page.getByText('Likes', {exact:true}).first()).toBeVisible();
   await page.waitForTimeout(2500);
-  await page.screenshot({path:'/home/user/space-owner.png', fullPage:false});
   for (const label of ['Home', 'Connections', 'Create a post', 'Whispers', 'Notifications']) {
     await expect(page.getByRole('button', {name: label, exact:true})).toBeVisible();
   }
@@ -464,7 +463,6 @@ test('a visitor sees the Space in the same shape as its owner', async ({page}) =
   await expect(page.getByRole('tab', { name: 'Crushes', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'About', exact: true })).toBeVisible();
   await page.waitForTimeout(2500);
-  await page.screenshot({path:'/home/user/space-visitor.png', fullPage:false});
   // The action row is Add Up, not Edit Space.
   await expect(page.getByRole('button', { name: 'Add Up Ada' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit your Space' })).toHaveCount(0);
@@ -489,7 +487,6 @@ test('Discover suggestion Add Up calls the real follow action and reflects its r
   await page.getByText('Space',{exact:true}).last().click({timeout:30000});
   await page.getByRole('button',{name:'3 Add Ups. View people'}).click();
   await page.waitForTimeout(2000);
-  await page.screenshot({path:'/home/user/space-visitor.png', fullPage:false});
   await page.getByRole('button',{name:'Add Up Ada'}).click();
   await expect.poll(()=>calls.some(x=>x.followed === true)).toBe(true);
   await expect(page.getByRole('button',{name:'Added Up Ada'})).toBeVisible();
