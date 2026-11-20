@@ -388,5 +388,28 @@ begin
    where schemaname = 'public' and tablename = 'holupp_identity_scores';
   assert n = 0, 'no client policy grants access to the scores table';
 
+  /* ------------------------------------------------------------- anonymous
+   *
+   * Production caught this and the local suite did not, because the local stubs
+   * did not grant EXECUTE on new functions to `anon` the way Supabase does. They
+   * do now, so this is the assertion that would have failed:
+   *
+   *   an anonymous caller must not be able to reach the engine at all.
+   */
+  reset role;
+  set role anon;
+
+  select count(*) into n
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public'
+     and p.proname in ('holupp_identity_recalc','holupp_identity_recalc_all',
+                       'holupp_admin_identity_update','holupp_admin_identity_state',
+                       'holupp_admin_identity_recalc')
+     and has_function_privilege('anon', p.oid, 'EXECUTE');
+  assert n = 0, 'no engine entry point is executable by an anonymous caller, found ' || n;
+
+  reset role;
+
   raise notice 'identity engine: end-to-end assertions passed';
 end $$;

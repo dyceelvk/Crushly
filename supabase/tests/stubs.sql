@@ -58,6 +58,12 @@ grant all on all tables in schema public to anon, authenticated, service_role;
 grant all on all tables in schema storage to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+-- Supabase also grants EXECUTE on every new function to anon, authenticated and
+-- service_role, which is why `revoke ... from public` is not enough to close one:
+-- `public` is a different grantee from `anon`. Without this line a local test
+-- database would be *more* private than production, and a function left open to
+-- anonymous callers would pass here and be open in the wild.
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 
 create schema realtime;
 create table realtime.messages (id bigint generated always as identity, extension text, payload jsonb);

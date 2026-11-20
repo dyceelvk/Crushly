@@ -337,6 +337,32 @@ end;
 $function$;
 
 -- ---------------------------------------------------------------- permissions
+-- ── Revoking is not enough on its own ───────────────────────────────────────
+--
+-- Supabase grants EXECUTE on every new function to `anon`, `authenticated` and
+-- `service_role` explicitly. `public` is a different grantee, so
+-- `revoke ... from public` leaves the explicit grant to `anon` untouched — which
+-- is exactly how an anonymous caller could reach `holupp_identity_recalc` on a
+-- live project while the local tests were green.
+--
+-- So: revoke from `public` *and* from `anon`, then grant back only to the roles
+-- that should have each one. The engine's own write paths are not granted to
+-- anybody: they are reached through SECURITY DEFINER callers or the scheduler.
+revoke all on function public.holupp_identity_recalc(bigint) from anon;
+revoke all on function public.holupp_identity_recalc_all(integer) from anon;
+revoke all on function public.holupp_identity_signals(bigint, integer) from anon;
+revoke all on function public.holupp_identity_verdict(jsonb, integer, text, bigint) from anon;
+revoke all on function public.holupp_identity_calculate(jsonb, jsonb) from anon;
+revoke all on function public.holupp_identity_setting(text, jsonb) from anon;
+revoke all on function public.holupp_admin_identity_state() from anon;
+revoke all on function public.holupp_admin_identity_update(jsonb) from anon;
+revoke all on function public.holupp_admin_identity_recalc(integer) from anon;
+revoke all on function public.holupp_identity_mine() from anon;
+revoke all on function public.holupp_identity_public(bigint) from anon;
+revoke all on function public.holupp_identity_set_visible(boolean) from anon;
+revoke all on function public.holupp_identity_note_search(text, boolean) from anon;
+revoke all on function public.holupp_identity_discovery() from anon;
+
 revoke all on function public.holupp_identity_mine() from public;
 revoke all on function public.holupp_identity_public(bigint) from public;
 revoke all on function public.holupp_identity_set_visible(boolean) from public;
