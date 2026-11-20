@@ -1,11 +1,11 @@
 {
-  "version": "1.0.133",
-  "versionCode": 133,
+  "version": "1.0.136",
+  "versionCode": 136,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.133-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.133/holUpp-1.0.133-RielOS.apk",
-  "notes": "A video longer than a minute no longer gets refused. It opens the editor \u2014 Trim, Text, Filters, Adjust, Speed, Crop, Stickers, Sound \u2014 and the trim says the clip is longer than a post can carry so you pick the minute you want. The rest stays on your phone.",
-  "bytes": 101699039,
-  "sha256": "71ee61b757e327d24da149c10dfa4917edfa6e365279815a4c0c14574a7a08ba",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.133/holUpp-1.0.133-RielOS.apk"
+  "file": "holUpp-1.0.136-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.136/holUpp-1.0.136-RielOS.apk",
+  "notes": "Onboarding now introduces HolUpp as a modern social network: build your Space, choose your interests, choose how you express yourself, and learn Flow, Connections, Circles, Moments and Crushes in context.",
+  "bytes": 44259530,
+  "sha256": "18fb8edd68ff7080babd50c0949649b9b44cc46e80f6f55db384d46142d69480",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.136/holUpp-1.0.136-RielOS.apk"
 }
