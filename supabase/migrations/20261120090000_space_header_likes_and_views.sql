@@ -78,7 +78,10 @@ begin
     'canViewAddUps',me=p_target or incoming='everyone' or (incoming='close' and homies),
     'canViewAddedUp',me=p_target or outgoing='everyone' or (outgoing='close' and homies),
     'outgoingVisibility',case when me=p_target then outgoing else null end,
-    'approvalRequired',case when me=p_target then coalesce((select approval_required from public.holup_follow_settings where user_id=p_target),false) else null end,
+    -- `holup_follow_settings` on the live database has only user_id and
+    -- outgoing_visibility: Add Ups have never needed approval here. Reported as
+    -- a constant rather than guessed from a column that does not exist.
+    'approvalRequired',case when me=p_target then false else null end,
     'myStatus',case when me<>p_target then (select status from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending')) else null end,
     'keptClose',base->'keptClose','canViewKeptClose',base->'canViewKeptClose','postLikes',base->'postLikes','addUpVisibility',base->'addUpVisibility',
     -- New: engagement received, and the owner's own traffic.
