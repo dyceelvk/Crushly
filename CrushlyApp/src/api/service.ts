@@ -2271,10 +2271,18 @@ export async function holupTrends(): Promise<{ term: string; postCount: number }
 export async function searchAll(query: string, category: SearchCategory, filters: SearchFilters): Promise<SearchResults> {
   const q = String(query ?? '').trim();
   if (q.length < 2) return { members: [], posts: [], moments: [], sounds: [], places: [], hashtags: [] };
-  return rpc<SearchResults>('search_holup', {
+  const results = await rpc<SearchResults>('search_holup', {
     p_query: q, p_category: category, p_since: filters.since, p_sort: filters.sort,
     p_author: filters.author, p_content: filters.content, p_hashtag: filters.hashtag, p_limit: 40, p_place: filters.place,
   });
+  /* Explorer is the one identity that measures discovery, and discovery had no
+     record at all — a search was answered and forgotten. This notes that one
+     happened. It is deliberately after the results are in and deliberately not
+     awaited: the search itself must never wait for, or fail because of, a
+     behavioural score. */
+  noteSearch(q, (results?.members?.length ?? 0) + (results?.posts?.length ?? 0)
+    + (results?.moments?.length ?? 0) + (results?.sounds?.length ?? 0) > 0);
+  return results;
 }
 
 /**
@@ -2360,4 +2368,76 @@ export async function appUpdate(): Promise<AppUpdate> {
   const res = await fetch(`${MEDIA_BASE_URL}${updateVersionPath(Platform.OS, channel, Constants.expoConfig?.android?.package)}`, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new ApiError(res.status, 'Couldn’t check for an update.');
   return (await res.json()) as AppUpdate;
+}
+
+/* ------------------------------------------------------------- HolUpp Identity */
+
+/**
+ * My own identity.
+ *
+ * Server-side only: the database decides, this reads. Nothing the app sends can
+ * influence the answer, so there is no argument here a client could use to
+ * promote itself to Fun Crusher.
+ */
+export type MyIdentity = {
+  authenticated: boolean;
+  identity: string | null;
+  co_primary: string[];
+  developing: boolean;
+  confidence: number | null;
+  evidence: number | null;
+  scores: Record<string, number> | null;
+  computed_at: number | null;
+  published_since: number | null;
+  visible: boolean;
+  history: { from: string | null; to: string; confidence: number | null; at: number; reason: string }[];
+};
+
+export async function myIdentity(): Promise<MyIdentity> {
+  const res = await rpc<Partial<MyIdentity>>('holupp_identity_mine');
+  return {
+    authenticated: res?.authenticated ?? false,
+    identity: res?.identity ?? null,
+    co_primary: res?.co_primary ?? [],
+    developing: res?.developing ?? true,
+    confidence: res?.confidence ?? null,
+    evidence: res?.evidence ?? null,
+    scores: res?.scores ?? null,
+    computed_at: res?.computed_at ?? null,
+    published_since: res?.published_since ?? null,
+    visible: res?.visible ?? true,
+    history: res?.history ?? [],
+  };
+}
+
+/**
+ * Somebody else's identity — a title and an epithet, or nothing.
+ *
+ * There is no score in this response by design, so there is nothing for a
+ * careless screen to leak.
+ */
+export async function memberIdentity(memberId: number): Promise<{ identity: string | null; co_primary: string[] }> {
+  const res = await rpc<{ identity: string | null; co_primary: string[] }>('holupp_identity_public', { p_profile: memberId });
+  return { identity: res?.identity ?? null, co_primary: res?.co_primary ?? [] };
+}
+
+/** Hide or show my identity. Hiding changes what other people see, nothing else. */
+export async function setIdentityVisible(visible: boolean): Promise<{ visible: boolean }> {
+  return rpc<{ visible: boolean }>('holupp_identity_set_visible', { p_visible: visible });
+}
+
+/**
+ * Records that a search happened, for the Explorer signal.
+ *
+ * Fire-and-forget on purpose: a member's search must never fail, or slow down,
+ * because a behavioural score could not be recorded. The database keeps a
+ * category and a timestamp and throws the term away.
+ */
+export function noteSearch(term: string, hadResults: boolean): void {
+  try {
+    void supabase.rpc('holupp_identity_note_search', { p_term: String(term ?? '').slice(0, 80), p_had_results: hadResults })
+      .then(() => undefined, () => undefined);
+  } catch {
+    /* never the member's problem */
+  }
 }

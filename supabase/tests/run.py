@@ -247,6 +247,12 @@ def main() -> int:
         # confirmed.
         if not run_file(ROOT / 'marked_copy.sql'):
             return 1
+        # HolUpp Identity: five identities, weighted, server-side, and not a
+        # counter. Ties are co-primary, a new account is developing, message
+        # contents are never read, hiding is public-only, the label is held
+        # against flapping, and the kill switch works.
+        if not run_file(ROOT / 'identity.sql'):
+            return 1
         print('ALL TESTS PASSED')
         return 0
     finally:

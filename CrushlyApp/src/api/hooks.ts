@@ -74,6 +74,45 @@ export const useMe = (enabled = true) =>
 export const useSpaceBanner = (viewerId?: number, targetId?: number) =>
   useQuery({ queryKey: keys.spaceBanner(viewerId ?? 0, targetId ?? 0), queryFn: () => service.spaceBanner(targetId!), enabled: !!viewerId && !!targetId, staleTime: 0 });
 
+/* ----------------------------------------------------------------- identity */
+/*
+ * Identity arrives once and then sits still. It is recalculated on a schedule,
+ * not in response to anything this app does, so re-asking on every screen would
+ * be polling the server for an answer that changes three times a day — and it
+ * would put a scoring round-trip in the path of opening a profile.
+ *
+ * `retry: 1` and the silent failure below are the "must never break the app"
+ * rule: if the engine is off, misconfigured or mid-migration, the profile shows
+ * no identity section at all rather than an error.
+ */
+export const useMyIdentity = (enabled = true) =>
+  useQuery({
+    queryKey: ['identity', 'mine'],
+    queryFn: () => service.myIdentity(),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+export const useMemberIdentity = (memberId: number, enabled = true) =>
+  useQuery({
+    queryKey: ['identity', 'member', memberId],
+    queryFn: () => service.memberIdentity(memberId),
+    enabled: enabled && Number.isFinite(memberId) && memberId > 0,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+export const useSetIdentityVisible = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (visible: boolean) => service.setIdentityVisible(visible),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['identity'] });
+    },
+  });
+};
+
 export const useDiscover = () =>
   useQuery({ queryKey: keys.discover, queryFn: () => service.discover(), staleTime: 60_000 });
 

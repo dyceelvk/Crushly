@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CrushIcon } from '../../components/Logo';
 import { FollowButton } from '../../components/FollowButton';
 import { HomieButton } from '../../components/HomieButton';
+import { IdentitySection } from '../../components/IdentityCard';
 import { homieStats, homieRequests, recordSpaceView, respondHomie } from '../../api/service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -577,6 +578,17 @@ export function SpaceScreen({
             </View>
           ) : null}
         </View>
+
+        {/* HolUpp Identity sits between the name block and the Big Up note, in
+            the page's own flow: a label and one line, no card, no colour of its
+            own. It renders nothing at all when there is nothing to say — a
+            visitor sees no gap and no placeholder.
+
+            `mine` is the only switch that matters here. Your own Space always
+            shows your identity, including while it is still developing and
+            including after you hide it from other people: hiding is a statement
+            to strangers, not a way to hide from yourself. */}
+        <IdentitySection memberId={p.id} mine={mine} />
 
         <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter }}>
           {!mine && p.crush.note ? (

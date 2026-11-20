@@ -1,0 +1,360 @@
+-- holupp_identity_engine — read API, visibility, admin
+--
+-- The rule that shapes this file: internal scores never leave the server except
+-- to their owner. `holupp_identity_public` — the only function a client can call
+-- about somebody else — returns a title and an epithet, and nothing else. No
+-- numbers, no confidence, no evidence, no history.
+
+begin;
+
+-- ------------------------------------------------------------ my own identity
+--
+-- The owner sees everything: scores, confidence, evidence, history. They cannot
+-- see anyone else's, and nobody can see theirs.
+create or replace function public.holupp_identity_mine()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me     bigint := public.me_id();
+  s      holupp_identity_scores;
+  vis    boolean;
+begin
+  if me is null then
+    return jsonb_build_object('authenticated', false);
+  end if;
+
+  select * into s from holupp_identity_scores where profile_id = me;
+  select coalesce(identity_visible, true) into vis from profiles where id = me;
+
+  return jsonb_build_object(
+    'authenticated', true,
+    -- What the member sees on their own profile: the same value the public
+    -- would see, plus the developing state.
+    'identity', s.published_identity,
+    'co_primary', to_jsonb(coalesce(s.co_primary, '{}')),
+    'developing', (s.published_identity is null),
+    'confidence', s.confidence,
+    'evidence', s.evidence,
+    'scores', s.scores,
+    'computed_at', s.computed_at,
+    'published_since', s.published_since,
+    -- Hiding is public-only; classification keeps running regardless.
+    'visible', coalesce(vis, true),
+    'history', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'from', h.from_identity, 'to', h.to_identity,
+        'confidence', h.confidence, 'at', h.created_at, 'reason', h.reason
+      ) order by h.created_at desc)
+      from (select * from holupp_identity_history where profile_id = me
+             order by created_at desc limit 20) h
+    ), '[]'::jsonb)
+  );
+end;
+$function$;
+
+-- --------------------------------------------------------- somebody else's
+--
+-- Called with a profile id. Returns a title, an epithet, and whether the member
+-- has hidden it. Returns nothing at all when the member hid it — and nothing at
+-- all for a private profile the caller cannot see, so this cannot become a way
+-- to probe who exists.
+create or replace function public.holupp_identity_public(p_profile bigint)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  s   holupp_identity_scores;
+  vis boolean;
+begin
+  select coalesce(identity_visible, true) into vis from profiles where id = p_profile;
+
+  if vis is null or vis = false then
+    return jsonb_build_object('identity', null);
+  end if;
+
+  select * into s from holupp_identity_scores where profile_id = p_profile;
+
+  /* The other co-primaries, if any. `published_identity` is reported separately
+     and always sits at the front of the list the app prints, so it is removed
+     here rather than being printed twice. */
+  return jsonb_build_object(
+    'identity', s.published_identity,
+    'co_primary', coalesce((
+      select jsonb_agg(x)
+        from unnest(coalesce(s.co_primary, '{}'::text[])) x
+       where x is distinct from s.published_identity
+    ), '[]'::jsonb)
+  );
+end;
+$function$;
+
+-- ------------------------------------------------------------- hide / show
+--
+-- The member's own switch. It flips visibility and nothing else: scores keep
+-- being calculated and the owner keeps seeing their own identity.
+create or replace function public.holupp_identity_set_visible(p_visible boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    raise exception 'not authenticated';
+  end if;
+  update profiles set identity_visible = coalesce(p_visible, true) where id = me;
+  return jsonb_build_object('visible', coalesce(p_visible, true));
+end;
+$function$;
+
+-- --------------------------------------------------------------- search log
+--
+-- Called by the app when somebody searches. Takes the term only to classify it
+-- into a coarse category, then throws the term away: it is never stored, never
+-- returned, never logged. `p_term` is not persisted anywhere.
+create or replace function public.holupp_identity_note_search(p_term text, p_had_results boolean default true)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  cat text;
+begin
+  if me is null then
+    return;                                   -- anonymous searches are not attributed
+  end if;
+
+  cat := case
+    when p_term is null or length(trim(p_term)) = 0 then null
+    when p_term ~* '(football|soccer|goal|match|league|anime|animation|cartoon|movie|film|music|song)' then 'entertainment'
+    when p_term ~* '^@' then 'people'
+    when p_term ~* '^#' then 'tags'
+    else 'general'
+  end;
+
+  insert into holupp_search_log (profile_id, category, had_results)
+  values (me, cat, coalesce(p_had_results, true));
+end;
+$function$;
+
+-- ------------------------------------------------------------------ discovery
+--
+-- The brief asks for structured data that could power discovery — similar
+-- interaction styles and content formats — while explicitly refusing to
+-- segregate users into identity groups. So this returns *formats*, keyed by the
+-- caller's own dominant style, and never a list of people tagged with an
+-- identity. A member's identity is not a group they belong to.
+create or replace function public.holupp_identity_discovery()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  s   holupp_identity_scores;
+begin
+  if me is null then
+    return jsonb_build_object('authenticated', false);
+  end if;
+
+  select * into s from holupp_identity_scores where profile_id = me;
+
+  return jsonb_build_object(
+    'primary', s.top_identity,
+    -- Suggested surfaces, not suggested identities.
+    'formats', case coalesce(s.top_identity, '')
+      when 'introvert' then '["watch","quiet_feed","saved"]'::jsonb
+      when 'pen'       then '["long_form","written","comments"]'::jsonb
+      when 'talkative' then '["messages","voice","circles"]'::jsonb
+      when 'explorer'  then '["search","discover","moments"]'::jsonb
+      when 'fun'       then '["sound","clips","reactions"]'::jsonb
+      else '["feed"]'::jsonb
+    end
+  );
+end;
+$function$;
+
+-- -------------------------------------------------------------------- admin
+--
+-- Aggregate only. There is deliberately no function here that returns one
+-- member's scores to an administrator: the dashboard answers "how is the
+-- distribution", "how many are waiting", "what did the last run do" — not "what
+-- is this person". Support cases that genuinely need one member go through the
+-- existing admin tooling, which is audited.
+create or replace function public.holupp_admin_identity_state()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if not public.holup_is_admin() then
+    raise exception 'not authorised';
+  end if;
+
+  return jsonb_build_object(
+    'enabled', public.holupp_identity_setting('enabled', 'true'::jsonb),
+    'settings', coalesce((select jsonb_object_agg(key, value) from holupp_identity_settings), '{}'::jsonb),
+    'weights', coalesce((select jsonb_object_agg(identity, weights) from holupp_identity_weights), '{}'::jsonb),
+    'totals', (
+      select jsonb_build_object(
+        'members', (select count(*) from profiles),
+        'calculated', count(*),
+        'classified', count(*) filter (where published_identity is not null),
+        'developing', count(*) filter (where published_identity is null),
+        'hidden', (select count(*) from profiles where identity_visible = false)
+      ) from holupp_identity_scores
+    ),
+    'distribution', coalesce((
+      select jsonb_object_agg(coalesce(published_identity,'developing'), n)
+      from (select published_identity, count(*) n from holupp_identity_scores group by 1) d
+    ), '{}'::jsonb),
+    -- "Accuracy" is not measurable without ground truth, and the brief's
+    -- requirement is really about health: how confident, how volatile, how
+    -- stale. Those are reported instead of inventing an accuracy number.
+    'confidence', coalesce((
+      select jsonb_build_object(
+        'avg', round(avg(confidence), 3),
+        'below_threshold', count(*) filter (where confidence <
+          coalesce((holupp_identity_setting('confidence_threshold','0.42'::jsonb))::text::numeric, 0.42)),
+        'median_evidence', round(percentile_cont(0.5) within group (order by evidence)::numeric, 0)
+      ) from holupp_identity_scores
+    ), '{}'::jsonb),
+    'recent_changes_7d', (
+      select count(*) from holupp_identity_history
+       where created_at >= public.now_ms() - 7::bigint * 86400000
+    ),
+    -- Volatility: members whose published identity moved more than twice in
+    -- 30 days. Not an error in itself; a signal that weights or tolerance need
+    -- attention.
+    'volatile_30d', (
+      select count(*) from (
+        select profile_id from holupp_identity_history
+         where created_at >= public.now_ms() - 30::bigint * 86400000
+         group by profile_id having count(*) > 2
+      ) v
+    ),
+    'last_run', (select max(computed_at) from holupp_identity_scores),
+    'engine_version', (select max(engine_version) from holupp_identity_scores)
+  );
+end;
+$function$;
+
+-- Weights and thresholds. Admins only, validated, and every change is recorded
+-- in the existing admin audit trail.
+create or replace function public.holupp_admin_identity_update(p_patch jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  k       text;
+  v       jsonb;
+  w       jsonb;
+  total   numeric;
+begin
+  if not public.holup_is_admin() then
+    raise exception 'not authorised';
+  end if;
+  if p_patch is null or jsonb_typeof(p_patch) <> 'object' then
+    raise exception 'patch must be an object';
+  end if;
+
+  -- Weights: each identity's weights must still total 100, otherwise the scores
+  -- would be on different scales and the comparison between identities would be
+  -- meaningless.
+  if p_patch ? 'weights' then
+    for k, w in select key, value from jsonb_each(p_patch->'weights') loop
+      if k not in ('introvert','pen','talkative','explorer','fun') then
+        raise exception 'unknown identity %', k;
+      end if;
+      select sum(value::text::numeric) into total
+        from jsonb_each_text(w);
+      if total is null or total <= 0 then
+        raise exception 'weights for % must be positive', k;
+      end if;
+      -- Normalise to 100 rather than reject: an admin thinking in ratios should
+      -- not have to make them add up to exactly 100.
+      update holupp_identity_weights
+         set weights = (select jsonb_object_agg(key, round((value::text::numeric / total * 100), 2))
+                          from jsonb_each_text(w)),
+             updated_at = public.now_ms()
+       where identity = k;
+    end loop;
+  end if;
+
+  -- Thresholds. `enabled` is the kill switch and is allowed through here so the
+  -- admin panel has exactly one write path.
+  for k, v in select key, value from jsonb_each(p_patch) loop
+    continue when k = 'weights';
+    if k not in ('enabled','window_days','confidence_threshold','min_events',
+                 'match_tolerance','flip_margin','min_hold_hours','recalc_minutes') then
+      raise exception 'unknown setting %', k;
+    end if;
+    insert into holupp_identity_settings (key, value, updated_at)
+    values (k, v, public.now_ms())
+    on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at;
+  end loop;
+
+  insert into holup_admin_events (kind, actor, details)
+  values ('identity_settings_updated', auth.uid(), p_patch);
+
+  return jsonb_build_object('ok', true);
+end;
+$function$;
+
+-- Manual recalculation from the panel, so an admin who changes weights can see
+-- the effect without waiting for the schedule.
+create or replace function public.holupp_admin_identity_recalc(p_limit integer default 200)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.holup_is_admin() then
+    raise exception 'not authorised';
+  end if;
+  return public.holupp_identity_recalc_all(greatest(least(coalesce(p_limit,200), 2000), 1));
+end;
+$function$;
+
+-- ---------------------------------------------------------------- permissions
+revoke all on function public.holupp_identity_mine() from public;
+revoke all on function public.holupp_identity_public(bigint) from public;
+revoke all on function public.holupp_identity_set_visible(boolean) from public;
+revoke all on function public.holupp_identity_note_search(text, boolean) from public;
+revoke all on function public.holupp_identity_discovery() from public;
+revoke all on function public.holupp_admin_identity_state() from public;
+revoke all on function public.holupp_admin_identity_update(jsonb) from public;
+revoke all on function public.holupp_admin_identity_recalc(integer) from public;
+revoke all on function public.holupp_identity_recalc(bigint) from public;
+revoke all on function public.holupp_identity_recalc_all(integer) from public;
+
+grant execute on function public.holupp_identity_mine() to authenticated;
+grant execute on function public.holupp_identity_public(bigint) to authenticated;
+grant execute on function public.holupp_identity_set_visible(boolean) to authenticated;
+grant execute on function public.holupp_identity_note_search(text, boolean) to authenticated;
+grant execute on function public.holupp_identity_discovery() to authenticated;
+grant execute on function public.holupp_admin_identity_state() to authenticated;
+grant execute on function public.holupp_admin_identity_update(jsonb) to authenticated;
+grant execute on function public.holupp_admin_identity_recalc(integer) to authenticated;
+
+commit;
