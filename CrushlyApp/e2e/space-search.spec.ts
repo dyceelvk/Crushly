@@ -462,7 +462,6 @@ test('a visitor sees the Space in the same shape as its owner', async ({page}) =
   // Same furniture as the owner's copy.
   await expect(page.getByRole('tab', { name: 'Crushes', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'About', exact: true })).toBeVisible();
-  await page.waitForTimeout(2500);
   // The action row is Add Up, not Edit Space.
   await expect(page.getByRole('button', { name: 'Add Up Ada' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit your Space' })).toHaveCount(0);
