@@ -67,12 +67,7 @@
   "1.0.130": "A letter you can start. The Control Centre inbox could answer mail and could not begin it; there is now a New message button, a compose screen with To, Cc, Bcc, Subject and a Link button, and a Send from choice between support@holupp.net and info@rielincos.com.",
   "1.0.132": "The website now opens on the room instead of a pop-up. A visitor sees public posts and can search before making an account — football, animation and entertainment lead, and when there is none of that yet holUpp's own posts stand in. Sign-up now adds Up to every official account you tick, and checks with the server that it landed.",
   "1.0.133": "A video longer than a minute no longer gets refused. It opens the editor — Trim, Text, Filters, Adjust, Speed, Crop, Stickers, Sound — and the trim says the clip is longer than a post can carry so you pick the minute you want. The rest stays on your phone.",
-  "1.0.135": [
-    "The Space has been rebuilt around the four things people actually come for: who this is, what they have done, what you can do about it, and what they have posted. The photo, the name, one line of numbers and one row of buttons now all sit on the first screen, above the four tabs.",
-    "The whole page carries the HolUpp colour — coral at the top through pink into lavender — instead of a white page with a coloured header on it.",
-    "Two numbers are new. Likes now counts everything a member's content has earned, across posts, Moments and comments, not posts alone. On your own Space you also see how many times your profile has been opened; that number is yours alone and nobody visiting can see it.",
-    "The tab you are on is marked with a coral-to-pink line under its name, so the row no longer depends on a shade difference to tell you where you are."
-  ],
+  "1.0.135": "The Space has been rebuilt on one screen: your photo, name, numbers and buttons above the four tabs, on the HolUpp colour itself rather than a white page. Likes now counts posts, Moments and comments; your own Space also shows how many times it was opened, and nobody else can see that number.",
   "1.0.134": [
     "Your HolUpp Identity is on your Space. It is read from how you actually use holUpp over the last thirty days — never from what you say in private messages.",
     "Five identities, and you can be two at once: Introvert Crush, Pen Crusher, Talkative Crush, Excrusher, Fun Crusher.",
