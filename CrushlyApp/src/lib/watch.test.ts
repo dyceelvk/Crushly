@@ -6,9 +6,9 @@
  *   1. A signed-out browser lands on the room, not on a slogan with a pop-up over
  *      it. The old web home answered a stranger with two buttons and a claim about
  *      feelings, and then covered it with a "get the app" card.
- *   2. Every account ticked in "Stay close to holUpp" is followed *and read back*
- *      before the member continues. It used to `Promise.allSettled` its way past
- *      every failure, so a ticked box could mean nothing at all.
+ *   2. Sign-up introduces the network before it introduces any relationship
+ *      feature. Romantic connections remain in the product, but they are not the
+ *      explanation for why HolUpp exists.
  */
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -66,12 +66,15 @@ test('the web home is the room, and the interstitial is off', () => {
     'the web notice must not be shown over the home page');
 });
 
-test('sign-up reads each follow back instead of assuming it landed', () => {
+test('sign-up introduces the social network before relationship features', () => {
   const onboarding = readFileSync(new URL('../screens/onboarding/Onboarding.tsx', import.meta.url), 'utf8');
-  assert.ok(!onboarding.includes('Promise.allSettled(OFFICIAL_ACCOUNTS'),
-    'a ticked account must not be followed best-effort');
-  assert.match(onboarding, /followStatus\(id\)/, 'the follow must be verified against the server');
-  assert.match(onboarding, /Couldn’t add Up to/, 'a failed follow must be reported, not swallowed');
+  assert.match(onboarding, /Welcome to HolUpp/);
+  assert.match(onboarding, /Your world\. Your people\. Your expression\./);
+  for (const feature of ['Flow', 'Connections', 'Circles', 'Space', 'Moments', 'Crushes']) {
+    assert.match(onboarding, new RegExp(`label: '${feature}'`), `onboarding must introduce ${feature}`);
+  }
+  assert.doesNotMatch(onboarding, /OFFICIAL_ACCOUNTS|followStatus\(id\)/,
+    'official follows do not belong in the social-network-first entry path');
 });
 
 test('the visitor feed cannot carry what a stranger may not see', () => {
