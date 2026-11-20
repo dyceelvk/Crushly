@@ -412,6 +412,27 @@ export function SpaceScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* ── The wash ─────────────────────────────────────────────────────────
+          HolUpp's Space is one soft field of colour rather than a white page
+          with coloured pieces on it: coral at the top, drifting through pink
+          into lavender by the time you reach the tabs, then settling under the
+          content. It sits behind everything and takes no touches, so the page
+          reads as one surface instead of a header bolted onto a list.
+
+          In light mode the wash is the brand's own gradient at low opacity over
+          cream; in dark mode the same stops sit over near-black, where they read
+          as light rather than paint. Both are the palette's colours — nothing
+          here is a new colour invented for this screen. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={
+          colors.scheme === 'dark'
+            ? ['rgba(237,89,175,0.20)', 'rgba(183,110,234,0.13)', 'rgba(255,135,136,0.05)', 'rgba(0,0,0,0)']
+            : ['rgba(255,170,150,0.55)', 'rgba(255,159,197,0.40)', 'rgba(214,168,240,0.26)', 'rgba(255,248,248,0)']
+        }
+        locations={[0, 0.34, 0.62, 1]}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, height: Math.max(heroH + 260, 520) }}
+      />
       <ScrollView
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, space.md) + space.lg }}
         showsVerticalScrollIndicator={false}
@@ -457,20 +478,28 @@ export function SpaceScreen({
               the row leaned on the photograph and on the face. Everything under
               the face is a column now: no line is asked to share space it does
               not have. */}
-          <View style={{ marginTop: -(FACE / 2 + 4), flexDirection: 'row', alignItems: 'flex-start' }}>
+          {/* ── The header block ─────────────────────────────────────────────
+              Photo on the left, and everything that identifies the person on the
+              right of it: name, handle, and the numbers. This is the arrangement
+              every modern social profile converged on, for one reason — the name
+              is the biggest thing on the page and the numbers are read in the
+              same glance, without a row of boxes between them.
+
+              We had the face alone on its own line and the numbers in a wrapping
+              row underneath, which cost about 120 points of vertical space and
+              pushed the tabs — the thing people actually came to use — below the
+              fold. */}
+          <View style={{ marginTop: -(FACE / 2 + 4), flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
             <Pressable
               onPress={onFacePress}
               accessibilityRole="button"
               accessibilityLabel={p.moments.length ? `Open ${p.name}’s photo or Moments` : `See ${p.name}’s photo`}
             >
-              {/* Two rings, both even: a coloured one only when there is a
-                  Moment behind the door, a plain one when there is not. The
-                  ring used to be laid down under the face with a screen of
-                  background colour between them, so a corner of it showed at
-                  the edge of the picture like something hiding behind it.
-                  On your own Space there is no ring at all: it is a door to
-                  your own Moments, which the tab underneath already opens, and
-                  on your own picture it reads as a shape stuck behind it. */}
+              {/* The ring is a door to Moments: coloured when there is something
+                  unwatched, quiet once watched, absent when there is nothing.
+                  On your own Space there is no ring — the Moments tab below is
+                  already that door, and a ring on your own face reads as a shape
+                  stuck behind the picture. */}
               {!mine && p.moments.length ? (
                 <LinearGradient
                   colors={momentSeen ? [MOMENT_RING_SEEN, MOMENT_RING_SEEN] : [colors.gold, colors.crush, colors.goldDeep]}
@@ -488,13 +517,8 @@ export function SpaceScreen({
                 </View>
               )}
             </Pressable>
-          </View>
 
-          {/* The name, and the two things you can do about this person —
-              one of them a chip, not a card. */}
-          <View style={{ marginTop: space.sm }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
-              <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flex: 1, minWidth: 0, paddingTop: space.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
                   {p.name}
@@ -503,56 +527,122 @@ export function SpaceScreen({
                 <VerifiedBadge size={18} tier={p.badgeTier ?? (p.verified ? 'verified' : 'none')} />
               </View>
 
-              </View>
-              {/* The action a visitor came for, in the product's own colour and
-                  on the right, where a follow lives on every app anybody has
-                  used — a rectangle, not a chip hidden under a name. It used to
-                  be a small chip in the row below, which read as a label rather
-                  than a button. */}
-              {mine ? null : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-                <FollowButton id={p.id} name={p.name} />
-                <IconButton icon="chatbubble-outline" label={`Whisper ${p.name}`} size={40} variant="surface" color={p.canMessage ? colors.text : colors.textMuted} onPress={message} />
+              <Txt variant="small" color="textSecondary" numberOfLines={1} style={{ marginTop: 2 }}>
+                {[p.username ? `@${p.username}` : null, p.city, p.pronouns].filter(Boolean).join('  ·  ')}
+              </Txt>
+
+              {/* The numbers, as prose. Three of them on the left where the eye
+                  lands first; the rest live in the About tab rather than being
+                  wrapped onto a second line that reads like a spreadsheet. */}
+              {relationship.data ? (
+                <View style={{ flexDirection: 'row', gap: space.lg, marginTop: space.sm }}>
+                  <Pressable
+                    onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}
+                  >
+                    <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.addUps)}</Txt>
+                    <Txt variant="caption" color="textSecondary">Add Ups</Txt>
+                  </Pressable>
+                  {homies.data ? (
+                    <Pressable
+                      onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${homies.data.count} Homies. View people`}
+                    >
+                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(homies.data.count)}</Txt>
+                      <Txt variant="caption" color="textSecondary">Homies</Txt>
+                    </Pressable>
+                  ) : null}
+                  {/* All Round Likes, which is posts + Moments + comments. On a
+                      backend older than the one that counts all three the field
+                      is absent and this falls back to post likes, so the space
+                      is never empty and never claims a number it cannot back. */}
+                  {typeof (relationship.data.allRoundLikes ?? relationship.data.postLikes) === 'number' ? (
+                    <View accessibilityLabel={`${relationship.data.allRoundLikes ?? relationship.data.postLikes} likes received`}>
+                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount((relationship.data.allRoundLikes ?? relationship.data.postLikes)!)}</Txt>
+                      <Txt variant="caption" color="textSecondary">Likes</Txt>
+                    </View>
+                  ) : null}
+                  {/* Views are the owner's business only. The RPC hands them to
+                      nobody else, so there is nothing to hide here — the number
+                      simply does not exist on a visitor's copy of this page. */}
+                  {mine && typeof relationship.data.views === 'number' ? (
+                    <View accessibilityLabel={`${relationship.data.views} profile views`}>
+                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.views)}</Txt>
+                      <Txt variant="caption" color="textSecondary">Views</Txt>
+                    </View>
+                  ) : null}
                 </View>
-              )}
+              ) : relationship.isError ? (
+                <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}>
+                  <Txt variant="small" color="textSecondary">Tap to retry</Txt>
+                </Pressable>
+              ) : null}
             </View>
-
-            {/* The handle, and the facts that read with it, sit under the name —
-                the chips come after, so nothing of the identity block ends up
-                below something that is only an action. */}
-            <Txt variant="small" color="textSecondary" style={{ marginTop: space.xs }}>
-              {[p.username ? `@${p.username}` : null, p.city, p.distance, p.pronouns].filter(Boolean).join('  ·  ')}
-            </Txt>
-            {relationship.data ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, flexWrap: 'wrap' }}>
-              <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addUps)}</Txt> Add Ups</Txt></Pressable>
-              {typeof relationship.data.addedUp === 'number' ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }} accessibilityRole="button" accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(relationship.data.addedUp)}</Txt> Added Up</Txt></Pressable> : null}
-              {homies.data ? <Pressable onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }} accessibilityRole="button" accessibilityLabel={`${homies.data.count} Homies. View people`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(homies.data.count)}</Txt> Homies</Txt></Pressable> : homies.isError ? <Pressable accessibilityRole="button" onPress={() => void homies.refetch()}><Txt variant="small" color="textSecondary">Retry Homies</Txt></Pressable> : null}
-              {mine && typeof spaceViews.data === 'number' ? <Pressable onPress={() => navigation.navigate('SpaceViewers')} accessibilityRole="button" accessibilityLabel={`${spaceViews.data} people opened your Space. See who`}><Txt variant="small"><Txt variant="bodyStrong" style={{fontSize: 17}}>{formatCount(spaceViews.data)}</Txt> Space views</Txt></Pressable> : null}
-              {typeof relationship.data.postLikes === 'number' ? <Txt variant="small" accessibilityLabel={`${relationship.data.postLikes} ${mine ? 'post likes' : 'public post likes'}`}><Txt variant="bodyStrong">{formatCount(relationship.data.postLikes)}</Txt> {mine ? 'Post likes' : 'Public post likes'}</Txt> : null}
-              {mine && relationship.data.backend === 'v2' ? <>
-                <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Added Up list privacy" onPress={() => setOutgoingMenu(true)}><Txt variant="small" color="gold">Added Up privacy</Txt></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="View Homie requests" onPress={() => setHomieRequestsOpen(true)}><Txt variant="small" color="gold">Homie requests</Txt></Pressable>
-              </> : mine ? <Pressable accessibilityRole="button" accessibilityLabel="Add Up list privacy" onPress={() => setVisibilityMenu(true)}><Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} /></Pressable> : null}
-            </View> : relationship.isError ? <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}><Txt variant="small" color="textSecondary">Couldn’t load counts. Tap to retry</Txt></Pressable> : null}
-            {p.bio ? <View style={{ marginTop: space.sm }}>
-              <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
-              {p.bio.length > 80 ? <Pressable onPress={() => setShowFullBio((open) => !open)} accessibilityRole="button" accessibilityLabel={showFullBio ? 'Show less bio' : 'Show full bio'}><Txt variant="small" color="gold">{showFullBio ? 'Show less' : 'Show more'}</Txt></Pressable> : null}
-            </View> : null}
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.xs, flexWrap: 'wrap' }}>
-                {/* Keep Close and Crush are things one member does to another.
-                    On your own Space there was a gold "Edit Space" chip here as
-                    well as the pencil in the header — two doors to one room,
-                    four pixels apart. The header is pinned and always in reach,
-                    so the chip is gone and the pencil is the only way in. */}
-                {mine ? null : (
-                <>
-                <HomieButton id={p.id} name={p.name} />
-                </>
-                )}
-              </View>
           </View>
+
+          {/* ── One action row ───────────────────────────────────────────────
+              Everything you can do about this person, in one line: the main act
+              as a wide pill, the smaller ones as circles beside it. On your own
+              Space the main act is Edit Space; on somebody else's it is Add Up,
+              which is what a visitor came to press.
+
+              The owner controls that used to live as text links in the stats row
+              — Add Up privacy, Added Up privacy, Homie requests — are moved into
+              that same row as the two circles and the menu, so they are reachable
+              without a line of gold text sitting in the middle of the numbers. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md }}>
+            {mine ? (
+              <Pressable
+                onPress={() => navigation.navigate('EditProfile')}
+                accessibilityRole="button"
+                accessibilityLabel="Edit your Space"
+                style={{ flex: 1, backgroundColor: colors.text, borderRadius: 999, paddingVertical: 13, alignItems: 'center' }}
+              >
+                <Txt variant="button" style={{ color: colors.bg }}>Edit Space</Txt>
+              </Pressable>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <FollowButton id={p.id} name={p.name} full />
+              </View>
+            )}
+
+            {mine ? (
+              <>
+                <IconButton icon="lock-closed-outline" size={44} variant="surface" label="Add Up list privacy" onPress={() => setVisibilityMenu(true)} />
+                <IconButton icon="person-add-outline" size={44} variant="surface" label="Homie requests" onPress={() => setHomieRequestsOpen(true)} />
+              </>
+            ) : (
+              <>
+                <IconButton icon="chatbubble-outline" size={44} variant="surface" color={p.canMessage ? colors.text : colors.textMuted} label={`Whisper ${p.name}`} onPress={message} />
+                <IconButton icon="ellipsis-horizontal" size={44} variant="surface" label={`More options for ${p.name}`} onPress={() => openActions(member, spaceActions)} />
+              </>
+            )}
+          </View>
+
+          {/* The bio, under the action row: read after you know who this is
+              and what you can do about it, which is the order the brief asks
+              for (name, proof, action, context). */}
+          {p.bio ? (
+            <View style={{ marginTop: space.md }}>
+              <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
+              {p.bio.length > 80 ? (
+                <Pressable onPress={() => setShowFullBio((open) => !open)} accessibilityRole="button" accessibilityLabel={showFullBio ? 'Show less bio' : 'Show full bio'}>
+                  <Txt variant="small" color="gold">{showFullBio ? 'Show less' : 'Show more'}</Txt>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Keep Close is a thing one member does to another, so it belongs
+              with the other actions on somebody else's Space and nowhere on
+              your own. */}
+          {mine ? null : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.sm, flexWrap: 'wrap' }}>
+              <HomieButton id={p.id} name={p.name} />
+            </View>
+          )}
 
           {/* The state pills used to sit on the bottom of the cover, which put
               them directly behind the face — a rounded rectangle poking out at

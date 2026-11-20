@@ -317,6 +317,18 @@ export type SpaceRelationshipStats = {
   addedUp: number | null;
   keptClose: number;
   postLikes: number;
+  /**
+   * Every like this member's content has earned, across posts, Moments and
+   * comments. Counted server-side over only the content the caller is allowed
+   * to see, so it is a number it is safe to show a stranger — and it is not
+   * the same thing as `postLikes`, which is posts alone.
+   */
+  allRoundLikes?: number;
+  /**
+   * Times this Space has been opened. Owner only: the RPC returns null for
+   * everybody else, and null is rendered as nothing rather than as a zero.
+   */
+  views?: number | null;
   canViewAddUps: boolean;
   canViewAddedUp: boolean;
   canViewKeptClose: boolean;

@@ -10,7 +10,7 @@ import { Txt } from './Txt';
 import { useToast } from './Toast';
 
 /** Real directional Add Up; a pending request is never presented as a follow. */
-export function FollowButton({ id, name, compact = false }: {id: number; name: string; compact?: boolean}) {
+export function FollowButton({ id, name, compact = false, full = false }: {id: number; name: string; compact?: boolean; full?: boolean}) {
   const me = useMe();
   const qc = useQueryClient();
   const { colors } = useTheme();
@@ -34,7 +34,11 @@ export function FollowButton({ id, name, compact = false }: {id: number; name: s
   const label = stats.isError ? 'Retry Add Up' : status === 'active' ? 'Added Up' : status === 'pending' ? 'Request sent' : 'Add Up';
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${name}`} disabled={stats.isLoading || change.isPending}
     onPress={() => stats.isError ? void stats.refetch() : change.mutate()}
-    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, paddingHorizontal:compact ? 9 : 16, paddingVertical:compact ? 7 : 10, borderRadius:10, backgroundColor: status ? colors.elevated : colors.primary, opacity: stats.isLoading || change.isPending ? 0.6 : 1}}>
+    /* `full` is the Space header's main action: a pill that fills the row
+       beside the circular controls, at the same height as the owner's Edit
+       Space. Without it the button keeps its natural width, which is right in
+       a list row and wrong as the one thing a visitor came to press. */
+    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, paddingHorizontal:compact ? 9 : 16, paddingVertical:full ? 13 : compact ? 7 : 10, borderRadius:full ? 999 : 10, backgroundColor: status ? colors.elevated : colors.primary, opacity: stats.isLoading || change.isPending ? 0.6 : 1}}>
     {stats.isLoading || change.isPending ? <ActivityIndicator size="small" color={status ? colors.text : '#fff'} /> : status ? <Ionicons name="checkmark" size={15} color={colors.text} /> : <CrushIcon size={15} color="#fff" />}
     <Txt variant="smallStrong" style={{color: status ? colors.text : '#fff'}}>{label}</Txt>
   </Pressable>;
