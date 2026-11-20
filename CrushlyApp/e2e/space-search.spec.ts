@@ -40,6 +40,8 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/holup_space_share_token') body = SHARE_TOKEN;
     // Who viewed me. One named viewer and one who stays private — the second
     // row is the whole point, so it is always in the fixture.
+    // The count now travels in the Space header's own summary, so it is there
+    // that it is faked; asking for it twice could let the two disagree.
     else if (path === '/rest/v1/rpc/space_view_count') body = 2;
     else if (path === '/rest/v1/rpc/space_viewers') { calls.push(route.request().postDataJSON() as Record<string, unknown>); body = {
       count: 2,
@@ -86,7 +88,9 @@ async function offline(page: Page, calls: Record<string, unknown>[], commentCall
     else if (path === '/rest/v1/rpc/holup_homie_requests_inbox') body = {items:[person],hasMore:false};
     else if (path === '/rest/v1/rpc/holup_respond_homie') { calls.push({homie:'respond',...route.request().postDataJSON()}); body={status:'accepted'}; }
     else if (path === '/rest/v1/rpc/holup_homie_people') { calls.push({p_kind:'keptClose'}); body={items:[person],hasMore:false}; }
-    else if (path === '/rest/v1/rpc/holup_follow_stats') body = {addUps: 3, addedUp: 4, keptClose: 2, postLikes: 7, canViewAddUps: !denyLists, canViewAddedUp: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private', outgoingVisibility, approvalRequired, myStatus: followed ? 'active' : null};
+    // `allRoundLikes` and `views` are the two the header now reads: likes across
+    // posts, Moments and comments, and the owner's own traffic.
+    else if (path === '/rest/v1/rpc/holup_follow_stats') body = {addUps: 3, addedUp: 4, keptClose: 2, postLikes: 7, allRoundLikes: 9, views: 2, canViewAddUps: !denyLists, canViewAddedUp: !denyLists, canViewKeptClose: !denyLists, addUpVisibility: 'private', outgoingVisibility, approvalRequired, myStatus: followed ? 'active' : null};
     else if (path === '/rest/v1/rpc/holup_follow_status') body = {status: followed ? 'active' : null};
     else if (path === '/rest/v1/rpc/holup_follow') { followed = true; calls.push({followed: true}); body = {status:'active',changed:true}; }
     else if (path === '/rest/v1/rpc/holup_unfollow') { followed = false; body = true; }
@@ -313,7 +317,12 @@ test('post composer link control inserts a web address', async ({ page }) => {
 test('Space has working app navigation and real stats', async ({ page }) => {
   await offline(page, []); await openApp(page, '/');
   await page.getByText('Space', { exact: true }).last().click({timeout:30000});
-  await expect(page.getByText('Post likes', {exact:false})).toBeVisible();
+  // The header's third number now counts everything the member's content has
+  // earned, so the word under it is "Likes"; the About tab is where the page
+  // says what that includes.
+  await expect(page.getByText('Likes', {exact:true}).first()).toBeVisible();
+  await page.waitForTimeout(2500);
+  await page.screenshot({path:'/home/user/space-owner.png', fullPage:false});
   for (const label of ['Home', 'Connections', 'Create a post', 'Whispers', 'Notifications']) {
     await expect(page.getByRole('button', {name: label, exact:true})).toBeVisible();
   }
@@ -442,6 +451,27 @@ test('a private relationship list shows the access notice without requesting ide
   await expect(page.getByRole('button', {name:'Back to Space'})).toBeVisible();
 });
 
+test('a visitor sees the Space in the same shape as its owner', async ({page}) => {
+  // The one thing this redesign must not do is give two people two different
+  // pages. A visitor gets the same photo-left, name-beside, numbers-then-actions
+  // order; what differs is what they can do and which numbers exist at all.
+  await offline(page, []); await openApp(page, '/');
+  await page.getByText('Space', { exact: true }).last().click({ timeout: 30000 });
+  await page.getByRole('button', { name: '3 Add Ups. View people' }).click();
+  await page.getByRole('button', { name: 'Open Ada’s Space' }).click();
+
+  // Same furniture as the owner's copy.
+  await expect(page.getByRole('tab', { name: 'Crushes', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'About', exact: true })).toBeVisible();
+  await page.waitForTimeout(2500);
+  await page.screenshot({path:'/home/user/space-visitor.png', fullPage:false});
+  // The action row is Add Up, not Edit Space.
+  await expect(page.getByRole('button', { name: 'Add Up Ada' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit your Space' })).toHaveCount(0);
+  // And no traffic number: it belongs to the owner alone.
+  await expect(page.getByRole('button', { name: /people opened your Space/ })).toHaveCount(0);
+});
+
 test('Added Up opens a real list and its visibility setting is saved', async ({page}) => {
   const calls: Record<string, unknown>[] = []; await offline(page,calls); await openApp(page, '/');
   await page.getByText('Space',{exact:true}).last().click({timeout:30000});
@@ -458,6 +488,8 @@ test('Discover suggestion Add Up calls the real follow action and reflects its r
   const calls: Record<string, unknown>[] = []; await offline(page,calls); await openApp(page, '/');
   await page.getByText('Space',{exact:true}).last().click({timeout:30000});
   await page.getByRole('button',{name:'3 Add Ups. View people'}).click();
+  await page.waitForTimeout(2000);
+  await page.screenshot({path:'/home/user/space-visitor.png', fullPage:false});
   await page.getByRole('button',{name:'Add Up Ada'}).click();
   await expect.poll(()=>calls.some(x=>x.followed === true)).toBe(true);
   await expect(page.getByRole('button',{name:'Added Up Ada'})).toBeVisible();

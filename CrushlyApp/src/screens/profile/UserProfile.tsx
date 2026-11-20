@@ -50,7 +50,7 @@ import { timeAgo } from '../../lib/format';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ScreenProps, RootStackParamList } from '../../navigation/types';
-import { keys, useMe, useMoments, useMyCircles, useSpaceBanner, useSpaceViewCount } from '../../api/hooks';
+import { keys, useMe, useMoments, useMyCircles, useSpaceBanner } from '../../api/hooks';
 import type { Me } from '../../api/types';
 
 /**
@@ -278,7 +278,6 @@ export function SpaceScreen({
   /* How many people opened this Space. Only ever asked for your own: the
      database would refuse the question about somebody else, so the app does not
      ask it. The number is a door to the full list, not a statistic to admire. */
-  const spaceViews = useSpaceViewCount(0, mine && !!meQ.data?.id);
   const visibilityMutation = useMutation({ mutationFn: setAddUpListVisibility,
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['space-relationship-stats'] }); toast({kind: 'success', title: 'Privacy updated'}); },
     onError: (e) => toast({kind:'error', title:'Couldn’t update privacy', message:(e as Error).message}),
@@ -411,7 +410,7 @@ export function SpaceScreen({
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1 }}>
       {/* ── The wash ─────────────────────────────────────────────────────────
           HolUpp's Space is one soft field of colour rather than a white page
           with coloured pieces on it: coral at the top, drifting through pink
@@ -427,11 +426,11 @@ export function SpaceScreen({
         pointerEvents="none"
         colors={
           colors.scheme === 'dark'
-            ? ['rgba(237,89,175,0.20)', 'rgba(183,110,234,0.13)', 'rgba(255,135,136,0.05)', 'rgba(0,0,0,0)']
-            : ['rgba(255,170,150,0.55)', 'rgba(255,159,197,0.40)', 'rgba(214,168,240,0.26)', 'rgba(255,248,248,0)']
+            ? ['rgba(255,135,136,0.34)', 'rgba(237,89,175,0.30)', 'rgba(183,110,234,0.20)', 'rgba(120,70,180,0.06)', 'rgba(0,0,0,0)']
+            : ['rgba(255,170,150,0.62)', 'rgba(255,159,197,0.48)', 'rgba(214,168,240,0.34)', 'rgba(228,205,248,0.16)', 'rgba(255,248,248,0)']
         }
-        locations={[0, 0.34, 0.62, 1]}
-        style={{ position: 'absolute', left: 0, right: 0, top: 0, height: Math.max(heroH + 260, 520) }}
+        locations={[0, 0.26, 0.52, 0.78, 1]}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, height: Math.max(heroH + 620, 900) }}
       />
       <ScrollView
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, space.md) + space.lg }}
@@ -449,7 +448,11 @@ export function SpaceScreen({
         }}
         scrollEventThrottle={16}
       >
-        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative', overflow: 'hidden', backgroundColor: hasBanner ? '#0A0710' : colors.bg }}>
+        {/* No banner means no cover, and no cover means the wash shows through.
+            This box used to be filled with the page colour either way, which
+            drew a hard line across the gradient exactly where the cover would
+            have ended — a photograph's edge with no photograph in it. */}
+        <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative', overflow: 'hidden', backgroundColor: hasBanner ? '#0A0710' : 'transparent' }}>
           {bannerPending ? (
             <Skeleton style={{ width: heroW, height: heroH, borderRadius: 0 }} />
           ) : bannerUrl ? (
@@ -512,6 +515,10 @@ export function SpaceScreen({
                   </View>
                 </LinearGradient>
               ) : (
+                /* The two-and-a-half point gap between the ring and the picture
+                   is the page's own colour, so it has to be a colour: left
+                   transparent it shows whatever is behind it, which on the wash
+                   is a second, muddier ring. */
                 <View style={{ padding: 2.5, borderRadius: FACE, backgroundColor: colors.bg }}>
                   <Avatar uri={p.photos[0]?.url ?? null} name={p.name} size={FACE} />
                 </View>
@@ -531,47 +538,97 @@ export function SpaceScreen({
                 {[p.username ? `@${p.username}` : null, p.city, p.pronouns].filter(Boolean).join('  ·  ')}
               </Txt>
 
-              {/* The numbers, as prose. Three of them on the left where the eye
-                  lands first; the rest live in the About tab rather than being
-                  wrapped onto a second line that reads like a spreadsheet. */}
+              {/* The numbers, as prose. Four of them, evenly spaced, each one
+                  its own door: Add Ups, Added Up, Homies and the likes their
+                  content has earned. On your own Space the fifth is the traffic
+                  this page has had, and it is yours alone.
+
+                  They are evenly spaced rather than tucked together because
+                  four numbers with four words under them is already a row; the
+                  row is where the eye lands after the name, so it should look
+                  deliberate rather than crowded into one corner. */}
               {relationship.data ? (
-                <View style={{ flexDirection: 'row', gap: space.lg, marginTop: space.sm }}>
+                <View style={{ flexDirection: 'row', marginTop: space.sm }}>
                   <Pressable
+                    style={{ flex: 1, minWidth: 0 }}
                     onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }}
                     accessibilityRole="button"
                     accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}
                   >
                     <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.addUps)}</Txt>
-                    <Txt variant="caption" color="textSecondary">Add Ups</Txt>
+                    <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Add Ups</Txt>
                   </Pressable>
+                  {typeof relationship.data.addedUp === 'number' ? (
+                    <Pressable
+                      style={{ flex: 1, minWidth: 0 }}
+                      onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}
+                    >
+                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.addedUp)}</Txt>
+                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Added Up</Txt>
+                    </Pressable>
+                  ) : null}
                   {homies.data ? (
                     <Pressable
+                      style={{ flex: 1, minWidth: 0 }}
                       onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }}
                       accessibilityRole="button"
                       accessibilityLabel={`${homies.data.count} Homies. View people`}
                     >
                       <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(homies.data.count)}</Txt>
-                      <Txt variant="caption" color="textSecondary">Homies</Txt>
+                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Homies</Txt>
                     </Pressable>
                   ) : null}
-                  {/* All Round Likes, which is posts + Moments + comments. On a
-                      backend older than the one that counts all three the field
-                      is absent and this falls back to post likes, so the space
-                      is never empty and never claims a number it cannot back. */}
+                  {/* All Round Likes: posts + Moments + comments. On a backend
+                      older than the one that counts all three the field is absent
+                      and this falls back to post likes, so the space is never
+                      empty and never claims a number it cannot back. The two wide
+                      words do not fit under a quarter of a phone, so the label
+                      stays the house word and the sentence that defines it lives
+                      in the About tab and in the accessibility label. */}
                   {typeof (relationship.data.allRoundLikes ?? relationship.data.postLikes) === 'number' ? (
-                    <View accessibilityLabel={`${relationship.data.allRoundLikes ?? relationship.data.postLikes} likes received`}>
+                    <View
+                      style={{ flex: 1, minWidth: 0 }}
+                      accessibilityLabel={
+                        typeof relationship.data.allRoundLikes === 'number'
+                          ? `${relationship.data.allRoundLikes} likes received across posts, Moments and comments`
+                          : `${relationship.data.postLikes} post likes`
+                      }
+                    >
                       <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount((relationship.data.allRoundLikes ?? relationship.data.postLikes)!)}</Txt>
-                      <Txt variant="caption" color="textSecondary">Likes</Txt>
+                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>
+                        {typeof relationship.data.allRoundLikes === 'number' ? 'Likes' : mine ? 'Post likes' : 'Public post likes'}
+                      </Txt>
                     </View>
                   ) : null}
-                  {/* Views are the owner's business only. The RPC hands them to
-                      nobody else, so there is nothing to hide here — the number
-                      simply does not exist on a visitor's copy of this page. */}
-                  {mine && typeof relationship.data.views === 'number' ? (
-                    <View accessibilityLabel={`${relationship.data.views} profile views`}>
-                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.views)}</Txt>
-                      <Txt variant="caption" color="textSecondary">Views</Txt>
-                    </View>
+                  {/* Who opened the Space, and the way in to the list of them.
+                      Owner only: the RPC hands this number to nobody else, so on
+                      a visitor's copy of the page it simply is not there. An
+                      older backend answers nothing, and the door stays anyway —
+                      the list is a separate request that still works. */}
+                  {mine ? (
+                    typeof relationship.data.views === 'number' ? (
+                      <Pressable
+                        style={{ flex: 1, minWidth: 0 }}
+                        onPress={() => navigation.navigate('SpaceViewers')}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${relationship.data.views} people opened your Space. See who`}
+                      >
+                        <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.views)}</Txt>
+                        <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Views</Txt>
+                      </Pressable>
+                    ) : (
+                      <Pressable
+                        style={{ flex: 1, minWidth: 0 }}
+                        onPress={() => navigation.navigate('SpaceViewers')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Space views. See who"
+                      >
+                        <Txt variant="bodyStrong" style={{ fontSize: 17 }}>—</Txt>
+                        <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Views</Txt>
+                      </Pressable>
+                    )
                   ) : null}
                 </View>
               ) : relationship.isError ? (
@@ -610,8 +667,13 @@ export function SpaceScreen({
 
             {mine ? (
               <>
-                <IconButton icon="lock-closed-outline" size={44} variant="surface" label="Add Up list privacy" onPress={() => setVisibilityMenu(true)} />
-                <IconButton icon="person-add-outline" size={44} variant="surface" label="Homie requests" onPress={() => setHomieRequestsOpen(true)} />
+                {/* Two lists, two locks, and they are told apart by name. The
+                    lock opens the Added Up list — who may see the people *you*
+                    added — because the arrow next to it holds the Add Ups
+                    themselves. Naming it "Add Up list privacy" and opening the
+                    other sheet was one lock standing in front of the wrong door. */}
+                <IconButton icon="lock-closed-outline" size={44} variant="surface" label="Added Up list privacy" onPress={() => setOutgoingMenu(true)} />
+                <IconButton icon="person-add-outline" size={44} variant="surface" label="View Homie requests" onPress={() => setHomieRequestsOpen(true)} />
               </>
             ) : (
               <>
@@ -789,6 +851,14 @@ export function SpaceScreen({
                 profile={p}
                 lifestyle={lifestyle}
                 mine={mine}
+                /* The header has room for four numbers and no room to say what
+                   the fourth one means. The About tab is where the page is
+                   allowed to explain itself, so the sentence lives there. */
+                likesLine={
+                  typeof relationship.data?.allRoundLikes === 'number'
+                    ? `${formatCount(relationship.data.allRoundLikes)} likes on everything ${mine ? 'you have' : `${p.name} has`} posted — posts, Moments and comments.`
+                    : undefined
+                }
                 onReport={mine ? undefined : () => openActions(member)}
               />
             ) : null}
@@ -1315,11 +1385,14 @@ function SpaceAbout({
   profile: p,
   lifestyle,
   mine,
+  likesLine,
   onReport,
 }: {
   profile: FullProfile;
   lifestyle: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }[];
   mine: boolean;
+  /** One sentence saying what the header's Likes number counts. */
+  likesLine?: string;
   onReport?: () => void;
 }) {
   const { colors } = useTheme();
@@ -1343,6 +1416,10 @@ function SpaceAbout({
   return (
     <View style={{ gap: space.lg }}>
       {p.bio ? <Txt variant="body"><LinkText text={p.bio} bare /></Txt> : null}
+
+      {likesLine ? (
+        <Txt variant="small" color="textMuted">{likesLine}</Txt>
+      ) : null}
 
       {hasWords && (p.intentions.length || p.relationshipIntention) ? (
         <Section title="Looking for">
