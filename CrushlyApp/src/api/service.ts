@@ -853,7 +853,15 @@ export async function spaceViewers(days = 0, offset = 0): Promise<SpaceViewerPag
  * verdict without counting. Both are server-computed — the client is told where
  * it stands, it does not decide.
  */
-export type WebClockState = { firstSeenAt: number | null; elapsedMs: number; remainingMs: number; blocked: boolean; opens?: number; platform?: string | null };
+export type WebClockState = {
+  firstSeenAt: number | null;
+  elapsedMs: number;
+  remainingMs: number;
+  blocked: boolean;
+  unlimited?: boolean;
+  opens?: number;
+  platform?: string | null;
+};
 export async function holupWebOpen(platform: string): Promise<WebClockState> {
   return rpc<WebClockState>('holup_web_open', { p_platform: platform });
 }
