@@ -21,6 +21,12 @@ test('no clock yet (signed out, or first paint) is not a block', () => {
   assert.equal(webStanding(undefined, 'android'), 'open');
 });
 
+test('the server-side unlimited result stays open and never warns', () => {
+  const unlimited = clock({ unlimited: true, blocked: true, remainingMs: 0 });
+  assert.equal(webStanding(unlimited, 'android'), 'open');
+  assert.equal(shouldWarn(unlimited), false);
+});
+
 test('Android gets the wall because there is an app to send it to', () => {
   assert.equal(webStanding(clock({ blocked: true, remainingMs: 0 }), 'android'), 'wall');
 });

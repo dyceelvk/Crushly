@@ -32,6 +32,8 @@ export type WebClock = {
   elapsedMs: number;
   remainingMs: number;
   blocked: boolean;
+  /** Server-side entitlement. Exempt members never enter a limited standing. */
+  unlimited?: boolean;
   opens?: number;
 };
 
@@ -52,7 +54,9 @@ export type WebClock = {
 export type WebStanding = 'open' | 'readonly' | 'wall';
 
 export function webStanding(clock: WebClock | null | undefined, platform: 'ios' | 'android' | 'other'): WebStanding {
-  if (!clock?.blocked) return 'open';
+  // `unlimited` is authoritative when present. The blocked check remains as a
+  // defensive fallback for older server responses that do not include it.
+  if (clock?.unlimited || !clock?.blocked) return 'open';
   return platform === 'android' ? 'wall' : 'readonly';
 }
 
@@ -98,7 +102,7 @@ export function timeLeftLabel(remainingMs: number): string {
  * nagging.
  */
 export function shouldWarn(clock: WebClock | null | undefined): boolean {
-  if (!clock || clock.blocked || clock.firstSeenAt == null) return false;
+  if (!clock || clock.unlimited || clock.blocked || clock.firstSeenAt == null) return false;
   return clock.remainingMs > 0 && clock.remainingMs <= 6 * 60 * 60 * 1000;
 }
 

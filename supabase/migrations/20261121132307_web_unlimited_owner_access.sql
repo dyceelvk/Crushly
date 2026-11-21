@@ -1,0 +1,186 @@
+-- 20261121132307_web_unlimited_owner_access
+--
+-- One private exception to the browser's 24-hour write clock.
+--
+-- The web product remains limited for everybody else. The owner needs a way to
+-- use and test the web build without consuming the public browser allowance, so
+-- this is an explicit entitlement rather than a client-side email check. The
+-- database checks the signed-in auth user on every clock read and every guarded
+-- write. Clearing browser storage, changing the user agent, or calling the RPC
+-- directly cannot turn the exception on for another account.
+--
+-- support@holupp.net was confirmed as a second authenticated account that also
+-- needs the exception.
+
+create table if not exists public.holup_web_access_exemptions (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at bigint not null default public.now_ms()
+);
+
+alter table public.holup_web_access_exemptions enable row level security;
+
+comment on table public.holup_web_access_exemptions is
+  'Private allowlist for members exempt from the browser write clock. No member may read or change it.';
+
+insert into public.holup_web_access_exemptions (user_id)
+select id
+  from auth.users
+ where lower(trim(email)) in ('rielosinc@gmail.com', 'support@holupp.net')
+on conflict (user_id) do nothing;
+
+revoke all on public.holup_web_access_exemptions from public, anon, authenticated;
+grant all on public.holup_web_access_exemptions to service_role;
+
+create or replace function public.holup_web_is_unlimited()
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select exists (
+    select 1
+      from public.holup_web_access_exemptions e
+     where e.user_id = auth.uid()
+  )
+$function$;
+
+revoke all on function public.holup_web_is_unlimited() from public, anon;
+grant execute on function public.holup_web_is_unlimited() to authenticated, service_role;
+
+-- The clock returns an open answer for the exempt member. Keeping the shape
+-- identical means no web bundle change is needed and the browser still works
+-- if this entitlement is added after the member has already visited once.
+create or replace function public.holup_web_open(p_platform text default null::text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  limit_ms constant bigint := 24::bigint * 3600000;
+  row public.holup_web_sessions;
+  nowms bigint := public.now_ms();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if public.holup_web_is_unlimited() then
+    return jsonb_build_object(
+      'firstSeenAt', null,
+      'elapsedMs', 0,
+      'remainingMs', limit_ms,
+      'blocked', false,
+      'opens', 0,
+      'platform', p_platform,
+      'unlimited', true
+    );
+  end if;
+
+  insert into public.holup_web_sessions as s (profile_id, first_seen_at, last_seen_at, last_platform)
+  values (me, nowms, nowms, p_platform)
+  on conflict (profile_id) do update
+    set last_seen_at = nowms,
+        last_platform = coalesce(excluded.last_platform, s.last_platform),
+        opens = s.opens + case when nowms - s.last_seen_at > 86400000 then 1 else 0 end
+  returning * into row;
+
+  return jsonb_build_object(
+    'firstSeenAt', row.first_seen_at,
+    'elapsedMs', nowms - row.first_seen_at,
+    'remainingMs', greatest(0, limit_ms - (nowms - row.first_seen_at)),
+    'blocked', (nowms - row.first_seen_at) >= limit_ms,
+    'opens', row.opens,
+    'platform', row.last_platform,
+    'unlimited', false
+  );
+end
+$function$;
+
+create or replace function public.holup_web_status()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  limit_ms constant bigint := 24::bigint * 3600000;
+  row public.holup_web_sessions;
+  nowms bigint := public.now_ms();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if public.holup_web_is_unlimited() then
+    return jsonb_build_object(
+      'firstSeenAt', null,
+      'elapsedMs', 0,
+      'remainingMs', limit_ms,
+      'blocked', false,
+      'opens', 0,
+      'unlimited', true
+    );
+  end if;
+
+  select * into row from public.holup_web_sessions where profile_id = me;
+  if not found then
+    return jsonb_build_object('firstSeenAt', null, 'elapsedMs', 0, 'remainingMs', limit_ms, 'blocked', false, 'opens', 0, 'unlimited', false);
+  end if;
+
+  return jsonb_build_object(
+    'firstSeenAt', row.first_seen_at,
+    'elapsedMs', nowms - row.first_seen_at,
+    'remainingMs', greatest(0, limit_ms - (nowms - row.first_seen_at)),
+    'blocked', (nowms - row.first_seen_at) >= limit_ms,
+    'opens', row.opens,
+    'unlimited', false
+  );
+end
+$function$;
+
+revoke all on function public.holup_web_open(text) from public, anon;
+grant execute on function public.holup_web_open(text) to authenticated, service_role;
+revoke all on function public.holup_web_status() from public, anon;
+grant execute on function public.holup_web_status() to authenticated, service_role;
+
+-- Guarded writes call this function after the browser header has been checked.
+-- The entitlement must be checked before the clock row, so a previously expired
+-- session is harmless for the owner as well.
+create or replace function public.holup_web_write_block()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  row public.holup_web_sessions;
+  limit_ms constant bigint := 24::bigint * 3600000;
+begin
+  if me is null or public.holup_web_is_unlimited() or not public.holup_request_is_browser() then
+    return null;
+  end if;
+
+  select * into row from public.holup_web_sessions where profile_id = me;
+  if not found or public.now_ms() - row.first_seen_at < limit_ms then
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'code', 'web_day_over',
+    'message', 'Your browser day is over. You can still read everything here — posting, Moments, clips and Whispers are in the app.',
+    'firstSeenAt', row.first_seen_at
+  );
+end
+$function$;
+
+revoke all on function public.holup_web_write_block() from public, anon;
+grant execute on function public.holup_web_write_block() to authenticated, service_role;
+
+notify pgrst, 'reload schema';
