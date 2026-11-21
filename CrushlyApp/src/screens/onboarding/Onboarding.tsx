@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Glow } from '../../components/Ambient';
 import { Logo } from '../../components/Logo';
@@ -12,7 +12,7 @@ import { useSetUsername, useMe, useUpdateProfile } from '../../api/hooks';
 import { Avatar } from '../../components/Photo';
 import { PhotoGrid } from '../../components/PhotoGrid';
 import { useToast } from '../../components/Toast';
-import { completeOnboarding } from '../../api/service';
+import { completeOnboarding, followMember, followStatus, profileByUsername } from '../../api/service';
 import { useAuth } from '../../state/auth';
 import { useTheme } from '../../theme/ThemeProvider';
 import { haptic } from '../../lib/haptics';
@@ -57,7 +57,7 @@ function StepSegments({ step, total }: { step: number; total: number }) {
  * step on a small phone and for the interest grid with a large text setting.
  */
 function Shell({
-  step, title, subtitle, children, onNext, nextLabel = 'Continue', nextDisabled, loading, onBack,
+  step, title, subtitle, children, onNext, nextLabel = 'Continue', nextDisabled, loading, onBack, skip,
 }: {
   step: number;
   title: string;
@@ -68,6 +68,7 @@ function Shell({
   nextDisabled?: boolean;
   loading?: boolean;
   onBack?: () => void;
+  skip?: () => void;
 }) {
   const { colors, reduceMotion } = useTheme();
   const { signOut } = useAuth();
@@ -94,6 +95,7 @@ function Shell({
         <View>
           <View style={{ height: stroke.hairline, backgroundColor: colors.border, marginBottom: space.md }} />
           <Button title={nextLabel} onPress={onNext} disabled={nextDisabled} loading={loading} />
+          {skip ? <Button title="Skip for now" variant="ghost" size="md" onPress={skip} disabled={loading} /> : null}
         </View>
       )}
     >
@@ -496,20 +498,110 @@ export function OnboardingFeaturesScreen({ navigation }: ScreenProps<'Onboarding
   );
 }
 
-/** 6 — finish only after the required identity pieces are actually present. */
+/** 6 — Stay close to HolUpp */
+
+/**
+ * The official accounts are the one social action offered during sign-up. The
+ * profile is marked onboarded first because the Add Up backend intentionally
+ * refuses relationships from an unfinished account. Only then do we add the
+ * selected official accounts and read the relationship back from the server.
+ */
+const OFFICIAL_ACCOUNTS = [
+  { handle: 'holupp', fallbackName: 'Holupyall', blurb: 'Official updates, new features and what is coming next.' },
+  { handle: 'info_holup', fallbackName: 'InfoholUp', blurb: 'Help, answers and the things worth knowing.' },
+] as const;
+
+type OfficialProfile = { id: number; name: string; photo: string | null };
+type FollowOutcome = 'following' | 'done' | 'failed';
+
 export function OnboardingCompleteScreen({ navigation }: ScreenProps<'OnboardingComplete'>) {
   const { colors } = useTheme();
-  const { refresh } = useAuth();
   const toast = useToast();
+  const { refresh } = useAuth();
+  const [profiles, setProfiles] = useState<Record<string, OfficialProfile>>({});
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(OFFICIAL_ACCOUNTS.map((account) => account.handle)));
+  const [outcome, setOutcome] = useState<Record<string, FollowOutcome>>({});
   const [finishing, setFinishing] = useState(false);
-  const { data: me } = useMe();
 
-  const finish = async () => {
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const found: Record<string, OfficialProfile> = {};
+      await Promise.all(OFFICIAL_ACCOUNTS.map(async (account) => {
+        try {
+          const profile = await profileByUsername(account.handle);
+          if (profile) {
+            found[account.handle] = {
+              id: profile.id,
+              name: profile.name || account.fallbackName,
+              photo: profile.photos?.[0]?.url ?? null,
+            };
+          }
+        } catch {
+          // The fallback row remains usable; the submit path retries the lookup.
+        }
+      }));
+      if (alive) setProfiles(found);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const toggle = (handle: string) => setSelected((current) => {
+    const next = new Set(current);
+    if (next.has(handle)) next.delete(handle);
+    else next.add(handle);
+    return next;
+  });
+
+  const finish = async (shouldAddUp: boolean) => {
     setFinishing(true);
     try {
+      // This must happen before holup_follow: an unfinished profile is not
+      // eligible to create an Add Up, even when the target is official.
       await completeOnboarding();
+
+      const selectedAccounts = shouldAddUp
+        ? OFFICIAL_ACCOUNTS.filter((account) => selected.has(account.handle))
+        : [];
+      const failed = (await Promise.all(selectedAccounts.map(async (account) => {
+        setOutcome((current) => ({ ...current, [account.handle]: 'following' }));
+        const id = profiles[account.handle]?.id ?? (await profileByUsername(account.handle).catch(() => null))?.id;
+        if (id == null) {
+          setOutcome((current) => ({ ...current, [account.handle]: 'failed' }));
+          return account.handle;
+        }
+
+        let sent = false;
+        for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
+          try {
+            await followMember(id);
+            sent = true;
+          } catch {
+            if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 700));
+          }
+        }
+
+        // A request/pending row is still a successful Add Up. The important
+        // guarantee is that the server has the relationship, not that the
+        // official account has already added the new member back.
+        const status = sent ? await followStatus(id).catch(() => null) : null;
+        const confirmed = status?.status === 'active'
+          || status?.status === 'pending'
+          || status?.connected === true;
+        setOutcome((current) => ({ ...current, [account.handle]: confirmed ? 'done' : 'failed' }));
+        return confirmed ? null : account.handle;
+      }))).filter((handle) => handle !== null);
+
       await refresh();
-      toast({ kind: 'success', title: 'You’re on HolUpp', message: 'Your Space is ready. Discover something new.' });
+      if (failed.length) {
+        toast({
+          kind: 'error',
+          title: `Couldn’t Add Up to ${failed.map((handle) => `@${handle}`).join(' and ')}`,
+          message: 'Your Space is ready. Open the official Space later and try Add Up again.',
+        });
+      } else {
+        toast({ kind: 'success', title: 'You’re on HolUpp', message: 'Your Space is ready. Start discovering.' });
+      }
     } catch (e) {
       setFinishing(false);
       toast({ kind: 'error', title: 'Almost there', message: (e as Error).message });
@@ -517,23 +609,65 @@ export function OnboardingCompleteScreen({ navigation }: ScreenProps<'Onboarding
   };
 
   return (
-    <Shell step={6} title="You’re good to go!" subtitle="Your HolUpp experience starts here. Discover, express and find your people." onBack={() => navigation.goBack()} onNext={finish} nextLabel="Enter HolUpp" loading={finishing}>
-      <View style={{ alignItems: 'center', paddingTop: space.md }}>
-        <View style={{ width: 116, height: 116, borderRadius: 58, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: colors.primaryLine }}>
-          <Avatar uri={me?.profile.photos?.[0]?.url ?? null} name={me?.profile.name ?? 'You'} size={92} ring="crush" />
-        </View>
-        <Txt variant="heading" align="center" style={{ marginTop: space.lg }}>
-          Your Space is ready for you.
-        </Txt>
-        <Txt variant="body" color="textSecondary" align="center" style={{ marginTop: space.xs, maxWidth: 330 }}>
-          Post something to Flow, explore Circles, share a Moment or simply look around. There is no single way to belong here.
-        </Txt>
+    <Shell
+      step={6}
+      title="Stay close to HolUpp"
+      subtitle="Add Up to the official accounts for updates, help and what is coming next — straight from the people who build it."
+      onBack={() => navigation.goBack()}
+      onNext={() => finish(true)}
+      nextLabel="Start discovering"
+      loading={finishing}
+      skip={finishing ? undefined : () => finish(false)}
+    >
+      <View style={{ gap: space.xs }}>
+        {OFFICIAL_ACCOUNTS.map((account) => {
+          const isSelected = selected.has(account.handle);
+          const profile = profiles[account.handle];
+          return (
+            <Pressable
+              key={account.handle}
+              onPress={() => { haptic.tap(); toggle(account.handle); }}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              accessibilityLabel={`Add Up to @${account.handle}`}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', gap: space.sm,
+                paddingVertical: space.sm, paddingHorizontal: space.sm,
+                borderRadius: radius.md, borderWidth: stroke.hairline,
+                borderColor: isSelected ? colors.primaryLine : colors.border,
+                backgroundColor: isSelected ? colors.primarySoft : colors.card,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Avatar uri={profile?.photo ?? null} name={profile?.name ?? account.fallbackName} size={44} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Txt variant="bodyStrong">{profile?.name ?? account.fallbackName}</Txt>
+                <Txt variant="small" color="textSecondary" style={{ marginTop: 1 }}>@{account.handle}</Txt>
+                <Txt variant="small" color={outcome[account.handle] === 'failed' ? 'danger' : 'textMuted'} style={{ marginTop: 2 }}>
+                  {outcome[account.handle] === 'following' ? 'Adding Up…'
+                    : outcome[account.handle] === 'done' ? 'Added Up — you’ll see their updates'
+                    : outcome[account.handle] === 'failed' ? 'Didn’t go through — try again later'
+                    : account.blurb}
+                </Txt>
+              </View>
+              <View style={{
+                width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                borderWidth: stroke.thick, borderColor: isSelected ? colors.primary : colors.borderStrong,
+                backgroundColor: isSelected ? colors.primary : 'transparent',
+              }}>
+                {outcome[account.handle] === 'following'
+                  ? <ActivityIndicator size="small" color={isSelected ? colors.onPrimary : colors.primary} />
+                  : isSelected ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
-      <View style={{ marginTop: rhythm.section, gap: space.xs }}>
-        {['Discover what people are sharing.', 'Express yourself in the way that feels natural.', 'Build connections at your own pace.'].map((line) => (
-          <View key={line} style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-            <Txt variant="small" color="textSecondary">{line}</Txt>
+      <View style={{ marginTop: rhythm.group, gap: space.xs }}>
+        {['Every account you tick is added Up before you enter.', 'You can remove the connection anytime from their Space.'].map((tip) => (
+          <View key={tip} style={{ flexDirection: 'row', gap: space.xs }}>
+            <Ionicons name="sparkles-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
+            <Txt variant="small" color="textSecondary" style={{ flex: 1 }}>{tip}</Txt>
           </View>
         ))}
       </View>

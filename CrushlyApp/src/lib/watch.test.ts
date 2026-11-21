@@ -66,15 +66,20 @@ test('the web home is the room, and the interstitial is off', () => {
     'the web notice must not be shown over the home page');
 });
 
-test('sign-up introduces the social network before relationship features', () => {
+test('sign-up introduces the social network before offering official Add Ups', () => {
   const onboarding = readFileSync(new URL('../screens/onboarding/Onboarding.tsx', import.meta.url), 'utf8');
   assert.match(onboarding, /Welcome to HolUpp/);
   assert.match(onboarding, /Your world\. Your people\. Your expression\./);
   for (const feature of ['Flow', 'Connections', 'Circles', 'Space', 'Moments', 'Crushes']) {
     assert.match(onboarding, new RegExp(`label: '${feature}'`), `onboarding must introduce ${feature}`);
   }
-  assert.doesNotMatch(onboarding, /OFFICIAL_ACCOUNTS|followStatus\(id\)/,
-    'official follows do not belong in the social-network-first entry path');
+  assert.match(onboarding, /const OFFICIAL_ACCOUNTS/);
+  assert.match(onboarding, /title="Stay close to HolUpp"/);
+  assert.match(onboarding, /accessibilityLabel=\{`Add Up to @\$\{account\.handle\}`\}/);
+  assert.match(onboarding, /await completeOnboarding\(\)/);
+  assert.match(onboarding, /followStatus\(id\)/);
+  assert.ok(onboarding.indexOf('await completeOnboarding()') < onboarding.indexOf('await followMember(id)'),
+    'the profile must be onboarded before the Add Up is sent');
 });
 
 test('the visitor feed cannot carry what a stranger may not see', () => {
