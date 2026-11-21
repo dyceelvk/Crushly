@@ -1,3 +1,4 @@
+-- REQUIRES: relationship_cutover
 -- Harden referral eligibility at the database boundary and give authenticated
 -- App Links a handle-to-profile-id resolver. The client never supplies an
 -- inviter id or a referred-member id.

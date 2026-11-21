@@ -1,3 +1,4 @@
+-- REQUIRES: relationship_cutover
 -- HolUpp invitations, server-side referral attribution, and successful counts.
 --
 -- A member receives one reusable, unguessable invitation code. A referral is

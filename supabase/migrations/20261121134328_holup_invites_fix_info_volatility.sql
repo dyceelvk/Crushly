@@ -1,3 +1,4 @@
+-- REQUIRES: relationship_cutover
 -- holup_invite_info creates a member's reusable code on first use, so it must
 -- be VOLATILE rather than STABLE. The original version was rejected by
 -- PostgreSQL when it attempted its intentional insert inside a stable function.
