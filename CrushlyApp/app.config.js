@@ -32,16 +32,20 @@ module.exports = () => {
       ...firebaseConfig(),
       package: 'app.holup.mobile',
       intentFilters: [{ action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'],
-        // Both public landing pages open the app: a shared post (/v/) and a shared
-        // Space (/s/). The Space page links on to ?space=<id> for anyone the app
-        // cannot open for, so an old install still lands somewhere real.
+        // All shareable HolUpp HTTPS links open the installed app: posts/videos
+        // (/v/), private Spaces (/s/), public profiles (/u/) and reusable
+        // invitations (/i/). Without the APK the same URLs stay on their web
+        // landing pages because App Links only claim them when this package is
+        // installed and verified.
         data: [
-          // The domain we actually publish, both apex and www, for the two
-          // public landing pages: a shared post (/v/) and a shared Space (/s/).
           { scheme: 'https', host: 'holupp.net', pathPrefix: '/v/' },
           { scheme: 'https', host: 'holupp.net', pathPrefix: '/s/' },
+          { scheme: 'https', host: 'holupp.net', pathPrefix: '/u/' },
+          { scheme: 'https', host: 'holupp.net', pathPrefix: '/i/' },
           { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/v/' },
           { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/s/' },
+          { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/u/' },
+          { scheme: 'https', host: 'www.holupp.net', pathPrefix: '/i/' },
           // The retired hostname is deliberately gone: it belongs to no project,
           // so an install claiming it would only ever open a page that 404s.
         ] }],

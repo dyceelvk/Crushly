@@ -16,6 +16,7 @@ import type {
 
 export const keys = {
   me: ['me'] as const,
+  invite: ['invite'] as const,
   discover: ['discover'] as const,
   user: (id: number) => ['user', id] as const,
   crushes: ['crushes'] as const,
@@ -70,6 +71,10 @@ function postsChanged(qc: QueryClient) {
 
 export const useMe = (enabled = true) =>
   useQuery({ queryKey: keys.me, queryFn: () => service.getMe(), enabled, staleTime: 30_000 });
+
+/** Settings-only referral data; the RPC returns no other member's referrals. */
+export const useInviteInfo = (enabled = true) =>
+  useQuery({ queryKey: keys.invite, queryFn: service.inviteInfo, enabled, staleTime: 15_000 });
 
 export const useSpaceBanner = (viewerId?: number, targetId?: number) =>
   useQuery({ queryKey: keys.spaceBanner(viewerId ?? 0, targetId ?? 0), queryFn: () => service.spaceBanner(targetId!), enabled: !!viewerId && !!targetId, staleTime: 0 });

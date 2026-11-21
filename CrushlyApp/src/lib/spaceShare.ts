@@ -15,6 +15,28 @@ export function spaceShareUrl(token: string): string {
   return `${PUBLIC_SITE}/s/${clean}`;
 }
 
+/** Read a secure `/s/<token>` target so the app can ask the server for its id. */
+export function sharedSpaceToken(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'https:' && isPublicHost(u.hostname)) {
+      const raw = /^\/s\/([^/]+)\/?$/.exec(u.pathname)?.[1] ?? null;
+      const token = raw?.toLowerCase() ?? null;
+      return token && TOKEN.test(token) ? token : null;
+    }
+    if (u.protocol === 'holup:' || u.protocol === 'crushly:') {
+      const kind = u.hostname.toLowerCase();
+      const raw = kind === 's' ? u.pathname.replace(/^\//, '') : null;
+      const token = raw?.toLowerCase() ?? null;
+      return token && TOKEN.test(token) ? token : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Where a holUpp link is asking to go. Three shapes are accepted:
  *

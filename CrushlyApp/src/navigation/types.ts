@@ -43,6 +43,7 @@ export type RootStackParamList = {
   Filters: undefined;
   Notifications: undefined;
   Settings: undefined;
+  Invite: undefined;
   Admin: undefined;
   EditProfile: undefined;
   Verification: undefined;

@@ -230,7 +230,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
        * what makes the link come back here; it only works because that origin is
        * in the project's redirect allow list.
        */
-      const origin = webOrigin();
+      // Return to the actual app shell, not the marketing root. A pending
+      // invitation is held in the device/browser store while the account is
+      // confirmed, then the referral intent claims it after auth.
+      const redirect = webReturnUrl() ?? webOrigin();
       // Same rule as sign-in: the check is asked for here, at the request, and
       // the token is spent immediately.
       const captchaToken = await getCaptchaToken();
@@ -238,7 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email.trim().toLowerCase(),
         password,
         options: {
-          ...(origin ? { emailRedirectTo: origin } : {}),
+          ...(redirect ? { emailRedirectTo: redirect } : {}),
           ...(captchaToken ? { captchaToken } : {}),
         },
       });

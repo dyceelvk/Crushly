@@ -102,7 +102,8 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           iconTone="gold"
           onPress={() => navigation.navigate('Verification')}
         />
-        <ListRow title="holUpp Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
+        <ListRow title="holUpp Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} />
+        <ListRow title="Invite people" subtitle="Share holUpp and see your private referral progress" icon="person-add-outline" iconTone="success" onPress={() => navigation.navigate('Invite')} last />
       </Group>
 
       <Group title="Discovery & privacy">

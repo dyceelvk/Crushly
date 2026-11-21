@@ -799,3 +799,19 @@ export type ViewerPage = { items: ViewerItem[]; count?: number };
  */
 export type SpaceViewerItem = { profile: Profile | null; viewedAt: number; views: number };
 export type SpaceViewerPage = { items: SpaceViewerItem[]; count: number };
+
+/** The one reusable personal invite and the private counts behind Settings. */
+export type InviteInfo = {
+  code: string;
+  link: string;
+  successful: number;
+  pending: number;
+  total: number;
+};
+
+/** The server's answer when an authenticated member brings an invite code. */
+export type ReferralClaimResult = {
+  claimed: boolean;
+  retryable?: boolean;
+  reason?: 'claimed' | 'account_not_confirmed' | 'already_onboarded' | 'already_attributed' | 'self_referral' | 'invalid_code';
+};

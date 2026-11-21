@@ -40,7 +40,7 @@ import {
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
 import type {WatchPost, AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
-  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
+  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, InviteInfo, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReferralClaimResult, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
 
 /**
  * The holUpp data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -361,6 +361,14 @@ export async function spaceShareToken(id: number): Promise<string> {
     throw new ApiError(500, 'share_unavailable', 'Sharing is unavailable right now.');
   }
   return token;
+}
+
+/** Resolve a token received through an Android App Link without trusting an id from the URL. */
+export async function spaceIdFromShareToken(token: string): Promise<number | null> {
+  const preview = await rpc<{ id?: unknown } | null>('public_space_preview', { p_token: String(token ?? '').trim().toLowerCase() });
+  const id = preview?.id;
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return null;
+  return id;
 }
 
 /**
@@ -785,6 +793,21 @@ export const adminReports = (handled = false, offset = 0) => rpc<AdminReport[]>(
 export const adminSetReportHandled = (id: number, handled: boolean) => rpc<boolean>('holup_admin_set_report_handled', { p_report_id: id, p_handled: handled });
 export const adminAccounts = (query: string) => rpc<AdminAccount[]>('holup_admin_accounts', { p_query: query });
 export const adminAudit = () => rpc<AdminAuditEvent[]>('holup_admin_audit');
+
+/**
+ * One reusable invitation code and the private totals for the signed-in member.
+ * The database creates the code on first read; the client never manufactures or
+ * stores an inviter identity.
+ */
+export const inviteInfo = () => rpc<InviteInfo>('holup_invite_info');
+
+/** Attribute an invite to the authenticated, not-yet-onboarded member. */
+export const claimReferral = (code: string) =>
+  rpc<ReferralClaimResult>('holup_referral_claim', { p_code: String(code ?? '').trim().toLowerCase() });
+
+/** Resolve a shared profile handle only after authentication. */
+export const sharedProfileIdByHandle = (username: string) =>
+  rpc<number | null>('holup_profile_id_by_username', { p_username: String(username ?? '').trim().replace(/^@/, '').toLowerCase() });
 
 /** Check that an external link has a public landing at the time it is made. */
 export async function publicPostPreview(postId: number): Promise<{ id: number; body: string; author: string } | null> {

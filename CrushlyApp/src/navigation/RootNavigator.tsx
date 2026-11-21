@@ -57,6 +57,7 @@ import { SpaceViewersScreen } from '../screens/profile/SpaceViewers';
 import { RegionScreen } from '../screens/region/Region';
 import { NotificationsScreen } from '../screens/notifications/Notifications';
 import { AccountScreen, AppearanceScreen, BlockedUsersScreen, NotificationSettingsScreen, SettingsScreen } from '../screens/settings/Settings';
+import { InviteScreen } from '../screens/settings/Invite';
 import { SafetyScreen, PrivacyScreen } from '../screens/settings/Safety';
 import { VerificationScreen } from '../screens/settings/Verification';
 import { PlusScreen } from '../screens/settings/Plus';
@@ -247,6 +248,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="Invite" component={InviteScreen} />
           <Stack.Screen name="Admin" component={AdminScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
           <Stack.Screen name="SpaceViewers" component={SpaceViewersScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />

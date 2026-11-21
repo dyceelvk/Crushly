@@ -17,6 +17,7 @@ import { UpdateGate } from './src/components/UpdateGate';
 import { MemberActionsProvider } from './src/state/memberActions';
 import { SharedSpaceIntent } from './src/components/SharedSpaceIntent';
 import { SharedPostIntent } from './src/components/SharedPostIntent';
+import { SharedReferralIntent } from './src/components/SharedReferralIntent';
 import { BootCanvas } from './src/screens/auth/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import type { RootStackParamList } from './src/navigation/types';
@@ -51,7 +52,10 @@ if (Platform.OS !== 'web') {
 }
 
 const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: ['crushly://'],
+  // The older debug scheme remains valid; secure release builds use holup.
+  // HTTPS share targets are consumed by the explicit intent components so a
+  // handle/code is resolved before a numeric navigation route can misread it.
+  prefixes: ['crushly://', 'holup://'],
   config: {
     screens: {
       Welcome: 'welcome',
@@ -147,6 +151,7 @@ function Shell() {
           <ErrorBoundary>
             <SharedPostIntent />
             <SharedSpaceIntent />
+            <SharedReferralIntent />
             {/* One chime for something that arrived, and none for anything
                 already on screen: see src/lib/sound.ts for the rules. */}
             <SoundAlerts enabled={status === 'ready' || status === 'onboarding'} />
