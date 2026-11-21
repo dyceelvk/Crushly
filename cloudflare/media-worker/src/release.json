@@ -1,11 +1,11 @@
 {
-  "version": "1.0.140",
-  "versionCode": 140,
+  "version": "1.0.141",
+  "versionCode": 141,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.140-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.140/holUpp-1.0.140-RielOS.apk",
-  "notes": "Onboarding ends with Stay close to HolUpp: choose the official accounts and holUpp adds them Up after your Space is complete, with the server confirming each relationship before you enter.",
-  "bytes": 101722235,
-  "sha256": "9cc92a1b1473203b25a5f8f26a58f6db588f4b8df2926d780952d11181b90648",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.140/holUpp-1.0.140-RielOS.apk"
+  "file": "holUpp-1.0.141-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.141/holUpp-1.0.141-RielOS.apk",
+  "notes": "Android updates now carry the trusted signing history from earlier holUpp builds, so members can update without uninstalling; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
+  "bytes": 101835778,
+  "sha256": "af99249ab3bf97c96935cf387a2cda6abe8fbd44c73a1c7024d5654dc504196c",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.141/holUpp-1.0.141-RielOS.apk"
 }
