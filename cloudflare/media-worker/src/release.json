@@ -1,11 +1,11 @@
 {
-  "version": "1.0.136",
-  "versionCode": 136,
+  "version": "1.0.140",
+  "versionCode": 140,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.136-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.136/holUpp-1.0.136-RielOS.apk",
-  "notes": "Onboarding now introduces HolUpp as a modern social network: build your Space, choose your interests, choose how you express yourself, and learn Flow, Connections, Circles, Moments and Crushes in context.",
-  "bytes": 101698827,
-  "sha256": "18fb8edd68ff7080babd50c0949649b9b44cc46e80f6f55db384d46142d69480",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.136/holUpp-1.0.136-RielOS.apk"
+  "file": "holUpp-1.0.140-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.140/holUpp-1.0.140-RielOS.apk",
+  "notes": "Onboarding ends with Stay close to HolUpp: choose the official accounts and holUpp adds them Up after your Space is complete, with the server confirming each relationship before you enter.",
+  "bytes": 101722235,
+  "sha256": "9cc92a1b1473203b25a5f8f26a58f6db588f4b8df2926d780952d11181b90648",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.140/holUpp-1.0.140-RielOS.apk"
 }
