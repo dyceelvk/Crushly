@@ -1,11 +1,11 @@
 {
-  "version": "1.0.142",
-  "versionCode": 142,
+  "version": "1.0.143",
+  "versionCode": 143,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.142-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.142/holUpp-1.0.142-RielOS.apk",
-  "notes": "The Android package now uses the standard release signing schemes for wider Xiaomi and Android installer compatibility; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
-  "bytes": 101722235,
-  "sha256": "ef2729786e6a29ba9a4f3885d971df963f4eedff6bc4e3b0ef202893cf617145",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.142/holUpp-1.0.142-RielOS.apk"
+  "file": "holUpp-1.0.143-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.143/holUpp-1.0.143-RielOS.apk",
+  "notes": "The Android package restores the full signing history, so members on 1.0.141 and 1.0.142 can update in place without uninstalling; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
+  "bytes": 101835778,
+  "sha256": "32d2dd85c933686b4387a2892ca37d9b96324cd6f567a3cc6d6a7f16ae0cbf51",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.143/holUpp-1.0.143-RielOS.apk"
 }
