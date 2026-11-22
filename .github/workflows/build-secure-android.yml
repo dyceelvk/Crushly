@@ -70,6 +70,25 @@ jobs:
           grep -qi 'certificate SHA-256 digest: cda5c0a7ff47e02ecf8dcef9e22869a09dfe8377aeacb86948555fed097d4ee4' "$RUNNER_TEMP/signature.txt"
           "$tools/aapt" dump badging "$apk" | grep -q "package: name='app.holup.mobile'"
           sha256sum "$apk"
+      # This candidate is signed with the production key only. A device on the
+      # rotated 1.0.141 carries {legacy debug, production} and will reject this
+      # APK with "App not installed" (the 1.0.142 bug). publish-android.yml
+      # runs check_apk_signers.py and refuses it. Use build-rotated-android.yml
+      # for any release until the installed base has passed through a rotated
+      # build.
+      - name: Mark the candidate as not publishable while rotated builds are live
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          echo "::warning::Standard-secure-only candidate. Cannot be published while devices carry the rotated 1.0.141 signature set; use build-rotated-android.yml for the next release."
+          if grep -q 'fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c' \
+             "$RUNNER_TEMP/signature.txt" 2>/dev/null; then
+            echo "::notice::This candidate does carry the legacy debug signer; the publish signer gate will pass."
+          else
+            echo "::notice::Confirmed: this candidate does NOT carry the legacy debug signer."
+          fi
+
       # No server credential may leave in a build a member holds. This runs on
       # the exact file that would be published, before it is published, and it
       # fails the build rather than warn: a leaked key cannot be un-shipped.

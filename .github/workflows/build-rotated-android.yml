@@ -6,9 +6,22 @@
 # workflow creates an Android 9+ v3 signing lineage from that legacy key to the
 # secure release key, then proves the update on an Android 11 emulator before
 # the artifact can be handed to the publish workflow.
+#
+# 1.0.141 was the first rotated build (v1/v2 legacy debug + v3 production, so its
+# certificate set is {debug, production}). 1.0.142 was then built with the
+# standard secure signing only ({production}), which the installer rejects over
+# any device still carrying 1.0.141 — the "error on installing" bug. Every
+# release until the installed base has fully passed through a rotated build MUST
+# be produced with this workflow; publish-android.yml enforces it with
+# check_apk_signers.py. The `version` input only names the artifact.
 name: Build rotated holUpp Android candidate
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build and name the APK (must match app.json/release.json)'
+        required: true
+        default: '1.0.143'
 permissions:
   contents: read
 jobs:
@@ -99,7 +112,7 @@ jobs:
           tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           aligned="$RUNNER_TEMP/holupp-aligned.apk"
           lineage="$RUNNER_TEMP/legacy-to-holup.lineage"
-          rotated="$RUNNER_TEMP/holUpp-1.0.141-RielOS.apk"
+          rotated="$RUNNER_TEMP/holUpp-${{ inputs.version }}-RielOS.apk"
           "$tools/zipalign" -p -f 4 "$unsigned" "$aligned"
           "$tools/apksigner" rotate \
             --out "$lineage" \
@@ -140,9 +153,9 @@ jobs:
           grep -qi 'cda5c0a7ff47e02ecf8dcef9e22869a09dfe8377aeacb86948555fed097d4ee4' "$RUNNER_TEMP/rotated-signature.txt"
           "$tools/aapt" dump badging "$rotated" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:)"
           mkdir -p apk
-          cp "$rotated" apk/holUpp-1.0.141-RielOS.apk
-          sha256sum apk/holUpp-1.0.141-RielOS.apk | tee apk/SHA256SUMS.txt
-          stat -c 'APK bytes: %s' apk/holUpp-1.0.141-RielOS.apk
+          cp "$rotated" apk/holUpp-${{ inputs.version }}-RielOS.apk
+          sha256sum apk/holUpp-${{ inputs.version }}-RielOS.apk | tee apk/SHA256SUMS.txt
+          stat -c 'APK bytes: %s' apk/holUpp-${{ inputs.version }}-RielOS.apk
       - name: Download old and current APKs for update testing
         working-directory: ${{ github.workspace }}
         run: |
@@ -154,7 +167,7 @@ jobs:
           curl -fLsS --retry 2 \
             https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.140/holUpp-1.0.140-RielOS.apk \
             -o apk-check/secure/Crushly-android-test.apk
-          cp CrushlyApp/apk/holUpp-1.0.141-RielOS.apk apk-check/new/Crushly-android-test.apk
+          cp CrushlyApp/apk/holUpp-${{ inputs.version }}-RielOS.apk apk-check/new/Crushly-android-test.apk
       - name: Enable emulator hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -192,12 +205,12 @@ jobs:
           APNS_AUTH_KEY: ${{ secrets.APNS_AUTH_KEY }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: python3 .github/scripts/audit-apk-secrets.py CrushlyApp/apk/holUpp-1.0.141-RielOS.apk "$RUNNER_TEMP/SECURITY-CHECK.txt"
+        run: python3 .github/scripts/audit-apk-secrets.py CrushlyApp/apk/holUpp-${{ inputs.version }}-RielOS.apk "$RUNNER_TEMP/SECURITY-CHECK.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: holUpp-rotated-unreleased-candidate
           path: |
-            CrushlyApp/apk/holUpp-1.0.141-RielOS.apk
+            CrushlyApp/apk/holUpp-${{ inputs.version }}-RielOS.apk
             CrushlyApp/apk/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 2

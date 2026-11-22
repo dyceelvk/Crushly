@@ -93,6 +93,18 @@ jobs:
         env:
           V: ${{ inputs.version }}
           SHA: ${{ inputs.sha256 }}
+      # The signer gate that 1.0.142 missed. Android compares the *set* of
+      # signer certificates on update: a device on the rotated 1.0.141 carries
+      # {legacy debug, production}, so a standard-secure-only APK ({production})
+      # is rejected by the installer with "App not installed". Refuse to publish
+      # any APK that does not carry every signer the installed base expects.
+      - name: Require the signers the installed base can update from
+        run: |
+          set -euo pipefail
+          apk=$(find apk -name "holUpp-${{ inputs.version }}-RielOS.apk" | head -1)
+          test -n "$apk" || { echo "::error::no renamed APK to check signers."; exit 1; }
+          python3 .github/scripts/check_apk_signers.py "$apk"
+
       # The APK goes to Cloudflare R2, in the bucket the Worker's RELEASES binding
       # actually points at (`holupp`), in the same account as the Worker that
       # serves it. A second bucket name here would upload to a place nothing
