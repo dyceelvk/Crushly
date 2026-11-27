@@ -427,46 +427,128 @@ function parseRange(rangeHeader: string | null, size: number): { offset: number;
  * `Accept-Ranges: bytes` and 206 responses the media element refuses to
  * stream, and the viewer sees a black box or a frozen first frame.
  *
- * R2's `get()` accepts a native `range` option and returns a sliced body.
- * B2 honours the `Range` header on its download endpoint. Both already
- * produce the correct sliced bytes, so we forward the header and then
- * assemble a response with the headers the client expects.
+ * R2's `get()` accepts a native `range` option as `{ offset, length }` and
+ * returns a sliced body. B2 honours the raw `Range` header on its download
+ * endpoint. Both produce the correct sliced bytes; we assemble a response
+ * with the headers the client expects.
  */
 async function serveMedia(
   env: Env,
   path: string,
   rangeHeader: string | null,
 ): Promise<Response | null> {
+  // Parse the range into offset/length — R2 needs the object form, B2 needs
+  // the raw header string.
+  let r2Range: { offset: number; length: number } | undefined;
+  if (rangeHeader) {
+    // We don't know the size yet for R2 (suffix ranges need it), so for R2
+    // we defer parsing: first try with a best-effort parse for absolute
+    // ranges, and fall back to a full read if the range can't be resolved.
+    const m = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader.trim());
+    if (m) {
+      const start = Number(m[1]);
+      const end = m[2] === '' ? undefined : Number(m[2]);
+      // For absolute ranges without an end, we can't compute length without
+      // the size — so only resolve when the end is explicit.
+      if (end !== undefined) {
+        r2Range = { offset: start, length: end - start + 1 };
+      }
+    }
+    // For suffix ranges (bytes=-N), we can't resolve without the size.
+    // Fall through to a full read and slice afterwards.
+  }
+
   for (const store of READ_ORDER) {
     let upstream: Response | null = null;
     if (store === 'r2') {
       const bucket = env.MEDIA;
       if (!bucket) continue;
-      const object = await bucket.get(path, rangeHeader ? { range: rangeHeader } : undefined);
-      if (!object || !object.body) continue;
-      const headers = new Headers();
-      if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
-      if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
-      headers.set('Accept-Ranges', 'bytes');
-      upstream = new Response(object.body, {
-        status: rangeHeader ? 206 : 200,
-        headers,
-      });
-    } else {
-      const auth = await b2Auth(env);
-      const answer = await b2Download(env, auth, path, rangeHeader);
-      if (answer.ok) {
-        const headers = new Headers(answer.headers);
+      try {
+        const object = await bucket.get(path, r2Range ? { range: r2Range } : undefined);
+        if (!object || !object.body) continue;
+        const headers = new Headers();
+        if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
+        if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
         headers.set('Accept-Ranges', 'bytes');
-        upstream = new Response(answer.body, {
-          status: rangeHeader ? 206 : 200,
-          headers,
-        });
+        // If we have a range header but couldn't pre-resolve it (suffix range),
+        // slice the body ourselves from the full response.
+        let body = object.body;
+        let status = rangeHeader ? 206 : 200;
+        if (rangeHeader && !r2Range) {
+          const size = object.size ?? 0;
+          const parsed = parseRange(rangeHeader, size);
+          if (parsed) {
+            headers.set('Content-Range', `bytes ${parsed.offset}-${parsed.offset + parsed.length - 1}/${size}`);
+            headers.set('Content-Length', String(parsed.length));
+            // Slice the ReadableStream — we read the full object but only
+            // send the requested slice.
+            body = sliceStream(object.body, parsed.offset, parsed.length);
+            status = 206;
+          } else {
+            status = 200;
+            headers.set('Content-Length', String(size));
+          }
+        }
+        upstream = new Response(body, { status, headers });
+      } catch {
+        continue;
+      }
+    } else {
+      try {
+        const auth = await b2Auth(env);
+        const answer = await b2Download(env, auth, path, rangeHeader);
+        if (answer.ok) {
+          const headers = new Headers(answer.headers);
+          headers.set('Accept-Ranges', 'bytes');
+          upstream = new Response(answer.body, {
+            status: rangeHeader ? 206 : 200,
+            headers,
+          });
+        }
+      } catch {
+        // B2 unreachable — fall through to next store (or return null).
       }
     }
     if (upstream) return upstream;
   }
   return null;
+}
+
+/**
+ * Slice a ReadableStream to a byte range. Used when the range couldn't be
+ * passed to R2 natively (e.g. suffix ranges) and we must trim after reading.
+ */
+function sliceStream(stream: ReadableStream<Uint8Array>, offset: number, length: number): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  return new ReadableStream({
+    async pull(controller) {
+      let remaining = length;
+      let skipped = 0;
+      while (remaining > 0) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (skipped < offset) {
+          const toSkip = Math.min(offset - skipped, value.byteLength);
+          skipped += toSkip;
+          const sliceStart = toSkip;
+          const remainingBytes = value.byteLength - sliceStart;
+          if (remainingBytes <= 0) continue;
+          const toSend = Math.min(remainingBytes, remaining);
+          controller.enqueue(value.slice(sliceStart, sliceStart + toSend));
+          remaining -= toSend;
+        } else {
+          const toSend = Math.min(value.byteLength, remaining);
+          controller.enqueue(value.slice(0, toSend));
+          remaining -= toSend;
+        }
+      }
+      await reader.cancel().catch(() => {});
+      controller.close();
+    },
+    cancel(reason) {
+      void reader.cancel(reason).catch(() => {});
+    },
+  });
 }
 
 /**
