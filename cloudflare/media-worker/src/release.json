@@ -1,11 +1,11 @@
 {
-  "version": "1.0.144",
-  "versionCode": 144,
+  "version": "1.0.145",
+  "versionCode": 145,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.144-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.144/holUpp-1.0.144-RielOS.apk",
-  "notes": "Repost is now available across Flow, post viewers, profiles and notifications, with the original post and its privacy settings kept intact; Android also carries the current update channel and push handling.",
-  "bytes": 101731919,
-  "sha256": "f2efc536d03106c12ecab8877226eee0204dd6b81e647091575b709bf3459273",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.144/holUpp-1.0.144-RielOS.apk"
+  "file": "holUpp-1.0.145-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.145/holUpp-1.0.145-RielOS.apk",
+  "notes": "A visitor's Space shows the Homies count once, as the Homies pill, instead of also repeating it as a number in the stats row; the owner's own Space keeps the number.",
+  "bytes": 101843970,
+  "sha256": "8589b2d9f66788130cf7037afb6527264729aaf75f184ced78b64856671ca6c8",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.145/holUpp-1.0.145-RielOS.apk"
 }
