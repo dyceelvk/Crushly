@@ -1,0 +1,228 @@
+# Build a secure APK that can update the older public debug-signed APK.
+#
+# 1.0.133–1.0.136 were signed with Expo's public debug key. The secure
+# release signer introduced later is a different certificate, so Android rejects
+# a direct update even when the package name and versionCode are correct. This
+# workflow creates an Android 9+ v3 signing lineage from that legacy key to the
+# secure release key, then proves the update on an Android 11 emulator before
+# the artifact can be handed to the publish workflow.
+#
+# 1.0.141 was the first rotated build (v1/v2 legacy debug + v3 production, so its
+# certificate set is {debug, production}). 1.0.142 was then built with the
+# standard secure signing only ({production}), which the installer rejects over
+# any device still carrying 1.0.141 — the "error on installing" bug. Every
+# release until the installed base has fully passed through a rotated build MUST
+# be produced with this workflow; publish-android.yml enforces it with
+# check_apk_signers.py. The `version` input only names the artifact.
+name: Build rotated holUpp Android candidate
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build and name the APK (must match app.json/release.json)'
+        required: true
+        default: '1.0.145'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    defaults:
+      run:
+        working-directory: CrushlyApp
+    env:
+      CI: '1'
+      HOLUP_SECURE_ANDROID: '1'
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.EXPO_PUBLIC_TURNSTILE_SITE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the captcha site key is usable
+        working-directory: ${{ github.workspace }}
+        run: python3 .github/scripts/check_captcha_key.py
+        env:
+          EXPO_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.EXPO_PUBLIC_TURNSTILE_SITE_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: CrushlyApp/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci --include=dev
+      - run: node scripts/check-public-build.mjs && npm run typecheck && npm test
+      - name: Recover the exact legacy Expo debug keystore
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          package=$(npm pack expo@57.0.27 --ignore-scripts --silent --pack-destination "$tmp" | tail -1)
+          tar -xOf "$tmp/$package" package/template.tgz > "$tmp/template.tgz"
+          umask 077
+          tar -xOf "$tmp/template.tgz" package/android/app/debug.keystore > "$RUNNER_TEMP/legacy-debug.keystore"
+          keytool -list -v -keystore "$RUNNER_TEMP/legacy-debug.keystore" -storepass android -alias androiddebugkey \
+            | grep -E 'Alias name:|SHA256:'
+      - name: Prepare secure signing key
+        env:
+          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
+          HOLUP_ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.HOLUP_ANDROID_RELEASE_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOLUP_ANDROID_RELEASE_KEY_PASSWORD" && test -n "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64"
+          umask 077
+          printf %s "$HOLUP_ANDROID_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/holup-release.p12"
+          echo "HOLUP_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/holup-release.p12" >> "$GITHUB_ENV"
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build an unsigned release package
+        env:
+          # The generated signing block is evaluated by Gradle even though the
+          # release signingConfig is removed below; it must see the password to
+          # get past that fail-closed guard.
+          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle')
+          s = p.read_text()
+          needle = 'signingConfig signingConfigs.holupRelease'
+          if s.count(needle) != 1:
+              raise SystemExit('secure release signing line was not found exactly once')
+          # apksigner must apply the rotated v3 lineage to an unsigned APK; do
+          # not let Gradle add a second, non-lineage signature first.
+          p.write_text(s.replace(needle, ''))
+          PY
+          cd android
+          ./gradlew assembleRelease --no-daemon --max-workers=2 \
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      - name: Sign with a legacy-to-secure certificate lineage
+        env:
+          HOLUP_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.HOLUP_ANDROID_RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_dir=android/app/build/outputs/apk/release
+          unsigned=$(find "$apk_dir" -maxdepth 1 -type f -name '*-unsigned.apk' -print -quit)
+          test -n "$unsigned" || { echo '::error::Gradle did not produce an unsigned APK.'; ls -la "$apk_dir"; exit 1; }
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          aligned="$RUNNER_TEMP/holupp-aligned.apk"
+          lineage="$RUNNER_TEMP/legacy-to-holup.lineage"
+          rotated="$RUNNER_TEMP/holUpp-${{ inputs.version }}-RielOS.apk"
+          "$tools/zipalign" -p -f 4 "$unsigned" "$aligned"
+          "$tools/apksigner" rotate \
+            --out "$lineage" \
+            --old-signer \
+            --ks "$RUNNER_TEMP/legacy-debug.keystore" \
+            --ks-type JKS \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --new-signer \
+            --ks "$RUNNER_TEMP/holup-release.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias holup-release \
+            --ks-pass env:HOLUP_ANDROID_RELEASE_KEY_PASSWORD \
+            --key-pass env:HOLUP_ANDROID_RELEASE_KEY_PASSWORD
+          "$tools/apksigner" sign \
+            --out "$rotated" \
+            --ks "$RUNNER_TEMP/legacy-debug.keystore" \
+            --ks-type JKS \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --next-signer \
+            --ks "$RUNNER_TEMP/holup-release.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias holup-release \
+            --ks-pass env:HOLUP_ANDROID_RELEASE_KEY_PASSWORD \
+            --key-pass env:HOLUP_ANDROID_RELEASE_KEY_PASSWORD \
+            --lineage "$lineage" \
+            --rotation-min-sdk-version 28 \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            "$aligned"
+          "$tools/apksigner" verify --verbose --print-certs "$rotated" | tee "$RUNNER_TEMP/rotated-signature.txt"
+          grep -Eqi 'Verified using v3 scheme.*true' "$RUNNER_TEMP/rotated-signature.txt"
+          grep -qi 'cda5c0a7ff47e02ecf8dcef9e22869a09dfe8377aeacb86948555fed097d4ee4' "$RUNNER_TEMP/rotated-signature.txt"
+          "$tools/aapt" dump badging "$rotated" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:)"
+          mkdir -p apk
+          cp "$rotated" apk/holUpp-${{ inputs.version }}-RielOS.apk
+          sha256sum apk/holUpp-${{ inputs.version }}-RielOS.apk | tee apk/SHA256SUMS.txt
+          stat -c 'APK bytes: %s' apk/holUpp-${{ inputs.version }}-RielOS.apk
+      - name: Download old and current APKs for update testing
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p apk-check/old apk-check/new apk-check/secure
+          curl -fLsS --retry 2 \
+            https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.133/holUpp-1.0.133-RielOS.apk \
+            -o apk-check/old/Crushly-android-test.apk
+          curl -fLsS --retry 2 \
+            https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.140/holUpp-1.0.140-RielOS.apk \
+            -o apk-check/secure/Crushly-android-test.apk
+          cp CrushlyApp/apk/holUpp-${{ inputs.version }}-RielOS.apk apk-check/new/Crushly-android-test.apk
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test old debug-signed and current secure updates
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            python3 .github/scripts/test-android-update.py
+            adb uninstall app.holup.mobile >/dev/null 2>&1 || true
+            adb install --no-streaming --abi armeabi-v7a apk-check/secure/Crushly-android-test.apk
+            adb install --no-streaming --abi armeabi-v7a -r apk-check/new/Crushly-android-test.apk
+            adb shell dumpsys package app.holup.mobile | grep -E 'versionCode=|primaryCpuAbi='
+      - name: Audit server secrets in the exact APK
+        working-directory: ${{ github.workspace }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DIDIT_API_KEY: ${{ secrets.DIDIT_API_KEY }}
+          DIDIT_WEBHOOK_SECRET: ${{ secrets.DIDIT_WEBHOOK_SECRET }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          GMAIL_SMTP_PASS: ${{ secrets.GMAIL_SMTP_PASS }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_SAFEGUARD_KEY: ${{ secrets.GROQ_SAFEGUARD_KEY }}
+          FCM_SERVER_KEY: ${{ secrets.FCM_SERVER_KEY }}
+          APNS_AUTH_KEY: ${{ secrets.APNS_AUTH_KEY }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 .github/scripts/audit-apk-secrets.py CrushlyApp/apk/holUpp-${{ inputs.version }}-RielOS.apk "$RUNNER_TEMP/SECURITY-CHECK.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: holUpp-rotated-unreleased-candidate
+          path: |
+            CrushlyApp/apk/holUpp-${{ inputs.version }}-RielOS.apk
+            CrushlyApp/apk/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-rotated-update-diagnostics
+          path: |
+            apk-check/*-report.txt
+            ${{ runner.temp }}/rotated-signature.txt
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove signing keys
+        if: always()
+        run: rm -f "$RUNNER_TEMP/legacy-debug.keystore" "$RUNNER_TEMP/holup-release.p12" "$RUNNER_TEMP/legacy-to-holup.lineage"
