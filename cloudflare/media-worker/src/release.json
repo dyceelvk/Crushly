@@ -1,11 +1,11 @@
 {
-  "version": "1.0.143",
-  "versionCode": 143,
+  "version": "1.0.144",
+  "versionCode": 144,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.143-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.143/holUpp-1.0.143-RielOS.apk",
-  "notes": "The Android package restores the full signing history, so members on 1.0.141 and 1.0.142 can update in place without uninstalling; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
-  "bytes": 101835778,
-  "sha256": "32d2dd85c933686b4387a2892ca37d9b96324cd6f567a3cc6d6a7f16ae0cbf51",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.143/holUpp-1.0.143-RielOS.apk"
+  "file": "holUpp-1.0.144-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.144/holUpp-1.0.144-RielOS.apk",
+  "notes": "Repost is now available across Flow, post viewers, profiles and notifications, with the original post and its privacy settings kept intact; Android also carries the current update channel and push handling.",
+  "bytes": 101731919,
+  "sha256": "f2efc536d03106c12ecab8877226eee0204dd6b81e647091575b709bf3459273",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.144/holUpp-1.0.144-RielOS.apk"
 }
