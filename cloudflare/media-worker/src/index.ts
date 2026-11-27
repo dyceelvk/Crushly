@@ -394,15 +394,196 @@ async function r2Put(env: Env, path: string, contentType: string, bytes: ArrayBu
   return true;
 }
 
-async function r2Get(env: Env, path: string): Promise<Response | null> {
-  const bucket = env.MEDIA;
-  if (!bucket) return null;
-  const object = await bucket.get(path);
-  if (!object || !object.body) return null;
-  const headers = new Headers();
-  if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
-  if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
-  return new Response(object.body, { status: 200, headers });
+/**
+ * Parse a `Range: bytes=start-end` header into an offset/length pair.
+ * Returns null when there is no range or the header is malformed.
+ */
+function parseRange(rangeHeader: string | null, size: number): { offset: number; length: number } | null {
+  if (!rangeHeader) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!m) return null;
+  const [, startStr, endStr] = m;
+  if (startStr === '' && endStr === '') return null;
+  let start: number;
+  let end: number;
+  if (startStr === '') {
+    // Suffix range: last N bytes.
+    const suffix = Number(endStr);
+    if (!Number.isFinite(suffix) || suffix <= 0) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(startStr);
+    end = endStr === '' ? size - 1 : Math.min(Number(endStr), size - 1);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end) return null;
+  return { offset: start, length: end - start + 1 };
+}
+
+/**
+ * Read a file from R2 or B2, honouring an optional `Range` header.
+ *
+ * Browsers require range support for `<video>` playback: without
+ * `Accept-Ranges: bytes` and 206 responses the media element refuses to
+ * stream, and the viewer sees a black box or a frozen first frame.
+ *
+ * R2's `get()` accepts a native `range` option as `{ offset, length }` and
+ * returns a sliced body. B2 honours the raw `Range` header on its download
+ * endpoint. Both produce the correct sliced bytes; we assemble a response
+ * with the headers the client expects.
+ */
+async function serveMedia(
+  env: Env,
+  path: string,
+  rangeHeader: string | null,
+): Promise<Response | null> {
+  // Parse the range into offset/length — R2 needs the object form, B2 needs
+  // the raw header string.
+  let r2Range: { offset: number; length: number } | undefined;
+  if (rangeHeader) {
+    // We don't know the size yet for R2 (suffix ranges need it), so for R2
+    // we defer parsing: first try with a best-effort parse for absolute
+    // ranges, and fall back to a full read if the range can't be resolved.
+    const m = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader.trim());
+    if (m) {
+      const start = Number(m[1]);
+      const end = m[2] === '' ? undefined : Number(m[2]);
+      // For absolute ranges without an end, we can't compute length without
+      // the size — so only resolve when the end is explicit.
+      if (end !== undefined) {
+        r2Range = { offset: start, length: end - start + 1 };
+      }
+    }
+    // For suffix ranges (bytes=-N), we can't resolve without the size.
+    // Fall through to a full read and slice afterwards.
+  }
+
+  for (const store of READ_ORDER) {
+    let upstream: Response | null = null;
+    if (store === 'r2') {
+      const bucket = env.MEDIA;
+      if (!bucket) continue;
+      try {
+        const object = await bucket.get(path, r2Range ? { range: r2Range } : undefined);
+        if (!object || !object.body) continue;
+        const headers = new Headers();
+        if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
+        headers.set('Accept-Ranges', 'bytes');
+        const fullSize = typeof object.size === 'number' ? object.size : 0;
+        // If we have a range header but couldn't pre-resolve it (suffix range),
+        // slice the body ourselves from the full response.
+        let body = object.body;
+        let status = rangeHeader ? 206 : 200;
+        if (rangeHeader && !r2Range) {
+          const parsed = parseRange(rangeHeader, fullSize);
+          if (parsed) {
+            headers.set('Content-Range', `bytes ${parsed.offset}-${parsed.offset + parsed.length - 1}/${fullSize}`);
+            headers.set('Content-Length', String(parsed.length));
+            // Slice the ReadableStream — we read the full object but only
+            // send the requested slice.
+            body = sliceStream(object.body, parsed.offset, parsed.length);
+            status = 206;
+          } else {
+            status = 200;
+            headers.set('Content-Length', String(fullSize));
+          }
+        } else if (r2Range) {
+          // Absolute range resolved before the read: R2 returns the sliced
+          // body, but object.size is still the full file size.
+          headers.set('Content-Range', `bytes ${r2Range.offset}-${r2Range.offset + r2Range.length - 1}/${fullSize}`);
+          headers.set('Content-Length', String(r2Range.length));
+          status = 206;
+        } else {
+          headers.set('Content-Length', String(fullSize));
+        }
+        upstream = new Response(body, { status, headers });
+      } catch {
+        continue;
+      }
+    } else {
+      try {
+        const auth = await b2Auth(env);
+        const answer = await b2Download(env, auth, path, rangeHeader);
+        if (answer.ok) {
+          const headers = new Headers(answer.headers);
+          headers.set('Accept-Ranges', 'bytes');
+          upstream = new Response(answer.body, {
+            status: rangeHeader ? 206 : 200,
+            headers,
+          });
+        }
+      } catch {
+        // B2 unreachable — fall through to next store (or return null).
+      }
+    }
+    if (upstream) return upstream;
+  }
+  return null;
+}
+
+/**
+ * Slice a ReadableStream to a byte range. Used when the range couldn't be
+ * passed to R2 natively (e.g. suffix ranges) and we must trim after reading.
+ */
+function sliceStream(stream: ReadableStream<Uint8Array>, offset: number, length: number): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  return new ReadableStream({
+    async pull(controller) {
+      let remaining = length;
+      let skipped = 0;
+      while (remaining > 0) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (skipped < offset) {
+          const toSkip = Math.min(offset - skipped, value.byteLength);
+          skipped += toSkip;
+          const sliceStart = toSkip;
+          const remainingBytes = value.byteLength - sliceStart;
+          if (remainingBytes <= 0) continue;
+          const toSend = Math.min(remainingBytes, remaining);
+          controller.enqueue(value.slice(sliceStart, sliceStart + toSend));
+          remaining -= toSend;
+        } else {
+          const toSend = Math.min(value.byteLength, remaining);
+          controller.enqueue(value.slice(0, toSend));
+          remaining -= toSend;
+        }
+      }
+      await reader.cancel().catch(() => {});
+      controller.close();
+    },
+    cancel(reason) {
+      void reader.cancel(reason).catch(() => {});
+    },
+  });
+}
+
+/**
+ * Read a file for a full-body download (the `/d/` route): no range support,
+ * just the raw bytes with a fixed content type and no-store caching.
+ */
+async function readFull(env: Env, path: string): Promise<Response | null> {
+  for (const store of READ_ORDER) {
+    let upstream: Response | null = null;
+    if (store === 'r2') {
+      const bucket = env.MEDIA;
+      if (!bucket) continue;
+      const object = await bucket.get(path);
+      if (!object || !object.body) continue;
+      const headers = new Headers();
+      if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
+      if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+      upstream = new Response(object.body, { status: 200, headers });
+    } else {
+      const auth = await b2Auth(env);
+      const answer = await b2Download(env, auth, path);
+      if (answer.ok) {
+        upstream = new Response(answer.body, { status: 200, headers: answer.headers });
+      }
+    }
+    if (upstream) return upstream;
+  }
+  return null;
 }
 
 async function r2Delete(env: Env, path: string): Promise<boolean> {
@@ -442,11 +623,13 @@ async function b2Upload(env: Env, path: string, contentType: string, bytes: Arra
 }
 
 /** Private bucket, so the download carries the account token. */
-function b2Download(env: Env, auth: B2Auth, path: string): Promise<Response> {
+function b2Download(env: Env, auth: B2Auth, path: string, rangeHeader?: string | null): Promise<Response> {
+  const headers: Record<string, string> = { Authorization: auth.token };
+  if (rangeHeader) headers.Range = rangeHeader;
   return fetch(`${auth.downloadUrl}/file/${encodeURIComponent(env.B2_BUCKET)}/${path
     .split('/')
     .map(encodeURIComponent)
-    .join('/')}`, { headers: { Authorization: auth.token } });
+    .join('/')}`, { headers });
 }
 
 async function b2Delete(env: Env, path: string): Promise<boolean> {
@@ -953,31 +1136,14 @@ export default {
       /*
        * Both stores, in the same order every other read uses.
        *
-       * This route asked B2 only, and that was wrong the day media moved to R2:
-       * a marked copy produced on the phone is uploaded through `/m`, which
-       * writes to R2 — so the file existed, the database pointed at it, and this
-       * endpoint looked in the other bucket and answered 404. Every clip posted
-       * since the move was unsaveable, and the app could only report it as
-       * "that clip isn't available to save".
+       * This route asked B2 only, and that stopped being true the day media
+       * moved to R2: a marked copy produced on the phone is uploaded through
+       * `/m`, which writes to R2. So the file existed, the database pointed at
+       * it, and this endpoint looked in the other bucket and answered 404 —
+       * which the app can only report as "that clip isn't available to save".
+       * Every clip posted since the move was unsaveable.
        */
-      let upstream: Response | null = null;
-      for (const store of READ_ORDER) {
-        if (store === 'r2') {
-          upstream = await r2Get(env, copy.data.path);
-        } else {
-          // A B2 that is unreachable, unconfigured or out of allowance must not
-          // turn "no copy yet" into a 500: the R2 answer has already been given,
-          // and the honest answer below is the one a member can act on.
-          try {
-            const auth = await b2Auth(env);
-            const answer = await b2Download(env, auth, copy.data.path);
-            upstream = answer.ok ? answer : null;
-          } catch {
-            upstream = null;
-          }
-        }
-        if (upstream) break;
-      }
+      const upstream = await readFull(env, copy.data.path);
       if (!upstream) {
         return fail(404, 'The saved copy of this clip isn’t ready yet. Try again in a minute.', origin);
       }
@@ -1005,7 +1171,42 @@ export default {
 
     const { path, queryToken } = splitPath(url);
     const token = bearerToken(request, queryToken);
-    if (!token) return fail(401, 'Sign in to load this.', origin);
+
+    /*
+     * A file on a public post, for somebody who has not signed in.
+     *
+     * The web front page shows public posts to strangers, and every one of their
+     * pictures answered 401 — an empty card where a photo should be. The fix is
+     * not "make /m open": a path is guessable, and every photo in holUpp is behind
+     * a privacy row. So a read *without* a token is allowed only when it is a GET
+     * or HEAD, and only after the database says this exact URL is the media of a
+     * post the public feed would already have shown, by an author who has turned
+     * public media on. One URL at a time, exact match, nothing listable.
+     */
+    if (!token) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return fail(401, 'Sign in to load this.', origin);
+      if (!path) return fail(404, 'That file isn’t available.', origin);
+      const publicUrl = `${url.origin}/m/${path}`;
+      const allowed = await rpc<string[]>(env, env.SUPABASE_ANON_KEY, 'public_media_urls', { p_paths: [publicUrl] });
+      if (!allowed.ok || !Array.isArray(allowed.data) || !allowed.data.includes(publicUrl)) {
+        return fail(401, 'Sign in to load this.', origin);
+      }
+      // Public files are the same for everybody, so they are cached like any other
+      // shareable asset — but under the public URL, never under a member's token.
+      const rangeHeader = request.headers.get('Range');
+      const upstream = await serveMedia(env, path, rangeHeader);
+      if (!upstream) return fail(404, 'That file isn’t available.', origin);
+      // serveMedia already sets the correct status (200/206), Content-Range,
+      // Content-Length and Accept-Ranges — just add CORS and cache headers.
+      const headers = new Headers(upstream.headers);
+      for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v);
+      headers.set('Cache-Control', mediaCacheControl(path, true));
+      return new Response(request.method === 'HEAD' ? null : upstream.body, {
+        status: upstream.status,
+        headers,
+      });
+    }
+
     if (!(await memberId(env, token))) return fail(401, 'That session has expired — sign in again.', origin);
 
     /* ------------------------------------------------------------- upload */
@@ -1076,16 +1277,8 @@ export default {
        * keep opening. Once the old keys age out, B2 simply stops answering and
        * this loop gets one iteration shorter without a code change.
        */
-      let upstream: Response | null = null;
-      for (const store of READ_ORDER) {
-        if (store === 'r2') upstream = await r2Get(env, path);
-        else {
-          const auth = await b2Auth(env);
-          const answer = await b2Download(env, auth, path);
-          upstream = answer.ok ? answer : null;
-        }
-        if (upstream) break;
-      }
+      const rangeHeader = request.headers.get('Range');
+      const upstream = await serveMedia(env, path, rangeHeader);
       if (!upstream) return fail(404, 'That file isn’t available.', origin);
 
       const response = withHeaders(new Response(upstream.body, upstream), path, verdict.data.cacheable === true);

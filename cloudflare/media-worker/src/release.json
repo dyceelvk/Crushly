@@ -1,11 +1,11 @@
 {
-  "version": "1.0.111",
-  "versionCode": 111,
+  "version": "1.0.146",
+  "versionCode": 146,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.111-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.111/holUpp-1.0.111-RielOS.apk",
-  "notes": "The security check before signing in now appears instead of spinning forever. It was being stopped by a redirect inside the app — the page it loads lives on www.holupp.net and the app refused to follow it — and, once it did load, the check had nowhere to keep its state. Both are fixed, and if the check cannot run it now says so and offers Try again.",
-  "bytes": 96979214,
-  "sha256": "ee9d9c805c6e8955179e05d41e2a9d3cd788225577baf724cd201ecf3fd579e7",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.111/holUpp-1.0.111-RielOS.apk"
+  "file": "holUpp-1.0.146-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.146/holUpp-1.0.146-RielOS.apk",
+  "notes": "Profile page matches the reference layout: owner stats row carries 4 tiles (Add Ups, Added Up, Homies, Likes) with the Views tile removed; visitors see the Homies count as a tappable pill in the pill row. Media Worker serves HTTP Range requests correctly for video.",
+  "bytes": 101843970,
+  "sha256": "6e6bf3051e1cf7802f427bb2c45bcd932805fbb6376b09ddb6f8bb8cc3f1b461",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.146/holUpp-1.0.146-RielOS.apk"
 }
