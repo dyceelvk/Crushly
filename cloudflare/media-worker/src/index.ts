@@ -1189,17 +1189,13 @@ export default {
       const rangeHeader = request.headers.get('Range');
       const upstream = await serveMedia(env, path, rangeHeader);
       if (!upstream) return fail(404, 'That file isn’t available.', origin);
+      // serveMedia already sets the correct status (200/206), Content-Range,
+      // Content-Length and Accept-Ranges — just add CORS and cache headers.
       const headers = new Headers(upstream.headers);
-      const size = Number(headers.get('Content-Length')) || 0;
-      const parsed = parseRange(rangeHeader, size);
-      if (parsed) {
-        headers.set('Content-Range', `bytes ${parsed.offset}-${parsed.offset + parsed.length - 1}/${size}`);
-        headers.set('Content-Length', String(parsed.length));
-      }
       for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v);
       headers.set('Cache-Control', mediaCacheControl(path, true));
       return new Response(request.method === 'HEAD' ? null : upstream.body, {
-        status: parsed ? 206 : 200,
+        status: upstream.status,
         headers,
       });
     }
