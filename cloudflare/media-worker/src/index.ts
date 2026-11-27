@@ -468,17 +468,16 @@ async function serveMedia(
         if (!object || !object.body) continue;
         const headers = new Headers();
         if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
-        if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
         headers.set('Accept-Ranges', 'bytes');
+        const fullSize = typeof object.size === 'number' ? object.size : 0;
         // If we have a range header but couldn't pre-resolve it (suffix range),
         // slice the body ourselves from the full response.
         let body = object.body;
         let status = rangeHeader ? 206 : 200;
         if (rangeHeader && !r2Range) {
-          const size = object.size ?? 0;
-          const parsed = parseRange(rangeHeader, size);
+          const parsed = parseRange(rangeHeader, fullSize);
           if (parsed) {
-            headers.set('Content-Range', `bytes ${parsed.offset}-${parsed.offset + parsed.length - 1}/${size}`);
+            headers.set('Content-Range', `bytes ${parsed.offset}-${parsed.offset + parsed.length - 1}/${fullSize}`);
             headers.set('Content-Length', String(parsed.length));
             // Slice the ReadableStream — we read the full object but only
             // send the requested slice.
@@ -486,8 +485,16 @@ async function serveMedia(
             status = 206;
           } else {
             status = 200;
-            headers.set('Content-Length', String(size));
+            headers.set('Content-Length', String(fullSize));
           }
+        } else if (r2Range) {
+          // Absolute range resolved before the read: R2 returns the sliced
+          // body, but object.size is still the full file size.
+          headers.set('Content-Range', `bytes ${r2Range.offset}-${r2Range.offset + r2Range.length - 1}/${fullSize}`);
+          headers.set('Content-Length', String(r2Range.length));
+          status = 206;
+        } else {
+          headers.set('Content-Length', String(fullSize));
         }
         upstream = new Response(body, { status, headers });
       } catch {
