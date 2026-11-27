@@ -561,50 +561,55 @@ export function SpaceScreen({
                     <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.addUps)}</Txt>
                     <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Add Ups</Txt>
                   </Pressable>
-                  {typeof relationship.data.addedUp === 'number' ? (
-                    <Pressable
-                      style={{ flex: 1, minWidth: 0 }}
-                      onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}
-                    >
-                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.addedUp)}</Txt>
-                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Added Up</Txt>
-                    </Pressable>
-                  ) : null}
-                  {mine && homies.data ? (
+                  {/* Added Up — always rendered so the owner's stats row keeps
+                      four tiles as designed. `spaceRelationshipStats` coerces a
+                      missing v2 value to 0, but a legacy backend returns null;
+                      rendering 0 (rather than hiding the tile) keeps the row
+                      stable and matching the reference layout. */}
+                  <Pressable
+                    style={{ flex: 1, minWidth: 0 }}
+                    onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${relationship.data.addedUp ?? 0} Added Up. View people`}
+                  >
+                    <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.addedUp ?? 0)}</Txt>
+                    <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Added Up</Txt>
+                  </Pressable>
+                  {/* Homies — owner always sees this tile. `?? 0` keeps the
+                      tile present even before `homies.data` loads or when the
+                      backend has no Homie count yet. */}
+                  {mine ? (
                     <Pressable
                       style={{ flex: 1, minWidth: 0 }}
                       onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }}
                       accessibilityRole="button"
-                      accessibilityLabel={`${homies.data.count} Homies. View people`}
+                      accessibilityLabel={`${homies.data?.count ?? 0} Homies. View people`}
                     >
-                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(homies.data.count)}</Txt>
+                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(homies.data?.count ?? 0)}</Txt>
                       <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Homies</Txt>
                     </Pressable>
                   ) : null}
-                  {/* All Round Likes: posts + Moments + comments. On a backend
-                      older than the one that counts all three the field is absent
-                      and this falls back to post likes, so the space is never
-                      empty and never claims a number it cannot back. The two wide
-                      words do not fit under a quarter of a phone, so the label
-                      stays the house word and the sentence that defines it lives
-                      in the About tab and in the accessibility label. */}
-                  {typeof (relationship.data.allRoundLikes ?? relationship.data.postLikes) === 'number' ? (
-                    <View
-                      style={{ flex: 1, minWidth: 0 }}
-                      accessibilityLabel={
-                        typeof relationship.data.allRoundLikes === 'number'
-                          ? `${relationship.data.allRoundLikes} likes received across posts, Moments and comments`
-                          : `${relationship.data.postLikes} post likes`
-                      }
-                    >
-                      <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount((relationship.data.allRoundLikes ?? relationship.data.postLikes)!)}</Txt>
-                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>
-                        {typeof relationship.data.allRoundLikes === 'number' ? 'Likes' : mine ? 'Post likes' : 'Public post likes'}
-                      </Txt>
-                    </View>
-                  ) : null}
+                  {/* All Round Likes: posts + Moments + comments. Always
+                      rendered for the owner so the stats row keeps four tiles.
+                      Falls back to post likes on older backends, and to 0 when
+                      neither field is available, so the tile is never missing.
+                      The two wide words do not fit under a quarter of a phone,
+                      so the label stays the house word and the sentence that
+                      defines it lives in the About tab and in the accessibility
+                      label. */}
+                  <View
+                    style={{ flex: 1, minWidth: 0 }}
+                    accessibilityLabel={
+                      typeof relationship.data.allRoundLikes === 'number'
+                        ? `${relationship.data.allRoundLikes} likes received across posts, Moments and comments`
+                        : `${relationship.data.postLikes ?? 0} post likes`
+                    }
+                  >
+                    <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount((relationship.data.allRoundLikes ?? relationship.data.postLikes ?? 0)!)}</Txt>
+                    <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>
+                      {typeof relationship.data.allRoundLikes === 'number' ? 'Likes' : mine ? 'Post likes' : 'Public post likes'}
+                    </Txt>
+                  </View>
                 </View>
               ) : relationship.isError ? (
                 <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}>
