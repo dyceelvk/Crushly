@@ -118,7 +118,12 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
 
       <Group title="Support">
         <ListRow title="Ask RielAi" subtitle="Quick answers about using holUpp" icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('RielAi')} />
-        <ListRow title="Report a problem" subtitle="Send product or account details to support" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} last />
+        <ListRow title="Report a problem" subtitle="Send product or account details to support" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} />
+        <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
+        <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
+        <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
+        <ListRow title="Privacy policy" icon="lock-closed-outline" onPress={() => navigation.navigate('Info', { page: 'privacy' })} />
+        <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
       </Group>
 
       {/* One section, not two both called "App". The version and the update
@@ -160,14 +165,6 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         ) : Platform.OS === 'android' ? (
           <ListRow title="Couldn’t check for updates" subtitle="Tap to try again." icon="refresh-outline" onPress={() => { void update.refetch(); }} last />
         ) : null}
-      </Group>
-
-      <Group title="Support">
-        <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
-        <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
-        <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
-        <ListRow title="Privacy policy" icon="lock-closed-outline" onPress={() => navigation.navigate('Info', { page: 'privacy' })} />
-        <ListRow title="Terms of service" icon="document-text-outline" onPress={() => navigation.navigate('Info', { page: 'terms' })} last />
       </Group>
 
       {/*
