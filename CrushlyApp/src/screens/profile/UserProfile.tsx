@@ -605,34 +605,6 @@ export function SpaceScreen({
                       </Txt>
                     </View>
                   ) : null}
-                  {/* Who opened the Space, and the way in to the list of them.
-                      Owner only: the RPC hands this number to nobody else, so on
-                      a visitor's copy of the page it simply is not there. An
-                      older backend answers nothing, and the door stays anyway —
-                      the list is a separate request that still works. */}
-                  {mine ? (
-                    typeof relationship.data.views === 'number' ? (
-                      <Pressable
-                        style={{ flex: 1, minWidth: 0 }}
-                        onPress={() => navigation.navigate('SpaceViewers')}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${relationship.data.views} people opened your Space. See who`}
-                      >
-                        <Txt variant="bodyStrong" style={{ fontSize: 17 }}>{formatCount(relationship.data.views)}</Txt>
-                        <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Views</Txt>
-                      </Pressable>
-                    ) : (
-                      <Pressable
-                        style={{ flex: 1, minWidth: 0 }}
-                        onPress={() => navigation.navigate('SpaceViewers')}
-                        accessibilityRole="button"
-                        accessibilityLabel="Space views. See who"
-                      >
-                        <Txt variant="bodyStrong" style={{ fontSize: 17 }}>—</Txt>
-                        <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Views</Txt>
-                      </Pressable>
-                    )
-                  ) : null}
                 </View>
               ) : relationship.isError ? (
                 <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()}>
@@ -712,8 +684,13 @@ export function SpaceScreen({
           {/* The state pills used to sit on the bottom of the cover, which put
               them directly behind the face — a rounded rectangle poking out at
               the corners of a circle, unreadable and untappable. They are on
-              the page now, where they can be read and pressed. */}
-          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.mutual || p.crush.received ? (
+              the page now, where they can be read and pressed.
+
+              A visitor's Homies count lives here as a pill, not as a stat tile:
+              the stats row carries three numbers (Add Ups, Added Up, Likes) and
+              the Homies count reaches the Homies list from this pill, which is
+              the same door the owner's stat tile opens. */}
+          {(mine && meQ.data?.status === 'paused') || p.online || p.activity || p.crush.mutual || p.crush.received || (!mine && homies.data) ? (
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: space.sm }}>
               {p.online ? (
                 <Pill tone="neutral" label="Online now" icon={<OnlineDot size={8} style={{ borderWidth: 0 }} />} />
@@ -728,6 +705,15 @@ export function SpaceScreen({
                   label={p.crush.receivedDeep ? 'Big Up from them' : 'Added up with you'}
                   icon={<Ionicons name="heart" size={11} color={colors.crush} />}
                 />
+              ) : null}
+              {!mine && homies.data ? (
+                <Pressable
+                  onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${homies.data.count} Homies. View people`}
+                >
+                  <Pill tone="neutral" label={`🫂 ${formatCount(homies.data.count)} Homies`} />
+                </Pressable>
               ) : null}
               {mine && meQ.data?.status === 'paused' ? <Pill tone="neutral" label="Hidden from Discover" /> : null}
             </View>
