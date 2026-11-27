@@ -39,6 +39,7 @@ test('a notification with nothing to quote still says something honest', () => {
 
 test('each kind gets its own title, and an unknown kind never renders a raw key', () => {
   assert.equal(titleForKind('post_comment'), 'A new comment');
+  assert.equal(titleForKind('post_repost'), 'Somebody reposted your post');
   assert.equal(titleForKind('mutual'), 'It is mutual');
   assert.equal(titleForKind(undefined), 'holUpp');
   assert.equal(titleForKind('something_new' as never), 'holUpp');

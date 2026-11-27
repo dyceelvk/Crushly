@@ -89,7 +89,10 @@ begin
        select 1 from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'public' and p.proname = fn
-          and pg_get_functiondef(p.oid) like '%post_engagement%'
+          and (
+            pg_get_functiondef(p.oid) like '%post_engagement%'
+            or pg_get_functiondef(p.oid) like '%post_feed_payload%'
+          )
      );
     assert missing is null, format('%s does not merge post_engagement (%s)', fn, missing);
   end loop;

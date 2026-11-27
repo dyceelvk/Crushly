@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spaceShareUrl, sharedSpaceId } from './spaceShare';
+import { spaceShareUrl, sharedSpaceId, sharedSpaceToken } from './spaceShare';
 
 const TOKEN = 'a'.repeat(32);
 
@@ -24,6 +24,14 @@ test('the app scheme opens a Space directly', () => {
   assert.equal(sharedSpaceId('crushly://space/42'), 42);
   assert.equal(sharedSpaceId('holup://space/0'), null);
   assert.equal(sharedSpaceId('holup://v/42'), null);
+});
+
+test('an installed app can resolve the secure Space token through the server', () => {
+  assert.equal(sharedSpaceToken(`https://holupp.net/s/${TOKEN}`), TOKEN);
+  assert.equal(sharedSpaceToken(`https://www.holupp.net/s/${TOKEN}/`), TOKEN);
+  assert.equal(sharedSpaceToken(`holup://s/${TOKEN}`), TOKEN);
+  assert.equal(sharedSpaceToken('https://holupp.net/s/42'), null);
+  assert.equal(sharedSpaceToken('https://evil.example/s/' + TOKEN), null);
 });
 
 test('a token is not an id, and every wrong shape is refused', () => {

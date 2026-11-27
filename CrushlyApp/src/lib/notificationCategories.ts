@@ -6,7 +6,7 @@ export function fromHolup(kind: NotificationKind): boolean {
 export function notificationCategory(kind: NotificationKind): Exclude<NotificationCategory, 'all'> | 'holup' {
   switch (kind) {
     case 'message': case 'moment_reply': return 'whispers';
-    case 'post_reaction': case 'post_comment': case 'post_mention': return 'posts';
+    case 'post_reaction': case 'post_comment': case 'post_repost': case 'post_mention': return 'posts';
     case 'crush': case 'deep_crush': case 'mutual': return 'addUps';
     case 'keep': return 'keptClose';
     case 'moment_reaction': return 'moments';

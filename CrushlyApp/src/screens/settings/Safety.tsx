@@ -133,7 +133,14 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
           icon="time-outline"
           toggle={{ value: p.showActivity && p.showOnline, onChange: (v) => set({ showActivity: v }), disabled: !p.showOnline }}
         />
-        <ListRow title="Read receipts" subtitle="If off, you won’t see others’ either" icon="checkmark-done-outline" toggle={{ value: p.readReceipts, onChange: (v) => set({ readReceipts: v }) }} last />
+        <ListRow title="Read receipts" subtitle="If off, you won’t see others’ either" icon="checkmark-done-outline" toggle={{ value: p.readReceipts, onChange: (v) => set({ readReceipts: v }) }} />
+        <ListRow
+          title="Allow reposts of my posts"
+          subtitle="People can share a link to the original on their profile"
+          icon="repeat-outline"
+          toggle={{ value: p.allowReposts, onChange: (v) => set({ allowReposts: v }) }}
+          last
+        />
       </Group>
 
       <Choice

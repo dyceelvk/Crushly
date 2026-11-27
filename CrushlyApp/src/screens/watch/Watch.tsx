@@ -308,7 +308,7 @@ export function WatchScreen({ navigation }: ScreenProps<'Follow'>) {
                 <Txt variant="small" color="textMuted" align="center">
                   That is what anyone can see. An account shows you the rest — Moments, clips, the people near you.
                 </Txt>
-                <Button title="Start with a feeling" onPress={() => signUp('footer')} />
+                <Button title="Create your Space" onPress={() => signUp('footer')} />
               </>
             ) : null}
           </View>
@@ -331,7 +331,7 @@ export function WatchScreen({ navigation }: ScreenProps<'Follow'>) {
                 No public posts yet. Be one of the first — an account takes a minute.
               </Txt>
               <View style={{ marginTop: space.md }}>
-                <Button title="Start with a feeling" onPress={() => signUp('first')} />
+                <Button title="Create your Space" onPress={() => signUp('first')} />
               </View>
             </View>
           )

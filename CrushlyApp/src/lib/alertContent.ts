@@ -34,6 +34,7 @@ export function titleForKind(kind: NotificationKind | null | undefined): string 
     case 'verification_rejected': return 'About your verification';
     case 'post_reaction': return 'A reaction to your post';
     case 'post_comment': return 'A new comment';
+    case 'post_repost': return 'Somebody reposted your post';
     case 'post_mention': return 'Somebody mentioned you';
     case 'keep': return 'Somebody is keeping you close';
     case 'message': return 'New Whisper';

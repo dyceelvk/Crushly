@@ -12,12 +12,14 @@ import { EditedClip } from '../EditedClip';
 import { CommentsSheet } from './CommentsSheet';
 import { ReactionButton } from './Reactions';
 import { ShareToWhisper } from '../ShareToWhisper';
-import { useReactToPost } from '../../api/hooks';
+import { RepostAttribution } from './RepostAttribution';
+import { useReactToPost, useRepostPost } from '../../api/hooks';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { timeAgo } from '../../lib/format';
 import { useTrackPostView } from '../../lib/useTrackPostView';
 import { PostViews } from '../ViewersSheet';
+import { useToast } from '../Toast';
 import { useTheme } from '../../theme/ThemeProvider';
 import { radius, space } from '../../theme/tokens';
 import type { Post } from '../../api/types';
@@ -49,9 +51,21 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
   const [shareOpen, setShareOpen] = useState(false);
   const [muted, setMuted] = useState(true);
   const react = useReactToPost();
+  const repost = useRepostPost();
+  const toast = useToast();
   const authorName = post.author.name;
 
   const open = () => navigation.navigate('PostViewer', { postId: post.id });
+  const toggleRepost = async () => {
+    if (repost.isPending) return;
+    const next = !post.reposted;
+    try {
+      await repost.mutateAsync({ postId: post.id, reposted: next });
+      toast({ kind: 'success', title: next ? 'Reposted to your profile.' : 'Repost removed.' });
+    } catch (e) {
+      toast({ kind: 'error', title: next ? 'Couldn’t repost' : 'Couldn’t undo repost', message: (e as Error).message });
+    }
+  };
 
   return (
     <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
@@ -96,6 +110,11 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 148 }}
         />
         <View style={{ paddingHorizontal: space.md, paddingBottom: space.sm, paddingTop: space.xl }} pointerEvents="box-none">
+          <RepostAttribution
+            post={post}
+            dark
+            onOpen={post.repostedBy ? () => navigation.navigate('UserProfile', { id: post.repostedBy!.id }) : undefined}
+          />
           <Pressable
             onPress={() => navigation.navigate('UserProfile', { id: post.author.id })}
             accessibilityRole="button"
@@ -158,6 +177,18 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
               hitSlop={8}
             >
               <Ionicons name="arrow-redo-outline" size={22} color="#FFFFFF" />
+            </Pressable>
+            <Pressable
+              onPress={() => void toggleRepost()}
+              disabled={repost.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={post.reposted ? 'Undo Repost' : 'Repost this post'}
+              accessibilityState={{ disabled: repost.isPending, selected: !!post.reposted }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: repost.isPending ? 0.45 : 1 }}
+              hitSlop={8}
+            >
+              <Ionicons name={post.reposted ? 'repeat' : 'repeat-outline'} size={22} color={post.reposted ? colors.primary : '#FFFFFF'} />
+              {post.repostCount ? <Txt variant="bodyStrong" color="#FFFFFF">{post.repostCount}</Txt> : null}
             </Pressable>
           </View>
         </View>

@@ -98,15 +98,13 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
             accessibilityRole="header"
             style={compact ? { fontSize: 32, lineHeight: 38 } : undefined}
           >
-            {'Follow the\nfeelings.'}
+            {'Your world.\nYour people.\nYour expression.'}
           </Txt>
           <View style={{ alignItems: 'center', marginTop: space.md }}>
-            {/* A short rule is what makes the two halves read as one lockup
-                rather than a headline with a subtitle floating under it. */}
             <View style={{ width: 36, height: 1, backgroundColor: colors.primaryLine }} />
           </View>
           <Txt variant="accent" color="textSecondary" align="center" style={{ marginTop: space.md }}>
-            {'Not the follower count.\nNot the algorithm’s opinion.'}
+            {'Share what matters.\nFind people who get it.'}
           </Txt>
         </Animated.View>
 
@@ -115,7 +113,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
         {/* -------------------------------------------------------- actions */}
         <Animated.View style={rise(actions, 10)}>
           <View style={{ gap: space.sm }}>
-            <Button title="Start with a feeling" onPress={() => navigation.navigate('SignUp')} />
+            <Button title="Create your Space" onPress={() => navigation.navigate('SignUp')} />
             {Platform.OS === 'web' ? (
               <Button
                 title="Get the Android app"
@@ -149,7 +147,7 @@ export function WelcomeScreen({ navigation }: ScreenProps<'Welcome'>) {
           </Pressable>
 
           <Txt variant="caption" color="textMuted" align="center" style={{ marginTop: space.xs }}>
-            For people 16+. Built for real connection.
+            For people 16+. Built for sharing, discovery and real connection.
           </Txt>
         </Animated.View>
       </View>

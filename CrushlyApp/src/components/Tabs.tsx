@@ -20,6 +20,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Animated, Platform, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeProvider';
 import { useSwipeTabs } from './SwipeTabs';
 import { fonts } from '../theme/tokens';
@@ -89,6 +90,7 @@ function Tab({
   muted: string;
   ms: number;
 }) {
+  const { colors } = useTheme();
   // One value per tab, animated rather than swapped, because a colour that
   // jumps reads as a different control; a colour that fades reads as the same
   // control in a different state.
@@ -135,6 +137,37 @@ function Tab({
             </Text>
           </View>
         ) : null}
+      </Animated.View>
+      {/* ── The marker ─────────────────────────────────────────────────────
+          A short brand-gradient rule under the tab you are on, drawn inside the
+          tab's own box so the row does not move when you switch. This is
+          borrowed from the tab rows on X and Instagram, both of which underline
+          the active label rather than boxing it, and it replaces nothing: the
+          brightening stays, so the state is still a colour you can see before
+          the bar has finished fading in.
+
+          It scales rather than slides — one value per tab, so four tabs do not
+          need four animated positions kept in sync — and it is hidden from
+          screen readers, which already get `selected` above. */}
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{
+          marginTop: 5,
+          height: 2,
+          borderRadius: 2,
+          overflow: 'hidden',
+          opacity: lit,
+          transform: [{ scaleX: lit.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) }],
+        }}
+      >
+        <LinearGradient
+          colors={[colors.gold, colors.crush]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ flex: 1, borderRadius: 2 }}
+        />
       </Animated.View>
     </Pressable>
   );

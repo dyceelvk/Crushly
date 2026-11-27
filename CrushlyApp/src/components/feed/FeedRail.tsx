@@ -32,16 +32,17 @@ export function FeedRail({
   onPick,
   onRepost,
   reposts,
+  reposted,
   following,
   onFollow,
 }: {
   post: Post;
   onAuthor: () => void;
   onPick: () => void;
-  /** Absent until the reposts table exists — a button that does nothing is worse
-   *  than a button that is not there. */
+  /** Repost is available only when the caller has a server-backed mutation. */
   onRepost?: () => void;
   reposts?: number;
+  reposted?: boolean;
   following?: boolean;
   onFollow?: () => void;
 }) {
@@ -118,7 +119,9 @@ export function FeedRail({
       ), onPick)}
 
       {onRepost
-        ? item('Repost', reposts ?? null, <Ionicons name="repeat-outline" size={32} color="#FFFFFF" />, onRepost)
+        ? item(reposted ? 'Undo Repost' : 'Repost', reposts ?? post.repostCount ?? null, (
+          <Ionicons name={reposted ? 'repeat' : 'repeat-outline'} size={32} color={reposted ? colors.primary : '#FFFFFF'} />
+        ), onRepost)
         : null}
     </View>
   );

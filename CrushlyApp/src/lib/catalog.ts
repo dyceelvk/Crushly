@@ -1,5 +1,5 @@
 import type { Ionicons } from '@expo/vector-icons';
-import type { Intention, MomentStyle } from '../api/types';
+import type { ExpressionStyle, Intention, MomentStyle } from '../api/types';
 
 /** Vocabularies shared with the backend validation in api/service.ts — keep in sync. */
 export const INTENTIONS: { value: Intention; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -23,13 +23,45 @@ export const FILTER_INTENTIONS: { value: Intention; label: string }[] = [
   { value: 'new_connections', label: 'New connections' },
 ];
 
-export const INTERESTS = [
-  'Music', 'Fitness', 'Fashion', 'Gaming', 'Travel', 'Movies', 'Food', 'Art', 'Business',
-  'Books', 'Nightlife', 'Photography', 'Outdoors', 'Tech', 'Cooking', 'Dancing', 'Wellness',
-  'Sports', 'Theatre', 'Coffee', 'Design', 'Afrobeats', 'Football', 'Wine',
+/** The broad, social-network-first interests shown during onboarding. */
+export const ONBOARDING_INTERESTS: { label: string; icon: keyof typeof Ionicons.glyphMap; description: string }[] = [
+  { label: 'Entertainment', icon: 'film-outline', description: 'Shows, films, creators and culture' },
+  { label: 'Lifestyle', icon: 'sunny-outline', description: 'The way you live, move and unwind' },
+  { label: 'Music', icon: 'musical-notes-outline', description: 'Sounds, artists and playlists' },
+  { label: 'Fashion', icon: 'shirt-outline', description: 'Style, beauty and self-expression' },
+  { label: 'Technology', icon: 'hardware-chip-outline', description: 'Ideas, tools and what comes next' },
+  { label: 'Sports', icon: 'trophy-outline', description: 'Games, movement and competition' },
+  { label: 'Business', icon: 'briefcase-outline', description: 'Work, building and ambition' },
+  { label: 'Education', icon: 'school-outline', description: 'Learning, teaching and curiosity' },
+  { label: 'Conversations', icon: 'chatbubbles-outline', description: 'Opinions, questions and real talk' },
+  { label: 'Creativity', icon: 'color-palette-outline', description: 'Making things and seeing differently' },
+  { label: 'Gaming', icon: 'game-controller-outline', description: 'Play, worlds and friendly rivalry' },
+  { label: 'General interests', icon: 'sparkles-outline', description: 'A little bit of everything' },
 ];
 
-export const FILTER_INTERESTS = ['Music', 'Fitness', 'Fashion', 'Gaming', 'Travel', 'Movies', 'Food', 'Art', 'Business', 'Books', 'Nightlife', 'Design'];
+/**
+ * The API accepts both the onboarding categories and the older, more specific
+ * profile tags. Keeping the old values means existing Spaces remain editable.
+ */
+export const INTERESTS = [
+  ...ONBOARDING_INTERESTS.map((interest) => interest.label),
+  'Fitness', 'Travel', 'Movies', 'Food', 'Art', 'Books', 'Nightlife', 'Photography',
+  'Outdoors', 'Tech', 'Cooking', 'Dancing', 'Wellness', 'Theatre', 'Coffee', 'Design',
+  'Afrobeats', 'Football', 'Wine',
+];
+
+export const EXPRESSION_STYLES: { value: ExpressionStyle; label: string; icon: keyof typeof Ionicons.glyphMap; description: string }[] = [
+  { value: 'visual', label: 'I love sharing pictures and videos.', icon: 'images-outline', description: 'Show the world what catches your eye.' },
+  { value: 'writing', label: 'I enjoy writing and sharing thoughts.', icon: 'create-outline', description: 'Put your perspective into words.' },
+  { value: 'conversation', label: 'I love conversations and discussions.', icon: 'chatbubbles-outline', description: 'Exchange ideas and hear different points of view.' },
+  { value: 'discovery', label: 'I enjoy discovering new things.', icon: 'compass-outline', description: 'Follow a curiosity and see where it leads.' },
+  { value: 'everything', label: 'I like a little bit of everything.', icon: 'sparkles-outline', description: 'Move between every part of the room.' },
+];
+
+export const FILTER_INTERESTS = [
+  ...ONBOARDING_INTERESTS.map((interest) => interest.label),
+  'Fitness', 'Travel', 'Movies', 'Food', 'Art', 'Books', 'Nightlife', 'Design',
+];
 
 export const LANGUAGES = [
   'English', 'French', 'Spanish', 'Portuguese', 'German', 'Italian', 'Yoruba', 'Igbo', 'Hausa',

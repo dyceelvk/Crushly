@@ -51,8 +51,14 @@ export function IdentityCard({
 
   return (
     <View style={styles.wrap}>
+      {/* The heading is the brand's own colour rather than a grey label.
+          Design 04 sets "YOUR HOlUPP IDENTITY" in hot pink caps on its own line
+          above the name of the identity, and that is doing real work: it is the
+          only place on the page that says a classification came from HolUpp
+          rather than from the member, so it should not read as chrome. It is
+          still the same sentence in the same place — the words are untouched. */}
       <Text
-        style={[type.label, { color: colors.textMuted, marginBottom: space.xs }]}
+        style={[type.label, { color: colors.gold, marginBottom: space.xs }]}
         accessibilityRole="header"
       >
         {line.heading}

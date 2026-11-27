@@ -226,6 +226,11 @@ def main() -> int:
             return 1
         if not run_file(ROOT / 'post_private.sql'):
             return 1
+        # Reposts are relationships to canonical originals: one active row per
+        # member/post, secure visibility gates, undo, profile attribution and
+        # preference-aware notifications.
+        if not run_file(ROOT / 'reposts.sql'):
+            return 1
         if not run_file(ROOT / 'private_viewers.sql'):
             return 1
         cur.execute("update public.holup_features set enabled=false where key='calls'")

@@ -13,6 +13,10 @@
       "destination": "/api/profile-share?id=:id"
     },
     {
+      "source": "/i/:id",
+      "destination": "/api/invite-share?id=:id"
+    },
+    {
       "source": "/s/:id",
       "destination": "/api/space-share?id=:id"
     },

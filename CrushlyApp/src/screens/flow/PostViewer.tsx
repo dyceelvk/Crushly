@@ -31,6 +31,7 @@ import { EditPostSheet } from '../../components/EditPostSheet';
 import { useMemberActions } from '../../state/memberActions';
 import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
+import { RepostAttribution } from '../../components/feed/RepostAttribution';
 import { DeleteSheet } from '../../components/DeleteSheet';
 import { useLayout } from '../../components/Layout';
 import { useToast } from '../../components/Toast';
@@ -41,6 +42,7 @@ import {
   useOpenConversation,
   usePost,
   useReactToPost,
+  useRepostPost,
   useSavePost,
 } from '../../api/hooks';
 import type { Post, ReactionKind } from '../../api/types';
@@ -476,6 +478,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
   useTrackPostView(post?.id ?? null, active && !!post, post?.mine ?? false);
   const react = useReactToPost();
   const keep = useSavePost();
+  const repost = useRepostPost();
   const remove = useDeletePost();
   const openWhisper = useOpenConversation();
 
@@ -555,6 +558,17 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
       toast({ kind: 'error', title: 'Not kept', message: (e as Error).message });
     }
   }, [post, keep, toast]);
+
+  const toggleRepost = useCallback(async () => {
+    if (!post || repost.isPending) return;
+    const next = !post.reposted;
+    try {
+      await repost.mutateAsync({ postId: post.id, reposted: next });
+      toast({ kind: 'success', title: next ? 'Reposted to your profile.' : 'Repost removed.' });
+    } catch (e) {
+      toast({ kind: 'error', title: next ? 'Couldn’t repost' : 'Couldn’t undo repost', message: (e as Error).message });
+    }
+  }, [post, repost, toast]);
 
   /** Throws on failure so the dialog that asked can say so and stay open. */
   const deletePost = useCallback(async () => {
@@ -766,6 +780,15 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
           </Txt>
         </View>
         <RailAction
+          icon={post.reposted ? 'repeat' : 'repeat-outline'}
+          tint={post.reposted ? colors.primary : '#FFFFFF'}
+          label={post.reposted ? 'Undo Repost' : 'Repost this post'}
+          count={formatCount(post.repostCount ?? 0)}
+          spoken={spokenCount(post.repostCount ?? 0, 'repost', 'reposts')}
+          disabled={repost.isPending}
+          onPress={() => void toggleRepost()}
+        />
+        <RailAction
           icon="chatbubble-ellipses-outline"
           label="Open comments"
           count={formatCount(post.commentCount)}
@@ -791,6 +814,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
           bottom: insets.bottom + 92,
         }}
       >
+        <RepostAttribution post={post} dark onOpen={post.repostedBy ? () => openProfile(post.repostedBy!.id) : undefined} />
         <PostViews post={post} light />
         <Pressable
           onPress={() => openProfile(post.author.id)}
@@ -964,6 +988,15 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
             }}
           />
           <SheetRow
+            icon={post.reposted ? 'repeat' : 'repeat-outline'}
+            label={post.reposted ? 'Undo Repost' : 'Repost to your profile'}
+            hint={post.reposted ? 'Remove the relationship only' : 'The original author and engagement stay canonical'}
+            onPress={() => {
+              setMoreOpen(false);
+              void toggleRepost();
+            }}
+          />
+          <SheetRow
             icon={post.saved ? 'bookmark' : 'bookmark-outline'}
             label={post.saved ? 'Remove this Pick' : 'Pick this post'}
             hint={post.saved ? 'It leaves your Picked' : 'Picked is yours alone — nobody else sees it'}
@@ -1108,6 +1141,7 @@ function RailAction({
   count,
   spoken,
   tint = '#FFFFFF',
+  disabled,
   onPress,
   onLongPress,
 }: {
@@ -1117,6 +1151,7 @@ function RailAction({
   /** The exact, unshortened figure for assistive tech. See lib/counts. */
   spoken?: string;
   tint?: string;
+  disabled?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
@@ -1125,11 +1160,13 @@ function RailAction({
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
+      disabled={disabled}
       delayLongPress={380}
       accessibilityRole="button"
       accessibilityLabel={spoken ? `${label}, ${spoken}` : label}
+      accessibilityState={{ disabled: !!disabled }}
       hitSlop={8}
-      style={{ alignItems: 'center', gap: 4 }}
+      style={{ alignItems: 'center', gap: 4, opacity: disabled ? 0.45 : 1 }}
     >
       <View
         style={{

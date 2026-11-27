@@ -8,6 +8,7 @@ import { liveMomentUserIds } from '../lib/profileTap';
 import { openWhisperLive, type WhisperLive, type WhisperLiveStatus } from '../lib/whisperLive';
 import { applyUpTo } from '../lib/messageStatus';
 import { stillTyping } from '../lib/presence';
+import { optimisticRepostCount } from '../lib/repost';
 import type {
   AppNotification, Badges, BlockedMember, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult,
   DiscoverPage, FullProfile, Me, Message, MomentsFeed, Preferences, Privacy, NotificationSettings, Moment,
@@ -16,6 +17,7 @@ import type {
 
 export const keys = {
   me: ['me'] as const,
+  invite: ['invite'] as const,
   discover: ['discover'] as const,
   user: (id: number) => ['user', id] as const,
   crushes: ['crushes'] as const,
@@ -70,6 +72,10 @@ function postsChanged(qc: QueryClient) {
 
 export const useMe = (enabled = true) =>
   useQuery({ queryKey: keys.me, queryFn: () => service.getMe(), enabled, staleTime: 30_000 });
+
+/** Settings-only referral data; the RPC returns no other member's referrals. */
+export const useInviteInfo = (enabled = true) =>
+  useQuery({ queryKey: keys.invite, queryFn: service.inviteInfo, enabled, staleTime: 15_000 });
 
 export const useSpaceBanner = (viewerId?: number, targetId?: number) =>
   useQuery({ queryKey: keys.spaceBanner(viewerId ?? 0, targetId ?? 0), queryFn: () => service.spaceBanner(targetId!), enabled: !!viewerId && !!targetId, staleTime: 0 });
@@ -729,6 +735,45 @@ export function useSavePost() {
       // The server may disagree (a post whose audience just narrowed comes back
       // unsaved), so the guess is corrected from the answer before the refetch.
       patchCachedPost(qc, vars.postId, (post) => ({ ...post, saved: result.saved }));
+      void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
+    },
+  });
+}
+
+/**
+ * Repost/undo is optimistic for the same reason Pick and Crush are: the mark
+ * must answer a thumb immediately, while the relationship itself is created or
+ * removed atomically by the server. A failed request restores every cached copy
+ * of the canonical post, including the profile grid.
+ */
+export function useRepostPost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ postId, reposted }: { postId: number; reposted: boolean }) =>
+      service.repostPost(postId, reposted),
+    onMutate: ({ postId, reposted }) => {
+      const touched = patchCachedPost(qc, postId, (post) => {
+        const was = !!post.reposted;
+        return {
+          ...post,
+          reposted,
+          repostCount: optimisticRepostCount(post.repostCount, was, reposted),
+        };
+      });
+      return { touched };
+    },
+    onError: (_e, _v, ctx) => {
+      for (const [key, data] of ctx?.touched ?? []) qc.setQueryData(key, data);
+    },
+    onSuccess: (result, vars) => {
+      patchCachedPost(qc, vars.postId, (post) => ({
+        ...post,
+        reposted: result.reposted,
+        repostCount: result.repostCount,
+        repostedBy: result.repostedBy ?? post.repostedBy ?? null,
+        repostedAt: result.repostedAt ?? post.repostedAt ?? null,
+      }));
+      postsChanged(qc);
       void qc.invalidateQueries({ queryKey: keys.post(vars.postId) });
     },
   });

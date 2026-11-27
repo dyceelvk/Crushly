@@ -91,7 +91,7 @@ const moments = (v: unknown): MomentSummary[] =>
 const lifestyle = (v: unknown) => {
   const l = isObject(v) ? v : {};
   const out: Record<string, string | number> = {};
-  for (const key of ['work', 'education', 'workout', 'drinking', 'smoking', 'pets', 'zodiac'] as const) {
+  for (const key of ['expressionStyle', 'work', 'education', 'workout', 'drinking', 'smoking', 'pets', 'zodiac'] as const) {
     const value = l[key];
     if (typeof value === 'string' && value.trim()) out[key] = value;
   }

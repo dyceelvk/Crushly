@@ -75,10 +75,10 @@ test('every screen the app navigates to is registered on a navigator', () => {
 
 test('the last onboarding step is registered, so onboarding can be finished', () => {
   // The screen that runs `completeOnboarding()`. If it is missing, every new
-  // member stops on step 5 of 6 with a button that does nothing.
-  assert.ok(registeredScreens().has('OnboardingFollow'));
+  // member stops on the final welcome with a button that does nothing.
+  assert.ok(registeredScreens().has('OnboardingComplete'));
   const root = readFileSync(join(SRC, 'navigation/RootNavigator.tsx'), 'utf8');
-  assert.match(root, /<Stack\.Screen\s+name="OnboardingFollow"\s+component=\{OnboardingFollowScreen\}/);
+  assert.match(root, /<Stack\.Screen\s+name="OnboardingComplete"\s+component=\{OnboardingCompleteScreen\}/);
 });
 
 test('nested tab screens are registered too, so the check above is not lenient', () => {

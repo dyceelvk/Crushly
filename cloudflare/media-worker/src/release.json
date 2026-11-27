@@ -1,11 +1,11 @@
 {
-  "version": "1.0.133",
-  "versionCode": 133,
+  "version": "1.0.141",
+  "versionCode": 141,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.133-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.133/holUpp-1.0.133-RielOS.apk",
-  "notes": "A video longer than a minute no longer gets refused. It opens the editor \u2014 Trim, Text, Filters, Adjust, Speed, Crop, Stickers, Sound \u2014 and the trim says the clip is longer than a post can carry so you pick the minute you want. The rest stays on your phone.",
-  "bytes": 101699039,
-  "sha256": "71ee61b757e327d24da149c10dfa4917edfa6e365279815a4c0c14574a7a08ba",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.133/holUpp-1.0.133-RielOS.apk"
+  "file": "holUpp-1.0.141-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.141/holUpp-1.0.141-RielOS.apk",
+  "notes": "Android updates now carry the trusted signing history from earlier holUpp builds, so members can update without uninstalling; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
+  "bytes": 101835778,
+  "sha256": "af99249ab3bf97c96935cf387a2cda6abe8fbd44c73a1c7024d5654dc504196c",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.141/holUpp-1.0.141-RielOS.apk"
 }

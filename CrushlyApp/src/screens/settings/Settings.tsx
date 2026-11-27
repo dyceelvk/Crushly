@@ -102,7 +102,8 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           iconTone="gold"
           onPress={() => navigation.navigate('Verification')}
         />
-        <ListRow title="holUpp Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} last />
+        <ListRow title="holUpp Plus" value={me?.plus.interested ? 'On the list' : 'Coming soon'} icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('Plus', {})} />
+        <ListRow title="Invite people" subtitle="Share holUpp and see your private referral progress" icon="person-add-outline" iconTone="success" onPress={() => navigation.navigate('Invite')} last />
       </Group>
 
       <Group title="Discovery & privacy">
@@ -520,6 +521,7 @@ export function NotificationSettingsScreen() {
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
         <ListRow title="Add ups" subtitle="Add ups, Big Ups and people who added back" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
         <ListRow title="Moments" subtitle="Replies and reactions to your Moments" icon="aperture-outline" toggle={{ value: n.moments, onChange: set('moments') }} />
+        <ListRow title="Reposts" subtitle="When someone reposts one of your posts" icon="repeat-outline" toggle={{ value: n.reposts, onChange: set('reposts') }} />
         <ListRow title="Discoveries" subtitle="Occasional suggestions of people worth knowing" icon="compass-outline" toggle={{ value: n.recommendations, onChange: set('recommendations') }} last />
       </Group>
     </Screen>

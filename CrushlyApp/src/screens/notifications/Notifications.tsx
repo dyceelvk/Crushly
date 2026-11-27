@@ -40,6 +40,7 @@ const ICON: Record<AppNotification['kind'], { name: keyof typeof Ionicons.glyphM
   verification_rejected: { name: 'shield-outline', tone: 'textSecondary' },
   post_reaction: { name: 'heart-outline', tone: 'crush' },
   post_comment: { name: 'chatbubble-outline', tone: 'textSecondary' },
+  post_repost: { name: 'repeat-outline', tone: 'gold' },
   post_mention: { name: 'at-outline', tone: 'gold' },
   keep: { name: 'eye-outline', tone: 'gold' },
   circle_request: { name: 'person-add-outline', tone: 'gold' },
@@ -77,6 +78,8 @@ export function notificationText(n: Pick<AppNotification, 'kind' | 'body'> & { a
       return { title: `${name} crushed on your post.`, detail: 'See what’s happening there.' };
     case 'post_comment':
       return { title: `${name} commented on your post.`, detail: n.body ? `“${n.body}”` : undefined };
+    case 'post_repost':
+      return { title: `${name} reposted your post.`, detail: 'Your original post and engagement stay canonical.' };
     case 'post_mention':
       return { title: `${name} mentioned you in a post.`, detail: n.body ? `“${n.body}”` : undefined };
     case 'message':
@@ -196,6 +199,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
         return n.actor ? navigation.navigate('UserProfile', { id: n.actor.id }) : navigation.navigate('Main', { screen: 'Discover' });
       case 'post_reaction':
       case 'post_comment':
+      case 'post_repost':
       case 'post_mention':
         return n.refId ? navigation.navigate('PostViewer', { postId: n.refId }) : navigation.navigate('Main', { screen: 'Flows' });
       case 'moment_reply':

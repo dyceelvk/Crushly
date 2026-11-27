@@ -43,18 +43,40 @@ function detectPlatform(): 'ios' | 'android' | 'other' {
 const SEEN_WARNING_KEY = 'holupp.webLimit.warned';
 
 export function useWebLimit() {
-  const { status } = useAuth();
+  const { status, me } = useAuth();
   const [clock, setClock] = useState<WebClock | null>(null);
   const [standing, setStanding] = useState<WebStanding>('open');
   const platform = useRef(detectPlatform()).current;
-  const recorded = useRef(false);
+  const recordedForMember = useRef<number | null>(null);
+  const memberId = me?.id ?? null;
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || status !== 'ready') return;
+    if (Platform.OS !== 'web') return;
+    if (status !== 'ready' || memberId == null) {
+      // Do not carry one account's server verdict into another account during a
+      // sign-out/sign-in transition. The next authenticated member gets a fresh
+      // server result, including the unlimited entitlement when applicable.
+      setClock(null);
+      setStanding('open');
+      recordedForMember.current = null;
+      return;
+    }
+
     let cancelled = false;
-    // Record the open once per app load; after that only read the verdict.
-    const record = recorded.current ? holupWebStatus() : holupWebOpen(platform);
-    recorded.current = true;
+    const firstReadForMember = recordedForMember.current !== memberId;
+    if (firstReadForMember) {
+      // Do not let the previous account's wall flash while this account's
+      // server verdict is being read.
+      setClock(null);
+      setStanding('open');
+    }
+    // Record the open once per authenticated member per app load; after that only
+    // read the verdict. The server, not this ref, decides whether the member is
+    // unlimited.
+    const record = firstReadForMember
+      ? holupWebOpen(platform)
+      : holupWebStatus();
+    recordedForMember.current = memberId;
     record
       .then((next) => {
         if (cancelled) return;
@@ -68,7 +90,7 @@ export function useWebLimit() {
     return () => {
       cancelled = true;
     };
-  }, [status, platform]);
+  }, [status, memberId, platform]);
 
   return { clock, standing, platform, limited: standing !== 'open' };
 }
@@ -133,7 +155,10 @@ function WebLimitGateView({ clock, standing, nudged, dismissed, onDismiss }: {
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    if (!shouldWarn(clock)) return;
+    if (!shouldWarn(clock)) {
+      setWarned(false);
+      return;
+    }
     try {
       if (window.sessionStorage?.getItem(SEEN_WARNING_KEY) === '1') return;
       window.sessionStorage?.setItem(SEEN_WARNING_KEY, '1');

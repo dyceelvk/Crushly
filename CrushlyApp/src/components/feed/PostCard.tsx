@@ -15,7 +15,7 @@ import { EditedClip } from '../EditedClip';
 import { useToast } from '../Toast';
 import { CommentsSheet } from './CommentsSheet';
 import { DeleteSheet } from '../DeleteSheet';
-import { useDeletePost, useLiveMomentUsers, useMe, useOpenConversation, useReactToPost, useSavePost } from '../../api/hooks';
+import { useDeletePost, useLiveMomentUsers, useMe, useOpenConversation, useReactToPost, useRepostPost, useSavePost } from '../../api/hooks';
 import type { Post } from '../../api/types';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
@@ -28,6 +28,7 @@ import { momentRing } from '../../lib/momentRings';
 import { useProfileTap } from '../../lib/useProfileTap';
 import { useTrackPostView } from '../../lib/useTrackPostView';
 import { PostViews } from '../ViewersSheet';
+import { RepostAttribution } from './RepostAttribution';
 import { formatCount, spokenCount } from '../../lib/counts';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -108,6 +109,21 @@ export function PostCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const like = useReactToPost();
   const pick = useSavePost();
+  const repost = useRepostPost();
+
+  const toggleRepost = async () => {
+    if (repost.isPending) return;
+    const next = !p.reposted;
+    try {
+      await repost.mutateAsync({ postId: p.id, reposted: next });
+      toast({
+        kind: 'success',
+        title: next ? 'Reposted to your profile.' : 'Repost removed.',
+      });
+    } catch (e) {
+      toast({ kind: 'error', title: next ? 'Couldn’t repost' : 'Couldn’t undo repost', message: (e as Error).message });
+    }
+  };
 
   // A post leaves the feed two ways now: into a Whisper, or out of the app.
   const [shareOpen, setShareOpen] = useState(false);
@@ -128,6 +144,7 @@ export function PostCard({
         ...elevation.soft,
       }}
     >
+      <RepostAttribution post={p} onOpen={p.repostedBy ? () => openName(p.repostedBy!.id) : undefined} />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingTop: space.sm }}>
         <Pressable
           onPress={() => openName(p.author.id)}
@@ -297,6 +314,15 @@ export function PostCard({
           onPress={() => (onOpen ? onOpen() : setCommentsOpen(true))}
         />
         <PostAction icon="arrow-redo-outline" label="Share this post" onPress={() => setShareOpen(true)} />
+        <PostAction
+          icon={p.reposted ? 'repeat' : 'repeat-outline'}
+          count={p.repostCount}
+          label={p.reposted ? 'Undo Repost' : 'Repost this post'}
+          active={p.reposted}
+          activeColor={colors.primary}
+          disabled={repost.isPending}
+          onPress={() => void toggleRepost()}
+        />
         <View style={{ flex: 1 }} />
         {/* Pick keeps the post in public: it lands in the picker's collection and
             on their Space, where anyone who can see the Space can read it. It is
@@ -368,7 +394,7 @@ export function PostCard({
 
 /** One of the three things you can do with a post, shown under it. */
 function PostAction({
-  icon, count, label, noun, active, activeColor, onPress,
+  icon, count, label, noun, active, activeColor, disabled, onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   count?: number;
@@ -378,6 +404,7 @@ function PostAction({
   active?: boolean;
   /** A Crush and a Pick are different states; they must not share a colour. */
   activeColor?: string;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -385,13 +412,15 @@ function PostAction({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={spoken ? `${label}, ${spoken}` : label}
+      accessibilityState={{ disabled: !!disabled, selected: !!active }}
       hitSlop={6}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: 6,
         minHeight: HIT, paddingHorizontal: space.sm, borderRadius: radius.sm,
-        opacity: pressed ? 0.55 : 1,
+        opacity: disabled ? 0.45 : pressed ? 0.55 : 1,
       })}
     >
       <Ionicons name={icon} size={19} color={active ? (activeColor ?? colors.crush) : colors.textSecondary} />

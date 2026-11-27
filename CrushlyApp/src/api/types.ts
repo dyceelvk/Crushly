@@ -6,7 +6,11 @@ export type Photo = { id: number; url: string };
 
 export type Intention = 'dating' | 'relationship' | 'friends' | 'casual' | 'new_connections' | 'not_sure';
 
+/** The broad way a member most enjoys contributing to HolUpp. */
+export type ExpressionStyle = 'visual' | 'writing' | 'conversation' | 'discovery' | 'everything';
+
 export type Lifestyle = Partial<{
+  expressionStyle: ExpressionStyle;
   work: string;
   education: string;
   height: number;
@@ -124,6 +128,14 @@ export type Post = {
   reactionKinds?: Partial<Record<ReactionKind, number>>;
   /** Whether you have kept this for later. */
   saved?: boolean;
+  /** Active canonical repost relationship state for the signed-in member. */
+  reposted?: boolean;
+  /** Active, visibility-filtered repost relationships on the original. */
+  repostCount?: number;
+  /** The member whose repost distributed this original into the current surface. */
+  repostedBy?: Profile | null;
+  /** When that distribution relationship was created; the post's createdAt remains original. */
+  repostedAt?: number | null;
   /** The sound this clip is under, when it has one. */
   sound?: PostSound | null;
 };
@@ -484,6 +496,8 @@ export type Privacy = {
   showAge: boolean;
   showCity: boolean;
   incognito: boolean;
+  /** Whether this member allows other members to repost their posts. */
+  allowReposts: boolean;
 };
 
 export type Preferences = {
@@ -495,7 +509,7 @@ export type Preferences = {
   verifiedOnly: boolean;
 };
 
-export type NotificationSettings = { messages: boolean; crushes: boolean; moments: boolean; recommendations: boolean };
+export type NotificationSettings = { messages: boolean; crushes: boolean; moments: boolean; recommendations: boolean; reposts: boolean };
 
 export type VerificationStatus = 'none' | 'pending' | 'verified' | 'rejected';
 
@@ -656,6 +670,7 @@ export type NotificationKind =
   | 'verification_rejected'
   | 'post_reaction'
   | 'post_comment'
+  | 'post_repost'
   /** Somebody named you with `@handle`. `refId` is the post it was written in. */
   | 'post_mention'
   /**
@@ -795,3 +810,19 @@ export type ViewerPage = { items: ViewerItem[]; count?: number };
  */
 export type SpaceViewerItem = { profile: Profile | null; viewedAt: number; views: number };
 export type SpaceViewerPage = { items: SpaceViewerItem[]; count: number };
+
+/** The one reusable personal invite and the private counts behind Settings. */
+export type InviteInfo = {
+  code: string;
+  link: string;
+  successful: number;
+  pending: number;
+  total: number;
+};
+
+/** The server's answer when an authenticated member brings an invite code. */
+export type ReferralClaimResult = {
+  claimed: boolean;
+  retryable?: boolean;
+  reason?: 'claimed' | 'account_not_confirmed' | 'already_onboarded' | 'already_attributed' | 'self_referral' | 'invalid_code';
+};

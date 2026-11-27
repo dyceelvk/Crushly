@@ -7198,6 +7198,16 @@ notify pgrst, 'reload schema';
 alter table public.post_comments
   add column if not exists parent_id bigint;
 
+-- `hidden` is what "delete" means for a comment that still has replies: the
+-- body is emptied and this flag is set, so the thread survives under it. The
+-- functions below read and write it, `post_saves.sql` filters comments by it,
+-- and production has had it since 2026-10-29 — but the 2026-10-30
+-- reconstruction of this file from the live catalog dropped the `add column`,
+-- so a database built from these migrations could not run `saved_posts` at
+-- all. Restored here; idempotent, and a no-op against production.
+alter table public.post_comments
+  add column if not exists hidden boolean not null default false;
+
 alter table public.post_comments
   drop constraint if exists post_comments_parent_fk;
 alter table public.post_comments
@@ -8534,7 +8544,7 @@ grant execute on function public.edit_post(bigint, text, text, jsonb) to authent
 
 notify pgrst, 'reload schema';
 
--- ================================ 20261101120000_voice_notes_badges_and_follow.sql
+-- ================================ 20261101213023_voice_notes_badges_and_follow.sql
 
 -- Voice notes that were never allowed through, the two badge tiers above
 -- "verified", and Keep Close travelling with a member into public.
@@ -8809,7 +8819,7 @@ begin
   return result;
 end $function$;
 
--- ================================ 20261101130000_circle_themes_and_visibility.sql
+-- ================================ 20261101213321_circle_themes_and_visibility.sql
 
 -- A Circle has a theme now, and a Circle knows who it is for.
 --
@@ -8946,7 +8956,78 @@ begin
   return jsonb_build_object('items', items, 'connected', connected);
 end $function$;
 
--- ================================ 20261101140000_mention_and_tag_suggest.sql
+-- ================================ 20261101214349_member_circles_uses_member_id.sql
+
+-- 20261101214349 member_circles_uses_member_id
+--
+-- Mirrored back from production's own migration history.
+--
+-- This migration was applied to `yzcssyebozfkmojqqdhc` on 2026-11-01 and
+-- recorded under this version, but its file never landed in the repository —
+-- so `supabase db push` refused to run at all with "Remote migration versions
+-- not found in local migrations directory", which is why the web deploy job was
+-- failing even after the hardcoded migration filename was fixed.
+--
+-- The SQL below is the statement stored in supabase_migrations.schema_migrations
+-- for this version, restored verbatim so that replaying the directory in order
+-- still produces the schema production actually has.
+--
+-- What it changes: `circle_members` keys members by `member_id`, not `user_id`.
+-- The earlier `member_circles` still selected `cm.user_id` and `cm.role` off
+-- that table, so it could not run. This replaces it with the member_id form and
+-- fills in a role/muted fallback for the viewer.
+
+create or replace function public.member_circles(p_member_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  connected boolean;
+  items jsonb := '[]'::jsonb;
+  r record;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  connected := public.is_connected_pair(me, p_member_id);
+
+  for r in
+    select c.*,
+           (select count(*) from circle_members cm2 where cm2.circle_id = c.id) as member_count,
+           exists (select 1 from circle_members cm3 where cm3.circle_id = c.id and cm3.member_id = me) as i_am_in
+      from circles c
+     where exists (select 1 from circle_members cm where cm.circle_id = c.id and cm.member_id = p_member_id)
+       and (
+         c.visibility = 'public'
+         or connected
+         or exists (select 1 from circle_members cm5 where cm5.circle_id = c.id and cm5.member_id = me)
+       )
+     order by i_am_in desc, member_count desc, c.created_at desc
+     limit 30
+  loop
+    items := items || jsonb_build_array(jsonb_build_object(
+      'id', r.id,
+      'name', r.name,
+      'about', r.about,
+      'coverUrl', r.cover_url,
+      'theme', r.theme,
+      'visibility', r.visibility,
+      'createdAt', r.created_at,
+      'ownerId', r.owner_id,
+      'myRole', case when r.i_am_in then coalesce((select cm6.role from circle_members cm6 where cm6.circle_id = r.id and cm6.member_id = me), 'member') else 'visitor' end,
+      'muted', coalesce((select cm7.muted from circle_members cm7 where cm7.circle_id = r.id and cm7.member_id = me), false),
+      'memberCount', r.member_count,
+      'joined', r.i_am_in
+    ));
+  end loop;
+
+  return jsonb_build_object('items', items, 'connected', connected);
+end $function$;
+
+-- ================================ 20261101224620_mention_and_tag_suggest.sql
 
 -- Who and what you mean when you type @ and #.
 --
@@ -9072,7 +9153,7 @@ begin
   ), '[]'::jsonb);
 end $function$;
 
--- ================================ 20261102000000_moment_clip_duration.sql
+-- ================================ 20261102073849_moment_clip_duration.sql
 
 -- Moment video duration and one-minute limit.
 -- Existing Moments remain readable; new video Moments report their selected
@@ -9194,5 +9275,17368 @@ end $$;
 
 revoke all on function public.create_moment(text, text, text, text, text, bigint, jsonb) from public, anon, authenticated;
 grant execute on function public.create_moment(text, text, text, text, text, bigint, jsonb) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261102151155_ranked_feed.sql
+
+-- 20261102000100 ranked_feed
+--
+-- The Flow was a timeline: `flow_feed` orders by `created_at desc` and nothing
+-- else. That is fine for a small circle of people you already know and useless
+-- for a For You feed, because a post's chance of being seen depends only on when
+-- it was written.
+--
+-- This migration gives the feed the two things a ranked stream needs:
+--
+--   1. somewhere to record what happened — `post_feedback`, one row per view or
+--      reaction, with the dwell time that TikTok's own client reports as
+--      `play_time`/`dwell`;
+--   2. `flow_ranked_feed(p_limit, p_cursor)`, which scores candidates from those
+--      signals and returns them in a stable, resumable order.
+--
+-- The shape of it is copied deliberately from the system observed in
+-- `docs/TIKTOK-FYP.md`: an item stream rather than a page of posts, a cursor
+-- rather than an offset, a small window per request (a client asks for 8 and
+-- keeps 2 of them ahead), diversity enforced server-side, and per-item logging
+-- so the reason each post was shown can be read back afterwards.
+--
+-- What is *not* copied is a ranking model. TikTok's weights are server-side and
+-- not in the APK; these weights are a starting point chosen to be explainable,
+-- and every one of them is returned with the item so they can be argued with.
+--
+-- Idempotent: safe to replay, which is what `setup.sql` and the test runner do.
+
+-- ---------------------------------------------------------------- signals ---
+
+create table if not exists public.post_feedback (
+  id         bigint generated always as identity primary key,
+  post_id    bigint not null references public.posts(id) on delete cascade,
+  viewer_id  bigint not null references public.profiles(id) on delete cascade,
+  -- 'view' is an impression with a duration; the rest are deliberate acts.
+  -- 'skip' is a view that ended early, 'hide' is "not interested" and is
+  -- permanent for that viewer.
+  kind       text not null check (kind in ('view', 'like', 'comment', 'save', 'share', 'skip', 'hide')),
+  dwell_ms   integer check (dwell_ms is null or (dwell_ms >= 0 and dwell_ms <= 3600000)),
+  completed  boolean not null default false,
+  position   integer check (position is null or position >= 0),
+  created_at bigint not null default public.now_ms()
+);
+
+create index if not exists post_feedback_post_idx
+  on public.post_feedback (post_id, created_at desc);
+create index if not exists post_feedback_viewer_idx
+  on public.post_feedback (viewer_id, created_at desc);
+create index if not exists post_feedback_viewer_post_idx
+  on public.post_feedback (viewer_id, post_id, kind);
+
+alter table public.post_feedback enable row level security;
+
+-- Your own signal trail is yours to read (it is what "why am I seeing this"
+-- will be built on). Writes go through the functions below, which check that the
+-- post is visible to you at all.
+drop policy if exists post_feedback_select_own on public.post_feedback;
+create policy post_feedback_select_own on public.post_feedback
+  for select to authenticated using (viewer_id = public.me_id());
+
+-- ---------------------------------------------------------------- writers ---
+
+create or replace function public.record_post_view(
+  p_post_id  bigint,
+  p_dwell_ms integer,
+  p_completed boolean default false,
+  p_position integer default null
+)
+returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  me   bigint := public.me_id();
+  post public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into post from posts where id = p_post_id;
+  if not found or not public.can_view_post(post, me) then
+    perform public.crushly_fail(404, 'not_found', 'That post is no longer available.');
+  end if;
+
+  -- A view is recorded at most once every 30 seconds per viewer, so a client
+  -- that re-renders a screen cannot inflate its own feed.
+  if exists (
+    select 1 from post_feedback f
+     where f.post_id = p_post_id and f.viewer_id = me and f.kind in ('view', 'skip')
+       and f.created_at > public.now_ms() - 30000
+  ) then
+    return jsonb_build_object('recorded', false, 'reason', 'too_soon');
+  end if;
+
+  -- A skip is a glance, a view is a read. The client does not get to decide
+  -- which: it reports whether the clip finished and for how long it was held,
+  -- and the threshold below is what separates the two. If this lived on the
+  -- client, a bug there would silently redefine the ranking signal.
+  insert into post_feedback (post_id, viewer_id, kind, dwell_ms, completed, position)
+  values (
+    p_post_id, me,
+    case when coalesce(p_completed, false) or coalesce(p_dwell_ms, 0) >= 1500
+         then 'view' else 'skip' end,
+    least(greatest(coalesce(p_dwell_ms, 0), 0), 3600000),
+    coalesce(p_completed, false),
+    p_position
+  );
+
+  return jsonb_build_object('recorded', true);
+end $$;
+
+create or replace function public.record_post_feedback(p_post_id bigint, p_kind text)
+returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  me   bigint := public.me_id();
+  post public.posts;
+  k    text := lower(coalesce(p_kind, ''));
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if k not in ('like', 'comment', 'save', 'share', 'hide') then
+    perform public.crushly_fail(400, 'bad_kind', 'Unknown feedback kind.');
+  end if;
+  select * into post from posts where id = p_post_id;
+  if not found or not public.can_view_post(post, me) then
+    perform public.crushly_fail(404, 'not_found', 'That post is no longer available.');
+  end if;
+
+  -- One row per (post, viewer, kind): saying it twice is saying it once.
+  if not exists (
+    select 1 from post_feedback f
+     where f.post_id = p_post_id and f.viewer_id = me and f.kind = k
+  ) then
+    insert into post_feedback (post_id, viewer_id, kind) values (p_post_id, me, k);
+  end if;
+
+  return jsonb_build_object('recorded', true, 'kind', k);
+end $$;
+
+-- --------------------------------------------------------------- the ranker ---
+--
+-- Score, in words:
+--
+--   engagement velocity  what has happened to the post, per hour of its life,
+--                        weighted so a comment is worth more than a like and a
+--                        save is worth more than a view
+--   recency              a three-day half-life, so nothing is permanently
+--                        buried but nothing stale outranks something fresh
+--   affinity             how much this viewer has engaged with this author in
+--                        the last 30 days — the same signal TikTok's client
+--                        reports and its server acts on
+--   exploration          a boost for posts nobody has seen, which is what stops
+--                        the feed from being a rich-get-richer loop
+--   diversity            the second post from one author in a page is worth
+--                        roughly 60% of the first, the third less again
+--
+-- A post the viewer has already been shown in the last three days is suppressed
+-- unless there is not enough fresh material to fill the page, in which case it
+-- comes back at 30% of its score. On a small network that matters: an empty feed
+-- is a worse failure than a repeat.
+
+create or replace function public.flow_ranked_feed(p_limit integer default 8, p_cursor jsonb default null)
+returns jsonb
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
+  with me_v as (
+    select public.me_id() as me, public.now_ms() as t
+  ),
+  cursor_v as (
+    select
+      case when p_cursor is null then null else nullif(p_cursor ->> 'score', '')::numeric end as score,
+      case when p_cursor is null then null else nullif(p_cursor ->> 'id', '')::bigint    end as id
+  ),
+  lim as (
+    select least(greatest(coalesce(p_limit, 8), 1), 30) as n
+  ),
+  cand as (
+    select
+      po.id, po.author_id, po.created_at, po.circle_id,
+      (m.t - po.created_at) / 3600000.0 as age_h,
+      coalesce(s.likes, 0)    as likes,
+      coalesce(s.comments, 0) as comments,
+      coalesce(s.saves, 0)    as saves,
+      coalesce(s.shares, 0)   as shares,
+      coalesce(s.views, 0)    as views,
+      coalesce(a.n, 0)        as affinity,
+      exists (
+        select 1 from post_feedback f
+         where f.post_id = po.id and f.viewer_id = m.me and f.kind in ('view', 'skip')
+           and f.created_at > m.t - 3 * 86400000
+      ) as seen
+    from posts po
+    cross join me_v m
+    left join lateral (
+      select
+        (select count(*) from post_reactions r where r.post_id = po.id) as likes,
+        (select count(*) from post_comments c where c.post_id = po.id) as comments,
+        (select count(*) from post_saves   s where s.post_id = po.id) as saves,
+        (select count(*) from post_feedback f
+          where f.post_id = po.id and f.kind = 'share')              as shares,
+        (select count(*) from post_feedback f
+          where f.post_id = po.id and f.kind in ('view', 'skip'))    as views
+    ) s on true
+    left join lateral (
+      select count(*) as n
+        from post_feedback f
+        join posts p2 on p2.id = f.post_id
+       where f.viewer_id = m.me
+         and p2.author_id = po.author_id
+         and f.kind in ('like', 'comment', 'save', 'share')
+         and f.created_at > m.t - 2592000000::bigint  -- 30 days, in ms (too big for int4)
+    ) a on true
+    where po.circle_id is null
+      and public.can_view_post(po, m.me)
+      and not exists (
+        select 1 from post_feedback f
+         where f.post_id = po.id and f.viewer_id = m.me and f.kind = 'hide'
+      )
+  ),
+  scored as (
+    select c.*,
+      -- velocity: engagement per hour, softened so a brand-new post is not
+      -- divided by zero and does not win on a single like
+      ((c.likes + 3 * c.comments + 3 * c.saves + 2 * c.shares)
+        / power(c.age_h + 2, 1.5))                                        as velocity,
+      exp(-c.age_h / 72.0)                                                as recency,
+      (1 + 0.6 * ln(1 + c.affinity))                                      as affinity_w,
+      0.6 * exp(-c.views / 20.0)                                          as explore,
+      (count(*) filter (where not c.seen) over ())                        as fresh_total
+    from cand c
+  ),
+  raw_scored as (
+    select s.*,
+      -- Recency multiplies the whole score, not just the engagement term. Left
+      -- outside it, the exploration boost made a six-week-old post with no
+      -- engagement score exactly the same as a five-minute-old one — the test
+      -- that asks "does fresh beat stale" is what caught it.
+      (s.velocity * s.affinity_w + s.explore) * s.recency as raw
+    from scored s
+  ),
+  diversified as (
+    select r.*,
+      row_number() over (partition by r.author_id order by r.raw desc, r.id desc) as author_rn
+    from raw_scored r
+  ),
+  scored_final as (
+    select d.*,
+      case when d.seen then 0.3 else 1.0 end * d.raw / (1 + 0.6 * (d.author_rn - 1)) as score
+    from diversified d
+    -- keep the fresh pool if it can fill the page; otherwise let seen posts back in
+    cross join lim l
+    where (d.fresh_total >= l.n and not d.seen) or d.fresh_total < l.n
+  ),
+  page as (
+    select f.*,
+      row_number() over (order by f.score desc, f.id desc) as position
+    from scored_final f
+    cross join cursor_v c
+    where c.score is null or (f.score, f.id) < (c.score, c.id)
+    order by f.score desc, f.id desc
+    limit (select n from lim)
+  )
+  select jsonb_build_object(
+    'items', coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', p.id,
+          'body', po.body,
+          'mediaUrl', po.media_url,
+          'mediaKind', case
+            when po.media_url is null then null
+            when po.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', po.edit,
+          'audience', po.audience,
+          'circleId', po.circle_id,
+          'createdAt', po.created_at,
+          'author', public.public_profile(m.me, po.author_id, false),
+          'mine', po.author_id = m.me,
+          -- the reason this post is here, in numbers, for the client's
+          -- "why am I seeing this" and for the tests
+          'rank', jsonb_build_object(
+            'position', p.position,
+            'score', round(p.score::numeric, 6),
+            'velocity', round(p.velocity::numeric, 6),
+            'recency', round(p.recency::numeric, 6),
+            'affinity', p.affinity,
+            'explore', round(p.explore::numeric, 6),
+            'diversityRank', p.author_rn,
+            'seenBefore', p.seen
+          )
+        ) || public.post_engagement(p.id, m.me)
+        order by p.position
+      ),
+      '[]'::jsonb
+    ),
+    'nextCursor', (
+      select jsonb_build_object('score', last_row.score::numeric, 'id', last_row.id)
+        from (
+          select p2.score, p2.id
+            from page p2
+           order by p2.position desc
+           limit 1
+        ) last_row
+    ),
+    'ranking', jsonb_build_object(
+      'candidates', (select count(*) from raw_scored),
+      'fresh', (select max(fresh_total) from scored),
+      'returned', (select count(*) from page)
+    )
+  )
+  from page p
+  join posts po on po.id = p.id
+  cross join me_v m;
+$function$;
+
+revoke all on function public.record_post_view(bigint, integer, boolean, integer) from public, anon, authenticated;
+revoke all on function public.record_post_feedback(bigint, text) from public, anon, authenticated;
+revoke all on function public.flow_ranked_feed(integer, jsonb) from public, anon, authenticated;
+grant execute on function public.record_post_view(bigint, integer, boolean, integer) to authenticated, service_role;
+grant execute on function public.record_post_feedback(bigint, text) to authenticated, service_role;
+grant execute on function public.flow_ranked_feed(integer, jsonb) to authenticated, service_role;
+
+-- ================================ 20261102162445_post_likers.sql
+
+-- Who liked this post.
+--
+-- The comment sheet shows two tabs over a post — the comments, and the people
+-- who reacted to it — and only the first had a query behind it. Counting
+-- reactions was possible (`post_engagement` returns the number); naming them
+-- was not, so the reference surface could only be copied with a dead tab.
+--
+-- Visibility follows the post: you get the list only if you can see the post at
+-- all, which `can_view_post` already decides for comments, saves and reactions.
+
+create or replace function public.post_likers(p_post_id bigint, p_limit integer default 40)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me    bigint := public.me_id();
+  post  public.posts;
+  n     integer := least(greatest(coalesce(p_limit, 40), 1), 100);
+  items jsonb := '[]'::jsonb;
+  r     record;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into post from posts where id = p_post_id;
+  if not found or not public.can_view_post(post, me) then
+    perform public.crushly_fail(404, 'not_found', 'That post is no longer available.');
+  end if;
+
+  for r in
+    select pr.user_id, pr.kind, pr.created_at
+      from post_reactions pr
+     where pr.post_id = p_post_id
+     order by pr.created_at desc
+     limit n
+  loop
+    items := items || jsonb_build_array(
+      jsonb_build_object(
+        'kind', r.kind,
+        'createdAt', r.created_at,
+        'author', public.public_profile(me, r.user_id, false)
+      )
+    );
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $function$;
+
+revoke all on function public.post_likers(bigint, integer) from public, anon, authenticated;
+grant execute on function public.post_likers(bigint, integer) to authenticated, service_role;
+
+-- ================================ 20261103205555_sounds.sql
+
+-- Sounds, so "original sound" is a thing rather than a caption.
+--
+-- The feed has said "original sound — <name>" since the redesign, and the
+-- reference's sound page could not be built on top of that sentence: there was
+-- no row to open. This adds the smallest honest model:
+--
+--   * `sounds` — one per author today, titled "Original sound", owned by them.
+--     A clip announces its sound automatically on insert, so every video that
+--     already exists can be attributed without anybody re-posting it.
+--   * `posts.sound_id` — which sound a clip is under.
+--   * `attach_post_sound()` — use somebody else's sound on a clip of your own,
+--     which is what the sound page's one action does.
+--   * `sound_page()` — the sound, who owns it, how many clips are on it, and the
+--     clips you are allowed to see.
+--
+-- `post_engagement` carries the sound too, so every feed that already returns
+-- engagement gets the sound with it and no feed query had to be rewritten.
+
+create table if not exists public.sounds (
+  id         bigint generated always as identity primary key,
+  owner_id   bigint not null references public.profiles(id) on delete cascade,
+  title      text not null default 'Original sound',
+  media_url  text,
+  created_at bigint not null default public.now_ms(),
+  constraint sounds_title_len check (char_length(title) between 1 and 80)
+);
+
+alter table public.posts add column if not exists sound_id bigint references public.sounds(id) on delete set null;
+create index if not exists posts_sound_idx on public.posts (sound_id, created_at desc);
+
+-- One "Original sound" per author: it is their recorded identity, not a new
+-- object every time they post.
+create unique index if not exists sounds_one_original_per_owner
+  on public.sounds (owner_id) where title = 'Original sound';
+
+alter table public.sounds enable row level security;
+
+create or replace function public.original_sound_for(p_owner bigint)
+returns bigint
+language plpgsql volatile security definer set search_path = public as $$
+declare v_id bigint;
+begin
+  select id into v_id from sounds where owner_id = p_owner and title = 'Original sound';
+  if v_id is not null then
+    return v_id;
+  end if;
+  insert into sounds (owner_id, title) values (p_owner, 'Original sound')
+  on conflict do nothing
+  returning id into v_id;
+  if v_id is null then
+    select id into v_id from sounds where owner_id = p_owner and title = 'Original sound';
+  end if;
+  return v_id;
+end $$;
+
+-- A clip carries a sound from the moment it exists.
+create or replace function public.posts_attach_original_sound()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.sound_id is null and new.media_url is not null
+     and new.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then
+    new.sound_id := public.original_sound_for(new.author_id);
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists posts_attach_original_sound on public.posts;
+create trigger posts_attach_original_sound before insert on public.posts
+  for each row execute function public.posts_attach_original_sound();
+
+-- Attribute the clips that already exist.
+insert into public.sounds (owner_id, title)
+select distinct p.author_id, 'Original sound'
+  from public.posts p
+ where p.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)'
+on conflict do nothing;
+
+update public.posts p
+   set sound_id = s.id
+  from public.sounds s
+ where p.sound_id is null
+   and s.owner_id = p.author_id
+   and s.title = 'Original sound'
+   and p.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)';
+
+-- Using somebody else's sound on your own clip.
+create or replace function public.attach_post_sound(p_post_id bigint, p_sound_id bigint)
+returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  me   bigint := public.me_id();
+  mine bigint;
+  snd  public.sounds;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select author_id into mine from posts where id = p_post_id;
+  if mine is null then
+    perform public.crushly_fail(404, 'not_found', 'That post is no longer available.');
+  end if;
+  if mine <> me then
+    perform public.crushly_fail(403, 'not_yours', 'Only your own post can carry a sound.');
+  end if;
+  select * into snd from sounds where id = p_sound_id;
+  if not found then
+    perform public.crushly_fail(404, 'not_found', 'That sound is no longer available.');
+  end if;
+
+  update posts set sound_id = p_sound_id where id = p_post_id;
+
+  return jsonb_build_object(
+    'postId', p_post_id,
+    'sound', jsonb_build_object('id', snd.id, 'title', snd.title, 'ownerId', snd.owner_id)
+  );
+end $$;
+
+-- The page: the sound, its owner, how much is on it, and the clips you may see.
+create or replace function public.sound_page(p_sound_id bigint, p_limit integer default 24)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  snd   public.sounds;
+  n     integer := least(greatest(coalesce(p_limit, 24), 1), 60);
+  items jsonb := '[]'::jsonb;
+  total integer := 0;
+  r     record;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into snd from sounds where id = p_sound_id;
+  if not found then
+    perform public.crushly_fail(404, 'not_found', 'That sound is no longer available.');
+  end if;
+
+  select count(*) into total
+    from posts p
+   where p.sound_id = p_sound_id and public.can_view_post(p, me);
+
+  for r in
+    select p.*
+      from posts p
+     where p.sound_id = p_sound_id and public.can_view_post(p, me)
+     order by p.created_at desc
+     limit n
+  loop
+    items := items || jsonb_build_array(
+      jsonb_build_object(
+        'id', r.id,
+        'body', r.body,
+        'mediaUrl', r.media_url,
+        'mediaKind', case
+          when r.media_url is null then null
+          when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+          else 'photo'
+        end,
+        'edit', r.edit,
+        'audience', r.audience,
+        'circleId', r.circle_id,
+        'createdAt', r.created_at,
+        'author', public.public_profile(me, r.author_id, false),
+        'mine', r.author_id = me
+      ) || public.post_engagement(r.id, me)
+    );
+  end loop;
+
+  return jsonb_build_object(
+    'sound', jsonb_build_object(
+      'id', snd.id,
+      'title', snd.title,
+      'createdAt', snd.created_at,
+      'postCount', total,
+      'owner', public.public_profile(me, snd.owner_id, false)
+    ),
+    'items', items
+  );
+end $$;
+
+-- Every feed that already asks for engagement now gets the sound with it.
+create or replace function public.post_engagement(p_post_id bigint, p_viewer bigint)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'likeCount', (select count(*) from post_reactions r where r.post_id = p_post_id),
+    'commentCount', (
+      select count(*) from post_comments c
+       where c.post_id = p_post_id
+         and not c.hidden
+         and not public.is_blocked_pair(p_viewer, c.author_id)
+    ),
+    'liked', exists (
+      select 1 from post_reactions r where r.post_id = p_post_id and r.user_id = p_viewer
+    ),
+    'myReaction', (
+      select r.kind from post_reactions r
+       where r.post_id = p_post_id and r.user_id = p_viewer
+    ),
+    'reactionKinds', coalesce((
+      select jsonb_object_agg(s.kind, s.n)
+        from (select r.kind, count(*) as n
+                from post_reactions r
+               where r.post_id = p_post_id
+               group by r.kind) s
+    ), '{}'::jsonb),
+    'saved', exists (
+      select 1 from post_saves s where s.post_id = p_post_id and s.user_id = p_viewer
+    ),
+    'sound', (
+      select jsonb_build_object('id', s.id, 'title', s.title, 'ownerId', s.owner_id)
+        from posts po join sounds s on s.id = po.sound_id
+       where po.id = p_post_id
+    )
+  );
+$$;
+
+revoke all on function public.attach_post_sound(bigint, bigint) from public, anon, authenticated;
+revoke all on function public.sound_page(bigint, integer) from public, anon, authenticated;
+revoke all on function public.original_sound_for(bigint) from public, anon;
+revoke all on function public.post_engagement(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.attach_post_sound(bigint, bigint) to authenticated, service_role;
+grant execute on function public.sound_page(bigint, integer) to authenticated, service_role;
+grant execute on function public.original_sound_for(bigint) to authenticated, service_role;
+grant execute on function public.post_engagement(bigint, bigint) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261104090000_crushes_feed.sql
+
+-- crush_posts_feed: the posts Crushes shows.
+--
+-- (Named this way, not `crushes_feed`: that name is already the people side of
+-- Crushes, `crushes_feed()` with no arguments, and adding a second function of
+-- the same name with defaults made every call to the first one ambiguous —
+-- "function public.crushes_feed() is not unique". The suite caught it before
+-- anyone's Space did.)
+--
+-- Crushes is a post feed, not a directory of people. It carries the posts of
+-- the people you have a Crush with — you on them, them on you, or both — and it
+-- carries what a feed on this surface should: pictures and words. Clips are
+-- Flow's (see flow_ranked_feed); a clip on the Crushes page would make the two
+-- surfaces the same page with two names.
+--
+-- Every rule the other feeds apply still applies, because this reads through the
+-- same door: can_view_post() decides who may see a post at all (audience,
+-- blocks, Circles), and post_engagement() supplies `saved`, `liked` and the
+-- counts so Pick and Crush work here exactly as they do on Flow.
+--
+-- Paging is keyset (created_at, id), the same shape flow_feed uses, so a post
+-- arriving while someone scrolls cannot make them see a row twice.
+
+create or replace function public.crush_posts_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me    bigint := public.me_id();
+  items jsonb := '[]'::jsonb;
+  r     record;
+  post  public.posts;
+  after_created bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if p_after is not null then
+    select p2.created_at into after_created from posts p2 where p2.id = p_after;
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.circle_id is null
+       -- A clip belongs to Flow.
+       and (po.media_url is null or po.media_url !~ '\.(mp4|webm|mov|m4v)(\?|$)')
+       -- A Crush in either direction, and never yourself: your own posts are
+       -- what your Space is.
+       and po.author_id <> me
+       and exists (
+         select 1 from crushes c
+          where (c.from_id = me and c.to_id = po.author_id)
+             or (c.to_id = me and c.from_id = po.author_id)
+       )
+       and (
+         p_after is null
+         or po.created_at < after_created
+         or (po.created_at = after_created and po.id < p_after)
+       )
+     order by po.created_at desc, po.id desc
+     limit least(greatest(coalesce(p_limit, 20), 1), 50)
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', false
+        ) || public.post_engagement(r.id, me)
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('items', items);
+end $function$;
+
+grant execute on function public.crush_posts_feed(integer, bigint) to authenticated, service_role;
+
+-- Belt and braces: if this migration is replayed over a database that ran the
+-- earlier draft, the ambiguous overload goes.
+drop function if exists public.crushes_feed(integer, bigint);
+
+-- Picked is saved content, not a public shelf: the picks_of() draft that made
+-- someone's Picks readable from their Space is gone, and this removes it from a
+-- database that ran it.
+drop function if exists public.picks_of(bigint, integer, bigint);
+
+-- ================================ 20261104130000_remove_vibes.sql
+
+-- Vibes are gone.
+--
+-- The brief was to remove Vibes completely, not to hide them: the nav entry, the
+-- discover row, the composer, the search tab, the Space tab, the notification
+-- copy, the client, the endpoints — and the tables they were the only user of.
+--
+-- Three things had to move before anything could be dropped, and they are the
+-- reason this file starts with three function bodies rather than a `drop table`:
+--
+--   * `media_upload_ticket` counts the last hour's uploads per member, and one
+--     of the six terms it counted was `vibes`. Dropping the table under it would
+--     have broken every upload in the app, not just Vibes.
+--
+--   * `search_all` returned a `vibes` array alongside members, posts and
+--     Moments. The client no longer reads it, but a function that selects from a
+--     dropped table cannot be left in place either.
+--
+--   * `can_manage_media` and `can_view_media` — the gates every private media
+--     write and read passes through —
+--     declared a `vibes` row variable and resolved `vibes/` paths against the
+--     table. A plpgsql body is not validated when it is created, so this one
+--     survived the drop and only failed the first time somebody opened a photo:
+--     which is exactly how the Postgres smoke suite caught it, twice — the write
+--     gate was hiding behind the read gate. Both are redefined below with their
+--     Vibe branches removed and every other branch untouched.
+--
+-- What is dropped afterwards is Vibes and only Vibes: `vibes`, its two
+-- children (`vibe_views`, `vibe_reactions`) and the seven functions that served
+-- them. Moments, posts, Circles, sounds, reactions and profile data are not
+-- touched, and no storage object is deleted — the clips already uploaded stay in
+-- the bucket under `vibes/`, unreferenced, so nothing that is not ours is lost.
+--
+-- Written by Odoh chiagoziem isreal's team, on the existing schema.
+
+/* ------------------------------------------------- uploads, search, media */
+create or replace function public.media_upload_ticket(p_kind text, p_content_type text, p_bytes integer default 0)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind is null or p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type is not supported.');
+  end if;
+  if not public.media_kind_allows(p_kind, v_ext) then
+    perform public.crushly_fail(415, '', case
+      when p_kind = 'photos' then 'Photos must be JPEG, PNG or WebP.'
+      when p_kind in ('moments', 'posts') then 'That takes a photo or a short clip.'
+      when p_kind = 'circles' then 'Circles take photos, voice notes and clips.'
+      else 'That file type is not supported.' end);
+  end if;
+
+  v_limit := case when p_kind in ('messages', 'circles', 'posts') then 80 * 1024 * 1024 else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty - try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  perform 1 from profiles where id = me for update;
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That is a lot of uploading - try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+  insert into media_upload_reservations(path, user_id, bytes) values (v_path, me, p_bytes);
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $function$;
+
+create or replace function public.search_all(p_query text, p_limit int default 8)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me  bigint := public.me_id();
+  q   text := btrim(coalesce(p_query, ''));
+  n   int := least(greatest(coalesce(p_limit, 8), 1), 20);
+  tsq tsquery;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  -- One letter would match nearly everything and tell nobody anything.
+  if char_length(q) < 2 then
+    return jsonb_build_object(
+      'members', '[]'::jsonb,
+      'posts', '[]'::jsonb,
+      'moments', '[]'::jsonb
+    );
+  end if;
+
+  -- websearch_to_tsquery, not to_tsquery: it never raises on odd punctuation,
+  -- so a member typing a quote or a dash gets results instead of an error.
+  tsq := websearch_to_tsquery('simple', q);
+
+  return jsonb_build_object(
+    'members', (
+      select coalesce(jsonb_agg(x.member), '[]'::jsonb)
+        from (
+          select public.public_profile(me, p.id, false) as member
+            from profiles p
+            join privacy pr on pr.user_id = p.id
+           where p.id <> me
+             and p.onboarded
+             and p.status = 'active'
+             and pr.discoverable
+             and not pr.incognito
+             and not public.is_blocked_pair(me, p.id)
+             -- Somebody who has made his Space Connections-only is still
+             -- findable by the people he is connected to, and by nobody else.
+             and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, p.id))
+             and (
+                  to_tsvector('simple', coalesce(p.name, '') || ' ' || coalesce(p.username, '') || ' ' || coalesce(p.city, '')) @@ tsq
+               or coalesce(p.name, '')     ilike public.search_like(q)
+               or coalesce(p.username, '') ilike public.search_like(q)
+               or coalesce(p.city, '')     ilike public.search_like(q)
+               or exists (
+                    select 1 from jsonb_array_elements_text(
+                      case when jsonb_typeof(p.interests) = 'array' then p.interests else '[]'::jsonb end
+                    ) as i where i ilike public.search_like(q)
+                  )
+             )
+           order by
+             (coalesce(p.name, '') ilike q || '%') desc,
+             (coalesce(p.username, '') ilike q || '%') desc,
+             p.name
+           limit n
+        ) x
+    ),
+
+    -- Flows. A post written inside a Circle is not a post you can search for:
+    -- it belongs to that room, and the room is the only door.
+    'posts', (
+      select coalesce(jsonb_agg(x.item), '[]'::jsonb)
+        from (
+          select jsonb_build_object(
+                   'id', po.id,
+                   'body', po.body,
+                   'mediaUrl', po.media_url,
+                   'audience', po.audience,
+                   'createdAt', po.created_at,
+                   'author', public.public_profile(me, po.author_id, false)
+                 ) as item
+            from posts po
+           where po.circle_id is null
+             and public.can_view_post(po, me)
+             and (
+                  to_tsvector('simple', coalesce(po.body, '')) @@ tsq
+               or coalesce(po.body, '') ilike public.search_like(q)
+             )
+           order by po.created_at desc, po.id desc
+           limit n
+        ) x
+    ),
+
+    -- Moments: the same test visible_moments applies, so a Moment you cannot
+    -- see is not searchable either.
+    'moments', (
+      select coalesce(jsonb_agg(x.item), '[]'::jsonb)
+        from (
+          select jsonb_build_object(
+                   'id', m.id,
+                   'kind', m.kind,
+                   'body', m.body,
+                   'mediaUrl', m.media_url,
+                   'createdAt', m.created_at,
+                   'author', public.public_profile(me, m.user_id, false)
+                 ) as item
+            from moments m
+           where m.expires_at > public.now_ms()
+             and public.can_view_moment(m, me)
+             and (
+                  to_tsvector('simple', coalesce(m.body, '')) @@ tsq
+               or coalesce(m.body, '') ilike public.search_like(q)
+             )
+           order by m.created_at desc, m.id desc
+           limit n
+        ) x
+    )
+  );
+end $$;
+
+create or replace function public.can_manage_media(p_path text, p_url text default null::text)
+returns boolean
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null or p_path is null or p_path = '' then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and public.media_object_path(p_url) <> p_path then
+    return false;
+  end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where public.media_object_path(url) = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (public.media_object_path(url) = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $function$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null::text)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+begin
+  if me is null or p_path is null or p_path = ''
+     or (p_url is not null and public.media_object_path(p_url) <> p_path) then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind in ('photos', 'seed') then
+    return jsonb_build_object('allowed', exists (
+      select 1 from photos ph join profiles pf on pf.id = ph.user_id
+        join privacy pr on pr.user_id = pf.id
+       where public.media_object_path(ph.url) = p_path
+         and (v_kind = 'seed' or split_part(p_path, '/', 2) = ph.user_id::text)
+         and (ph.user_id = me or (
+           pf.onboarded and pf.status = 'active'
+           and not public.is_blocked_pair(me, ph.user_id)
+           and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, ph.user_id))
+           and (not pr.incognito or public.is_connected_pair(me, ph.user_id))
+         ))
+    ), 'cacheable', false);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where public.media_object_path(mo.media_url) = p_path
+      and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url
+        and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where public.media_object_path(ms.media_url) = p_path and (c.user_a = me or c.user_b = me)
+        and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+          and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Media belongs to the original uploader's row, not an arbitrary row that
+  -- copied its URL. Visibility is checked again on every request.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where (public.media_object_path(po.media_url) = p_path or (p_url is not null and po.media_url = p_url))
+       and split_part(p_path, '/', 2) = po.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (public.media_object_path(m2.media_url) = p_path or (p_url is not null and m2.media_url = p_url))
+         and split_part(p_path, '/', 2) = m2.sender_id::text
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (public.media_object_path(c.cover_url) = p_path or (p_url is not null and c.cover_url = p_url))
+         and split_part(p_path, '/', 2) = c.owner_id::text
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $function$;
+
+/* ------------------------------------------------------------ dependents */
+
+-- Redefined without Vibes. Everything else in both bodies is their previous
+-- definition, character for character.
+
+-- The functions that only existed to serve Vibes. Each is dropped from its exact
+-- signature, including the older `create_vibe` overload, so nothing is left
+-- behind that could still be granted or called.
+drop function if exists public.vibes_feed(integer, bigint);
+drop function if exists public.space_vibes(bigint, integer, bigint);
+drop function if exists public.view_vibe(bigint);
+drop function if exists public.delete_vibe(bigint);
+drop function if exists public.react_to_vibe(bigint, boolean);
+drop function if exists public.vibe_viewers(bigint);
+drop function if exists public.cleanup_expired_vibes(integer);
+drop function if exists public.create_vibe(text, text, text, text, integer);
+drop function if exists public.create_vibe(text, text, text, text, integer, jsonb);
+-- These two take a `vibes` row, so they must go before the table does.
+drop function if exists public.can_view_vibe(public.vibes, bigint);
+drop function if exists public.serialize_vibe(public.vibes, bigint);
+drop function if exists public.vibe_lifetime_ms();
+
+/* ---------------------------------------------------------------- tables */
+
+-- Children first: both carry a foreign key to `vibes`.
+drop table if exists public.vibe_reactions cascade;
+drop table if exists public.vibe_views cascade;
+drop table if exists public.vibes cascade;
+
+/* --------------------------------------------------------------- outcome */
+
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+              where table_schema = 'public' and table_name in ('vibes', 'vibe_views', 'vibe_reactions')) then
+    raise exception 'a Vibes table survived the drop';
+  end if;
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public' and p.proname ilike '%vibe%') then
+    raise exception 'a Vibes function survived the drop';
+  end if;
+  -- The posts, Moments, Circles and sounds that were never Vibes are still here.
+  perform 1 from public.posts;
+  perform 1 from public.moments;
+  perform 1 from public.circles;
+end $$;
+
+-- ================================ 20261104140000_circle_requests_and_highlights.sql
+
+-- Circles become active: highlights worth looking at, and a way in.
+--
+-- §3 of the brief asked for two things that are really one idea. A Circle you
+-- are already in should show you the thing inside it that people actually
+-- engaged with — not a badge, not an "unread 3" — and a Circle you are not in
+-- should be joinable, with the owner deciding, and with that rule enforced here
+-- rather than in the button that happens to be on screen.
+--
+-- Two pieces follow:
+--
+--   * `circle_highlights()` — for the Circles you belong to, the post with the
+--     most reactions in each, plus how many messages that room has had this
+--     week. Every number comes from a row. There is no seeded engagement and no
+--     derived guess: a Circle nobody has reacted to simply has no highlight.
+--
+--   * join requests — a real table with a pending row, an owner's decision, and
+--     a membership that only `decide_circle_request()` can create. The whole
+--     point of approving in the database is that a client cannot approve
+--     itself: the request table has RLS on and no policies, so the only way to
+--     read or write it is through these functions.
+--
+-- Nothing here changes what a Circle's contents are. A public Circle is still
+-- findable, not readable: the request grants membership, and membership is what
+-- reads the room.
+
+/* ---------------------------------------------------------------- requests */
+
+create table if not exists public.circle_join_requests (
+  id          bigint generated always as identity primary key,
+  circle_id   bigint not null references public.circles(id) on delete cascade,
+  member_id   bigint not null references public.profiles(id) on delete cascade,
+  status      text not null default 'pending'
+                check (status in ('pending', 'approved', 'rejected', 'cancelled')),
+  created_at  bigint not null default public.now_ms(),
+  decided_at  bigint,
+  decided_by  bigint references public.profiles(id) on delete set null
+);
+
+-- One pending request per person per room. A decided row may be followed by a
+-- new pending one, which is what "ask again later" means.
+create unique index if not exists circle_join_requests_pending_idx
+  on public.circle_join_requests (circle_id, member_id) where status = 'pending';
+
+create index if not exists circle_join_requests_circle_idx
+  on public.circle_join_requests (circle_id, created_at desc);
+
+alter table public.circle_join_requests enable row level security;
+-- Deliberately no policies: every read and every write goes through the
+-- functions below, which check who is asking.
+
+/** How many people a Circle holds. One number, in one place. */
+create or replace function public.circle_capacity()
+returns integer
+language sql
+immutable
+as $function$
+  select 12
+$function$;
+
+/**
+ * Ask to join.
+ *
+ * Only a public Circle takes requests. Everything that could make the asking a
+ * lie — a block between the two people, a full room, already being inside — is
+ * refused here with a sentence a person can read, because the client is not the
+ * place that gets to decide any of it.
+ */
+create or replace function public.request_join_circle(p_circle_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  c   public.circles;
+  req public.circle_join_requests;
+  n   int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle is not here any more.');
+  end if;
+
+  if c.visibility <> 'public' then
+    perform public.crushly_fail(403, '', 'That Circle is not taking new members.');
+  end if;
+
+  if exists (select 1 from circle_members where circle_id = c.id and member_id = me) then
+    perform public.crushly_fail(409, '', 'You are already in this Circle.');
+  end if;
+
+  if public.is_blocked_pair(me, c.owner_id) then
+    perform public.crushly_fail(403, '', 'You cannot join this Circle.');
+  end if;
+
+  select count(*) into n from circle_members where circle_id = c.id;
+  if n >= public.circle_capacity() then
+    perform public.crushly_fail(409, '', 'This Circle is full.');
+  end if;
+
+  select * into req from circle_join_requests
+   where circle_id = c.id and member_id = me and status = 'pending';
+  if found then
+    return jsonb_build_object('status', 'pending', 'requestId', req.id);
+  end if;
+
+  insert into circle_join_requests (circle_id, member_id)
+    values (c.id, me)
+    returning * into req;
+  return jsonb_build_object('status', 'pending', 'requestId', req.id);
+end $function$;
+
+/** Take the request back before anybody answers it. */
+create or replace function public.cancel_join_request(p_circle_id bigint)
+returns boolean
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  update circle_join_requests
+     set status = 'cancelled', decided_at = public.now_ms(), decided_by = me
+   where circle_id = p_circle_id and member_id = me and status = 'pending';
+  return found;
+end $function$;
+
+/**
+ * The owner's side: who has asked, for the rooms you started.
+ *
+ * Returns the asker as a profile card, because the decision is about a person
+ * and not about an id. Circles you own but that are not public cannot have
+ * requests, so they simply return nothing.
+ */
+create or replace function public.my_circle_requests()
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', r.id,
+             'circleId', r.circle_id,
+             'circleName', c.name,
+             'createdAt', r.created_at,
+             'member', public.public_profile(me, r.member_id, false)
+           ) order by r.created_at)
+      from circle_join_requests r
+      join circles c on c.id = r.circle_id
+     where c.owner_id = me
+       and r.status = 'pending'
+       and r.member_id <> me
+  ), '[]'::jsonb);
+end $function$;
+
+/**
+ * Approve or reject.
+ *
+ * The membership is created here, so an approved request and a row in
+ * `circle_members` are the same event. A room that filled up between the asking
+ * and the answer refuses the approval instead of silently exceeding twelve.
+ */
+create or replace function public.decide_circle_request(p_request_id bigint, p_approve boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  r   public.circle_join_requests;
+  c   public.circles;
+  n   int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into r from circle_join_requests where id = p_request_id;
+  if not found or r.status <> 'pending' then
+    perform public.crushly_fail(404, '', 'That request has already been answered.');
+  end if;
+
+  select * into c from circles where id = r.circle_id;
+  if not found or c.owner_id <> me then
+    perform public.crushly_fail(403, '', 'Only the person who started this Circle can answer.');
+  end if;
+
+  if p_approve then
+    select count(*) into n from circle_members where circle_id = c.id;
+    if n >= public.circle_capacity()
+       and not exists (select 1 from circle_members where circle_id = c.id and member_id = r.member_id) then
+      perform public.crushly_fail(409, '', 'This Circle is full.');
+    end if;
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, r.member_id, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+  end if;
+
+  update circle_join_requests
+     set status = case when p_approve then 'approved' else 'rejected' end,
+         decided_at = public.now_ms(),
+         decided_by = me
+   where id = r.id;
+
+  return jsonb_build_object('ok', true, 'approved', p_approve, 'memberId', r.member_id, 'circleId', c.id);
+end $function$;
+
+/** Where you stand with one room: for the button on somebody's Space. */
+create or replace function public.circle_request_state(p_circle_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  return jsonb_build_object(
+    'requested', exists (
+      select 1 from circle_join_requests
+       where circle_id = p_circle_id and member_id = me and status = 'pending'
+    )
+  );
+end $function$;
+
+/* -------------------------------------------------------------- highlights */
+
+/**
+ * The most engaged thing in each of your Circles.
+ *
+ * A highlight is one of two facts, and both are counted:
+ *
+ *   * the post in the room with the most reactions — with its reactions and
+ *     comments;
+ *   * how many messages the room has had in the last seven days.
+ *
+ * Ordered by engagement, so the carousel leads with the room people are
+ * actually using. A Circle with no reactions and no recent messages still
+ * appears if it has messages at all, but at the back, and its `kind` is
+ * `quiet`. Rooms with nothing in them are not returned: an empty card is a
+ * worse empty state than no card.
+ */
+create or replace function public.circle_highlights(p_limit integer default 8)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  n  int := least(greatest(coalesce(p_limit, 8), 1), 20);
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(item order by score desc, circle_id)
+      from (
+        select
+               (coalesce(best.likes, 0) * 3) + coalesce(best.comments, 0) * 2 + coalesce(week.messages, 0) as score,
+               c.id as circle_id,
+               jsonb_build_object(
+                 'circleId', c.id,
+                 'circleName', c.name,
+                 'theme', c.theme,
+                 'coverUrl', c.cover_url,
+                 'memberCount', (select count(*) from circle_members cm where cm.circle_id = c.id),
+                 'postId', best.post_id,
+                 'body', best.body,
+                 'mediaUrl', best.media_url,
+                 'likes', coalesce(best.likes, 0),
+                 'comments', coalesce(best.comments, 0),
+                 'messages', coalesce(week.messages, 0),
+                 'kind', case when best.post_id is not null and coalesce(best.likes, 0) > 0 then 'post'
+                              when coalesce(week.messages, 0) > 0 then 'conversation'
+                              else 'quiet' end,
+                 'score', (coalesce(best.likes, 0) * 3) + coalesce(best.comments, 0) * 2 + coalesce(week.messages, 0),
+                 'totalMessages', (select count(*) from circle_messages m where m.circle_id = c.id)
+               ) as item
+          from circles c
+          join circle_members mine on mine.circle_id = c.id and mine.member_id = me
+          left join lateral (
+            select po.id as post_id, po.body, po.media_url,
+                   (select count(*) from post_reactions pr where pr.post_id = po.id) as likes,
+                   (select count(*) from post_comments pc where pc.post_id = po.id) as comments
+              from posts po
+             where po.circle_id = c.id
+             order by (select count(*) from post_reactions pr where pr.post_id = po.id) desc,
+                      po.created_at desc
+             limit 1
+          ) best on true
+          left join lateral (
+            select count(*) as messages
+              from circle_messages m
+             where m.circle_id = c.id
+               and m.created_at > public.now_ms() - 7 * 24 * 60 * 60 * 1000
+          ) week on true
+         where best.post_id is not null or coalesce(week.messages, 0) > 0
+         order by score desc, c.id
+         limit n
+      ) ranked
+  ), '[]'::jsonb);
+end $function$;
+
+/* ------------------------------------------------------------------ grants */
+
+revoke all on function public.circle_capacity() from public, anon, authenticated;
+grant execute on function public.circle_capacity() to authenticated, service_role;
+
+revoke all on function public.request_join_circle(bigint) from public, anon, authenticated;
+grant execute on function public.request_join_circle(bigint) to authenticated, service_role;
+
+revoke all on function public.cancel_join_request(bigint) from public, anon, authenticated;
+grant execute on function public.cancel_join_request(bigint) to authenticated, service_role;
+
+revoke all on function public.my_circle_requests() from public, anon, authenticated;
+grant execute on function public.my_circle_requests() to authenticated, service_role;
+
+revoke all on function public.decide_circle_request(bigint, boolean) from public, anon, authenticated;
+grant execute on function public.decide_circle_request(bigint, boolean) to authenticated, service_role;
+
+revoke all on function public.circle_request_state(bigint) from public, anon, authenticated;
+grant execute on function public.circle_request_state(bigint) to authenticated, service_role;
+
+revoke all on function public.circle_highlights(integer) from public, anon, authenticated;
+grant execute on function public.circle_highlights(integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261104151119_crushes_feed_and_picks_of.sql
+
+-- Reconciliation, not a change. This file exists so git and the live database
+-- agree about what has been applied.
+--
+-- The live project recorded a migration under this version stamp, named
+-- `crushes_feed_and_picks_of`, that exists in no commit of this repository. It
+-- created two functions, and both were then dealt with again on purpose:
+--
+--   * `public.crushes_feed(p_limit integer, p_after bigint)` — a *second*
+--     function called `crushes_feed`, alongside the people list `crushes_feed()`
+--     that Crushes had always used. It was the post feed. It is gone from the
+--     live database, and the feature it was written for now lives in
+--     `20261104090000_crushes_feed.sql` under a name that cannot collide:
+--     `crush_posts_feed` (see the note at the top of that file — the two-argument
+--     overload is deliberately dropped there, "if this migration is replayed
+--     over a database that ran the earlier draft").
+--
+--   * `public.picks_of(p_user_id, p_limit, p_after)` — a draft that made
+--     somebody's Picked readable from their Space. Deliberately removed: Picked
+--     is private, not a public shelf, and `20261104090000_crushes_feed.sql`
+--     drops it for any database that ran the draft.
+--
+-- So there is nothing to create here, and creating anything would undo
+-- `20261104090000` two versions later.
+--
+-- Why the file exists at all: `supabase db push` decides what to apply by
+-- reading `supabase_migrations.schema_migrations` and comparing it to the files
+-- in this directory. A version in the database with no file here is a hard stop
+-- — the CLI refuses with "Remote migration versions not found in local
+-- migrations directory" and pushes *nothing*, not even the migrations that are
+-- genuinely missing. That is what the 1.0.53 push did. Recording this version in
+-- the repository lets the three migrations that never reached production
+-- (`20261104090000`, `20261104130000`, `20261104140000`) finally land, and lets
+-- the drift check in `.github/workflows/db-migrations.yml` compare the two lists
+-- from now on.
+
+do $$
+begin
+  raise notice 'reconciliation only: see the comment at the top of this file';
+end $$;
+
+-- ================================ 20261105090000_media_bucket_private.sql
+
+-- The media bucket is private. This is the file that says so.
+--
+-- The live project has been private for a while, but no migration ever said so:
+-- `20261008000003_storage.sql` inserts the bucket with `public = true` and
+-- creates
+--
+--     create policy "media_public_read" on storage.objects
+--       for select to public using (bucket_id = 'media');
+--
+-- — whole bucket, every prefix, no token, forever. Reading the 55 migrations in
+-- order, nothing afterwards flips `public` back or drops that policy. The fix
+-- that closed it was made in the dashboard, and a fix made in a dashboard is a
+-- fix that exists in exactly one place.
+--
+-- That matters beyond tidiness. This chain is how a second environment comes
+-- into being: a Supabase branch, a restore, staging, a rebuild after a disaster.
+-- Every one of those would have come up with a world-readable bucket containing
+-- `messages/` — which is where Whisper photos and voice notes live, and which
+-- outlives the message.
+--
+-- Two statements, both idempotent, both no-ops on the live project:
+--
+--   1. the bucket is private at the bucket level, which is what governs
+--      `/storage/v1/object/public/...`;
+--   2. the blanket read policy is gone, so reads go through `media_private_read`
+--      → `can_view_media(name)`, which is where blocks, connections, Moment
+--      expiry and Circles already live.
+--
+-- `supabase/tests/storage_privacy.sql` asserts both, so this cannot quietly
+-- come back.
+
+update storage.buckets set public = false where id = 'media';
+
+drop policy if exists "media_public_read" on storage.objects;
+
+-- ================================ 20261105120000_circle_discovery_and_membership.sql
+
+-- Circles you can find, and rooms you have to be let into.
+--
+-- Until now a Circle had one switch: `visibility`, public or not. That was one
+-- question pretending to be two, and it produced the worst of both answers —
+-- a room could be findable on a Space while having no way in at all, and an
+-- owner had no way to say "anyone who wants in, come in".
+--
+-- Two independent settings replace it:
+--
+--   discoverable   may this room be found by people who are not in it?
+--                  It appears in Connections' discovery, it can be recommended,
+--                  and its preview is readable. Off means the room is invisible
+--                  outside its members, and only the owner can bring people in.
+--
+--   join_policy    when somebody who found it asks to come in, what happens?
+--                    request  they ask, the owner answers. Pending grants nothing.
+--                    open     they are in, immediately. Still a join, not a dodge
+--                             around capacity or a block.
+--                    invite   there is no asking. The owner adds people.
+--
+-- The two are orthogonal on purpose. "Findable but you must be approved",
+-- "findable and open", and "hidden and I choose who comes in" are three
+-- different communities that used to be one.
+--
+-- Everything below is a function with RLS under it: `circles` is still readable
+-- only through membership, so a discoverable room is findable without being
+-- readable. Finding a room means seeing its name, its face, who runs it and how
+-- busy it is — never its posts and never its conversation.
+
+/* ------------------------------------------------------------- the settings */
+
+alter table public.circles
+  add column if not exists discoverable boolean not null default false;
+
+alter table public.circles
+  add column if not exists join_policy text not null default 'request';
+
+alter table public.circles
+  drop constraint if exists circles_join_policy_check;
+alter table public.circles
+  add constraint circles_join_policy_check check (join_policy in ('request', 'open', 'invite'));
+
+-- A room that was public was, by definition, findable. Those keep the one thing
+-- they had, and start on the safest of the three policies.
+update public.circles
+   set discoverable = true
+ where visibility = 'public'
+   and discoverable = false;
+
+/**
+ * One truth, two columns.
+ *
+ * `visibility` is what older builds read and what older fixtures write;
+ * `discoverable` is what the rest of this migration decides by. A trigger keeps
+ * them from ever disagreeing — including for an INSERT from an old build, and
+ * including for a hand-written fixture, which is how the existing test suite
+ * builds its rooms.
+ */
+create or replace function public.circles_mirror_visibility()
+returns trigger
+language plpgsql
+as $function$
+begin
+  if tg_op = 'INSERT' then
+    if new.visibility = 'public' then
+      new.discoverable := true;
+    end if;
+    new.visibility := case when new.discoverable then 'public' else 'connections' end;
+  elsif new.discoverable is distinct from old.discoverable then
+    new.visibility := case when new.discoverable then 'public' else 'connections' end;
+  elsif new.visibility is distinct from old.visibility then
+    new.discoverable := (new.visibility = 'public');
+  end if;
+  return new;
+end $function$;
+
+drop trigger if exists circles_mirror_visibility on public.circles;
+create trigger circles_mirror_visibility
+  before insert or update on public.circles
+  for each row execute function public.circles_mirror_visibility();
+
+/**
+ * The owner's answer to both questions at once.
+ *
+ * `visibility` is kept in step so builds written before this migration keep
+ * drawing the right badge; `discoverable` is the truth from here on.
+ */
+create or replace function public.set_circle_access(
+  p_circle_id bigint, p_discoverable boolean, p_join_policy text
+) returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_owner bigint;
+  v_discoverable boolean := coalesce(p_discoverable, false);
+  v_policy text := case when p_join_policy in ('request', 'open', 'invite') then p_join_policy else 'request' end;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select owner_id into v_owner from circles where id = p_circle_id;
+  if v_owner is null then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+  if v_owner <> me then
+    perform public.crushly_fail(403, '', 'Only the owner can change this Circle.');
+  end if;
+
+  update circles
+     set discoverable = v_discoverable,
+         join_policy = v_policy,
+         visibility = case when v_discoverable then 'public' else 'connections' end
+   where id = p_circle_id;
+
+  return jsonb_build_object(
+    'id', p_circle_id,
+    'discoverable', v_discoverable,
+    'joinPolicy', v_policy,
+    'visibility', case when v_discoverable then 'public' else 'connections' end
+  );
+end $function$;
+
+/**
+ * What a room's settings are, for the management screen.
+ *
+ * Owner only: the numbers behind the switches are the owner's business, and a
+ * pending request is somebody's name.
+ */
+create or replace function public.circle_settings(p_circle_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+  if c.owner_id <> me then
+    perform public.crushly_fail(403, '', 'Only the owner can manage this Circle.');
+  end if;
+  return jsonb_build_object(
+    'id', c.id,
+    'name', c.name,
+    'discoverable', c.discoverable,
+    'joinPolicy', c.join_policy,
+    'capacity', public.circle_capacity(),
+    'memberCount', (select count(*) from circle_members where circle_id = c.id),
+    'pendingRequests', (select count(*) from circle_join_requests r where r.circle_id = c.id and r.status = 'pending'),
+    'pendingInvitations', (select count(*) from circle_invitations i where i.circle_id = c.id and i.status = 'pending')
+  );
+end $function$;
+
+/* ------------------------------------------------------------ invitations */
+
+-- The other direction of the same question. A request is somebody asking to
+-- come in; an invitation is the owner asking somebody in. Both end in a row in
+-- `circle_members`, and neither does so by itself.
+create table if not exists public.circle_invitations (
+  id          bigint generated always as identity primary key,
+  circle_id   bigint not null references public.circles(id) on delete cascade,
+  member_id   bigint not null references public.profiles(id) on delete cascade,
+  invited_by  bigint not null references public.profiles(id) on delete cascade,
+  status      text not null default 'pending'
+                check (status in ('pending', 'accepted', 'declined', 'cancelled')),
+  created_at  bigint not null default public.now_ms(),
+  decided_at  bigint
+);
+
+-- One live invitation per person per room, the same way there is one live
+-- request: asking twice is not two invitations.
+create unique index if not exists circle_invitations_pending_idx
+  on public.circle_invitations (circle_id, member_id) where status = 'pending';
+
+create index if not exists circle_invitations_member_idx
+  on public.circle_invitations (member_id, created_at desc);
+
+alter table public.circle_invitations enable row level security;
+-- No policies, same as requests: every read and write is a function below.
+
+/* -------------------------------------------------------- notification kinds */
+
+-- Four new things can happen to a person: somebody asked to come into their
+-- room, they were let in, they were turned away, and they were asked in.
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('crush', 'deep_crush', 'mutual', 'message', 'moment_reply',
+                  'moment_reaction', 'verified', 'verification_rejected',
+                  'post_reaction', 'post_comment',
+                  'circle_request', 'circle_approved', 'circle_declined', 'circle_invite'));
+
+/* --------------------------------------------------------------- discovery */
+
+/**
+ * Rooms you could walk into, for the Connections feed.
+ *
+ * The rules, in order, because each one is a refusal somebody could otherwise
+ * complain about:
+ *
+ *   * only discoverable rooms — a private family room is not a suggestion;
+ *   * never a room you are in, or the one you own;
+ *   * never a room whose owner has blocked you, or you them;
+ *   * never a room that is already full, because recommending a door that
+ *     cannot open is worse than recommending nothing;
+ *   * ranked by what makes a room worth joining: whether it is about something
+ *     you said you were into, whether people you are connected to are already
+ *     inside, and how alive it is this week. Member count is the last tiebreak,
+ *     not the first score, so a big dead room does not outrank a small one
+ *     people are actually using.
+ *
+ * `state` carries where you already stand, so the card can show the truth:
+ * `none`, `pending`, `invited`, or `member` (a member is not a discovery, but
+ * the query is also used to place a card for a room you just left).
+ *
+ * Paging is offset-based and the order is deterministic, so "load more" never
+ * shows the same room twice and never skips one.
+ */
+create or replace function public.discover_circles(p_limit integer default 6, p_offset integer default 0)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  lim int := least(greatest(coalesce(p_limit, 6), 1), 20);
+  off int := greatest(coalesce(p_offset, 0), 0);
+  my_interests jsonb;
+  week bigint := public.now_ms() - 7 * 24 * 60 * 60 * 1000;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select coalesce(interests, '[]'::jsonb) into my_interests from profiles where id = me;
+  my_interests := coalesce(my_interests, '[]'::jsonb);
+
+  return coalesce((
+    select jsonb_agg(item order by score desc, member_count desc, id)
+      from (
+        select c.id,
+               c.member_count,
+               (
+                 -- Is it about something you said you were into? A theme that
+                 -- matches one of your interests is the strongest single signal.
+                 case when c.theme is not null
+                       and exists (
+                         select 1 from jsonb_array_elements_text(my_interests) i
+                          where lower(i) = lower(c.theme)
+                             or c.theme ilike '%' || i || '%'
+                             or i ilike '%' || c.theme || '%'
+                       ) then 8 else 0 end
+                 -- People you already know, inside.
+                 + 4 * c.friends_inside
+                 -- A room being used this week beats a room with a big history.
+                 + 2 * least(c.posts_week, 5)
+                 + 2 * least(c.messages_week, 5)
+                 + least(c.reactions_week, 10)
+                 + least(c.member_count, 12)
+               ) as score,
+               jsonb_build_object(
+                 'id', c.id,
+                 'name', c.name,
+                 'about', c.about,
+                 'theme', c.theme,
+                 'coverUrl', c.cover_url,
+                 'createdAt', c.created_at,
+                 'ownerId', c.owner_id,
+                 'ownerName', c.owner_name,
+                 'ownerUsername', c.owner_username,
+                 'ownerPhoto', c.owner_photo,
+                 'memberCount', c.member_count,
+                 'capacity', public.circle_capacity(),
+                 'discoverable', true,
+                 'joinPolicy', c.join_policy,
+                 'postsThisWeek', c.posts_week,
+                 'messagesThisWeek', c.messages_week,
+                 'posts', c.posts_total,
+                 'messages', c.messages_total,
+                 'friendsInside', c.friends_inside,
+                 'state', case
+                            when exists (select 1 from circle_members m where m.circle_id = c.id and m.member_id = me) then 'member'
+                            when exists (select 1 from circle_join_requests r where r.circle_id = c.id and r.member_id = me and r.status = 'pending') then 'pending'
+                            when exists (select 1 from circle_invitations i where i.circle_id = c.id and i.member_id = me and i.status = 'pending') then 'invited'
+                            else 'none'
+                          end
+               ) as item
+          from (
+            select c0.*,
+                   (select count(*) from circle_members m0 where m0.circle_id = c0.id) as member_count,
+                   (select count(*) from posts p0 where p0.circle_id = c0.id) as posts_total,
+                   (select count(*) from posts p0 where p0.circle_id = c0.id and p0.created_at > week) as posts_week,
+                   (select count(*) from circle_messages m0 where m0.circle_id = c0.id) as messages_total,
+                   (select count(*) from circle_messages m0 where m0.circle_id = c0.id and m0.created_at > week) as messages_week,
+                   (select count(*) from posts p0
+                      join post_reactions r0 on r0.post_id = p0.id
+                     where p0.circle_id = c0.id and r0.created_at > week) as reactions_week,
+                   (select count(distinct cm0.member_id) from circle_members cm0
+                     where cm0.circle_id = c0.id and cm0.member_id <> me
+                       and public.is_connected_pair(me, cm0.member_id)) as friends_inside,
+                   po.name as owner_name,
+                   po.username as owner_username,
+                   (select ph.url from photos ph where ph.user_id = po.id order by ph.position, ph.id limit 1) as owner_photo
+              from circles c0
+              join profiles po on po.id = c0.owner_id
+             where c0.discoverable
+               and not exists (select 1 from circle_members m1 where m1.circle_id = c0.id and m1.member_id = me)
+               and not public.is_blocked_pair(me, c0.owner_id)
+          ) c
+         where c.member_count < public.circle_capacity()
+         order by score desc, c.member_count desc, c.id
+         limit lim offset off
+      ) ranked
+  ), '[]'::jsonb);
+end $function$;
+
+/* ----------------------------------------------------------------- preview */
+
+/**
+ * One room, seen from outside.
+ *
+ * A member sees the room. A non-member sees it only if it is discoverable, and
+ * even then sees only what a stranger may know: what it is called, what it is
+ * about, its face, who runs it, who is in it, and how much has happened — counts,
+ * not contents. The posts and the conversation stay behind membership, which is
+ * the one rule Circles have had since the first migration and is not relaxed
+ * here to make a preview look fuller.
+ */
+create or replace function public.circle_preview(p_circle_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+  member boolean;
+  week bigint := public.now_ms() - 7 * 24 * 60 * 60 * 1000;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+
+  member := public.is_circle_member(c.id, me);
+  if not member and not c.discoverable then
+    perform public.crushly_fail(403, '', 'That Circle is private.');
+  end if;
+
+  return jsonb_build_object(
+    'circle', jsonb_build_object(
+      'id', c.id,
+      'name', c.name,
+      'about', c.about,
+      'theme', c.theme,
+      'coverUrl', c.cover_url,
+      'createdAt', c.created_at,
+      'ownerId', c.owner_id,
+      'discoverable', c.discoverable,
+      'joinPolicy', c.join_policy,
+      'memberCount', (select count(*) from circle_members m where m.circle_id = c.id),
+      'capacity', public.circle_capacity()
+    ),
+    'owner', public.public_profile(me, c.owner_id, false),
+    'members', coalesce((
+      select jsonb_agg(faces.item order by faces.joined_at)
+        from (
+          select public.public_profile(me, m.member_id, false) as item, m.joined_at
+            from circle_members m
+           where m.circle_id = c.id
+             and not public.is_blocked_pair(me, m.member_id)
+           order by m.joined_at
+           limit 8
+        ) faces
+    ), '[]'::jsonb),
+    'activity', jsonb_build_object(
+      'posts', (select count(*) from posts p where p.circle_id = c.id),
+      'postsThisWeek', (select count(*) from posts p where p.circle_id = c.id and p.created_at > week),
+      'messagesThisWeek', (select count(*) from circle_messages m where m.circle_id = c.id and m.created_at > week),
+      'reactionsThisWeek', (select count(*) from posts p join post_reactions r on r.post_id = p.id
+                             where p.circle_id = c.id and r.created_at > week),
+      'lastActivityAt', greatest(
+        coalesce((select max(p.created_at) from posts p where p.circle_id = c.id), 0),
+        coalesce((select max(m.created_at) from circle_messages m where m.circle_id = c.id), 0)
+      )
+    ),
+    'state', case
+               when member then 'member'
+               when exists (select 1 from circle_join_requests r where r.circle_id = c.id and r.member_id = me and r.status = 'pending') then 'pending'
+               when exists (select 1 from circle_invitations i where i.circle_id = c.id and i.member_id = me and i.status = 'pending') then 'invited'
+               else 'none'
+             end,
+    'myRole', case when member then (select m.role from circle_members m where m.circle_id = c.id and m.member_id = me) else null end,
+    'full', (select count(*) from circle_members m where m.circle_id = c.id) >= public.circle_capacity()
+  );
+end $function$;
+
+/* -------------------------------------------------------------------- join */
+
+/**
+ * Walking in.
+ *
+ * One function for all three policies, because the button and the rule should
+ * never be able to disagree: an `open` room makes you a member now, a `request`
+ * room makes you a pending row, and an `invite` room refuses — including when
+ * the client ignored the fact that there was no button to press.
+ *
+ * An outstanding invitation is honoured on the way in: if the owner already
+ * asked you, asking back is not a request, it is an acceptance.
+ */
+create or replace function public.join_circle(p_circle_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+  req public.circle_join_requests;
+  inv public.circle_invitations;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+
+  if exists (select 1 from circle_members where circle_id = c.id and member_id = me) then
+    return jsonb_build_object('state', 'member', 'already', true);
+  end if;
+
+  if public.is_blocked_pair(me, c.owner_id) then
+    perform public.crushly_fail(403, '', 'You cannot join this Circle.');
+  end if;
+
+  -- Invited already: this is not an ask, it is an answer.
+  select * into inv from circle_invitations
+   where circle_id = c.id and member_id = me and status = 'pending';
+  if found then
+    select count(*) into n from circle_members where circle_id = c.id;
+    if n >= public.circle_capacity() then
+      perform public.crushly_fail(409, '', 'This Circle is full.');
+    end if;
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, me, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    update circle_invitations
+       set status = 'accepted', decided_at = public.now_ms()
+     where id = inv.id;
+    perform public.notify_to(c.owner_id, 'circle_approved', me, c.id, left(c.name, 60));
+    return jsonb_build_object('state', 'member', 'viaInvitation', true);
+  end if;
+
+  if not c.discoverable then
+    perform public.crushly_fail(403, '', 'That Circle is private.');
+  end if;
+
+  if c.join_policy = 'invite' then
+    perform public.crushly_fail(403, '', 'This Circle only takes people the owner adds.');
+  end if;
+
+  select count(*) into n from circle_members where circle_id = c.id;
+  if n >= public.circle_capacity() then
+    perform public.crushly_fail(409, '', 'This Circle is full.');
+  end if;
+
+  if c.join_policy = 'open' then
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, me, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    perform public.notify_to(c.owner_id, 'circle_approved', me, c.id, left(c.name, 60));
+    return jsonb_build_object('state', 'member');
+  end if;
+
+  select * into req from circle_join_requests
+   where circle_id = c.id and member_id = me and status = 'pending';
+  if not found then
+    insert into circle_join_requests (circle_id, member_id)
+      values (c.id, me)
+      returning * into req;
+    perform public.notify_to(c.owner_id, 'circle_request', me, c.id, left(c.name, 60));
+  end if;
+
+  return jsonb_build_object('state', 'pending', 'requestId', req.id);
+end $function$;
+
+/**
+ * The owner's decision, now with the two notifications it always implied.
+ *
+ * Approval is the only path that creates a membership from a request, and it
+ * hands the new member the room's name rather than an id: "You're in" should
+ * say what you are in.
+ */
+create or replace function public.decide_circle_request(p_request_id bigint, p_approve boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  r public.circle_join_requests;
+  c public.circles;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into r from circle_join_requests where id = p_request_id;
+  if not found or r.status <> 'pending' then
+    perform public.crushly_fail(404, '', 'That request has already been answered.');
+  end if;
+
+  select * into c from circles where id = r.circle_id;
+  if not found or c.owner_id <> me then
+    perform public.crushly_fail(403, '', 'Only the person who started this Circle can answer.');
+  end if;
+
+  if p_approve then
+    select count(*) into n from circle_members where circle_id = c.id;
+    if n >= public.circle_capacity()
+       and not exists (select 1 from circle_members where circle_id = c.id and member_id = r.member_id) then
+      perform public.crushly_fail(409, '', 'This Circle is full.');
+    end if;
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, r.member_id, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    perform public.notify_to(r.member_id, 'circle_approved', me, c.id, left(c.name, 60));
+  else
+    perform public.notify_to(r.member_id, 'circle_declined', me, c.id, left(c.name, 60));
+  end if;
+
+  update circle_join_requests
+     set status = case when p_approve then 'approved' else 'rejected' end,
+         decided_at = public.now_ms(),
+         decided_by = me
+   where id = r.id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'approved', p_approve,
+    'memberId', r.member_id,
+    'circleId', c.id,
+    'circleName', c.name
+  );
+end $function$;
+
+/* ------------------------------------------------------------- invitations */
+
+/**
+ * Asking somebody in.
+ *
+ * Refused for an open room — there is nothing to invite people to when the door
+ * is already unlocked, and a pending invitation there would be paperwork. If the
+ * person has already asked to join, this is the answer to that request, so it
+ * becomes membership and the request is marked approved rather than left
+ * standing next to a membership that makes it meaningless.
+ */
+create or replace function public.invite_to_circle(p_circle_id bigint, p_member_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+  req public.circle_join_requests;
+  inv public.circle_invitations;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+  if c.owner_id <> me then
+    perform public.crushly_fail(403, '', 'Only the person who started this Circle can add people.');
+  end if;
+  if p_member_id is null or p_member_id = me then
+    perform public.crushly_fail(400, '', 'That is not somebody to add.');
+  end if;
+  if not exists (select 1 from profiles where id = p_member_id) then
+    perform public.crushly_fail(404, '', 'That member is not here any more.');
+  end if;
+  if exists (select 1 from circle_members where circle_id = c.id and member_id = p_member_id) then
+    perform public.crushly_fail(409, '', 'They are already in this Circle.');
+  end if;
+  if public.is_blocked_pair(me, p_member_id) then
+    perform public.crushly_fail(403, '', 'You cannot add this person.');
+  end if;
+  if c.join_policy = 'open' then
+    perform public.crushly_fail(409, '', 'Anyone can join this Circle already — no invitation needed.');
+  end if;
+
+  select count(*) into n from circle_members where circle_id = c.id;
+  if n >= public.circle_capacity() then
+    perform public.crushly_fail(409, '', 'This Circle is full.');
+  end if;
+
+  -- They asked; this is the yes.
+  select * into req from circle_join_requests
+   where circle_id = c.id and member_id = p_member_id and status = 'pending';
+  if found then
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, p_member_id, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    update circle_join_requests
+       set status = 'approved', decided_at = public.now_ms(), decided_by = me
+     where id = req.id;
+    perform public.notify_to(p_member_id, 'circle_approved', me, c.id, left(c.name, 60));
+    return jsonb_build_object('state', 'member', 'fromRequest', true);
+  end if;
+
+  select * into inv from circle_invitations
+   where circle_id = c.id and member_id = p_member_id and status = 'pending';
+  if not found then
+    insert into circle_invitations (circle_id, member_id, invited_by)
+      values (c.id, p_member_id, me)
+      returning * into inv;
+    perform public.notify_to(p_member_id, 'circle_invite', me, c.id, left(c.name, 60));
+  end if;
+
+  return jsonb_build_object('state', 'invited', 'invitationId', inv.id);
+end $function$;
+
+/** The invitations waiting on you. */
+create or replace function public.my_circle_invitations()
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', i.id,
+             'circleId', i.circle_id,
+             'circleName', c.name,
+             'about', c.about,
+             'theme', c.theme,
+             'coverUrl', c.cover_url,
+             'memberCount', (select count(*) from circle_members m where m.circle_id = c.id),
+             'createdAt', i.created_at,
+             'invitedBy', public.public_profile(me, i.invited_by, false),
+             'state', 'invited'
+           ) order by i.created_at desc)
+      from circle_invitations i
+      join circles c on c.id = i.circle_id
+     where i.member_id = me and i.status = 'pending'
+       and not public.is_blocked_pair(me, c.owner_id)
+  ), '[]'::jsonb);
+end $function$;
+
+/**
+ * Yes or no to an invitation.
+ *
+ * Only the person invited can answer, and accepting goes through the same
+ * capacity test as every other way in — an invitation is not a key that
+ * overfills a room.
+ */
+create or replace function public.respond_circle_invitation(p_invitation_id bigint, p_accept boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  inv public.circle_invitations;
+  c public.circles;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into inv from circle_invitations where id = p_invitation_id;
+  if not found or inv.member_id <> me or inv.status <> 'pending' then
+    perform public.crushly_fail(404, '', 'That invitation is no longer open.');
+  end if;
+
+  select * into c from circles where id = inv.circle_id;
+
+  if p_accept then
+    select count(*) into n from circle_members where circle_id = c.id;
+    if n >= public.circle_capacity() then
+      perform public.crushly_fail(409, '', 'This Circle is full.');
+    end if;
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, me, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    perform public.notify_to(c.owner_id, 'circle_approved', me, c.id, left(c.name, 60));
+  end if;
+
+  update circle_invitations
+     set status = case when p_accept then 'accepted' else 'declined' end,
+         decided_at = public.now_ms()
+   where id = inv.id;
+
+  return jsonb_build_object('ok', true, 'accepted', p_accept, 'circleId', c.id);
+end $function$;
+
+/**
+ * The owner's desk: everybody, everybody waiting, everybody invited, everybody
+ * turned away.
+ *
+ * One call rather than four, because the four lists are read at one glance and
+ * somebody deciding a request wants to see the room it is for.
+ */
+create or replace function public.circle_manage(p_circle_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path = 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+  if c.owner_id <> me then
+    perform public.crushly_fail(403, '', 'Only the owner can manage this Circle.');
+  end if;
+
+  return jsonb_build_object(
+    'circle', jsonb_build_object(
+      'id', c.id,
+      'name', c.name,
+      'about', c.about,
+      'theme', c.theme,
+      'coverUrl', c.cover_url,
+      'discoverable', c.discoverable,
+      'joinPolicy', c.join_policy,
+      'capacity', public.circle_capacity()
+    ),
+    'members', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'member', public.public_profile(me, m.member_id, false),
+               'role', m.role,
+               'joinedAt', m.joined_at
+             ) order by case when m.role = 'owner' then 0 else 1 end, m.joined_at)
+        from circle_members m where m.circle_id = c.id
+    ), '[]'::jsonb),
+    'requests', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', r.id,
+               'requestedAt', r.created_at,
+               'member', public.public_profile(me, r.member_id, false)
+             ) order by r.created_at)
+        from circle_join_requests r
+       where r.circle_id = c.id and r.status = 'pending' and r.member_id <> me
+    ), '[]'::jsonb),
+    'declined', coalesce((
+      select jsonb_agg(no.item order by no.decided_at desc nulls last)
+        from (
+          select jsonb_build_object(
+                   'id', r.id,
+                   'requestedAt', r.created_at,
+                   'decidedAt', r.decided_at,
+                   'member', public.public_profile(me, r.member_id, false)
+                 ) as item,
+                 r.decided_at
+            from circle_join_requests r
+           where r.circle_id = c.id and r.status = 'rejected'
+           order by r.decided_at desc nulls last
+           limit 20
+        ) no
+    ), '[]'::jsonb),
+    'invitations', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', i.id,
+               'createdAt', i.created_at,
+               'member', public.public_profile(me, i.member_id, false)
+             ) order by i.created_at desc)
+        from circle_invitations i
+       where i.circle_id = c.id and i.status = 'pending'
+    ), '[]'::jsonb)
+  );
+end $function$;
+
+/**
+ * Somebody to invite.
+ *
+ * The owner picks from people they can already see — their Connections first,
+ * because a room is a room and twelve strangers is not one. Search is by name or
+ * username, never anonymous: you cannot invite somebody you could not otherwise
+ * find.
+ */
+create or replace function public.circle_invite_candidates(p_circle_id bigint, p_query text default '')
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  q text := lower(btrim(coalesce(p_query, '')));
+  owner bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select c.owner_id into owner from circles c where c.id = p_circle_id;
+  if owner is null or owner <> me then
+    perform public.crushly_fail(403, '', 'Only the owner can add people.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'member', public.public_profile(me, p.id, false),
+             'connected', public.is_connected_pair(me, p.id),
+             'invited', exists (select 1 from circle_invitations i
+                                 where i.circle_id = p_circle_id and i.member_id = p.id and i.status = 'pending')
+           ) order by (case when public.is_connected_pair(me, p.id) then 0 else 1 end), p.name)
+      from profiles p
+      join privacy pr on pr.user_id = p.id
+     where p.id <> me
+       and p.onboarded
+       and p.status = 'active'
+       and pr.discoverable
+       and not public.is_blocked_pair(me, p.id)
+       and not exists (select 1 from circle_members m where m.circle_id = p_circle_id and m.member_id = p.id)
+       and (q = '' or lower(p.name) like '%' || q || '%' or lower(coalesce(p.username, '')) like '%' || q || '%')
+     limit 24
+  ), '[]'::jsonb);
+end $function$;
+
+/* ------------------------------------------------------------ the old doors */
+
+-- `request_join_circle` keeps working for builds already in people's hands, but
+-- it now asks the same questions as `join_circle` instead of the retired
+-- visibility flag.
+create or replace function public.request_join_circle(p_circle_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+  req public.circle_join_requests;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle is not here any more.');
+  end if;
+  if not c.discoverable then
+    perform public.crushly_fail(403, '', 'That Circle is not taking new members.');
+  end if;
+  if c.join_policy = 'invite' then
+    perform public.crushly_fail(403, '', 'This Circle only takes people the owner adds.');
+  end if;
+  if exists (select 1 from circle_members where circle_id = c.id and member_id = me) then
+    perform public.crushly_fail(409, '', 'You are already in this Circle.');
+  end if;
+  if public.is_blocked_pair(me, c.owner_id) then
+    perform public.crushly_fail(403, '', 'You cannot join this Circle.');
+  end if;
+
+  select count(*) into n from circle_members where circle_id = c.id;
+  if n >= public.circle_capacity() then
+    perform public.crushly_fail(409, '', 'This Circle is full.');
+  end if;
+
+  select * into req from circle_join_requests
+   where circle_id = c.id and member_id = me and status = 'pending';
+  if found then
+    return jsonb_build_object('status', 'pending', 'requestId', req.id);
+  end if;
+
+  insert into circle_join_requests (circle_id, member_id)
+    values (c.id, me)
+    returning * into req;
+  perform public.notify_to(c.owner_id, 'circle_request', me, c.id, left(c.name, 60));
+  return jsonb_build_object('status', 'pending', 'requestId', req.id);
+end $function$;
+
+/**
+ * A member's Space, and the Circles on it a stranger may walk up to.
+ *
+ * The old rule was `visibility = 'public'`; the rule is `discoverable` now, and
+ * the two are kept in step by `set_circle_access`, so this only had to change
+ * which one it reads.
+ */
+create or replace function public.member_circles(p_member_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  connected boolean;
+  items jsonb := '[]'::jsonb;
+  r record;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  connected := public.is_connected_pair(me, p_member_id);
+
+  for r in
+    select c.*,
+           (select count(*) from circle_members cm2 where cm2.circle_id = c.id) as member_count,
+           exists (select 1 from circle_members cm3 where cm3.circle_id = c.id and cm3.member_id = me) as i_am_in
+      from circles c
+     where exists (select 1 from circle_members cm where cm.circle_id = c.id and cm.member_id = p_member_id)
+       and (
+         c.discoverable
+         or connected
+         or exists (select 1 from circle_members cm5 where cm5.circle_id = c.id and cm5.member_id = me)
+       )
+     order by i_am_in desc, member_count desc, c.created_at desc
+     limit 30
+  loop
+    items := items || jsonb_build_array(jsonb_build_object(
+      'id', r.id,
+      'name', r.name,
+      'about', r.about,
+      'coverUrl', r.cover_url,
+      'theme', r.theme,
+      'visibility', r.visibility,
+      'discoverable', r.discoverable,
+      'joinPolicy', r.join_policy,
+      'createdAt', r.created_at,
+      'ownerId', r.owner_id,
+      'myRole', case when r.i_am_in then coalesce((select cm6.role from circle_members cm6 where cm6.circle_id = r.id and cm6.member_id = me), 'member') else 'visitor' end,
+      'muted', coalesce((select cm7.muted from circle_members cm7 where cm7.circle_id = r.id and cm7.member_id = me), false),
+      'memberCount', r.member_count,
+      'joined', r.i_am_in
+    ));
+  end loop;
+
+  return jsonb_build_object('items', items, 'connected', connected);
+end $function$;
+
+-- `my_circles` carries the two settings so the rooms list can say, in a line,
+-- what each room is: open, by request, or by invitation.
+create or replace function public.my_circles()
+returns jsonb
+language plpgsql stable security definer set search_path = 'public' as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(t.item), '[]'::jsonb))
+    from (
+      select jsonb_build_object(
+        'id', c.id,
+        'name', c.name,
+        'about', c.about,
+        'coverUrl', c.cover_url,
+        'theme', c.theme,
+        'visibility', c.visibility,
+        'discoverable', c.discoverable,
+        'joinPolicy', c.join_policy,
+        'createdAt', c.created_at,
+        'ownerId', c.owner_id,
+        'myRole', cm.role,
+        'muted', cm.muted,
+        'memberCount', (select count(*) from circle_members m where m.circle_id = c.id),
+        'pendingRequests', case when cm.role = 'owner'
+                                then (select count(*) from circle_join_requests r
+                                       where r.circle_id = c.id and r.status = 'pending')
+                                else 0 end,
+        'lastMessageAt', (select max(m2.created_at) from circle_messages m2 where m2.circle_id = c.id),
+        'unreadCount', (
+          select count(*) from circle_messages m3
+           where m3.circle_id = c.id and m3.sender_id <> me and m3.created_at > cm.last_read_at
+             and not public.is_blocked_pair(me, m3.sender_id)
+        )
+      ) as item,
+      coalesce((select max(m4.created_at) from circle_messages m4 where m4.circle_id = c.id), c.created_at) as activity
+      from circles c join circle_members cm on cm.circle_id = c.id
+      where cm.member_id = me
+      order by activity desc, c.id desc
+    ) t
+  );
+end $function$;
+
+/* ------------------------------------------------------------------ grants */
+
+revoke all on function public.set_circle_access(bigint, boolean, text) from public, anon, authenticated;
+grant execute on function public.set_circle_access(bigint, boolean, text) to authenticated, service_role;
+
+revoke all on function public.circle_settings(bigint) from public, anon, authenticated;
+grant execute on function public.circle_settings(bigint) to authenticated, service_role;
+
+revoke all on function public.discover_circles(integer, integer) from public, anon, authenticated;
+grant execute on function public.discover_circles(integer, integer) to authenticated, service_role;
+
+revoke all on function public.circle_preview(bigint) from public, anon, authenticated;
+grant execute on function public.circle_preview(bigint) to authenticated, service_role;
+
+revoke all on function public.join_circle(bigint) from public, anon, authenticated;
+grant execute on function public.join_circle(bigint) to authenticated, service_role;
+
+revoke all on function public.invite_to_circle(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.invite_to_circle(bigint, bigint) to authenticated, service_role;
+
+revoke all on function public.my_circle_invitations() from public, anon, authenticated;
+grant execute on function public.my_circle_invitations() to authenticated, service_role;
+
+revoke all on function public.respond_circle_invitation(bigint, boolean) from public, anon, authenticated;
+grant execute on function public.respond_circle_invitation(bigint, boolean) to authenticated, service_role;
+
+revoke all on function public.circle_manage(bigint) from public, anon, authenticated;
+grant execute on function public.circle_manage(bigint) to authenticated, service_role;
+
+revoke all on function public.circle_invite_candidates(bigint, text) from public, anon, authenticated;
+grant execute on function public.circle_invite_candidates(bigint, text) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261105130000_circle_joined_notification.sql
+
+/*
+ * Someone is in your room — say so in words that fit the owner.
+ *
+ * `circle_approved` is what a person hears when they are let in: "Riel let you
+ * into Sunday Go Sharp". The same kind was being sent to the owner when the
+ * membership went the other way (a self-join on an open room, or an invitation
+ * being accepted), so the owner read their own approval back. Same event, two
+ * opposite sentences, one kind — so the owner's side gets its own kind and can
+ * be phrased from the owner's point of view.
+ */
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('crush', 'deep_crush', 'mutual', 'message', 'moment_reply',
+                  'moment_reaction', 'verified', 'verification_rejected',
+                  'post_reaction', 'post_comment',
+                  'circle_request', 'circle_approved', 'circle_declined',
+                  'circle_invite', 'circle_joined'));
+
+create or replace function public.join_circle(p_circle_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  c public.circles;
+  req public.circle_join_requests;
+  inv public.circle_invitations;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into c from circles where id = p_circle_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Circle isn’t here any more.');
+  end if;
+
+  if exists (select 1 from circle_members where circle_id = c.id and member_id = me) then
+    return jsonb_build_object('state', 'member', 'already', true);
+  end if;
+
+  if public.is_blocked_pair(me, c.owner_id) then
+    perform public.crushly_fail(403, '', 'You cannot join this Circle.');
+  end if;
+
+  -- Invited already: this is not an ask, it is an answer.
+  select * into inv from circle_invitations
+   where circle_id = c.id and member_id = me and status = 'pending';
+  if found then
+    select count(*) into n from circle_members where circle_id = c.id;
+    if n >= public.circle_capacity() then
+      perform public.crushly_fail(409, '', 'This Circle is full.');
+    end if;
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, me, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    update circle_invitations
+       set status = 'accepted', decided_at = public.now_ms()
+     where id = inv.id;
+    perform public.notify_to(c.owner_id, 'circle_joined', me, c.id, left(c.name, 60));
+    return jsonb_build_object('state', 'member', 'viaInvitation', true);
+  end if;
+
+  if not c.discoverable then
+    perform public.crushly_fail(403, '', 'That Circle is private.');
+  end if;
+
+  if c.join_policy = 'invite' then
+    perform public.crushly_fail(403, '', 'This Circle only takes people the owner adds.');
+  end if;
+
+  select count(*) into n from circle_members where circle_id = c.id;
+  if n >= public.circle_capacity() then
+    perform public.crushly_fail(409, '', 'This Circle is full.');
+  end if;
+
+  if c.join_policy = 'open' then
+    insert into circle_members (circle_id, member_id, role, joined_at)
+      values (c.id, me, 'member', public.now_ms())
+      on conflict (circle_id, member_id) do nothing;
+    perform public.notify_to(c.owner_id, 'circle_joined', me, c.id, left(c.name, 60));
+    return jsonb_build_object('state', 'member');
+  end if;
+
+  select * into req from circle_join_requests
+   where circle_id = c.id and member_id = me and status = 'pending';
+  if not found then
+    insert into circle_join_requests (circle_id, member_id)
+      values (c.id, me)
+      returning * into req;
+    perform public.notify_to(c.owner_id, 'circle_request', me, c.id, left(c.name, 60));
+  end if;
+
+  return jsonb_build_object('state', 'pending', 'requestId', req.id);
+end $function$;
+
+-- ================================ 20261105140000_trending_clips.sql
+
+/*
+ * Top Crushes This Week — the clips rail Discover needed.
+ *
+ * Video is back, and a rail of the week's most-Crushed clips is the first thing
+ * that makes its return visible: nine-by-sixteen tiles that open the post, with
+ * a real number under each one.
+ *
+ * Ranking is deliberately boring and legible:
+ *
+ *   1. clips from the last seven days first, then older ones if the week is
+ *      quiet — a rail that empties itself on a Monday is worse than one that
+ *      reaches back a little;
+ *   2. within a window, Crushes count, with a comment worth three of them and a
+ *      recent clip beating an older one at the same score;
+ *   3. one clip per author, so a single person cannot own the whole rail.
+ *
+ * Everything goes through `can_view_post` and `post_engagement`, so the rail can
+ * only ever show what this member is allowed to see, counted the same way the
+ * feed counts it. A Circle's clips never appear: the rail is public surface.
+ */
+create or replace function public.trending_clips(p_limit integer default 12)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me     bigint := public.me_id();
+  cap    int := least(greatest(coalesce(p_limit, 12), 1), 24);
+  items  jsonb := '[]'::jsonb;
+  r      record;
+  post   public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    with clip as (
+      select po.*,
+             case
+               when po.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+               else 'photo'
+             end as media_kind,
+             coalesce((select count(*) from post_reactions re where re.post_id = po.id), 0) as crushes,
+             coalesce((select count(*) from post_comments pc where pc.post_id = po.id), 0) as comments,
+             row_number() over (partition by po.author_id
+                                order by po.created_at desc) as per_author
+        from posts po
+       where po.media_url is not null
+         and po.circle_id is null
+         and po.audience = 'everyone'
+    )
+    select c.* from clip c
+     where c.media_kind = 'video'
+       and c.per_author = 1
+       and public.can_view_post(c, me)
+     order by
+       (c.created_at > public.now_ms() - 7 * 86400000) desc,
+       (c.crushes + 3 * c.comments) desc,
+       c.created_at desc,
+       c.id desc
+     limit cap
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', 'video',
+          'edit', r.edit,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+    end if;
+  end loop;
+
+  return items;
+end $function$;
+
+grant execute on function public.trending_clips(integer) to authenticated, service_role;
+
+-- ================================ 20261105150000_trending_clips_fixed.sql
+
+/*
+ * Top Crushes This Week — the function Discover actually calls.
+ *
+ * This replaces `20261105140000_trending_clips.sql`, which could not run. Two
+ * mistakes, both found by running it against a real Postgres instead of reading
+ * it:
+ *
+ *   · `can_view_post(c, me)` was handed the CTE's row — a record with four extra
+ *     columns — where the function wants a `posts` row. Postgres plans a plpgsql
+ *     body lazily, so the migration applied cleanly and the rail would have
+ *     failed the first time a member opened Discover. Rank in SQL, check
+ *     visibility per row.
+ *
+ *   · "one clip per author" was numbered over every post, so a member who posted
+ *     a photograph an hour ago lost their clip to it. It is counted over clips.
+ *
+ * The ranking itself is unchanged and deliberately legible: the last seven days
+ * first, then Crushes with a comment worth three, then newest, then id as a
+ * tiebreak so two calls a millisecond apart agree.
+ */
+create or replace function public.trending_clips(p_limit integer default 12)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me     bigint := public.me_id();
+  cap    int := least(greatest(coalesce(p_limit, 12), 1), 24);
+  items  jsonb := '[]'::jsonb;
+  r      record;
+  post   public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    with clip as (
+      select po.id,
+             po.author_id,
+             po.created_at,
+             coalesce((select count(*) from post_reactions re where re.post_id = po.id), 0) as crushes,
+             coalesce((select count(*) from post_comments pc where pc.post_id = po.id), 0) as comments,
+             row_number() over (partition by po.author_id
+                                order by po.created_at desc, po.id desc) as per_author
+        from posts po
+       where po.media_url is not null
+         and po.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)'
+         and po.circle_id is null
+         and po.audience = 'everyone'
+    )
+    select c.id from clip c
+     where c.per_author = 1
+     order by
+       (c.created_at > public.now_ms() - 7 * 86400000) desc,
+       (c.crushes + 3 * c.comments) desc,
+       c.created_at desc,
+       c.id desc
+     limit cap
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', post.id,
+          'body', post.body,
+          'mediaUrl', post.media_url,
+          'mediaKind', 'video',
+          'edit', post.edit,
+          'audience', post.audience,
+          'createdAt', post.created_at,
+          'author', public.public_profile(me, post.author_id, false),
+          'mine', post.author_id = me
+        ) || public.post_engagement(post.id, me)
+      );
+    end if;
+  end loop;
+
+  return items;
+end $function$;
+
+grant execute on function public.trending_clips(integer) to authenticated, service_role;
+
+-- ================================ 20261106100000_own_posts_and_paging.sql
+
+-- Your own post is a post, and a page is not the whole feed.
+--
+-- Three things people asked for, and none of them is a new idea — each is a
+-- place where the product was stricter than it needed to be:
+--
+--   1. You can Crush your own post. The rule that stopped it ("You can't like
+--      your own post") was there to keep a like meaningful, but on this product
+--      a Crush is how you keep a post — your own pictures belong in your own
+--      Crushes the same way anyone else's do, and a post with no count looks
+--      broken from the inside. The obvious guard stays: reacting to yourself
+--      notifies nobody.
+--
+--   2. Crushes carries your own posts too. It used to say `author_id <> me`
+--      with the reasoning that "your own posts are what your Space is", which
+--      left a member looking at a feed from everyone except themselves. Now the
+--      feed is: the people you share a Crush with, and you.
+--
+--   3. Both feeds hand back a cursor. `crush_posts_feed` and `space_posts`
+--      returned `items` and nothing else, so the client could never ask for the
+--      next page — Crushes held one page of 20 and a Space held one page of 20,
+--      and scrolling past the end looked like the posts had been taken away.
+--      The cursor is the id of the last row returned, null on a short page, so
+--      a caller can page until it is null and stop.
+
+-- ------------------------------------------------------- 1. Crushing your own
+
+create or replace function public.react_to_post(
+  p_post_id bigint,
+  p_liked   boolean default true,
+  p_kind    text    default 'crush'
+)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me    bigint := public.me_id();
+  po    public.posts;
+  had   boolean;
+  clean text := lower(btrim(coalesce(p_kind, 'crush')));
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+
+  if clean not in ('crush', 'fire', 'laugh', 'wow', 'clap') then
+    clean := 'crush';
+  end if;
+
+  select exists (select 1 from post_reactions r where r.post_id = po.id and r.user_id = me) into had;
+
+  if coalesce(p_liked, true) then
+    insert into post_reactions (post_id, user_id, kind)
+      values (po.id, me, clean)
+    on conflict (post_id, user_id) do update set kind = excluded.kind;
+    -- Only the first reaction is news, and never to yourself: a notification
+    -- that says you liked your own picture is noise with your own name on it.
+    if not had and po.author_id <> me then
+      perform public.notify_to(po.author_id, 'post_reaction', me, po.id, '');
+    end if;
+  else
+    delete from post_reactions r where r.post_id = po.id and r.user_id = me;
+  end if;
+
+  return jsonb_build_object(
+    'liked', coalesce(p_liked, true),
+    'myReaction', case when coalesce(p_liked, true) then clean else null end,
+    'likeCount', (select count(*) from post_reactions r where r.post_id = po.id),
+    'reactionKinds', coalesce((
+      select jsonb_object_agg(s.kind, s.n)
+        from (select r.kind, count(*) as n
+                from post_reactions r
+               where r.post_id = po.id
+               group by r.kind) s
+    ), '{}'::jsonb)
+  );
+end $$;
+
+revoke all on function public.react_to_post(bigint, boolean, text) from public, anon, authenticated;
+grant execute on function public.react_to_post(bigint, boolean, text) to authenticated, service_role;
+
+-- ------------------------------------------- 2 & 3. Crushes, with you in it
+
+create or replace function public.crush_posts_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me        bigint := public.me_id();
+  lim       integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items     jsonb := '[]'::jsonb;
+  r         record;
+  post      public.posts;
+  after_created bigint;
+  last_id   bigint;
+  taken     integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if p_after is not null then
+    select p2.created_at into after_created from posts p2 where p2.id = p_after;
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.circle_id is null
+       -- A clip belongs to Flow.
+       and (po.media_url is null or po.media_url !~ '\.(mp4|webm|mov|m4v)(\?|$)')
+       -- A Crush in either direction — or your own post. Crushes is what the
+       -- people you are here for are sharing, and you are one of them.
+       and (
+         po.author_id = me
+         or exists (
+           select 1 from crushes c
+            where (c.from_id = me and c.to_id = po.author_id)
+               or (c.to_id = me and c.from_id = po.author_id)
+         )
+       )
+       and (
+         p_after is null
+         or po.created_at < after_created
+         or (po.created_at = after_created and po.id < p_after)
+       )
+     order by po.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  -- A full page might have more behind it; a short page is the end. The client
+  -- stops when this is null, so an empty feed costs one request, not two.
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+grant execute on function public.crush_posts_feed(integer, bigint) to authenticated, service_role;
+
+-- --------------------------------------------------- a Space pages too
+
+create or replace function public.space_posts(p_author_id bigint, p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me        bigint := public.me_id();
+  lim       integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items     jsonb := '[]'::jsonb;
+  r         record;
+  post      public.posts;
+  after_created bigint;
+  last_id   bigint;
+  taken     integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if p_after is not null then
+    select p2.created_at into after_created from posts p2 where p2.id = p_after;
+  end if;
+
+  for r in
+    select po.* from posts po
+     where po.author_id = p_author_id
+       -- Visibility belongs in the WHERE, not in a check after the LIMIT: a row
+       -- dropped after the page was cut leaves the page short with no cursor,
+       -- and the walk stops there for good.
+       and public.can_view_post(po, me)
+       and (
+         p_after is null
+         or po.created_at < after_created
+         or (po.created_at = after_created and po.id < p_after)
+       )
+     order by po.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+grant execute on function public.space_posts(bigint, integer, bigint) to authenticated, service_role;
+
+-- ================================ 20261107000000_crushes_everywhere.sql
+
+-- Crushes reads the posts table, not your Add up list.
+--
+-- The report: "users publish posts inside their Spaces; the posts appear on
+-- their profiles but not on the Crushes page." The posts were never the
+-- problem — they were in `posts` the whole time, and `space_posts` returned
+-- them. `crush_posts_feed` returned them too, but only when a row existed in
+-- `crushes` between the reader and the author:
+--
+--     and exists (select 1 from crushes c
+--                  where (c.from_id = me and c.to_id = po.author_id)
+--                     or (c.to_id = me and c.from_id = po.author_id))
+--
+-- So Crushes was a list of who you had added up with, rendered as posts. A
+-- member with no Add ups — which is every member on their first day — saw an
+-- empty page over a full table, and a member who added up with one person saw
+-- one person's posts and reasonably concluded their own feed was broken.
+--
+-- Crushes is the discovery surface. What decides whether a post belongs here is
+-- whether the reader may see it at all, and that question already has exactly
+-- one answer in this database: can_view_post(). It applies the audience
+-- ('everyone' vs 'connections'), the author's own visibility and incognito
+-- settings, blocks in either direction, and Circle membership. Reading through
+-- it means Crushes cannot drift from the rules the rest of the product enforces
+-- — and it means a private post cannot become public by being in a feed query.
+--
+-- Three things are deliberately unchanged:
+--
+--   * A Circle post stays in its room. Circles are places with a door;
+--     `circle_id is null` keeps them out of a feed that everyone reads.
+--   * The post is the same row the Space returns — same id, same author, same
+--     media, same counts through post_engagement(). There is no Crushes copy of
+--     anything, so a post cannot appear twice or drift out of date.
+--   * Paging is keyset on (created_at, id) and hands back a cursor.
+--
+-- One thing changes with the division of labour: a clip is a post. It used to
+-- be filtered out here ("a clip belongs to Flow"), which meant a member who
+-- posted a clip saw it on their Space and never on Crushes. Flow still ranks
+-- clips for the surface built for them; Crushes does not pretend they do not
+-- exist.
+
+create or replace function public.crush_posts_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me        bigint := public.me_id();
+  lim       integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items     jsonb := '[]'::jsonb;
+  r         record;
+  post      public.posts;
+  after_created bigint;
+  last_id   bigint;
+  taken     integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if p_after is not null then
+    select p2.created_at into after_created from posts p2 where p2.id = p_after;
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       -- A room is a room, not a square.
+       and po.circle_id is null
+       and (
+         p_after is null
+         or po.created_at < after_created
+         or (po.created_at = after_created and po.id < p_after)
+       )
+     order by po.created_at desc, po.id desc
+     limit lim
+  loop
+    -- Judged before the page was cut, and judged again here: a row that stopped
+    -- being visible between the two reads is dropped rather than handed out.
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  -- A full page might have more behind it; a short page is the end.
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+revoke all on function public.crush_posts_feed(integer, bigint) from public, anon, authenticated;
+grant execute on function public.crush_posts_feed(integer, bigint) to authenticated, service_role;
+
+-- ================================ 20261107010000_notifications_social.sql
+
+-- Notifications are social activity. Private conversation belongs in Whisper.
+--
+-- Four faults, each one visible on a phone:
+--
+--   1. Whisper messages arrive in the Notification centre. `notify_to` writes a
+--      'message' row per conversation, so the centre is a second, worse inbox —
+--      one that cannot show the message, cannot reply, and marks the same event
+--      twice whenever the chat is open in front of you. The inbox already holds
+--      the sender, the preview and the unread count; the centre does not need a
+--      copy of it.
+--
+--   2. Keeping somebody close told nobody. `keep_close` says so in a comment —
+--      "it is not announced" — but a follower is exactly the kind of social
+--      event this centre exists for, so it is announced now, with its own kind
+--      and its own switch.
+--
+--   3. Mentions did not exist. `@username` is typeable (mention_suggest offers
+--      it) and nothing was ever sent when somebody used it.
+--
+--   4. Post Crushes and comments had no wording, so they rendered as a picture,
+--      a timestamp and an empty line — and tapping one went nowhere. The wording
+--      and the destination are the client's job (Notifications.tsx), but the row
+--      has to say which post it is about: `post_comment` already carried the
+--      post id in `ref_id`, and now so does the mention.
+--
+-- The vocabulary this file assumes is the one the product settled on:
+--   profile  →  Add Up       (a connection request, answered by a person)
+--   following →  Keep Close  (no approval, nobody's permission)
+--   a post   →  Crush        (engagement, unchanged)
+
+-- ---------------------------------------------------------------- 1. the kinds
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('crush', 'deep_crush', 'mutual', 'message', 'moment_reply',
+                  'moment_reaction', 'verified', 'verification_rejected',
+                  'post_reaction', 'post_comment', 'post_mention', 'keep',
+                  'circle_request', 'circle_approved', 'circle_declined',
+                  'circle_invite', 'circle_joined'));
+
+-- ------------------------------------------------- 2. keeping close is news
+
+alter table public.notification_settings
+  add column if not exists keeps boolean not null default true;
+
+create or replace function public.notification_allowed(p_uid bigint, p_kind text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case
+    when not exists (select 1 from notification_settings where user_id = p_uid) then true
+    when p_kind = 'message' then (select messages from notification_settings where user_id = p_uid)
+    when p_kind in ('crush', 'deep_crush', 'mutual') then (select crushes from notification_settings where user_id = p_uid)
+    when p_kind in ('moment_reply', 'moment_reaction') then (select moments from notification_settings where user_id = p_uid)
+    when p_kind = 'keep' then coalesce((select keeps from notification_settings where user_id = p_uid), true)
+    else true
+  end
+$$;
+
+create or replace function public.keep_close(p_member_id bigint)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  n  int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_member_id is null or me = p_member_id then
+    perform public.crushly_fail(400, '', 'You can’t keep yourself close.');
+  end if;
+  if not exists (select 1 from profiles p where p.id = p_member_id and p.status = 'active') then
+    perform public.crushly_fail(404, '', 'Member not found.');
+  end if;
+  if public.is_blocked_pair(me, p_member_id) then
+    perform public.crushly_fail(403, '', 'You can’t keep this member close.');
+  end if;
+
+  -- A hundred a day is far past what a person does by hand and far short of
+  -- what it takes to farm a follower list.
+  select count(*) into n from keeps k
+   where k.keeper_id = me and k.created_at > public.now_ms() - 86400 * 1000;
+  if n >= 100 then
+    perform public.crushly_fail(429, '', 'That’s a lot for one day — try again tomorrow.');
+  end if;
+
+  -- Announced only when it is new. Keeping somebody close twice is not an event,
+  -- and a member who follows, lets go and follows again should not ring the bell
+  -- each time they change their mind.
+  if not exists (select 1 from keeps k where k.keeper_id = me and k.kept_id = p_member_id) then
+    perform public.notify_to(p_member_id, 'keep', me, null, '');
+  end if;
+
+  insert into keeps (keeper_id, kept_id) values (me, p_member_id) on conflict do nothing;
+  return public.keep_state(p_member_id);
+end $$;
+
+-- ------------------------------------------------------ 3. mentions are sent
+
+/*
+ * `@handle` in a post, resolved to the person it names.
+ *
+ * The handle is the username, which is lowercase letters, digits and underscore
+ * — the same rule `mention_suggest` offers and the same one the composer
+ * inserts, so what is typeable is what is announced. A mention notifies only
+ * somebody who can see the post: a handle written into a connections-only post
+ * says nothing to a member who is not a connection, and a handle in a Circle
+ * post says nothing to a member of the wrong room. Naming yourself is not news.
+ */
+create or replace function public.notify_post_mentions() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  handle   text;
+  target   bigint;
+begin
+  for handle in
+    select distinct lower(m[1])
+      from regexp_matches(coalesce(new.body, ''), '@([a-zA-Z0-9_]{3,30})', 'g') as m
+  loop
+    select p.id into target from profiles p
+     where lower(p.username) = handle and p.id <> new.author_id
+       and p.status = 'active'
+     limit 1;
+    continue when target is null;
+    continue when not public.can_view_post(new, target);
+    perform public.notify_to(target, 'post_mention', new.author_id, new.id, left(coalesce(new.body, ''), 80));
+  end loop;
+  return null;
+end $$;
+
+drop trigger if exists posts_notify_mentions on public.posts;
+create trigger posts_notify_mentions after insert or update of body on public.posts
+  for each row execute function public.notify_post_mentions();
+
+-- An edit that adds somebody sends one; an edit that changes nothing sends
+-- nothing, because the trigger only fires when the words change and the row it
+-- would write already exists (see below).
+
+/*
+ * One unread row per (kind, actor, ref).
+ *
+ * A post edited twice must not shout twice, and a member who follows, lets go
+ * and follows again has not done two things: an unread row of the same kind,
+ * from the same person, about the same thing is the same news, so it is
+ * refreshed rather than stacked. Once it has been read, a fresh event is fresh
+ * news again and gets its own row.
+ */
+create or replace function public.notify_to(
+  p_uid bigint, p_kind text, p_actor_id bigint default null, p_ref_id bigint default null, p_body text default ''
+) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  existing_id bigint;
+begin
+  /*
+   * A private message is not social activity in the centre's sense. The Whisper
+   * inbox shows the sender, the preview and the count, in real time, in the one
+   * place a reply can be typed — a second copy here is a notification that
+   * cannot be answered and marks the same message twice.
+   *
+   * Kept as a silent return rather than deleted from the callers: `send_message`
+   * is one of the oldest and most load-bearing functions in the database, and a
+   * policy about where a message appears belongs here, at the one door every
+   * notification walks through.
+   */
+  if p_kind = 'message' then
+    return;
+  end if;
+
+  if not public.notification_allowed(p_uid, p_kind) then
+    return;
+  end if;
+
+  if p_kind in ('post_mention', 'keep') and p_actor_id is not null then
+    select nt.id into existing_id from notifications nt
+     where nt.user_id = p_uid and nt.kind = p_kind
+       and nt.actor_id = p_actor_id
+       and nt.ref_id is not distinct from p_ref_id
+       and nt.read_at is null
+     limit 1;
+    if existing_id is not null then
+      update notifications nt
+         set created_at = public.now_ms(), body = p_body
+       where nt.id = existing_id;
+      return;
+    end if;
+  end if;
+
+  insert into notifications (user_id, kind, actor_id, ref_id, body)
+  values (p_uid, p_kind, p_actor_id, p_ref_id, p_body);
+end $$;
+
+-- ------------------------------------------- 4. the centre is not a second inbox
+
+/*
+ * Messages already in the centre are removed. They were written before the rule
+ * above existed, and leaving them would mean the rule only applies to new
+ * messages — the centre would keep a frozen copy of old conversations forever.
+ * Nothing is lost: every one of them is a row in `messages`, where it can still
+ * be read and answered.
+ */
+delete from public.notifications where kind = 'message';
+
+-- ================================ 20261107020000_add_up_requests.sql
+
+-- Add Up is a request a person answers.
+--
+-- The fault: "Add Up" wrote a one-way row in `crushes` and connected both
+-- members the instant the other had also done it. Nothing was ever asked, so
+-- nothing could be accepted, declined or withdrawn — the recipient had no way
+-- to say no, and the sender had no way to know whether it had been seen.
+--
+-- The model is the one this table already had, with the half that was missing:
+--
+--     pending    a request is waiting for the person it was sent to
+--     accepted   they said yes; the pair is in `connections`
+--     declined   they said no; the row is kept as the record of that
+--     cancelled  the sender took it back
+--
+-- `connections` stays the only definition of "connected", so nothing about
+-- messaging, Moments or the Crushes feed's audience rules changes. `keeps`
+-- (Keep Close) is untouched and still needs nobody's permission: following is
+-- not asking, and accepting a request is not following.
+--
+-- Counts, for the record: a request is between two members and only ever two
+-- rows — one each way — because the primary key is the pair.
+
+alter table public.crushes
+  add column if not exists status text not null default 'pending',
+  add column if not exists responded_at bigint;
+
+alter table public.crushes drop constraint if exists crushes_status_check;
+alter table public.crushes add constraint crushes_status_check
+  check (status in ('pending', 'accepted', 'declined', 'cancelled'));
+
+-- Anything already connected was answered long ago (by reciprocity, before
+-- there was a word for it). Marking it accepted keeps history honest and stops
+-- an old crush reappearing as a request the moment this ships.
+update public.crushes c
+   set status = 'accepted', responded_at = coalesce(c.responded_at, c.created_at)
+ where c.status = 'pending'
+   and public.is_connected_pair(c.from_id, c.to_id);
+
+create index if not exists crushes_incoming_pending_idx
+  on public.crushes (to_id, created_at desc) where status = 'pending';
+create index if not exists crushes_outgoing_pending_idx
+  on public.crushes (from_id, created_at desc) where status = 'pending';
+
+
+-- ---------------------------------------------------------------- asking
+
+/*
+ * Add Up: ask to connect.
+ *
+ * Three things a button cannot decide by itself, and all three live here:
+ *
+ *   - a request is only new once. Asking twice is not two requests, and the
+ *     primary key on (from_id, to_id) is why rather than a check in a screen;
+ *   - if *they* have already asked, this is not a second request, it is an
+ *     answer — both rows are accepted and the pair joins `connections`;
+ *   - a declined request is not a door that can be knocked on every five
+ *     minutes. Asking again is allowed after seven days, which is long enough
+ *     to be a change of mind rather than a campaign.
+ *
+ * The preserved signature is deliberate: every installed build calls
+ * `crush_member`, and the verb changed before the mechanism did.
+ */
+create or replace function public.crush_member(
+  p_target_id bigint,
+  p_is_deep boolean default false,
+  p_note text default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  target record;
+  mine public.crushes;
+  mine_found boolean;
+  theirs_status text;
+  already_connected boolean;
+  used int;
+  clean_note text;
+  cooldown_ms bigint := 7 * 24 * 60 * 60 * 1000;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if me = p_target_id then
+    perform public.crushly_fail(400, '', 'You can’t add yourself up.');
+  end if;
+  if public.load_visible_profile(me, p_target_id) is null then
+    perform public.crushly_fail(404, '', 'This profile isn’t available.');
+  end if;
+
+  select pf.name, pv.who_can_crush into target from profiles pf
+    join privacy pv on pv.user_id = pf.id where pf.id = p_target_id;
+  if target.who_can_crush = 'verified'
+     and not exists (select 1 from profiles pf where pf.id = me and pf.verification = 'verified') then
+    perform public.crushly_fail(403, 'verification_required',
+      target.name || ' only accepts Add ups from verified members.');
+  end if;
+
+  clean_note := case when p_note is null or btrim(p_note) = '' then null else left(btrim(p_note), 140) end;
+  already_connected := public.is_connected_pair(me, p_target_id);
+
+  if already_connected then
+    return jsonb_build_object(
+      'mutual', true, 'isNew', false, 'request', 'connected',
+      'profile', public.load_visible_profile(me, p_target_id)
+    );
+  end if;
+
+  select * into mine from crushes c where c.from_id = me and c.to_id = p_target_id;
+  mine_found := found;
+
+  if mine_found and mine.status = 'pending' then
+    -- Already asked and still waiting. Nothing happens, and nothing is said
+    -- twice: the screen may show the same state without another notification.
+    return jsonb_build_object(
+      'mutual', false, 'isNew', false, 'request', 'pending',
+      'profile', public.load_visible_profile(me, p_target_id)
+    );
+  end if;
+
+  if mine_found and mine.status = 'declined'
+     and coalesce(mine.responded_at, mine.created_at) > public.now_ms() - cooldown_ms then
+    perform public.crushly_fail(429, 'request_cooldown',
+      'They declined this Add up. You can ask again in a few days.');
+  end if;
+
+  if p_is_deep and not (mine_found and mine.deep) then
+    select count(*)::int into used from crushes c
+     where c.from_id = me and c.deep and c.created_at > public.now_ms() - 24 * 60 * 60 * 1000;
+    if used >= 3 then
+      perform public.crushly_fail(429, 'deep_limit',
+        'You’ve sent your 3 Big Ups for today. They refresh tomorrow — an ordinary Add up still says plenty.');
+    end if;
+  end if;
+
+  -- An answer, not another question.
+  select c.status into theirs_status from crushes c where c.from_id = p_target_id and c.to_id = me;
+  if coalesce(theirs_status, '') = 'pending' then
+    update crushes c
+       set status = 'accepted', responded_at = public.now_ms()
+     where c.from_id = p_target_id and c.to_id = me;
+    insert into crushes (from_id, to_id, deep, note, status, responded_at)
+      values (me, p_target_id, coalesce(p_is_deep, false), clean_note, 'accepted', public.now_ms())
+    on conflict (from_id, to_id) do update
+      set deep = crushes.deep or excluded.deep,
+          note = coalesce(excluded.note, crushes.note),
+          status = 'accepted',
+          responded_at = public.now_ms();
+
+    perform public.connect_pair(me, p_target_id);
+    -- The person who asked first hears the answer; the person who answered is
+    -- looking at the result of their own tap.
+    perform public.notify_to(p_target_id, 'mutual', me, null, '');
+    return jsonb_build_object(
+      'mutual', true, 'isNew', true, 'request', 'accepted',
+      'profile', public.load_visible_profile(me, p_target_id)
+    );
+  end if;
+
+  -- A fresh ask (or a renewal after a decline that has cooled off).
+  insert into crushes (from_id, to_id, deep, note, status, created_at, responded_at)
+    values (me, p_target_id, coalesce(p_is_deep, false), clean_note, 'pending', public.now_ms(), null)
+  on conflict (from_id, to_id) do update
+    set deep = crushes.deep or excluded.deep,
+        note = coalesce(excluded.note, crushes.note),
+        status = 'pending',
+        created_at = public.now_ms(),
+        responded_at = null;
+
+  delete from passes where from_id = me and to_id = p_target_id;
+  perform public.notify_to(p_target_id, case when coalesce(p_is_deep, false) then 'deep_crush' else 'crush' end,
+                   me, null, coalesce(clean_note, ''));
+
+  return jsonb_build_object(
+    'mutual', false, 'isNew', true, 'request', 'pending',
+    'profile', public.load_visible_profile(me, p_target_id)
+  );
+end $$;
+
+-- --------------------------------------------------------------- answering
+
+/*
+ * Accept: they asked, you said yes, and you are connections.
+ *
+ * Only the person the request was sent to can answer it — the row is found by
+ * (from = them, to = me), so there is nothing to guess and nothing to spoof.
+ */
+create or replace function public.accept_connection_request(p_from_id bigint)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  theirs public.crushes;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into theirs from crushes c
+   where c.from_id = p_from_id and c.to_id = me and c.status = 'pending';
+  if not found then
+    perform public.crushly_fail(404, '', 'That request isn’t waiting for an answer.');
+  end if;
+
+  update crushes c set status = 'accepted', responded_at = public.now_ms()
+   where c.from_id = p_from_id and c.to_id = me;
+
+  -- A row the other way is the same answer, so it is recorded as one rather
+  -- than left looking like a request that was never answered.
+  update crushes c set status = 'accepted', responded_at = public.now_ms()
+   where c.from_id = me and c.to_id = p_from_id and c.status in ('pending', 'declined');
+
+  perform public.connect_pair(me, p_from_id);
+  perform public.notify_to(p_from_id, 'mutual', me, null, '');
+
+  return jsonb_build_object(
+    'connected', true,
+    'profile', public.load_visible_profile(me, p_from_id)
+  );
+end $$;
+
+/*
+ * Decline: no, and the asking stops.
+ *
+ * Nothing is sent. A refusal is not news, and a notification that says somebody
+ * declined would be a second refusal. The unread request in their centre goes
+ * away with it, so the tap that would have opened the request opens nothing.
+ */
+create or replace function public.decline_connection_request(p_from_id bigint)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  update crushes c set status = 'declined', responded_at = public.now_ms()
+   where c.from_id = p_from_id and c.to_id = me and c.status = 'pending';
+  if not found then
+    perform public.crushly_fail(404, '', 'That request isn’t waiting for an answer.');
+  end if;
+
+  delete from notifications n
+   where n.user_id = me and n.kind in ('crush', 'deep_crush')
+     and n.actor_id = p_from_id and n.read_at is null;
+
+  return jsonb_build_object('declined', true);
+end $$;
+
+/*
+ * Cancel: you asked, and you have changed your mind.
+ *
+ * The row is kept as 'cancelled' so the pair's history stays readable, and the
+ * unread request leaves their centre — a withdrawn ask that still rings the
+ * bell is the worst of both.
+ */
+create or replace function public.cancel_connection_request(p_to_id bigint)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  update crushes c set status = 'cancelled', responded_at = public.now_ms()
+   where c.from_id = me and c.to_id = p_to_id and c.status = 'pending';
+  if not found then
+    perform public.crushly_fail(404, '', 'You don’t have a request waiting with them.');
+  end if;
+
+  delete from notifications n
+   where n.user_id = p_to_id and n.kind in ('crush', 'deep_crush')
+     and n.actor_id = me and n.read_at is null;
+
+  return jsonb_build_object('cancelled', true);
+end $$;
+
+-- The old name, kept because it is what installed builds call. Withdrawing a
+-- Crush and cancelling an Add up are the same act.
+create or replace function public.uncrush_member(p_target_id bigint) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if public.is_connected_pair(me, p_target_id) then
+    perform public.crushly_fail(400, '', 'You’re already connected. Use “Remove connection” to end it.');
+  end if;
+  delete from crushes where from_id = me and to_id = p_target_id;
+  delete from notifications n
+   where n.user_id = p_target_id and n.kind in ('crush', 'deep_crush')
+     and n.actor_id = me and n.read_at is null;
+  return true;
+end $$;
+
+revoke all on function public.accept_connection_request(bigint) from public, anon, authenticated;
+revoke all on function public.decline_connection_request(bigint) from public, anon, authenticated;
+revoke all on function public.cancel_connection_request(bigint) from public, anon, authenticated;
+grant execute on function public.accept_connection_request(bigint) to authenticated, service_role;
+grant execute on function public.decline_connection_request(bigint) to authenticated, service_role;
+grant execute on function public.cancel_connection_request(bigint) to authenticated, service_role;
+
+-- ---------------------------------------------------------------- the lists
+
+/*
+ * Crushes' people side: the requests waiting for you, the ones you are waiting
+ * on, and the connections. Same shape as before — only pending rows are
+ * requests, and an answered row is no longer either side's business here.
+ */
+create or replace function public.crushes_feed() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  incoming jsonb;
+  outgoing jsonb;
+  mutual jsonb;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  with src as (
+    select c.created_at as at, p.id as pid,
+           row_number() over (order by c.deep desc, c.created_at desc) as rn
+      from crushes c join profiles p on p.id = c.from_id
+     where c.to_id = me and c.status = 'pending'
+       and not public.is_connected_pair(me, p.id)
+       and not exists (select 1 from passes x where x.from_id = me and x.to_id = p.id)
+       and not public.is_blocked_pair(me, p.id)
+       and p.onboarded and p.status = 'active'
+  )
+  select coalesce(jsonb_agg(public.public_profile(me, src.pid, false) || jsonb_build_object('at', src.at)
+                            order by src.rn), '[]'::jsonb)
+    into incoming from src;
+
+  with src as (
+    select c.created_at as at, p.id as pid,
+           row_number() over (order by c.created_at desc) as rn
+      from crushes c join profiles p on p.id = c.to_id
+     where c.from_id = me and c.status = 'pending'
+       and not public.is_connected_pair(me, p.id)
+       and not public.is_blocked_pair(me, p.id)
+       and p.onboarded and p.status = 'active'
+  )
+  select coalesce(jsonb_agg(public.public_profile(me, src.pid, false) || jsonb_build_object('at', src.at)
+                            order by src.rn), '[]'::jsonb)
+    into outgoing from src;
+
+  with src as (
+    select k.created_at as at,
+           case when k.user_a = me then k.user_b else k.user_a end as pid,
+           row_number() over (order by k.created_at desc) as rn
+      from connections k
+     where k.user_a = me or k.user_b = me
+  )
+  select coalesce(jsonb_agg(public.public_profile(me, src.pid, false) || jsonb_build_object('at', src.at)
+                            order by src.rn), '[]'::jsonb)
+    into mutual from src
+   where not public.is_blocked_pair(me, src.pid)
+     and exists (select 1 from profiles p where p.id = src.pid and p.onboarded and p.status = 'active');
+
+  return jsonb_build_object(
+    'incoming', incoming,
+    'outgoing', outgoing,
+    'mutual', mutual,
+    'requestCount', jsonb_array_length(incoming)
+  );
+end $$;
+
+
+-- --------------------------------------------- the profile, from one side
+
+create or replace function public.public_profile(p_viewer bigint, p_target bigint, p_full boolean default false)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  r record;
+  v record;
+  interests jsonb;
+  intentions jsonb;
+  shared_interests jsonb;
+  km double precision;
+  my_deep boolean;
+  my_note text;
+  my_found boolean;
+  their_deep boolean;
+  their_note text;
+  their_found boolean;
+  my_status text;
+  my_responded bigint;
+  their_status text;
+  connected boolean;
+  can_see_activity boolean;
+  result jsonb;
+begin
+  select p.*, pr.show_distance, pr.show_online, pr.discoverable, pr.profile_visibility,
+         pr.who_can_message, pr.who_can_crush, pr.show_age, pr.show_city, pr.incognito
+    into r
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_target;
+  if not found then
+    return null;
+  end if;
+
+  select p.lat, p.lng, p.interests, p.intentions, p.verification, pr.show_online
+    into v
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_viewer;
+
+  interests := coalesce(r.interests, '[]'::jsonb);
+  intentions := coalesce(r.intentions, '[]'::jsonb);
+  km := public.distance_km(v.lat, v.lng, r.lat, r.lng);
+  connected := public.is_connected_pair(p_viewer, p_target);
+
+  select c.deep, c.note, c.status, c.responded_at into my_deep, my_note, my_status, my_responded
+    from crushes c where c.from_id = p_viewer and c.to_id = p_target;
+  my_found := found;
+  select c.deep, c.note, c.status into their_deep, their_note, their_status
+    from crushes c where c.from_id = p_target and c.to_id = p_viewer;
+  their_found := found;
+
+  can_see_activity := r.show_online and coalesce(v.show_online, true);
+
+  select coalesce(jsonb_agg(i), '[]'::jsonb) into shared_interests
+    from jsonb_array_elements_text(interests) i
+   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb)));
+
+  result := jsonb_build_object(
+    'id', r.id,
+    'name', r.name,
+    'username', nullif(r.username, ''),
+    'age', case when r.show_age then public.age_of(r.birthdate) else null end,
+    'pronouns', nullif(r.pronouns, ''),
+    'city', case when r.show_city then nullif(r.city, '') else null end,
+    'verified', r.verification = 'verified',
+    -- Which seal, if any. 'verified' is the ordinary one, 'gold' is earned,
+    -- 'diamond' belongs to the company account alone.
+    'badgeTier', case
+      when r.badge_tier = 'diamond' then 'diamond'
+      when r.badge_tier = 'gold' then 'gold'
+      when r.verification = 'verified' then 'verified'
+      else 'none'
+    end,
+    -- Keep Close, read from this viewer's side: are they keeping you close?
+    'keepsYou', exists (select 1 from keeps k where k.keeper_id = p_target and k.kept_id = p_viewer),
+    'distance', case when r.show_distance then public.distance_label(km) else null end,
+    'online', case when can_see_activity then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when can_see_activity then public.activity_label_at(r.last_active_at) else null end,
+    'bio', r.bio,
+    'intentions', intentions,
+    'relationshipIntention', nullif(r.relationship_intention, ''),
+    'interests', interests,
+    'sharedInterests', shared_interests,
+    'photos', public.photos_of(p_target),
+    /*
+     * Add Up, read from this viewer's side.
+     *
+     * `sent` and `received` mean *a request is waiting* — they are what draws
+     * "Request sent" and the Accept / Decline pair. An accepted request is a
+     * connection (`mutual`), and a declined one is neither: `sentStatus` and
+     * `receivedStatus` carry the whole truth for the screens that need to say
+     * more than a yes or a no ("You asked. They declined. You can ask again
+     * in a few days.").
+     */
+    'crush', jsonb_build_object(
+      'sent', my_found and coalesce(my_status, 'pending') = 'pending',
+      'sentStatus', my_status,
+      'sentDeep', coalesce(my_deep, false),
+      'received', their_found and coalesce(their_status, 'pending') = 'pending',
+      'receivedStatus', their_status,
+      'receivedDeep', coalesce(their_deep, false),
+      'note', case when their_found then their_note else null end,
+      'respondedAt', my_responded,
+      'mutual', connected
+    ),
+    'canMessage', public.messaging_block_reason(p_viewer, p_target) is null,
+    'acceptsCrushes', r.who_can_crush <> 'verified' or (v.verification = 'verified'),
+    -- The ring. True only when there is a live Moment THIS viewer may open.
+    'hasMoment', exists (
+      select 1 from moments m
+       where m.user_id = p_target
+         and m.expires_at > public.now_ms()
+         and public.can_view_moment(m, p_viewer)
+    )
+  );
+
+  if p_full then
+    result := result || jsonb_build_object(
+      'languages', coalesce(r.languages, '[]'::jsonb),
+      'lifestyle', coalesce(r.lifestyle, '{}'::jsonb),
+      'messageBlockReason', public.messaging_block_reason(p_viewer, p_target)
+    );
+  end if;
+  return result;
+end $function$;
+
+-- ================================ 20261107030000_whisper_live.sql
+
+-- ============================================================================
+-- Whisper, live — 1.0.68
+--
+-- Three things were missing from Whisper and all three are transport, not
+-- product: a message arrived only when a poll asked for it, "being here" was a
+-- five-minute guess computed from `last_active_at`, and a Whisper had two
+-- visible states (sent, read) because nothing recorded the moment the other
+-- phone actually had it.
+--
+-- So this migration adds transport, and only transport:
+--
+--   1 · `messages.delivered_at` — the moment the recipient's device had the
+--       message. Not a receipt: it says "arrived", never "read".
+--   2 · one private Realtime topic per conversation (`whisper:<id>`), with the
+--       same authorisation shape the voice calls already use, so typing,
+--       recording and presence can ride on it without ever carrying content.
+--   3 · `privacy.show_activity` — being seen online and being timestamped are
+--       different disclosures, so they get different switches.
+--
+-- Message *content* never travels over the channel. The channel says "there is
+-- something new"; the message itself is still fetched through `get_messages`,
+-- where every audience, block and read rule already lives.
+-- ============================================================================
+
+-- ------------------------------------------------------------ 1 · delivery
+
+alter table public.messages add column if not exists delivered_at bigint;
+
+-- The recipient's query is "what have I not acknowledged yet, in this thread".
+-- A partial index keeps that cheap forever: it only ever holds the few rows
+-- between a message being sent and being delivered.
+create index if not exists messages_undelivered_idx
+  on public.messages (conversation_id, id) where delivered_at is null;
+
+/*
+ * Serialisation gains one field, and only for the sender.
+ *
+ * `deliveredAt` is about *my* message reaching *their* device, so it is the
+ * sender's business. A recipient is not told when their own phone received
+ * something — that is their own device's knowledge, not a message about them.
+ */
+create or replace function public.serialize_message(m public.messages, p_viewer bigint, p_show_receipts boolean)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'id', m.id,
+    'conversationId', m.conversation_id,
+    'senderId', m.sender_id,
+    'mine', m.sender_id = p_viewer,
+    'kind', m.kind,
+    'body', m.body,
+    'mediaUrl', m.media_url,
+    'meta', m.meta,
+    'createdAt', m.created_at,
+    'readAt', case when m.sender_id = p_viewer and not p_show_receipts then null else m.read_at end,
+    'deliveredAt', case when m.sender_id = p_viewer then m.delivered_at else null end,
+    'reactions', coalesce((
+      select jsonb_agg(jsonb_build_object('userId', r.user_id, 'kind', r.kind))
+        from message_reactions r where r.message_id = m.id
+    ), '[]'::jsonb)
+  )
+$$;
+
+/*
+ * "I have these."
+ *
+ * Called by the recipient's device the moment the messages arrive — on open, on
+ * a realtime nudge, and on returning to the app. Deliberately idempotent: the
+ * stamp is the *first* time it was true, so a second call neither moves it nor
+ * fails, and re-delivery after a reconnect cannot rewrite history.
+ *
+ * `p_up_to_id` is optional and defaults to everything in the thread, because
+ * the honest thing to record is "I have all of it" rather than the highest id a
+ * screen happened to be holding.
+ */
+create or replace function public.mark_messages_delivered(p_conversation_id bigint, p_up_to_id bigint default null)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  ceiling_id bigint;
+  stamped integer;
+  highest bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into conv from conversations c where c.id = p_conversation_id;
+  if not found or (conv.user_a <> me and conv.user_b <> me) then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+  -- A cut-off pair does not get delivery acks either: the thread is over, and
+  -- an ack is still a signal that somebody is there.
+  if public.is_blocked_pair(me, peer) then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+
+  ceiling_id := coalesce(p_up_to_id, 0);
+  if ceiling_id <= 0 then
+    select max(ms.id) into ceiling_id from messages ms where ms.conversation_id = p_conversation_id;
+  end if;
+  if ceiling_id is null then
+    return jsonb_build_object('upTo', 0, 'count', 0);
+  end if;
+
+  with stamped_rows as (
+    update messages ms set delivered_at = public.now_ms()
+     where ms.conversation_id = p_conversation_id
+       and ms.sender_id <> me
+       and ms.delivered_at is null
+       and ms.id <= ceiling_id
+    returning ms.id
+  )
+  select count(*)::int, max(id) into stamped, highest from stamped_rows;
+
+  return jsonb_build_object('upTo', coalesce(highest, 0), 'count', coalesce(stamped, 0));
+end $$;
+
+revoke all on function public.mark_messages_delivered(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.mark_messages_delivered(bigint, bigint) to authenticated, service_role;
+
+/*
+ * Reading implies having. Anybody who marks a thread read has, by definition,
+ * the messages in it — so the delivery stamp is filled in the same statement
+ * rather than waiting for a second round trip that might never come.
+ */
+create or replace function public.mark_conversation_read(p_conversation_id bigint) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into conv from conversations c where c.id = p_conversation_id;
+  if not found or (conv.user_a <> me and conv.user_b <> me) then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  update messages ms set delivered_at = coalesce(ms.delivered_at, public.now_ms())
+   where ms.conversation_id = p_conversation_id and ms.sender_id <> me and ms.delivered_at is null;
+  update messages ms set read_at = public.now_ms()
+   where ms.conversation_id = p_conversation_id and ms.sender_id <> me and ms.read_at is null;
+  update notifications nt set read_at = public.now_ms()
+   where nt.user_id = me and nt.kind = 'message' and nt.ref_id = p_conversation_id and nt.read_at is null;
+  return true;
+end $$;
+
+-- ------------------------------------------------- 2 · the whisper channel
+
+/*
+ * One topic per conversation: `whisper:<conversation id>`.
+ *
+ * Same shape as the private call rooms — a topic the database can authorise,
+ * because a topic a client invents is a topic anybody can guess. Nothing secret
+ * is in the name: a conversation id is already a number both members know, and
+ * knowing it is useless without the row saying you are one of them.
+ */
+create or replace function public.whisper_topic_conversation(p_topic text) returns bigint
+language sql immutable as $$
+  select case
+    when p_topic ~ '^whisper:[0-9]{1,18}$' then substring(p_topic from 9)::bigint
+    else null
+  end
+$$;
+
+/*
+ * Who may listen to and speak on a conversation's channel.
+ *
+ * A member, of a conversation that is still open, with nobody cut off. That is
+ * the whole rule — the same rule `get_messages` already applies to the messages
+ * themselves, so the channel can never be wider than the thread it describes.
+ */
+create or replace function public.can_join_whisper(p_topic text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv_id bigint;
+  conv record;
+  peer bigint;
+begin
+  if me is null then return false; end if;
+  conv_id := public.whisper_topic_conversation(p_topic);
+  if conv_id is null then return false; end if;
+  select * into conv from conversations c where c.id = conv_id;
+  if not found or (conv.user_a <> me and conv.user_b <> me) then return false; end if;
+  if conv.closed then return false; end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+  return not public.is_blocked_pair(me, peer);
+end $$;
+
+revoke all on function public.whisper_topic_conversation(text) from public, anon;
+revoke all on function public.can_join_whisper(text) from public, anon;
+grant execute on function public.whisper_topic_conversation(text) to authenticated, service_role;
+grant execute on function public.can_join_whisper(text) to authenticated, service_role;
+
+-- Supabase supplies realtime.messages and realtime.topic(); the plain-Postgres
+-- smoke harness stubs both, so these policies are exercised by the tests too.
+drop policy if exists "crushly_whisper_receive" on realtime.messages;
+create policy "crushly_whisper_receive" on realtime.messages
+  for select to authenticated
+  using (extension = 'broadcast' and public.can_join_whisper(realtime.topic()));
+
+drop policy if exists "crushly_whisper_send" on realtime.messages;
+create policy "crushly_whisper_send" on realtime.messages
+  for insert to authenticated
+  with check (extension = 'broadcast' and public.can_join_whisper(realtime.topic()));
+
+-- ------------------------------------------------------- 3 · what presence says
+
+/*
+ * Being online and being timestamped are two disclosures, so they are two
+ * switches. Default true keeps every existing member exactly as they are today.
+ */
+alter table public.privacy add column if not exists show_activity boolean not null default true;
+
+/*
+ * The header of a Whisper, read once and then kept live by the channel.
+ *
+ * It answers only what a chat header may ask: are they here, when were they
+ * last here, and may I see a tick when they read this. `activity` is null when
+ * either side has switched that off, which is the same answer as "unknown" —
+ * the screen prints nothing rather than inventing a time.
+ */
+create or replace function public.peer_presence(p_conversation_id bigint) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  r record;
+  v record;
+  see_online boolean;
+  see_activity boolean;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into conv from conversations c
+   where c.id = p_conversation_id and (c.user_a = me or c.user_b = me);
+  if not found then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+
+  select p.last_active_at, pr.show_online, pr.show_activity into r
+    from profiles p join privacy pr on pr.user_id = p.id where p.id = peer;
+  select pr.show_online, pr.show_activity into v from privacy pr where pr.user_id = me;
+
+  see_online := coalesce(r.show_online, true) and coalesce(v.show_online, true);
+  see_activity := see_online and coalesce(r.show_activity, true) and coalesce(v.show_activity, true);
+
+  return jsonb_build_object(
+    'peerId', peer,
+    'online', case when see_online then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when see_activity then public.activity_label_at(r.last_active_at) else null end,
+    -- Receipts need both sides; the receipt tick is drawn from this, and the
+    -- channel's `read` broadcast is only sent when it is true.
+    'receipts', public.receipts_visible(me, peer),
+    -- Whether this member's own presence may be announced on the channel. It is
+    -- my switch about me, so I am the only one who has to allow it.
+    'announce', coalesce(v.show_online, true),
+    'closed', conv.closed
+  );
+end $$;
+
+revoke all on function public.peer_presence(bigint) from public, anon, authenticated;
+grant execute on function public.peer_presence(bigint) to authenticated, service_role;
+
+-- ------------------------------------- 4 · the Space, with activity gated
+
+create or replace function public.public_profile(p_viewer bigint, p_target bigint, p_full boolean default false)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  r record;
+  v record;
+  interests jsonb;
+  intentions jsonb;
+  shared_interests jsonb;
+  km double precision;
+  my_deep boolean;
+  my_note text;
+  my_found boolean;
+  their_deep boolean;
+  their_note text;
+  their_found boolean;
+  my_status text;
+  my_responded bigint;
+  their_status text;
+  connected boolean;
+  can_see_online boolean;
+  can_see_activity boolean;
+  result jsonb;
+begin
+  select p.*, pr.show_distance, pr.show_online, pr.show_activity, pr.discoverable,
+         pr.profile_visibility, pr.who_can_message, pr.who_can_crush, pr.show_age,
+         pr.show_city, pr.incognito
+    into r
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_target;
+  if not found then
+    return null;
+  end if;
+
+  select p.lat, p.lng, p.interests, p.intentions, p.verification, pr.show_online, pr.show_activity
+    into v
+    from profiles p join privacy pr on pr.user_id = p.id
+   where p.id = p_viewer;
+
+  interests := coalesce(r.interests, '[]'::jsonb);
+  intentions := coalesce(r.intentions, '[]'::jsonb);
+  km := public.distance_km(v.lat, v.lng, r.lat, r.lng);
+  connected := public.is_connected_pair(p_viewer, p_target);
+
+  select c.deep, c.note, c.status, c.responded_at into my_deep, my_note, my_status, my_responded
+    from crushes c where c.from_id = p_viewer and c.to_id = p_target;
+  my_found := found;
+  select c.deep, c.note, c.status into their_deep, their_note, their_status
+    from crushes c where c.from_id = p_target and c.to_id = p_viewer;
+  their_found := found;
+
+  /*
+   * Two different questions, so two different answers.
+   *
+   * The dot means "they are here right now"; the label means "they were here at
+   * 14:20". Somebody may be happy to be seen online while not wanting to hand
+   * out a log of when they were last around — which is why `show_activity` is
+   * its own switch and both sides have to allow it, exactly like `show_online`.
+   */
+  can_see_online := r.show_online and coalesce(v.show_online, true);
+  can_see_activity := can_see_online and r.show_activity and coalesce(v.show_activity, true);
+
+  select coalesce(jsonb_agg(i), '[]'::jsonb) into shared_interests
+    from jsonb_array_elements_text(interests) i
+   where i in (select jsonb_array_elements_text(coalesce(v.interests, '[]'::jsonb)));
+
+  result := jsonb_build_object(
+    'id', r.id,
+    'name', r.name,
+    'username', nullif(r.username, ''),
+    'age', case when r.show_age then public.age_of(r.birthdate) else null end,
+    'pronouns', nullif(r.pronouns, ''),
+    'city', case when r.show_city then nullif(r.city, '') else null end,
+    'verified', r.verification = 'verified',
+    -- Which seal, if any. 'verified' is the ordinary one, 'gold' is earned,
+    -- 'diamond' belongs to the company account alone.
+    'badgeTier', case
+      when r.badge_tier = 'diamond' then 'diamond'
+      when r.badge_tier = 'gold' then 'gold'
+      when r.verification = 'verified' then 'verified'
+      else 'none'
+    end,
+    -- Keep Close, read from this viewer's side: are they keeping you close?
+    'keepsYou', exists (select 1 from keeps k where k.keeper_id = p_target and k.kept_id = p_viewer),
+    'distance', case when r.show_distance then public.distance_label(km) else null end,
+    'online', case when can_see_online then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when can_see_activity then public.activity_label_at(r.last_active_at) else null end,
+    'bio', r.bio,
+    'intentions', intentions,
+    'relationshipIntention', nullif(r.relationship_intention, ''),
+    'interests', interests,
+    'sharedInterests', shared_interests,
+    'photos', public.photos_of(p_target),
+    /*
+     * Add Up, read from this viewer's side.
+     *
+     * `sent` and `received` mean *a request is waiting* — they are what draws
+     * "Request sent" and the Accept / Decline pair. An accepted request is a
+     * connection (`mutual`), and a declined one is neither: `sentStatus` and
+     * `receivedStatus` carry the whole truth for the screens that need to say
+     * more than a yes or a no ("You asked. They declined. You can ask again
+     * in a few days.").
+     */
+    'crush', jsonb_build_object(
+      'sent', my_found and coalesce(my_status, 'pending') = 'pending',
+      'sentStatus', my_status,
+      'sentDeep', coalesce(my_deep, false),
+      'received', their_found and coalesce(their_status, 'pending') = 'pending',
+      'receivedStatus', their_status,
+      'receivedDeep', coalesce(their_deep, false),
+      'note', case when their_found then their_note else null end,
+      'respondedAt', my_responded,
+      'mutual', connected
+    ),
+    'canMessage', public.messaging_block_reason(p_viewer, p_target) is null,
+    'acceptsCrushes', r.who_can_crush <> 'verified' or (v.verification = 'verified'),
+    -- The ring. True only when there is a live Moment THIS viewer may open.
+    'hasMoment', exists (
+      select 1 from moments m
+       where m.user_id = p_target
+         and m.expires_at > public.now_ms()
+         and public.can_view_moment(m, p_viewer)
+    )
+  );
+
+  if p_full then
+    result := result || jsonb_build_object(
+      'languages', coalesce(r.languages, '[]'::jsonb),
+      'lifestyle', coalesce(r.lifestyle, '{}'::jsonb),
+      'messageBlockReason', public.messaging_block_reason(p_viewer, p_target)
+    );
+  end if;
+  return result;
+end $function$;
+
+-- ================================ 20261107040000_top_crushes_and_ten_second_notes.sql
+
+-- ============================================================================
+-- Top Crushes This Week, for real — 1.0.69
+--
+-- The rail on that page is called "Top Crushes This Week" and it was not
+-- showing that. The ranking was:
+--
+--     (created_at > now - 7 days) desc,     -- recency, first
+--     (crushes + 3 * comments) desc         -- engagement, second
+--
+-- Two things were wrong with it, and both are the kind that a person can see
+-- from the outside:
+--
+--   1. Recency came *before* engagement, so every clip posted this week
+--      outranked every older clip no matter what it had earned. A clip with no
+--      Crushes and no comments sat at the top of a rail promising the opposite.
+--   2. Comments were weighted three times as heavily as Crushes, on a rail whose
+--      entire name is Crushes.
+--
+-- So the ordering becomes the one the title claims, and the claim becomes
+-- something the query can keep:
+--
+--     · only the last seven days — "This Week" is not decoration;
+--     · at least one Crush — a post nobody has crushed is not a top Crush, and
+--       an empty rail is a more honest thing to draw than a full wrong one;
+--     · Crushes, then comments as the tiebreak, then newest, then id so two
+--       calls a millisecond apart agree;
+--     · one clip per author, and it is that author's *most crushed* clip of the
+--       week rather than simply their newest one.
+--
+-- Picking per author now happens after the engagement sort, which is the point:
+-- previously a member's newest clip won the slot even if a different clip of
+-- theirs had been crushed a hundred times.
+-- ============================================================================
+
+create or replace function public.trending_clips(p_limit integer default 12)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me     bigint := public.me_id();
+  cap    int := least(greatest(coalesce(p_limit, 12), 1), 24);
+  items  jsonb := '[]'::jsonb;
+  r      record;
+  post   public.posts;
+  window_start bigint := public.now_ms() - 7 * 86400000;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    with clip as (
+      select po.id,
+             po.author_id,
+             po.created_at,
+             coalesce((select count(*) from post_reactions re where re.post_id = po.id), 0) as crushes,
+             coalesce((select count(*) from post_comments pc where pc.post_id = po.id), 0) as comments
+        from posts po
+       where po.media_url is not null
+         and po.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)'
+         and po.circle_id is null
+         and po.audience = 'everyone'
+         and po.created_at > window_start
+    ),
+    -- The clip that carries each author this week: theirs, if it earned anything.
+    per_author as (
+      select distinct on (c.author_id) c.*
+        from clip c
+       where c.crushes > 0
+       order by c.author_id, c.crushes desc, c.comments desc, c.created_at desc, c.id desc
+    )
+    select c.id
+      from per_author c
+     order by c.crushes desc,
+              c.comments desc,
+              c.created_at desc,
+              c.id desc
+     limit cap
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', post.id,
+          'body', post.body,
+          'mediaUrl', post.media_url,
+          'mediaKind', 'video',
+          'edit', post.edit,
+          'audience', post.audience,
+          'createdAt', post.created_at,
+          'author', public.public_profile(me, post.author_id, false),
+          'mine', post.author_id = me
+        ) || public.post_engagement(post.id, me)
+      );
+    end if;
+  end loop;
+
+  return items;
+end $function$;
+
+grant execute on function public.trending_clips(integer) to authenticated, service_role;
+
+-- ============================================================================
+-- A video note is ten seconds — enforced where it is stored
+-- ============================================================================
+
+/*
+ * The recorder stops at ten seconds, and the camera app is told the same. This
+ * is the line that holds when an older build — or a client that is not ours —
+ * tries to upload a minute under the same message kind. Ten seconds plus two, for
+ * the rounding a duration goes through on the way here.
+ *
+ * It is deliberately a trigger rather than a change to `send_message`: the rule
+ * belongs to the message, not to one way of writing it, and a trigger catches
+ * every writer there will ever be.
+ *
+ * INSERT only, and that is not an oversight. Notes recorded before this release
+ * are already in threads; checking on UPDATE would make an old minute-long note
+ * impossible to mark as read — a rule about storage would break reading.
+ */
+create or replace function public.validate_video_note_length() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  secs numeric;
+begin
+  if new.kind <> 'video' then
+    return new;
+  end if;
+  if (new.meta ->> 'duration') ~ '^[0-9]+(\.[0-9]+)?$' then
+    secs := (new.meta ->> 'duration')::numeric;
+  end if;
+  if secs is not null and secs > 12 then
+    perform public.crushly_fail(400, 'video_too_long', 'A video note is 10 seconds. Record a shorter one and send that.');
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists validate_video_note_length on public.messages;
+create trigger validate_video_note_length before insert on public.messages
+  for each row execute function public.validate_video_note_length();
+
+notify pgrst, 'reload schema';
+
+-- ============================================================================
+-- The same lie, one rail over: a Circle tile captioned "Most Crushed Post"
+-- ============================================================================
+
+/*
+ * `circle_highlights` picked each room's newest-or-most-reacted post and admitted
+ * the room whenever that post existed — no reactions, no comments, nothing
+ * needed. A room whose most recent post nobody touched still got a tile, and the
+ * tile's caption is chosen by the client from `likes` and `comments`: zero of
+ * both falls through to "Most Crushed Post". The same sentence the rail got
+ * wrong, in a different place.
+ *
+ * So a post becomes a candidate for the tile only once somebody has crushed it or
+ * answered it. A room with nothing crushed and nothing said this week is not a
+ * highlight; it is a room, and it is still on Connections, one tap away.
+ *
+ * Nothing else changes: the score, the seven days, the ordering, the one-post-
+ * per-room rule, and the fact that a room that has only been talking is still a
+ * highlight — for the conversation, which is what it earned.
+ */
+create or replace function public.circle_highlights(p_limit integer default 8)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  n  int := least(greatest(coalesce(p_limit, 8), 1), 20);
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(item order by score desc, circle_id)
+      from (
+        select
+               (coalesce(best.likes, 0) * 3) + coalesce(best.comments, 0) * 2 + coalesce(week.messages, 0) as score,
+               c.id as circle_id,
+               jsonb_build_object(
+                 'circleId', c.id,
+                 'circleName', c.name,
+                 'theme', c.theme,
+                 'coverUrl', c.cover_url,
+                 'memberCount', (select count(*) from circle_members cm where cm.circle_id = c.id),
+                 'postId', best.post_id,
+                 'body', best.body,
+                 'mediaUrl', best.media_url,
+                 'likes', coalesce(best.likes, 0),
+                 'comments', coalesce(best.comments, 0),
+                 'messages', coalesce(week.messages, 0),
+                 'kind', case when best.post_id is not null and coalesce(best.likes, 0) > 0 then 'post'
+                              when coalesce(week.messages, 0) > 0 then 'conversation'
+                              else 'quiet' end,
+                 'score', (coalesce(best.likes, 0) * 3) + coalesce(best.comments, 0) * 2 + coalesce(week.messages, 0),
+                 'totalMessages', (select count(*) from circle_messages m where m.circle_id = c.id)
+               ) as item
+          from circles c
+          join circle_members mine on mine.circle_id = c.id and mine.member_id = me
+          left join lateral (
+            select po.id as post_id, po.body, po.media_url,
+                   (select count(*) from post_reactions pr where pr.post_id = po.id) as likes,
+                   (select count(*) from post_comments pc where pc.post_id = po.id) as comments
+              from posts po
+             where po.circle_id = c.id
+               and (exists (select 1 from post_reactions pr where pr.post_id = po.id)
+                    or exists (select 1 from post_comments pc where pc.post_id = po.id))
+             order by (select count(*) from post_reactions pr where pr.post_id = po.id) desc,
+                      po.created_at desc
+             limit 1
+          ) best on true
+          left join lateral (
+            select count(*) as messages
+              from circle_messages m
+             where m.circle_id = c.id
+               and m.created_at > public.now_ms() - 7 * 24 * 60 * 60 * 1000
+          ) week on true
+         where best.post_id is not null or coalesce(week.messages, 0) > 0
+         order by score desc, c.id
+         limit n
+      ) ranked
+  ), '[]'::jsonb);
+end $function$;
+
+grant execute on function public.circle_highlights(integer) to authenticated, service_role;
+
+-- ================================ 20261108080208_post_comment_options.sql
+
+-- Comment controls are enforced by the database, including older app versions.
+-- Creation and the choice happen in one transaction; the post is never briefly
+-- public with comments enabled before the choice is applied.
+alter table public.posts add column if not exists comments_enabled boolean not null default true;
+
+create or replace function public.create_post_with_options(
+  p_body text, p_media_url text, p_audience text, p_circle_id bigint,
+  p_edit jsonb, p_comments_enabled boolean
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare result jsonb;
+begin
+  if p_comments_enabled is null then
+    perform public.crushly_fail(400, '', 'Choose whether comments are allowed.');
+  end if;
+  result := public.create_post(p_body, p_media_url, p_audience, p_circle_id, p_edit);
+  update public.posts set comments_enabled = p_comments_enabled
+    where id = (result->>'id')::bigint and author_id = public.me_id();
+  if not found then
+    perform public.crushly_fail(500, '', 'Could not save post options.');
+  end if;
+  return result || jsonb_build_object('commentsEnabled', p_comments_enabled);
+end $$;
+revoke all on function public.create_post_with_options(text,text,text,bigint,jsonb,boolean) from public, anon;
+grant execute on function public.create_post_with_options(text,text,text,bigint,jsonb,boolean) to authenticated, service_role;
+
+-- Also blocks old clients and direct inserts; enforcement does not rely on UI.
+create or replace function public.enforce_post_comments_enabled()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare allowed boolean;
+begin
+  select comments_enabled into allowed from public.posts where id = new.post_id;
+  if allowed is distinct from true then
+    perform public.crushly_fail(403, 'comments_disabled', 'Comments are turned off for this post.');
+  end if;
+  return new;
+end $$;
+revoke all on function public.enforce_post_comments_enabled() from public, anon, authenticated;
+drop trigger if exists enforce_post_comments_enabled on public.post_comments;
+create trigger enforce_post_comments_enabled before insert on public.post_comments
+for each row execute function public.enforce_post_comments_enabled();
+
+create or replace function public.post_comment_settings(p_post_id bigint)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare viewer bigint := public.me_id(); po public.posts;
+begin
+  if viewer is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into po from public.posts where id = p_post_id;
+  if not found or not public.can_view_post(po, viewer) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+  return po.comments_enabled;
+end $$;
+revoke all on function public.post_comment_settings(bigint) from public, anon;
+grant execute on function public.post_comment_settings(bigint) to authenticated, service_role;
+
+-- ================================ 20261108113451_moment_clip_upload_limit.sql
+
+-- Keep photo limits intact but let one-minute Moment clips upload.
+create or replace function public.media_upload_ticket(p_kind text, p_content_type text, p_bytes integer default 0)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind is null or p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type is not supported.');
+  end if;
+  if not public.media_kind_allows(p_kind, v_ext) then
+    perform public.crushly_fail(415, '', case
+      when p_kind = 'photos' then 'Photos must be JPEG, PNG or WebP.'
+      when p_kind in ('moments', 'posts') then 'That takes a photo or a short clip.'
+      when p_kind = 'circles' then 'Circles take photos, voice notes and clips.'
+      else 'That file type is not supported.' end);
+  end if;
+
+  -- A Moment clip can be up to one minute: give video the same 80 MiB ceiling
+  -- as other clips while retaining the 8 MiB ceiling for Moment photos.
+  v_limit := case when p_kind in ('messages', 'circles', 'posts')
+    or (p_kind = 'moments' and v_ext in ('mp4', 'webm', 'mov'))
+    then 80 * 1024 * 1024 else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty - try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  perform 1 from profiles where id = me for update;
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That is a lot of uploading - try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+  insert into media_upload_reservations(path, user_id, bytes) values (v_path, me, p_bytes);
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $function$;
+
+-- ================================ 20261109000000_space_banners.sql
+
+-- Space banners are separate from the six profile photos and use the same
+-- visibility and block rules. The Worker asks can_view_media on every read.
+create table if not exists public.profile_banners (
+  user_id bigint primary key references public.profiles(id) on delete cascade,
+  url text not null,
+  updated_at bigint not null default public.now_ms()
+);
+alter table public.profile_banners enable row level security;
+revoke all on public.profile_banners from public, anon, authenticated;
+-- A reservation is used at most once. Keep the reservation for the upload
+-- rate window; deleting it immediately would permit unlimited banner uploads.
+create table if not exists public.profile_banner_claims (
+  path text primary key references public.media_upload_reservations(path) on delete cascade
+);
+alter table public.profile_banner_claims enable row level security;
+revoke all on public.profile_banner_claims from public, anon, authenticated;
+
+
+create or replace function public.can_manage_media(p_path text, p_url text default null::text)
+returns boolean
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  v_folder text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 2);
+begin
+  if me is null or p_path is null or p_path = '' then return false; end if;
+
+  -- Paths are minted server-side as `kind/<profile id>/…`. You may only ever
+  -- touch your own folder, checked before anything else — otherwise passing
+  -- your own path alongside somebody else's file URL would be enough to
+  -- delete their photo.
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'banners') or v_folder <> me::text then
+    return false;
+  end if;
+
+  -- The same guard on the URL form: both arguments must describe the same file
+  -- in your own folder. Without this, your own path paired with somebody else's
+  -- file URL would slip past the folder check above.
+  if p_url is not null
+     and public.media_object_path(p_url) <> p_path then
+    return false;
+  end if;
+
+  -- A referenced banner is never deletable directly: first replace/remove the
+  -- row. This also protects an upload if its save response is lost in transit.
+  if v_kind = 'banners' and exists (
+    select 1 from public.profile_banners where public.media_object_path(url) = p_path
+  ) then return false; end if;
+
+  -- Still referenced? Then only the owner of that row may remove it.
+  if v_kind = 'photos' and exists (
+    select 1 from photos where public.media_object_path(url) = p_path or (p_url is not null and url = p_url)
+  ) then
+    return exists (
+      select 1 from photos where user_id = me
+        and (public.media_object_path(url) = p_path or (p_url is not null and url = p_url))
+    );
+  end if;
+
+  if v_kind = 'moments' and exists (
+    select 1 from moments where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from moments where user_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'messages' and exists (
+    select 1 from messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from messages where sender_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'posts' and exists (
+    select 1 from posts where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+  ) then
+    return exists (
+      select 1 from posts where author_id = me
+        and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+    );
+  end if;
+
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages where public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url)
+    ) then
+      return exists (
+        select 1 from circle_messages where sender_id = me
+          and (public.media_object_path(media_url) = p_path or (p_url is not null and media_url = p_url))
+      );
+    end if;
+    -- The cover of a room you started, and nothing else.
+    if exists (
+      select 1 from circles where public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url)
+    ) then
+      return exists (
+        select 1 from circles where owner_id = me
+          and (public.media_object_path(cover_url) = p_path or (p_url is not null and cover_url = p_url))
+      );
+    end if;
+  end if;
+
+  -- Nothing references it any more and it sits in your own folder: an orphan
+  -- (a photo replaced before it was saved, say) you are allowed to clear.
+  return true;
+end $function$;
+
+create or replace function public.can_view_media(p_path text, p_url text default null::text)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_kind text := split_part(ltrim(coalesce(p_path, ''), '/'), '/', 1);
+  m public.moments;
+  msg public.messages;
+  post public.posts;
+begin
+  if me is null or p_path is null or p_path = ''
+     or (p_url is not null and public.media_object_path(p_url) <> p_path) then
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  if v_kind = 'banners' then
+    return jsonb_build_object('allowed', exists (
+      select 1 from public.profile_banners b
+      join public.profiles pf on pf.id = b.user_id
+      join public.privacy pr on pr.user_id = b.user_id
+      where public.media_object_path(b.url) = p_path
+        and split_part(p_path, '/', 2) = b.user_id::text
+        and (b.user_id = me or (
+          pf.onboarded and pf.status = 'active'
+          and not public.is_blocked_pair(me, b.user_id)
+          and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, b.user_id))
+          and (not pr.incognito or public.is_connected_pair(me, b.user_id))
+        ))
+    ), 'cacheable', false);
+  end if;
+
+  if v_kind in ('photos', 'seed') then
+    return jsonb_build_object('allowed', exists (
+      select 1 from photos ph join profiles pf on pf.id = ph.user_id
+        join privacy pr on pr.user_id = pf.id
+       where public.media_object_path(ph.url) = p_path
+         and (v_kind = 'seed' or split_part(p_path, '/', 2) = ph.user_id::text)
+         and (ph.user_id = me or (
+           pf.onboarded and pf.status = 'active'
+           and not public.is_blocked_pair(me, ph.user_id)
+           and (pr.profile_visibility = 'everyone' or public.is_connected_pair(me, ph.user_id))
+           and (not pr.incognito or public.is_connected_pair(me, ph.user_id))
+         ))
+    ), 'cacheable', false);
+  end if;
+
+  if v_kind = 'moments' then
+    select * into m from moments mo where public.media_object_path(mo.media_url) = p_path
+      and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    if not found and p_url is not null then
+      select * into m from moments mo where mo.media_url = p_url
+        and split_part(p_path, '/', 2) = mo.user_id::text limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if m.expires_at <= public.now_ms() then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_moment(m, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  if v_kind = 'messages' then
+    select ms.* into msg from messages ms
+      join conversations c on c.id = ms.conversation_id
+      where public.media_object_path(ms.media_url) = p_path and (c.user_a = me or c.user_b = me)
+        and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+      limit 1;
+    if not found and p_url is not null then
+      select ms.* into msg from messages ms
+        join conversations c on c.id = ms.conversation_id
+        where ms.media_url = p_url and (c.user_a = me or c.user_b = me)
+          and split_part(p_path, '/', 2) = ms.sender_id::text
+        and not public.is_blocked_pair(c.user_a, c.user_b)
+        limit 1;
+    end if;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Media belongs to the original uploader's row, not an arbitrary row that
+  -- copied its URL. Visibility is checked again on every request.
+  if v_kind = 'posts' then
+    select po.* into post from posts po
+     where (public.media_object_path(po.media_url) = p_path or (p_url is not null and po.media_url = p_url))
+       and split_part(p_path, '/', 2) = po.author_id::text
+     limit 1;
+    if not found then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    if not public.can_view_post(post, me) then
+      return jsonb_build_object('allowed', false, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', true, 'cacheable', false);
+  end if;
+
+  -- Inside a Circle: the messages people sent, and the room's cover.
+  if v_kind = 'circles' then
+    if exists (
+      select 1 from circle_messages m2
+        join circle_members cm on cm.circle_id = m2.circle_id
+       where cm.member_id = me
+         and (public.media_object_path(m2.media_url) = p_path or (p_url is not null and m2.media_url = p_url))
+         and split_part(p_path, '/', 2) = m2.sender_id::text
+         and not public.is_blocked_pair(me, m2.sender_id)
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    if exists (
+      select 1 from circles c
+        join circle_members cm on cm.circle_id = c.id
+       where cm.member_id = me
+         and (public.media_object_path(c.cover_url) = p_path or (p_url is not null and c.cover_url = p_url))
+         and split_part(p_path, '/', 2) = c.owner_id::text
+    ) then
+      return jsonb_build_object('allowed', true, 'cacheable', false);
+    end if;
+    return jsonb_build_object('allowed', false, 'cacheable', false);
+  end if;
+
+  return jsonb_build_object('allowed', false, 'cacheable', false);
+end $function$;
+
+-- Keep photo limits intact but let one-minute Moment clips upload.
+create or replace function public.media_upload_ticket(p_kind text, p_content_type text, p_bytes integer default 0)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  v_ext text;
+  v_limit int;
+  v_path text;
+  n int;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_kind is null or p_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'banners') then
+    perform public.crushly_fail(400, '', 'Unsupported media kind.');
+  end if;
+
+  v_ext := public.media_extension(p_content_type);
+  if v_ext is null then
+    perform public.crushly_fail(415, '', 'That file type is not supported.');
+  end if;
+  if not public.media_kind_allows(case when p_kind = 'banners' then 'photos' else p_kind end, v_ext) then
+    perform public.crushly_fail(415, '', case
+      when p_kind in ('photos', 'banners') then 'Photos must be JPEG, PNG or WebP.'
+      when p_kind in ('moments', 'posts') then 'That takes a photo or a short clip.'
+      when p_kind = 'circles' then 'Circles take photos, voice notes and clips.'
+      else 'That file type is not supported.' end);
+  end if;
+
+  -- A Moment clip can be up to one minute: give video the same 80 MiB ceiling
+  -- as other clips while retaining the 8 MiB ceiling for Moment photos.
+  v_limit := case when p_kind in ('messages', 'circles', 'posts')
+    or (p_kind = 'moments' and v_ext in ('mp4', 'webm', 'mov'))
+    then 80 * 1024 * 1024 else 8 * 1024 * 1024 end;
+  if coalesce(p_bytes, 0) <= 0 then
+    perform public.crushly_fail(400, '', 'That file looks empty - try picking it again.');
+  elsif p_bytes > v_limit then
+    perform public.crushly_fail(413, '', 'That file is too large to send.');
+  end if;
+
+  perform 1 from profiles where id = me for update;
+  select (select count(*) from photos where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from moments where user_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from posts where author_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from circle_messages where sender_id = me and created_at > public.now_ms() - 3600 * 1000)
+       + (select count(*) from media_upload_reservations where user_id = me and path like 'banners/%' and created_at > public.now_ms() - 3600 * 1000)
+    into n;
+  if n >= 40 then
+    perform public.crushly_fail(429, '', 'That is a lot of uploading - try again in a little while.');
+  end if;
+
+  if p_kind = 'photos' and (select count(*) from photos where user_id = me) >= 6 then
+    perform public.crushly_fail(400, '', 'You can show up to 6 photos.');
+  end if;
+
+  v_path := p_kind || '/' || me::text || '/' || public.now_ms()::text || '-'
+    || substr(md5(random()::text || me::text || public.now_ms()::text), 1, 10) || '.' || v_ext;
+  insert into media_upload_reservations(path, user_id, bytes) values (v_path, me, p_bytes);
+  return jsonb_build_object('path', v_path, 'maxBytes', v_limit, 'extension', v_ext);
+end $function$;
+
+
+
+-- Read a banner only when its bytes would also be readable to this viewer.
+create or replace function public.space_banner(p_target_id bigint)
+returns text language plpgsql stable security definer set search_path = public as $function$
+declare me bigint := public.me_id(); v_url text;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  select url into v_url from public.profile_banners where user_id = p_target_id;
+  if v_url is null then return null; end if;
+  if coalesce((public.can_view_media(public.media_object_path(v_url), v_url)->>'allowed')::boolean, false) then
+    return v_url;
+  end if;
+  return null;
+end $function$;
+
+-- Reservations are minted by the Worker upload ticket; the only acceptable
+-- URL is a newly uploaded image in this member's own folder. Row lock makes
+-- replacement atomic. Return the previous URL so the client can delete it.
+create or replace function public.set_space_banner(p_url text default null)
+returns text language plpgsql security definer set search_path = public as $function$
+declare me bigint := public.me_id(); old_url text; v_path text;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  perform 1 from public.profiles where id = me for update;
+  if p_url is not null then
+    v_path := public.media_object_path(p_url);
+    if p_url <> 'https://crushly-media.dyceelvk.workers.dev/m/' || v_path
+       or split_part(v_path, '/', 1) <> 'banners'
+       or split_part(v_path, '/', 2) <> me::text
+       or not exists (select 1 from public.media_upload_reservations where path = v_path and user_id = me and created_at > public.now_ms() - 3600000)
+       or exists (select 1 from public.profile_banner_claims where path = v_path)
+    then perform public.crushly_fail(400, '', 'Please choose a new banner.'); end if;
+  end if;
+  select url into old_url from public.profile_banners where user_id = me;
+  if p_url is null then
+    delete from public.profile_banners where user_id = me;
+  else
+    insert into public.profile_banners(user_id, url, updated_at) values(me, p_url, public.now_ms())
+    on conflict(user_id) do update set url = excluded.url, updated_at = excluded.updated_at;
+    insert into public.profile_banner_claims(path) values (v_path);
+  end if;
+  return old_url;
+end $function$;
+revoke all on function public.space_banner(bigint) from public, anon;
+revoke all on function public.set_space_banner(text) from public, anon;
+grant execute on function public.space_banner(bigint) to authenticated, service_role;
+grant execute on function public.set_space_banner(text) to authenticated, service_role;
+
+-- ================================ 20261109000001_holup_search.sql
+
+-- New search surface. Old clients retain search_all unchanged.
+-- All rows are filtered before limits are applied; no client-side sampling is
+-- used to decide whether a result is visible. Circle posts stay in their room.
+create or replace function public.search_holup(
+  p_query text, p_category text default 'top', p_since bigint default 0,
+  p_sort text default 'relevance', p_author text default '',
+  p_content text default 'all', p_hashtag boolean default false, p_limit integer default 40, p_place text default ''
+) returns jsonb language plpgsql stable security definer set search_path = public as $function$
+declare
+  me bigint := public.me_id();
+  q text := btrim(coalesce(p_query, ''));
+  a text := ltrim(btrim(coalesce(p_author, '')), '@');
+  n integer := least(greatest(coalesce(p_limit, 40), 1), 50);
+  since_ms bigint := greatest(coalesce(p_since, 0), 0);
+  tsq tsquery;
+  result jsonb;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  if length(q) < 2 or length(q) > 120 or length(a) > 60 or length(coalesce(p_place,'')) > 60 then
+    return jsonb_build_object('members','[]'::jsonb,'posts','[]'::jsonb,'moments','[]'::jsonb,'sounds','[]'::jsonb,'places','[]'::jsonb,'hashtags','[]'::jsonb);
+  end if;
+  if p_category not in ('top','clips','photos','people','sounds','places','hashtags','moments')
+     or p_sort not in ('relevance','newest') or p_content not in ('all','clip','photo','text') then
+    perform public.crushly_fail(400, '', 'Check your search filters.');
+  end if;
+  tsq := websearch_to_tsquery('simple', q);
+
+  with visible_people as materialized (
+    select p.* from public.profiles p join public.privacy pr on pr.user_id=p.id
+     where p_category in ('top','people','places') and p.id <> me and p.onboarded and p.status='active' and pr.discoverable and not pr.incognito
+       and not public.is_blocked_pair(me,p.id)
+       and (pr.profile_visibility='everyone' or public.is_connected_pair(me,p.id))
+  ),
+  eligible_posts as materialized (
+    select po.*, ap.name as author_name, ap.username as author_username,
+      case when po.media_url is null then 'text'
+           when po.media_url ~* '\.(mp4|webm|mov|m4v)(\?|$)' then 'clip' else 'photo' end as content_kind
+    from public.posts po join public.profiles ap on ap.id=po.author_id
+    where p_category in ('top','clips','photos','sounds','hashtags') and po.circle_id is null and public.can_view_post(po,me) and po.created_at >= since_ms
+      and (a='' or coalesce(ap.name,'') ilike public.search_like(a) or coalesce(ap.username,'') ilike public.search_like(a))
+  ),
+  matching_posts as (
+    select po.* from eligible_posts po where
+      ((not p_hashtag and (to_tsvector('simple',coalesce(po.body,'')) @@ tsq or coalesce(po.body,'') ilike public.search_like(q)))
+       or (p_hashtag and exists (select 1 from regexp_matches(coalesce(po.body,''), '#([[:alnum:]_]+)', 'g') tags where lower(tags[1])=lower(q))))
+      and (p_content='all' or po.content_kind=p_content)
+      and (p_category not in ('clips','photos') or po.content_kind=case when p_category='clips' then 'clip' else 'photo' end)
+  )
+  select jsonb_build_object(
+    'members', coalesce((select jsonb_agg(item) from (
+      select public.public_profile(me,p.id,false) item
+      from visible_people p
+      where p_category in ('top','people')
+        and (coalesce(p_place,'')='' or exists (select 1 from public.privacy pr where pr.user_id=p.id and pr.show_city and lower(btrim(p.city))=lower(btrim(p_place))))
+        and (to_tsvector('simple',coalesce(p.name,'')||' '||coalesce(p.username,'')) @@ tsq
+          or coalesce(p.name,'') ilike public.search_like(q) or coalesce(p.username,'') ilike public.search_like(q)
+          or exists (select 1 from public.privacy pr where pr.user_id=p.id and pr.show_city and coalesce(p.city,'') ilike public.search_like(q))
+          or exists (select 1 from jsonb_array_elements_text(case when jsonb_typeof(p.interests)='array' then p.interests else '[]'::jsonb end) i where i ilike public.search_like(q)))
+      order by case when p_sort='newest' then p.created_at else 0 end desc, (coalesce(p.name,'') ilike q||'%') desc, p.name, p.id limit n
+    ) x), '[]'::jsonb),
+    'posts', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('id',po.id,'body',po.body,'mediaUrl',po.media_url,'mediaKind',case when po.content_kind='clip' then 'video' when po.content_kind='photo' then 'photo' else null end,
+        'audience',po.audience,'createdAt',po.created_at,'author',public.public_profile(me,po.author_id,false)) item
+      from matching_posts po where p_category in ('top','clips','photos')
+      order by case when p_sort='relevance' then ts_rank(to_tsvector('simple',coalesce(po.body,'')),tsq) else 0 end desc, po.created_at desc, po.id desc limit n
+    ) x), '[]'::jsonb),
+    'moments', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('id',m.id,'kind',m.kind,'body',m.body,'mediaUrl',m.media_url,'createdAt',m.created_at,'mine',m.user_id=me,'author',public.public_profile(me,m.user_id,false)) item
+      from public.moments m join public.profiles ap on ap.id=m.user_id
+      where p_category in ('top','moments') and m.expires_at > public.now_ms() and m.created_at>=since_ms and public.can_view_moment(m,me)
+        and (a='' or coalesce(ap.name,'') ilike public.search_like(a) or coalesce(ap.username,'') ilike public.search_like(a))
+        and (p_content='all' or (p_content='clip' and m.kind='video') or (p_content='photo' and m.kind='photo') or (p_content='text' and m.kind='text'))
+        and ((not p_hashtag and (to_tsvector('simple',coalesce(m.body,'')) @@ tsq or coalesce(m.body,'') ilike public.search_like(q))) or (p_hashtag and exists (select 1 from regexp_matches(coalesce(m.body,''), '#([[:alnum:]_]+)', 'g') tags where lower(tags[1])=lower(q))) )
+      order by case when p_sort='relevance' then ts_rank(to_tsvector('simple',coalesce(m.body,'')),tsq) else 0 end desc, m.created_at desc, m.id desc limit n
+    ) x), '[]'::jsonb),
+    'sounds', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('id',s.id,'title',s.title) item
+      from public.sounds s where p_category in ('top','sounds') and s.title ilike public.search_like(q)
+        and exists (select 1 from eligible_posts ep where ep.sound_id=s.id and (p_content='all' or ep.content_kind=p_content))
+        and exists (select 1 from public.profiles owner join public.privacy pr on pr.user_id=owner.id
+          where owner.id=s.owner_id and (owner.id=me or (owner.onboarded and owner.status='active'
+            and not public.is_blocked_pair(me,owner.id)
+            and (pr.profile_visibility='everyone' or public.is_connected_pair(me,owner.id))
+            and (not pr.incognito or public.is_connected_pair(me,owner.id)))))
+      order by case when p_sort='relevance' and s.title ilike q||'%' then 0 else 1 end, s.created_at desc, s.id desc limit n
+    ) x), '[]'::jsonb),
+    'places', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('name',p.city) item from visible_people p join public.privacy pr on pr.user_id=p.id
+      where p_category in ('top','places') and pr.show_city and nullif(btrim(p.city),'') is not null and p.city ilike public.search_like(q)
+      group by p.city order by p.city limit n
+    ) x), '[]'::jsonb),
+    'hashtags', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('tag',t.tag) item from (
+        select lower((regexp_matches(coalesce(ep.body,''), '#([[:alnum:]_]+)', 'g'))[1]) tag, ep.created_at
+        from eligible_posts ep where p_category in ('top','hashtags') and (p_content='all' or ep.content_kind=p_content)
+      ) t where t.tag ilike public.search_like(q)
+      group by t.tag order by case when p_sort='newest' then max(t.created_at) else 0 end desc, t.tag limit n
+    ) x), '[]'::jsonb)
+  ) into result;
+  return result;
+end $function$;
+revoke all on function public.search_holup(text,text,bigint,text,text,text,boolean,integer,text) from public,anon;
+grant execute on function public.search_holup(text,text,bigint,text,text,text,boolean,integer,text) to authenticated,service_role;
+
+-- ================================ 20261109000002_post_private.sql
+
+-- Owner-only audience: every existing post/media/search reader uses can_view_post.
+-- Circle pairing remains unchanged; creation is deliberately unchanged.
+alter table public.posts drop constraint if exists posts_audience_check;
+alter table public.posts add constraint posts_audience_check
+  check (audience in ('connections', 'everyone', 'circle', 'private'));
+
+create or replace function public.can_view_post(p_post public.posts, p_viewer bigint)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_viewer is null then return false; end if;
+  if p_post.author_id = p_viewer then return true; end if;
+  if public.is_blocked_pair(p_viewer, p_post.author_id) then return false; end if;
+  if p_post.audience = 'private' then return false; end if;
+  if p_post.audience = 'circle' then
+    return public.is_circle_member(p_post.circle_id, p_viewer);
+  end if;
+  if p_post.audience = 'everyone' then
+    return exists (
+      select 1 from profiles p join privacy pr on pr.user_id = p.id
+       where p.id = p_post.author_id and p.onboarded and p.status = 'active'
+         and pr.profile_visibility = 'everyone' and not pr.incognito
+    );
+  end if;
+  return p_post.audience = 'connections' and public.is_connected_pair(p_viewer, p_post.author_id);
+end $$;
+
+
+create or replace function public.edit_post(
+  p_post_id bigint,
+  p_body text default null,
+  p_audience text default null,
+  p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  po public.posts;
+  next_body text;
+  next_audience text;
+  next_edit jsonb;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That post is gone.');
+  end if;
+  if po.author_id <> me then
+    perform public.crushly_fail(403, 'not_yours', 'This post isn’t yours to edit.');
+  end if;
+
+  -- A null argument means "leave it alone"; an empty body means "clear it".
+  next_body := case when p_body is null then po.body else btrim(p_body) end;
+  next_body := left(next_body, 2000);
+
+  if p_audience is null then
+    next_audience := po.audience;
+  elsif po.circle_id is not null then
+    -- Who sees a Circle post is the Circle's business, not the editor's.
+    next_audience := po.audience;
+  elsif p_audience in ('everyone', 'connections', 'private') then
+    next_audience := p_audience;
+  else
+    perform public.crushly_fail(400, '', 'Pick who can see this.');
+  end if;
+
+  if p_edit is null then
+    next_edit := po.edit;
+  elsif po.media_url is null then
+    next_edit := null;
+  else
+    next_edit := public.clean_video_edit(p_edit);
+    if next_edit is null then
+      perform public.crushly_fail(400, '', 'That edit could not be saved.');
+    end if;
+  end if;
+
+  if btrim(next_body) = '' and po.media_url is null then
+    perform public.crushly_fail(400, '', 'A post needs some words, or a photo.');
+  end if;
+
+  update posts
+     set body = next_body,
+         audience = next_audience,
+         edit = next_edit
+   where id = p_post_id;
+
+  return public.load_post(p_post_id);
+end $$;
+
+revoke all on function public.edit_post(bigint, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.edit_post(bigint, text, text, jsonb) to authenticated, service_role;
+
+
+-- Previous Whisper cards contained a permanent copy of the post text and
+-- media URL. Remove those snapshots whenever the owner changes the audience.
+-- Existing messages remain in the conversation as safe references.
+create or replace function public.redact_private_post_shares()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  if old.audience is distinct from new.audience then
+    update public.messages
+       set body = 'Shared a post', media_url = null,
+           meta = jsonb_build_object('postId', new.id)
+     where kind = 'post' and meta ->> 'postId' = new.id::text;
+  end if;
+  return new;
+end $$;
+revoke all on function public.redact_private_post_shares() from public, anon, authenticated;
+drop trigger if exists redact_private_post_shares on public.posts;
+create trigger redact_private_post_shares after update of audience on public.posts
+for each row execute function public.redact_private_post_shares();
+
+create or replace function public.send_message(
+  p_conversation_id bigint, p_kind text default 'text', p_body text default '',
+  p_media_url text default null, p_meta jsonb default '{}'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  reason text;
+  new_id bigint;
+  clean_body text := coalesce(p_body, '');
+  clean_meta jsonb := coalesce(p_meta, '{}'::jsonb);
+  clean_media text := nullif(coalesce(p_media_url, ''), '');
+  shared jsonb;
+  shared_post public.posts;
+  preview text;
+  reply_id bigint;
+  reply jsonb;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into conv from conversations c where c.id = p_conversation_id;
+  if not found or (conv.user_a <> me and conv.user_b <> me) then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+  if conv.closed then
+    perform public.crushly_fail(403, '', 'This connection has ended.');
+  end if;
+  reason := public.messaging_block_reason(me, peer);
+  if reason is not null then
+    perform public.crushly_fail(403, 'messaging_restricted', reason);
+  end if;
+
+  case p_kind
+    when 'text' then
+      if btrim(clean_body) = '' then
+        perform public.crushly_fail(400, '', 'Say something worth replying to.');
+      end if;
+      clean_body := left(clean_body, 2000);
+    when 'photo' then
+      if clean_media is null then
+        perform public.crushly_fail(400, '', 'Choose a photo to send.');
+      end if;
+      clean_body := left(clean_body, 300);
+    when 'voice' then
+      if clean_media is null then
+        perform public.crushly_fail(400, '', 'Record a voice note to send.');
+      end if;
+      clean_meta := jsonb_build_object('duration',
+        least(greatest(coalesce((clean_meta ->> 'duration')::int, 1), 1), 300));
+    when 'video' then
+      if clean_media is null then
+        perform public.crushly_fail(400, '', 'Record a video note to send.');
+      end if;
+      clean_meta := jsonb_build_object('duration',
+        least(greatest(coalesce((clean_meta ->> 'duration')::int, 1), 1), 120));
+    when 'call' then
+      if clean_meta ->> 'channel' is null or btrim(clean_meta ->> 'channel') = '' then
+        perform public.crushly_fail(400, '', 'Call requests need a channel.');
+      end if;
+      clean_body := 'Voice call';
+      clean_meta := jsonb_build_object('channel', clean_meta ->> 'channel');
+    when 'sticker' then
+      if clean_meta ->> 'sticker' not in ('wave', 'blush', 'fire', 'cheers', 'wink', 'heart_eyes', 'coffee', 'crown') then
+        perform public.crushly_fail(400, '', 'Pick a sticker to send.');
+      end if;
+    when 'profile' then
+      shared := public.load_visible_profile(me, (clean_meta ->> 'profileId')::bigint);
+      if shared is null then
+        perform public.crushly_fail(404, '', 'That Space can’t be shared.');
+      end if;
+      clean_meta := jsonb_build_object(
+        'profileId', (shared ->> 'id')::bigint,
+        'name', shared ->> 'name',
+        'age', shared ->> 'age',
+        'photo', shared #>> '{photos,0,url}',
+        'verified', (shared ->> 'verified')::boolean);
+    when 'post' then
+      -- Share a reference only, never a permanent snapshot. The recipient
+      -- resolves the post through the normal, current visibility check.
+      select * into shared_post from posts where id = (clean_meta ->> 'postId')::bigint;
+      if not found or not public.can_view_post(shared_post, me) then
+        perform public.crushly_fail(404, '', 'That post can’t be shared.');
+      end if;
+      clean_body := 'Shared a post';
+      clean_media := null;
+      clean_meta := jsonb_build_object('postId', shared_post.id);
+    else
+      perform public.crushly_fail(400, '', 'Unsupported message type.');
+  end case;
+
+  -- Rebuild the quote from the row itself, never from what the client said it
+  -- said. Anything that does not resolve is dropped rather than trusted.
+  if coalesce(clean_meta #>> '{replyTo,id}', '') ~ '^[0-9]{1,18}$' then
+    reply_id := (clean_meta #>> '{replyTo,id}')::bigint;
+    select jsonb_build_object(
+             'id', rm.id,
+             'mine', rm.sender_id = me,
+             'name', case when rm.sender_id = me then 'You'
+                          else coalesce((select p.name from profiles p where p.id = rm.sender_id), 'Member') end,
+             'preview', case rm.kind
+               when 'text' then left(coalesce(nullif(btrim(rm.body), ''), 'Whisper'), 80)
+               when 'photo' then coalesce(nullif(btrim(rm.body), ''), 'Photo')
+               when 'voice' then 'Voice note'
+               when 'video' then 'Video note'
+               when 'sticker' then 'Sticker'
+               when 'profile' then 'Shared a Space'
+               when 'post' then 'Shared a post'
+               when 'call' then 'Voice call'
+               else coalesce(nullif(btrim(rm.body), ''), 'Whisper') end
+           )
+      into reply
+      from messages rm
+     where rm.id = reply_id and rm.conversation_id = p_conversation_id;
+
+    if reply is null then
+      clean_meta := clean_meta - 'replyTo';
+    else
+      clean_meta := jsonb_set(clean_meta, '{replyTo}', reply);
+    end if;
+  end if;
+
+  insert into messages (conversation_id, sender_id, kind, body, media_url, meta)
+  values (p_conversation_id, me, p_kind, clean_body, clean_media, clean_meta)
+  returning id into new_id;
+  update conversations set last_message_at = public.now_ms() where id = p_conversation_id;
+
+  preview := case p_kind
+    when 'text' then left(clean_body, 80)
+    when 'photo' then 'Sent a photo'
+    when 'voice' then 'Sent a voice note'
+    when 'video' then 'Sent a video note'
+    when 'call' then 'Voice call'
+    when 'sticker' then 'Sent a sticker'
+    when 'post' then 'Shared a post'
+    else 'Shared a Space'
+  end;
+  perform public.notify_to(peer, 'message', me, p_conversation_id, preview);
+
+  return (
+    select public.serialize_message(m, me, public.receipts_visible(me, peer))
+      from messages m where m.id = new_id
+  );
+end $$;
+
+revoke all on function public.send_message(bigint, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.send_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109000003_private_viewers.sql
+
+-- Viewer counts are distinct real accounts with a qualifying view; author
+-- self-views are excluded. No viewer identities are included in post payloads.
+create index if not exists post_feedback_view_unique_lookup
+  on public.post_feedback(post_id, viewer_id, created_at desc) where kind = 'view';
+
+create or replace function public.post_engagement(p_post_id bigint, p_viewer bigint)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    -- A direct RPC caller cannot forge p_viewer to learn a restricted count.
+    'viewCount', case when exists (select 1 from posts po where po.id=p_post_id and public.can_view_post(po, public.me_id())) then (select count(distinct pf.viewer_id) from post_feedback pf join posts po on po.id=pf.post_id where pf.post_id=p_post_id and pf.kind='view' and pf.viewer_id<>po.author_id) else null end,
+    'likeCount', (select count(*) from post_reactions r where r.post_id = p_post_id),
+    'commentCount', (
+      select count(*) from post_comments c
+       where c.post_id = p_post_id
+         and not c.hidden
+         and not public.is_blocked_pair(p_viewer, c.author_id)
+    ),
+    'liked', exists (
+      select 1 from post_reactions r where r.post_id = p_post_id and r.user_id = p_viewer
+    ),
+    'myReaction', (
+      select r.kind from post_reactions r
+       where r.post_id = p_post_id and r.user_id = p_viewer
+    ),
+    'reactionKinds', coalesce((
+      select jsonb_object_agg(s.kind, s.n)
+        from (select r.kind, count(*) as n
+                from post_reactions r
+               where r.post_id = p_post_id
+               group by r.kind) s
+    ), '{}'::jsonb),
+    'saved', exists (
+      select 1 from post_saves s where s.post_id = p_post_id and s.user_id = p_viewer
+    ),
+    'sound', (
+      select jsonb_build_object('id', s.id, 'title', s.title, 'ownerId', s.owner_id)
+        from posts po join sounds s on s.id = po.sound_id
+       where po.id = p_post_id
+    )
+  );
+$$;
+-- Internal helper takes a viewer ID: never expose it as a client RPC.
+revoke all on function public.post_engagement(bigint,bigint) from public, anon, authenticated;
+grant execute on function public.post_engagement(bigint,bigint) to service_role;
+
+-- Viewers may read their own Moment view marker, but cannot forge views by
+-- directly inserting rows for Moments they cannot see. view_moment validates.
+drop policy if exists moment_views_own on public.moment_views;
+drop policy if exists moment_views_select_own on public.moment_views;
+create policy moment_views_select_own on public.moment_views
+  for select to authenticated using (user_id=public.me_id());
+
+-- Post owners alone receive identities. All other authorized readers get only
+-- the count already in post_engagement, never an array of names or pictures.
+create or replace function public.post_viewers(p_post_id bigint, p_limit integer default 100, p_offset integer default 0)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint := public.me_id(); po public.posts; items jsonb;
+begin
+  select * into po from public.posts where id=p_post_id;
+  if me is null or not found or po.author_id<>me then
+    perform public.crushly_fail(404, 'not_found', 'That post is not available.');
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'profile', v.profile, 'viewedAt', v.viewed_at) order by v.viewed_at desc, v.viewer_id desc), '[]'::jsonb)
+  into items from (
+    select x.viewer_id,x.viewed_at, public.load_visible_profile(me,x.viewer_id,false) as profile
+    from (select f.viewer_id,max(f.created_at) as viewed_at
+          from post_feedback f where f.post_id=p_post_id and f.kind='view' and f.viewer_id<>me
+          group by f.viewer_id) x
+    order by x.viewed_at desc,x.viewer_id desc
+    limit least(greatest(coalesce(p_limit,100),1),100) offset greatest(coalesce(p_offset,0),0)
+  ) v;
+  return jsonb_build_object('items',items);
+end $$;
+
+-- Moment viewers and the count are both strictly owner-only, independently of
+-- whether the caller is otherwise permitted to see the Moment.
+create or replace function public.moment_viewers(p_moment_id bigint, p_limit integer default 100, p_offset integer default 0)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint := public.me_id(); mo public.moments; items jsonb;
+begin
+  select * into mo from public.moments where id=p_moment_id;
+  if me is null or not found or mo.user_id<>me then
+    perform public.crushly_fail(404, 'not_found', 'That Moment is not available.');
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'profile', v.profile, 'viewedAt', v.created_at) order by v.created_at desc, v.user_id desc), '[]'::jsonb)
+  into items from (
+    select mv.user_id, mv.created_at, public.load_visible_profile(me,mv.user_id,false) as profile
+    from moment_views mv where mv.moment_id=p_moment_id and mv.user_id<>me
+    order by mv.created_at desc,mv.user_id desc
+    limit least(greatest(coalesce(p_limit,100),1),100) offset greatest(coalesce(p_offset,0),0)
+  ) v;
+  return jsonb_build_object('count',(select count(*) from moment_views where moment_id=p_moment_id and user_id<>me),'items',items);
+end $$;
+
+revoke all on function public.post_viewers(bigint,integer,integer) from public, anon, authenticated;
+revoke all on function public.moment_viewers(bigint,integer,integer) from public, anon, authenticated;
+grant execute on function public.post_viewers(bigint,integer,integer) to authenticated, service_role;
+grant execute on function public.moment_viewers(bigint,integer,integer) to authenticated, service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109000004_public_share.sql
+
+-- An anonymous preview is deliberately separate from signed-in post access.
+-- Never expose media URLs: Worker media remains behind live authorization.
+-- Every request re-evaluates current audience and profile privacy.
+create or replace function public.public_post_preview(p_post_id bigint)
+returns jsonb language sql stable security definer set search_path=public as $$
+  select jsonb_build_object('id',po.id,'body',left(po.body,300),'author',p.name)
+  from posts po join profiles p on p.id=po.author_id join privacy pr on pr.user_id=p.id
+  where po.id=p_post_id and po.audience='everyone' and po.circle_id is null
+    and p.onboarded and p.status='active' and pr.profile_visibility='everyone' and not pr.incognito
+  limit 1
+$$;
+revoke all on function public.public_post_preview(bigint) from public, anon, authenticated;
+grant execute on function public.public_post_preview(bigint) to anon, authenticated, service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109000005_search_trends.sql
+
+-- New search surface. Old clients retain search_all unchanged.
+-- All rows are filtered before limits are applied; no client-side sampling is
+-- used to decide whether a result is visible. Circle posts stay in their room.
+create or replace function public.search_holup(
+  p_query text, p_category text default 'top', p_since bigint default 0,
+  p_sort text default 'relevance', p_author text default '',
+  p_content text default 'all', p_hashtag boolean default false, p_limit integer default 40, p_place text default ''
+) returns jsonb language plpgsql stable security definer set search_path = public as $function$
+declare
+  me bigint := public.me_id();
+  q text := btrim(coalesce(p_query, ''));
+  a text := ltrim(btrim(coalesce(p_author, '')), '@');
+  n integer := least(greatest(coalesce(p_limit, 40), 1), 50);
+  since_ms bigint := greatest(coalesce(p_since, 0), 0);
+  tsq tsquery;
+  result jsonb;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  if length(q) < 2 or length(q) > 120 or length(a) > 60 or length(coalesce(p_place,'')) > 60 then
+    return jsonb_build_object('members','[]'::jsonb,'posts','[]'::jsonb,'moments','[]'::jsonb,'sounds','[]'::jsonb,'places','[]'::jsonb,'hashtags','[]'::jsonb);
+  end if;
+  if p_category not in ('top','clips','photos','people','sounds','places','hashtags','moments')
+     or p_sort not in ('relevance','newest') or p_content not in ('all','clip','photo','text') then
+    perform public.crushly_fail(400, '', 'Check your search filters.');
+  end if;
+  tsq := websearch_to_tsquery('simple', q);
+
+  with visible_people as materialized (
+    select p.* from public.profiles p join public.privacy pr on pr.user_id=p.id
+     where p_category in ('top','people','places') and p.id <> me and p.onboarded and p.status='active' and pr.discoverable and not pr.incognito
+       and not public.is_blocked_pair(me,p.id)
+       and (pr.profile_visibility='everyone' or public.is_connected_pair(me,p.id))
+  ),
+  eligible_posts as materialized (
+    select po.*, ap.name as author_name, ap.username as author_username,
+      case when po.media_url is null then 'text'
+           when po.media_url ~* '\.(mp4|webm|mov|m4v)(\?|$)' then 'clip' else 'photo' end as content_kind
+    from public.posts po join public.profiles ap on ap.id=po.author_id
+    where p_category in ('top','clips','photos','sounds','hashtags') and po.circle_id is null and public.can_view_post(po,me) and po.created_at >= since_ms
+      and (a='' or coalesce(ap.name,'') ilike public.search_like(a) or coalesce(ap.username,'') ilike public.search_like(a))
+  ),
+  matching_posts as (
+    select po.* from eligible_posts po where
+      ((not p_hashtag and (to_tsvector('simple',coalesce(po.body,'')) @@ tsq or coalesce(po.body,'') ilike public.search_like(q)
+          or exists (select 1 from post_comments pc where pc.post_id=po.id and not pc.hidden and not public.is_blocked_pair(me,pc.author_id)
+            and (to_tsvector('simple',coalesce(pc.body,'')) @@ tsq or pc.body ilike public.search_like(q)))))
+       or (p_hashtag and (exists (select 1 from regexp_matches(coalesce(po.body,''), '#([[:alnum:]_]+)', 'g') tags where lower(tags[1])=lower(q))
+          or exists (select 1 from post_comments pc cross join lateral regexp_matches(coalesce(pc.body,''), '#([[:alnum:]_]+)', 'g') tags
+            where pc.post_id=po.id and not pc.hidden and not public.is_blocked_pair(me,pc.author_id) and lower(tags[1])=lower(q)))))
+      and (p_content='all' or po.content_kind=p_content)
+      and (p_category not in ('clips','photos') or po.content_kind=case when p_category='clips' then 'clip' else 'photo' end)
+  )
+  select jsonb_build_object(
+    'members', coalesce((select jsonb_agg(item) from (
+      select public.public_profile(me,p.id,false) item
+      from visible_people p
+      where p_category in ('top','people')
+        and (coalesce(p_place,'')='' or exists (select 1 from public.privacy pr where pr.user_id=p.id and pr.show_city and lower(btrim(p.city))=lower(btrim(p_place))))
+        and (to_tsvector('simple',coalesce(p.name,'')||' '||coalesce(p.username,'')) @@ tsq
+          or coalesce(p.name,'') ilike public.search_like(q) or coalesce(p.username,'') ilike public.search_like(q)
+          or exists (select 1 from public.privacy pr where pr.user_id=p.id and pr.show_city and coalesce(p.city,'') ilike public.search_like(q))
+          or exists (select 1 from jsonb_array_elements_text(case when jsonb_typeof(p.interests)='array' then p.interests else '[]'::jsonb end) i where i ilike public.search_like(q)))
+      order by case when p_sort='newest' then p.created_at else 0 end desc, (coalesce(p.name,'') ilike q||'%') desc, p.name, p.id limit n
+    ) x), '[]'::jsonb),
+    'posts', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('id',po.id,'body',po.body,'mediaUrl',po.media_url,'mediaKind',case when po.content_kind='clip' then 'video' when po.content_kind='photo' then 'photo' else null end,
+        'audience',po.audience,'createdAt',po.created_at,'author',public.public_profile(me,po.author_id,false)) item
+      from matching_posts po where p_category in ('top','clips','photos')
+      order by case when p_sort='relevance' then ts_rank(to_tsvector('simple',coalesce(po.body,'')),tsq) else 0 end desc, po.created_at desc, po.id desc limit n
+    ) x), '[]'::jsonb),
+    'moments', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('id',m.id,'kind',m.kind,'body',m.body,'mediaUrl',m.media_url,'createdAt',m.created_at,'mine',m.user_id=me,'author',public.public_profile(me,m.user_id,false)) item
+      from public.moments m join public.profiles ap on ap.id=m.user_id
+      where p_category in ('top','moments') and m.expires_at > public.now_ms() and m.created_at>=since_ms and public.can_view_moment(m,me)
+        and (a='' or coalesce(ap.name,'') ilike public.search_like(a) or coalesce(ap.username,'') ilike public.search_like(a))
+        and (p_content='all' or (p_content='clip' and m.kind='video') or (p_content='photo' and m.kind='photo') or (p_content='text' and m.kind='text'))
+        and ((not p_hashtag and (to_tsvector('simple',coalesce(m.body,'')) @@ tsq or coalesce(m.body,'') ilike public.search_like(q))) or (p_hashtag and exists (select 1 from regexp_matches(coalesce(m.body,''), '#([[:alnum:]_]+)', 'g') tags where lower(tags[1])=lower(q))) )
+      order by case when p_sort='relevance' then ts_rank(to_tsvector('simple',coalesce(m.body,'')),tsq) else 0 end desc, m.created_at desc, m.id desc limit n
+    ) x), '[]'::jsonb),
+    'sounds', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('id',s.id,'title',s.title) item
+      from public.sounds s where p_category in ('top','sounds') and s.title ilike public.search_like(q)
+        and exists (select 1 from eligible_posts ep where ep.sound_id=s.id and (p_content='all' or ep.content_kind=p_content))
+        and exists (select 1 from public.profiles owner join public.privacy pr on pr.user_id=owner.id
+          where owner.id=s.owner_id and (owner.id=me or (owner.onboarded and owner.status='active'
+            and not public.is_blocked_pair(me,owner.id)
+            and (pr.profile_visibility='everyone' or public.is_connected_pair(me,owner.id))
+            and (not pr.incognito or public.is_connected_pair(me,owner.id)))))
+      order by case when p_sort='relevance' and s.title ilike q||'%' then 0 else 1 end, s.created_at desc, s.id desc limit n
+    ) x), '[]'::jsonb),
+    'places', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('name',p.city) item from visible_people p join public.privacy pr on pr.user_id=p.id
+      where p_category in ('top','places') and pr.show_city and nullif(btrim(p.city),'') is not null and p.city ilike public.search_like(q)
+      group by p.city order by p.city limit n
+    ) x), '[]'::jsonb),
+    'hashtags', coalesce((select jsonb_agg(item) from (
+      select jsonb_build_object('tag',t.tag) item from (
+        select lower((regexp_matches(coalesce(ep.body,''), '#([[:alnum:]_]+)', 'g'))[1]) tag, ep.created_at
+        from eligible_posts ep where p_category in ('top','hashtags') and (p_content='all' or ep.content_kind=p_content)
+        union all
+        select lower(tags[1]) tag, pc.created_at from eligible_posts ep
+        join post_comments pc on pc.post_id=ep.id and not pc.hidden and not public.is_blocked_pair(me,pc.author_id)
+        cross join lateral regexp_matches(coalesce(pc.body,''), '#([[:alnum:]_]+)', 'g') tags
+        where p_category in ('top','hashtags') and (p_content='all' or ep.content_kind=p_content)
+      ) t where t.tag ilike public.search_like(q)
+      group by t.tag order by case when p_sort='newest' then max(t.created_at) else 0 end desc, t.tag limit n
+    ) x), '[]'::jsonb)
+  ) into result;
+  return result;
+end $function$;
+revoke all on function public.search_holup(text,text,bigint,text,text,text,boolean,integer,text) from public,anon;
+grant execute on function public.search_holup(text,text,bigint,text,text,text,boolean,integer,text) to authenticated,service_role;
+
+
+-- Suggestions come from recent posts AND their visible, non-hidden comments.
+-- Only terms appearing on at least two distinct visible posts qualify.
+create or replace function public.holup_trends(p_limit integer default 10)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); result jsonb;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  with eligible as materialized (
+    select p.id,p.body,p.created_at from posts p
+    where p.circle_id is null and p.created_at >= public.now_ms()-7*86400000::bigint and public.can_view_post(p,me)
+    order by p.created_at desc,p.id desc limit 1000
+  ), sources as (
+    select id as post_id,body from eligible
+    union all
+    select p.id,c.body from eligible p join post_comments c on c.post_id=p.id
+    where c.created_at>=public.now_ms()-7*86400000::bigint and not c.hidden and not public.is_blocked_pair(me,c.author_id)
+  ), words as (
+    select post_id,lower(m[1]) term from sources cross join lateral regexp_matches(body, '(?:^|[^[:alnum:]_@#])([[:alpha:]][[:alnum:]_]{3,30})', 'g') m
+    union all
+    select post_id,'#'||lower(m[1]) term from sources cross join lateral regexp_matches(body, '#([[:alnum:]_]{2,30})', 'g') m
+  ), ranked as (
+    select term,count(distinct post_id)::int as post_count from words
+    where term not in ('this','that','with','from','have','your','they','what','when','where','there','will','just','about','like','their','some','more','only','been','were','them','would','could','should','here','into','than','then','also','very','much','really','because','https','http','www','holup')
+    group by term having count(distinct post_id)>=2
+    order by post_count desc,term limit least(greatest(coalesce(p_limit,10),1),20)
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('term',term,'postCount',post_count) order by post_count desc,term),'[]'::jsonb) into result from ranked;
+  return result;
+end $$;
+revoke all on function public.holup_trends(integer) from public,anon,authenticated;
+grant execute on function public.holup_trends(integer) to authenticated,service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109000006_admin_controls.sql
+
+-- Server-side authority uses immutable authenticated user IDs, not client email.
+create table if not exists public.holup_admins (
+  auth_user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at bigint not null default public.now_ms()
+);
+alter table public.holup_admins enable row level security;
+revoke all on public.holup_admins from public, anon, authenticated;
+insert into public.holup_admins(auth_user_id)
+  select id from auth.users where id='03deee67-8259-4ccf-8011-d5a74d2732d9'::uuid
+    and lower(email)=lower('rielosInc@gmail.com') and email_confirmed_at is not null
+  on conflict do nothing;
+
+create table if not exists public.holup_features (
+  key text primary key, enabled boolean not null, updated_at bigint not null default public.now_ms()
+);
+alter table public.holup_features enable row level security;
+revoke all on public.holup_features from public,anon,authenticated;
+insert into public.holup_features(key,enabled) values ('calls',false),('public_post_sharing',true) on conflict do nothing;
+
+create table if not exists public.holup_announcement (
+  singleton boolean primary key default true check(singleton),
+  title text not null default '', body text not null default '', active boolean not null default false,
+  updated_at bigint not null default public.now_ms()
+);
+alter table public.holup_announcement enable row level security;
+revoke all on public.holup_announcement from public,anon,authenticated;
+insert into public.holup_announcement(singleton) values(true) on conflict do nothing;
+
+create table if not exists public.holup_admin_events (
+  id bigint generated always as identity primary key, actor uuid not null references auth.users(id),
+  kind text not null, details jsonb not null, created_at bigint not null default public.now_ms()
+);
+alter table public.holup_admin_events enable row level security;
+revoke all on public.holup_admin_events from public,anon,authenticated;
+
+create or replace function public.holup_is_admin() returns boolean
+language sql stable security definer set search_path=public as $$
+ select auth.uid() is not null and exists(select 1 from holup_admins where auth_user_id=auth.uid())
+$$;
+create or replace function public.holup_feature_enabled(p_key text) returns boolean
+language sql stable security definer set search_path=public as $$
+ select coalesce((select enabled from holup_features where key=p_key),false)
+$$;
+revoke all on function public.holup_feature_enabled(text) from public,anon,authenticated;
+
+create or replace function public.holup_app_settings() returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+begin
+  if public.me_id() is null then perform public.crushly_fail(401,'unauthorized','Please sign in.'); end if;
+  return jsonb_build_object('callsEnabled',public.holup_feature_enabled('calls'),
+    'publicSharingEnabled',public.holup_feature_enabled('public_post_sharing'),
+    'announcement',(select case when active then jsonb_build_object('title',title,'body',body) else null end from holup_announcement where singleton));
+end $$;
+create or replace function public.holup_admin_state() returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+begin
+  if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+  return jsonb_build_object('features',(select jsonb_object_agg(key,enabled) from holup_features),
+    'announcement',(select jsonb_build_object('title',title,'body',body,'active',active) from holup_announcement where singleton));
+end $$;
+create or replace function public.holup_admin_set_feature(p_key text,p_enabled boolean) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare old_value boolean;
+begin
+  if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+  if p_key is null or p_key not in ('calls','public_post_sharing') or p_enabled is null then perform public.crushly_fail(400,'bad_feature','Unknown feature.'); end if;
+  select enabled into old_value from holup_features where key=p_key for update;
+  update holup_features set enabled=p_enabled,updated_at=public.now_ms() where key=p_key;
+  insert into holup_admin_events(actor,kind,details) values(auth.uid(),'feature',jsonb_build_object('key',p_key,'before',old_value,'after',p_enabled));
+  return p_enabled;
+end $$;
+create or replace function public.holup_admin_announcement(p_title text,p_body text,p_active boolean) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare t text:=btrim(coalesce(p_title,'')); b text:=btrim(coalesce(p_body,''));
+begin
+  if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+  if length(t)>100 or length(b)>500 or p_active is null or (p_active and (t='' or b='')) then
+    perform public.crushly_fail(400,'bad_announcement','Add a title and message, within the length limits.');
+  end if;
+  update holup_announcement set title=t,body=b,active=p_active,updated_at=public.now_ms() where singleton;
+  insert into holup_admin_events(actor,kind,details) values(auth.uid(),'announcement',jsonb_build_object('title',t,'body',b,'active',p_active));
+  return true;
+end $$;
+revoke all on function public.holup_is_admin() from public,anon,authenticated;
+revoke all on function public.holup_app_settings() from public,anon,authenticated;
+revoke all on function public.holup_admin_state() from public,anon,authenticated;
+revoke all on function public.holup_admin_set_feature(text,boolean) from public,anon,authenticated;
+revoke all on function public.holup_admin_announcement(text,text,boolean) from public,anon,authenticated;
+grant execute on function public.holup_is_admin(), public.holup_app_settings(), public.holup_admin_state(), public.holup_admin_set_feature(text,boolean), public.holup_admin_announcement(text,text,boolean) to authenticated,service_role;
+
+create or replace function public.register_call_room(p_conversation_id bigint) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  token text := 'call-' || replace(gen_random_uuid()::text, '-', '');
+begin
+  if me is null then perform public.crushly_fail(401, '', 'Sign in again to make calls.'); end if;
+  if not public.holup_feature_enabled('calls') then perform public.crushly_fail(403,'disabled','Calls are currently unavailable.'); end if;
+  select * into conv from public.conversations where id = p_conversation_id;
+  if not found or me not in (conv.user_a, conv.user_b) then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+  if conv.closed or public.messaging_block_reason(me, peer) is not null then
+    perform public.crushly_fail(403, '', 'Calling is not available in this conversation.');
+  end if;
+  -- Serialize per-caller creation to make the rate limit safe under concurrency.
+  perform pg_advisory_xact_lock(me);
+  if (select count(*) from public.call_rooms where caller_id = me and created_at > public.now_ms() - 60000) >= 5 then
+    perform public.crushly_fail(429, '', 'Too many calls. Wait a minute and try again.');
+  end if;
+  delete from public.call_rooms where expires_at < public.now_ms() - 86400000;
+  insert into public.call_rooms(channel, conversation_id, caller_id, callee_id) values(token, conv.id, me, peer);
+  return token;
+end $$;
+revoke all on function public.register_call_room(bigint) from public, anon;
+grant execute on function public.register_call_room(bigint) to authenticated;
+
+create or replace function public.can_join_call(p_channel text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.holup_feature_enabled('calls') and exists (
+    select 1 from public.call_rooms r join public.conversations c on c.id = r.conversation_id
+    where r.channel = p_channel and r.expires_at > public.now_ms() and r.closed_at is null
+      and public.me_id() in (r.caller_id, r.callee_id)
+      and not c.closed and public.messaging_block_reason(r.caller_id, r.callee_id) is null
+  )
+$$;
+revoke all on function public.can_join_call(text) from public, anon;
+grant execute on function public.can_join_call(text) to authenticated;
+
+create or replace function public.end_call_room(p_channel text) returns void
+language sql security definer set search_path = public as $$
+  update public.call_rooms set closed_at = public.now_ms()
+    where channel = p_channel and public.me_id() in (caller_id, callee_id) and closed_at is null
+$$;
+revoke all on function public.end_call_room(text) from public, anon;
+grant execute on function public.end_call_room(text) to authenticated;
+
+
+create or replace function public.validate_call_invitation() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.kind = 'call' and not public.holup_feature_enabled('calls') then
+    perform public.crushly_fail(403,'disabled','Calls are currently unavailable.');
+  end if;
+  if new.kind = 'call' and not exists (
+    select 1 from public.call_rooms r where r.channel = new.meta ->> 'channel'
+      and r.conversation_id = new.conversation_id and r.caller_id = new.sender_id
+      and r.closed_at is null and r.expires_at > public.now_ms()
+  ) then
+    perform public.crushly_fail(400, '', 'This call invitation has expired. Start a new call.');
+  end if;
+  return new;
+end $$;
+drop trigger if exists validate_call_invitation on public.messages;
+create trigger validate_call_invitation before insert on public.messages
+  for each row execute function public.validate_call_invitation();
+
+-- An anonymous preview is deliberately separate from signed-in post access.
+-- Never expose media URLs: Worker media remains behind live authorization.
+-- Every request re-evaluates current audience and profile privacy.
+create or replace function public.public_post_preview(p_post_id bigint)
+returns jsonb language sql stable security definer set search_path=public as $$
+  select jsonb_build_object('id',po.id,'body',left(po.body,300),'author',p.name)
+  from posts po join profiles p on p.id=po.author_id join privacy pr on pr.user_id=p.id
+  where public.holup_feature_enabled('public_post_sharing') and po.id=p_post_id and po.audience='everyone' and po.circle_id is null
+    and p.onboarded and p.status='active' and pr.profile_visibility='everyone' and not pr.incognito
+  limit 1
+$$;
+revoke all on function public.public_post_preview(bigint) from public, anon, authenticated;
+grant execute on function public.public_post_preview(bigint) to anon, authenticated, service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109110817_harden_adult_profile_writes.sql
+
+-- Applied to production as migration 20261109110817. Defense in depth only: incomplete-account social access and teen isolation remain unresolved.
+create or replace function public.age_of(birthdate text) returns integer
+language sql stable set search_path=public as $$
+  select case when birthdate is null or birthdate !~ '^\d{4}-\d{2}-\d{2}$'
+      or not pg_input_is_valid(birthdate,'date') then null
+    else extract(year from age(current_date,birthdate::date))::integer end
+$$;
+
+create or replace function public.experimental_check_adult_profile() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare birth date;
+begin
+  if new.birthdate is null and not new.onboarded then return new; end if;
+  if new.birthdate is null or new.birthdate !~ '^\d{4}-\d{2}-\d{2}$'
+     or not pg_input_is_valid(new.birthdate,'date') then
+    perform public.crushly_fail(400,'invalid_birthday','Please enter a valid birthday.');
+  end if;
+  birth:=new.birthdate::date;
+  if birth > (current_date - interval '18 years')::date then
+    perform public.crushly_fail(403,'adult_only','Holup is for adults aged 18 or older.');
+  end if;
+  if birth <= (current_date - interval '100 years')::date then
+    perform public.crushly_fail(400,'invalid_birthday','Please check your birthday.');
+  end if;
+  return new;
+end $$;
+revoke all on function public.experimental_check_adult_profile() from public,anon,authenticated;
+drop trigger if exists experimental_adult_profile_gate on public.profiles;
+create trigger experimental_adult_profile_gate before insert or update of birthdate,onboarded
+  on public.profiles for each row execute function public.experimental_check_adult_profile();
+
+-- ================================ 20261109131025_protect_profile_badge_tier.sql
+
+-- Applied to Holup production: ordinary clients may update their own profile,
+-- but may not award, change or remove verification badge tiers themselves.
+-- Existing badges and server-authorized review actions are unchanged.
+create or replace function public.guard_profile_badge_tier()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+ if current_user in ('anon','authenticated') and new.badge_tier is distinct from old.badge_tier then
+  raise exception 'Badge tier is managed by Holup reviewers' using errcode = '42501';
+ end if;
+ return new;
+end $$;
+drop trigger if exists guard_profile_badge_tier on public.profiles;
+create trigger guard_profile_badge_tier before update of badge_tier on public.profiles
+ for each row execute function public.guard_profile_badge_tier();
+revoke all on function public.guard_profile_badge_tier() from public,anon,authenticated;
+
+-- ================================ 20261109133904_manual_evidence_retention_foundation.sql
+
+-- Production retention foundation only. Does not enable verification or uploads.
+-- The matching cleanup worker and scheduler are required for physical deletion.
+create table public.manual_verification_cases (
+ id bigint generated always as identity primary key,
+ member_id bigint not null references public.profiles(id) on delete cascade,
+ kind text not null check(kind in ('creator','person_id')),
+ status text not null default 'open' check(status in ('open','approved','rejected','withdrawn')),
+ criteria_snapshot jsonb not null,
+ created_at bigint not null default public.now_ms(),
+ decided_at bigint,
+ reviewer uuid references auth.users(id),
+ decision_reason text
+);
+create unique index manual_verification_one_category on public.manual_verification_cases(member_id) where status in ('open','approved');
+alter table public.manual_verification_cases enable row level security;
+revoke all on public.manual_verification_cases from public,anon,authenticated;
+revoke all on sequence public.manual_verification_cases_id_seq from public,anon,authenticated;
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+values('holup-review-evidence','holup-review-evidence',false,5242880,array['image/jpeg','image/png','image/webp']);
+create table public.manual_verification_files (
+ id uuid primary key default gen_random_uuid(),
+ case_id bigint not null references public.manual_verification_cases(id) on delete cascade,
+ storage_path text not null unique,
+ mime_type text not null check(mime_type in ('image/jpeg','image/png','image/webp')),
+ state text not null default 'reserved' check(state in ('reserved','ready','deleted')),
+ created_at bigint not null default public.now_ms()
+);
+create index manual_verification_files_case on public.manual_verification_files(case_id,created_at);
+alter table public.manual_verification_files enable row level security;
+revoke all on public.manual_verification_files from public,anon,authenticated;
+create table public.manual_verification_file_deletions (
+ storage_path text primary key, queued_at timestamptz not null default now(), revision uuid not null default gen_random_uuid()
+);
+alter table public.manual_verification_file_deletions enable row level security;
+revoke all on public.manual_verification_file_deletions from public,anon,authenticated;
+create function public.manual_evidence_queue_delete() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if tg_op='DELETE' or (new.state='deleted' and old.state<>'deleted') then
+  insert into public.manual_verification_file_deletions(storage_path) values(old.storage_path)
+  on conflict(storage_path) do update set queued_at=now(),revision=gen_random_uuid();
+ end if;
+ if tg_op='DELETE' then return old; end if;
+ return new;
+end $$;
+create trigger manual_evidence_deleted after delete or update of state on public.manual_verification_files for each row execute function public.manual_evidence_queue_delete();
+create function public.manual_evidence_expire(p_limit integer default 100) returns integer language plpgsql security definer set search_path='' as $$
+declare changed integer;
+begin
+ with candidates as (
+  select f.id from public.manual_verification_files f join public.manual_verification_cases c on c.id=f.case_id
+  where f.state<>'deleted' and ((c.status<>'open' and (c.decided_at is null or c.decided_at<=public.now_ms()-2592000000))
+   or (f.state='reserved' and f.created_at<=public.now_ms()-86400000))
+  order by f.created_at,f.id limit least(greatest(coalesce(p_limit,100),1),100) for update of f skip locked
+ ) update public.manual_verification_files f set state='deleted' from candidates q where f.id=q.id;
+ get diagnostics changed=row_count; return changed;
+end $$;
+create function public.manual_evidence_cleanup_enqueue(p_path text) returns void language plpgsql security definer set search_path='' as $$
+begin
+ if p_path is null or p_path !~ '^cases/[0-9]+/[0-9a-f-]{36}[.]jpg$' then raise exception 'Invalid evidence path' using errcode='22023'; end if;
+ insert into public.manual_verification_file_deletions(storage_path) values(p_path)
+ on conflict(storage_path) do update set queued_at=now(),revision=gen_random_uuid();
+end $$;
+create function public.manual_evidence_cleanup_batch(p_limit integer default 100) returns jsonb language sql security definer set search_path='' as $$
+ select coalesce(jsonb_agg(jsonb_build_object('path',q.storage_path,'revision',q.revision)),'[]'::jsonb) from
+ (select storage_path,revision from public.manual_verification_file_deletions order by queued_at,storage_path limit least(greatest(coalesce(p_limit,100),1),100)) q
+$$;
+create function public.manual_evidence_cleanup_done(p_path text,p_revision uuid) returns void language sql security definer set search_path='' as $$
+ delete from public.manual_verification_file_deletions where storage_path=p_path and revision=p_revision
+$$;
+create table public.manual_evidence_cleanup_health_state (
+ singleton boolean primary key default true check(singleton), last_attempt_at bigint, last_success_at bigint,
+ last_failed integer not null default 0 check(last_failed>=0)
+);
+insert into public.manual_evidence_cleanup_health_state(singleton) values(true);
+alter table public.manual_evidence_cleanup_health_state enable row level security;
+revoke all on public.manual_evidence_cleanup_health_state from public,anon,authenticated;
+create function public.manual_evidence_cleanup_heartbeat(p_failed integer) returns void language plpgsql security definer set search_path='' as $$
+begin
+ if p_failed is null or p_failed<0 then raise exception 'Invalid count' using errcode='22023'; end if;
+ update public.manual_evidence_cleanup_health_state set last_attempt_at=public.now_ms(),
+ last_success_at=case when p_failed=0 then public.now_ms() else last_success_at end,last_failed=p_failed where singleton;
+end $$;
+revoke all on function public.manual_evidence_queue_delete(),public.manual_evidence_expire(integer),public.manual_evidence_cleanup_enqueue(text),public.manual_evidence_cleanup_batch(integer),public.manual_evidence_cleanup_done(text,uuid),public.manual_evidence_cleanup_heartbeat(integer) from public,anon,authenticated;
+grant execute on function public.manual_evidence_expire(integer),public.manual_evidence_cleanup_enqueue(text),public.manual_evidence_cleanup_batch(integer),public.manual_evidence_cleanup_done(text,uuid),public.manual_evidence_cleanup_heartbeat(integer) to service_role;
+
+-- ================================ 20261109134050_protect_evidence_cleanup_auth.sql
+
+create table public.manual_evidence_cleanup_auth_state (
+ singleton boolean primary key default true check(singleton),
+ secret_digest text not null check(secret_digest ~ '^[0-9a-f]{64}$')
+);
+alter table public.manual_evidence_cleanup_auth_state enable row level security;
+revoke all on public.manual_evidence_cleanup_auth_state from public,anon,authenticated;
+create function public.manual_evidence_cleanup_authenticate(p_digest text) returns boolean
+language sql stable security definer set search_path='' as $$
+ select exists(select 1 from public.manual_evidence_cleanup_auth_state where singleton and secret_digest=p_digest)
+$$;
+revoke all on function public.manual_evidence_cleanup_authenticate(text) from public,anon,authenticated;
+grant execute on function public.manual_evidence_cleanup_authenticate(text) to service_role;
+
+-- ================================ 20261109140000_manual_verification_backend_inactive.sql
+
+-- Inactive review migration draft; do not deploy without complete cutover review.
+-- Depends on production migrations 20261109133904 and 20261109134050.
+-- Authenticated grants are withheld until all integrations are deployed.
+begin;
+create table public.manual_verification_messages (
+ id bigint generated always as identity primary key,
+ case_id bigint not null references public.manual_verification_cases(id) on delete cascade,
+ sender_auth uuid not null references auth.users(id),
+ sender_role text not null check(sender_role in ('member','admin')),
+ body text not null check(char_length(body) between 1 and 2000),
+ created_at bigint not null default public.now_ms()
+);
+create index manual_verification_message_order on public.manual_verification_messages(case_id,id);
+alter table public.manual_verification_messages enable row level security;
+revoke all on public.manual_verification_messages from public,anon,authenticated;
+revoke all on sequence public.manual_verification_messages_id_seq from public,anon,authenticated;
+
+-- Aggregate numbers are visible only to the member or a server-authorized admin.
+-- Count current post reactions the same way the app displays its Crushes. Count
+-- current posts: deleted posts no longer count. Four consecutive rolling,
+-- nonoverlapping seven-day periods, from now going backwards (not total/4).
+create or replace function public.manual_verification_progress(p_kind text,p_member bigint default null)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare me bigint:=public.me_id(); who bigint:=coalesce(p_member,me); adds bigint; media bigint; texts bigint; likes bigint; video_likes bigint;
+ weeks bigint[]; exempt boolean; ready boolean;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Sign in.'); end if;
+ if who<>me and not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Not available.'); end if;
+ if p_kind not in ('creator','person_id') or p_kind is null then perform public.crushly_fail(400,'','Choose a verification type.'); end if;
+ if not exists(select 1 from public.profiles p where p.id=who) then perform public.crushly_fail(404,'','Member unavailable.'); end if;
+ select exists(select 1 from public.profiles p join public.holup_admins a on a.auth_user_id=p.auth_user_id where p.id=who) into exempt;
+ select count(*) into adds from public.crushes c join public.profiles p on p.id=c.from_id
+  where c.to_id=who and c.status in ('pending','accepted') and p.onboarded and p.status='active' and not public.is_blocked_pair(c.from_id,who);
+ select count(*) filter(where media_url is not null),count(*) filter(where media_url is null and btrim(body)<>'') into media,texts
+  from public.posts where author_id=who and circle_id is null;
+ select count(*),count(*) filter(where po.media_url ~* '[.](mp4|webm|mov|m4v)([?]|$)') into likes,video_likes
+  from public.posts po join public.post_reactions r on r.post_id=po.id
+  where po.author_id=who and po.circle_id is null;
+ select array_agg((select count(*) from public.posts p where p.author_id=who and p.circle_id is null
+   and p.created_at<=public.now_ms()-i*604800000::bigint and p.created_at>public.now_ms()-(i+1)*604800000::bigint) order by i)
+ into weeks from generate_series(0,3) i;
+ ready:=exempt or (case when p_kind='creator' then adds>=10000 and media>=1000 and texts>=100 and likes>=500000 and (select bool_and(w>=3) from unnest(weeks) w)
+  else adds>=5000 and media>=1000 and texts>=50 and video_likes>=50000 end);
+ return jsonb_build_object('kind',p_kind,'eligible',ready,'adminExempt',exempt,'addUps',adds,'mediaPosts',media,'textPosts',texts,
+ 'crushes',case when p_kind='creator' then likes else video_likes end,'weeklyPosts',to_jsonb(weeks));
+end $$;
+
+create or replace function public.manual_verification_apply(p_kind text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare me bigint:=public.me_id(); progress jsonb; new_id bigint; existing public.manual_verification_cases; current_tier text;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Sign in.'); end if;
+ perform pg_advisory_xact_lock(hashtextextended('verification:'||me::text,0));
+ progress:=public.manual_verification_progress(p_kind);
+ if not coalesce((progress->>'eligible')::boolean,false) then perform public.crushly_fail(403,'not_eligible','Meet the requirements before applying.'); end if;
+ select * into existing from public.manual_verification_cases where member_id=me and status in ('open','approved') limit 1;
+ if existing.id is not null then
+  if existing.kind=p_kind and existing.status='open' then return jsonb_build_object('id',existing.id); end if;
+  perform public.crushly_fail(409,'one_category','An account can have only one verification category.');
+ end if;
+ select badge_tier into current_tier from public.profiles where id=me for update;
+ if current_tier in ('gold','diamond') then perform public.crushly_fail(409,'one_category','This account already has a verification badge.'); end if;
+ insert into public.manual_verification_cases(member_id,kind,criteria_snapshot) values(me,p_kind,progress) returning id into new_id;
+ return jsonb_build_object('id',new_id);
+end $$;
+create or replace function public.manual_verification_cases_list(p_admin boolean default false,p_kind text default null,p_offset integer default 0) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare me bigint:=public.me_id(); out_json jsonb;
+begin
+ if me is null or (p_admin and not public.holup_is_admin()) then perform public.crushly_fail(403,'forbidden','Not available.'); end if;
+ if p_kind is not null and p_kind not in ('creator','person_id') then perform public.crushly_fail(400,'','Choose a verification type.'); end if;
+ if p_admin then insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_manual_verification_queue','{}'::jsonb); end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',q.id,'memberId',q.member_id,'memberName',q.name,'kind',q.kind,'status',q.status,'createdAt',q.created_at) order by q.id desc),'[]'::jsonb) into out_json
+ from (select c.*,p.name from public.manual_verification_cases c join public.profiles p on p.id=c.member_id
+ where ((p_admin and public.holup_is_admin()) or (not p_admin and c.member_id=me)) and (p_kind is null or c.kind=p_kind)
+ order by c.id desc offset greatest(coalesce(p_offset,0),0) limit 51) q;
+ return out_json;
+end $$;
+create or replace function public.manual_verification_thread(p_case bigint) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare me bigint:=public.me_id(); c public.manual_verification_cases; messages jsonb; is_admin boolean:=public.holup_is_admin();
+begin
+ select * into c from public.manual_verification_cases where id=p_case;
+ if me is null or not found or (c.member_id<>me and not is_admin) then perform public.crushly_fail(404,'','Application unavailable.'); end if;
+ if is_admin and c.member_id<>me then insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_verification_case',jsonb_build_object('caseId',c.id)); end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',m.id,'role',m.sender_role,'body',m.body,'createdAt',m.created_at) order by m.id),'[]'::jsonb) into messages
+ from public.manual_verification_messages m where m.case_id=c.id;
+ return jsonb_build_object('id',c.id,'kind',c.kind,'status',c.status,'memberId',c.member_id,'criteria',c.criteria_snapshot,'messages',messages);
+end $$;
+create or replace function public.manual_verification_send(p_case bigint,p_body text) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare me bigint:=public.me_id(); c public.manual_verification_cases; text_body text:=btrim(coalesce(p_body,'')); sender text;
+begin
+ if me is null or char_length(text_body) not between 1 and 2000 then perform public.crushly_fail(400,'','Enter a message of up to 2,000 characters.'); end if;
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ if not found or (c.member_id<>me and not public.holup_is_admin()) then perform public.crushly_fail(404,'','Application unavailable.'); end if;
+ if c.status<>'open' then perform public.crushly_fail(409,'','This application is closed.'); end if;
+ sender:=case when c.member_id=me then 'member' else 'admin' end;
+ if (select count(*) from public.manual_verification_messages where sender_auth=auth.uid() and created_at>public.now_ms()-3600000)>=30 then perform public.crushly_fail(429,'','Please try again later.'); end if;
+ insert into public.manual_verification_messages(case_id,sender_auth,sender_role,body) values(c.id,auth.uid(),sender,text_body);
+ if sender='admin' then insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'verification_message',jsonb_build_object('caseId',c.id)); end if;
+ return true;
+end $$;
+-- A separate trusted provider-integration layer must bind a Didit session to
+-- this case and record a verified outcome. No authenticated user can write
+-- evidence, and the old identity-verification callback is NOT evidence here.
+create table public.manual_verification_capture_evidence (
+ case_id bigint primary key references public.manual_verification_cases(id) on delete cascade,
+ provider_session_id text not null unique,
+ approved boolean not null default false,
+ completed_at bigint not null,
+ recorded_at bigint not null default public.now_ms()
+);
+alter table public.manual_verification_capture_evidence enable row level security;
+revoke all on public.manual_verification_capture_evidence from public,anon,authenticated;
+
+-- The live badge-tier guard is provided by migration
+-- 20261109131025_protect_profile_badge_tier. No badges are changed here.
+
+create or replace function public.manual_verification_decide(p_case bigint,p_decision text,p_reason text) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; reason text:=btrim(coalesce(p_reason,'')); tier text;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ if p_decision is null or p_decision not in ('approve','reject') or char_length(reason) not between 10 and 500 then
+  perform public.crushly_fail(400,'','Choose a decision and provide a reason of 10 to 500 characters.'); end if;
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ if not found or c.status<>'open' then perform public.crushly_fail(404,'','Open application unavailable.'); end if;
+ if p_decision='approve' and not exists(select 1 from public.manual_verification_capture_evidence e join public.manual_verification_captures d on d.case_id=e.case_id and d.state='approved' and d.provider_session_id=e.provider_session_id where e.case_id=c.id and e.approved) then
+  perform public.crushly_fail(409,'capture_required','Approved Didit live capture is required before a badge can be assigned.'); end if;
+ tier:=case when c.kind='creator' then 'gold' else 'diamond' end;
+ if p_decision='approve' then
+  perform 1 from public.profiles where id=c.member_id and badge_tier not in ('gold','diamond') for update;
+  if not found then perform public.crushly_fail(409,'one_category','This account already has a verification badge.'); end if;
+  update public.profiles set verification='verified',badge_tier=tier where id=c.member_id;
+ end if;
+ insert into public.manual_verification_messages(case_id,sender_auth,sender_role,body) values(c.id,auth.uid(),'admin',case when p_decision='approve' then 'Application approved. ' else 'Application not approved. ' end || reason);
+ update public.manual_verification_cases set status=case when p_decision='approve' then 'approved' else 'rejected' end,
+  reviewer=auth.uid(),decided_at=public.now_ms(),decision_reason=reason where id=c.id;
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'verification_decision',jsonb_build_object('caseId',c.id,'memberId',c.member_id,'decision',p_decision,'badge',case when p_decision='approve' then tier else null end,'reason',reason));
+ return true;
+end $$;
+revoke all on function public.manual_verification_decide(bigint,text,text) from public,anon,authenticated;
+
+revoke all on function public.manual_verification_progress(text,bigint),public.manual_verification_apply(text),public.manual_verification_cases_list(boolean,text,integer),public.manual_verification_thread(bigint),public.manual_verification_send(bigint,text) from public,anon,authenticated;
+
+
+create table public.manual_verification_captures (
+ case_id bigint primary key references public.manual_verification_cases(id) on delete cascade,
+ state text not null check(state in ('requested','creating','created','approved','declined','review','expired')),
+ lease uuid, lease_until timestamptz,
+ provider_session_id text unique, provider_url text, workflow_id text,
+ last_observed_at bigint not null default 0,
+ updated_at timestamptz not null default now()
+);
+alter table public.manual_verification_captures enable row level security;
+revoke all on public.manual_verification_captures from public,anon,authenticated;
+
+create or replace function public.manual_capture_request(p_case bigint) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; state text;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ if not found or c.status<>'open' then perform public.crushly_fail(404,'','Open verification application unavailable.'); end if;
+ select cap.state into state from public.manual_verification_captures cap where cap.case_id=p_case for update;
+ if state in ('requested','creating','created','approved','review') then perform public.crushly_fail(409,'','Capture is already requested or in progress.'); end if;
+ delete from public.manual_verification_capture_evidence where case_id=p_case;
+ insert into public.manual_verification_captures(case_id,state) values(p_case,'requested')
+ on conflict(case_id) do update set state='requested',lease=null,lease_until=null,provider_session_id=null,provider_url=null,workflow_id=null,last_observed_at=0,updated_at=now();
+ insert into public.manual_verification_messages(case_id,sender_auth,sender_role,body)
+ values(p_case,auth.uid(),'admin','Please complete the secure Didit live ID and selfie capture using the button in this review. Never share a password or sign-in code.');
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'verification_capture_requested',jsonb_build_object('caseId',p_case));
+ return true;
+end $$;
+
+-- This service-only function trusts p_actor only after an edge function has
+-- verified its JWT using Auth. Never expose a service key to a client.
+create or replace function public.manual_capture_claim(p_case bigint,p_actor uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; cap public.manual_verification_captures; tok uuid;
+begin
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ if not found or c.status<>'open' or not exists(select 1 from public.profiles p where p.id=c.member_id and p.auth_user_id=p_actor) then raise exception 'Application unavailable' using errcode='42501'; end if;
+ select * into cap from public.manual_verification_captures where case_id=p_case for update;
+ if not found then raise exception 'A reviewer must request capture first' using errcode='42501'; end if;
+ if cap.state in ('created','review','approved') then return jsonb_build_object('state',cap.state,'url',cap.provider_url); end if;
+ if cap.state='creating' and cap.lease_until>now() then raise exception 'Capture is being prepared; try again shortly' using errcode='55000'; end if;
+ if cap.state not in ('requested','creating') then raise exception 'Ask your reviewer for another capture' using errcode='55000'; end if;
+ tok:=gen_random_uuid();
+ update public.manual_verification_captures set state='creating',lease=tok,lease_until=now()+interval '2 minutes',updated_at=now() where case_id=p_case;
+ return jsonb_build_object('state','creating','lease',tok);
+end $$;
+create or replace function public.manual_capture_record(p_case bigint,p_actor uuid,p_lease uuid,p_session text,p_url text,p_workflow text) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases;
+begin
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ if not found or c.status<>'open' or not exists(select 1 from public.profiles p where p.id=c.member_id and p.auth_user_id=p_actor) then raise exception 'Application unavailable' using errcode='42501'; end if;
+ if p_session is null or p_url is null or p_workflow is null or p_session !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  or p_url !~ '^https://verify[.]didit[.]me/' or length(p_url)>2000 or p_workflow is null or length(p_workflow)>100 then raise exception 'Invalid provider session' using errcode='22023'; end if;
+ update public.manual_verification_captures set state='created',provider_session_id=p_session,provider_url=p_url,workflow_id=p_workflow,lease=null,lease_until=null,updated_at=now()
+ where case_id=p_case and state='creating' and lease=p_lease and lease_until>now();
+ if not found then raise exception 'Capture reservation expired' using errcode='55000'; end if;
+ return true;
+end $$;
+
+create or replace function public.manual_capture_lookup(p_case bigint,p_actor uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; cap public.manual_verification_captures; allowed boolean;
+begin
+ select * into c from public.manual_verification_cases where id=p_case;
+ if not found or c.status<>'open' then raise exception 'Application unavailable' using errcode='42501'; end if;
+ select exists(select 1 from public.profiles p where p.id=c.member_id and p.auth_user_id=p_actor) or exists(select 1 from public.holup_admins a where a.auth_user_id=p_actor) into allowed;
+ if not allowed then raise exception 'Application unavailable' using errcode='42501'; end if;
+ select * into cap from public.manual_verification_captures where case_id=p_case;
+ if not found then return jsonb_build_object('state','not_requested'); end if;
+ return jsonb_build_object('state',cap.state,'session',cap.provider_session_id,'workflow',cap.workflow_id);
+end $$;
+
+-- Called only with server-fetched provider results. We store the minimum
+-- decision, not raw document images, face data, extracted IDs or full response.
+create or replace function public.manual_capture_result(p_case bigint,p_session text,p_workflow text,p_state text,p_observed_at bigint default public.now_ms()) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; cap public.manual_verification_captures;
+begin
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ select * into cap from public.manual_verification_captures where case_id=p_case for update;
+ if c.id is null or c.status<>'open' or cap.provider_session_id is distinct from p_session or cap.workflow_id is distinct from p_workflow then raise exception 'Capture changed' using errcode='55000'; end if;
+ if p_state is null or p_state not in ('created','approved','declined','review','expired') or p_observed_at is null or p_observed_at<0 or p_observed_at>public.now_ms()+300000 then raise exception 'Invalid result' using errcode='22023'; end if;
+ -- Ignore out-of-order events; concurrent same-millisecond conflicting
+ -- results may never promote a case to approved. A fresh poll can reconcile.
+ if p_observed_at<cap.last_observed_at or (p_observed_at=cap.last_observed_at and p_state='approved' and cap.state<>'approved') then return true; end if;
+ -- Do not revive terminal declined/expired attempts. If a later provider
+ -- decision withdraws approval, fail closed and revoke evidence.
+ if cap.state in ('declined','expired') then return true; end if;
+ if cap.state='approved' and p_state='created' then return true; end if;
+ if p_state in ('declined','expired','review') then delete from public.manual_verification_capture_evidence where case_id=p_case; end if;
+ update public.manual_verification_captures set state=p_state,last_observed_at=p_observed_at,updated_at=now() where case_id=p_case;
+ if p_state='approved' then
+  insert into public.manual_verification_capture_evidence(case_id,provider_session_id,approved,completed_at)
+  values(p_case,p_session,true,public.now_ms()) on conflict(case_id) do update set provider_session_id=excluded.provider_session_id,approved=true,completed_at=excluded.completed_at,recorded_at=public.now_ms();
+ end if;
+ return true;
+end $$;
+create or replace function public.manual_capture_state(p_case bigint) returns text
+language plpgsql stable security definer set search_path='' as $$
+declare c public.manual_verification_cases; s text;
+begin
+ select * into c from public.manual_verification_cases where id=p_case;
+ if not found or public.me_id() is null or (c.member_id<>public.me_id() and not public.holup_is_admin()) then perform public.crushly_fail(404,'','Application unavailable.'); end if;
+ select state into s from public.manual_verification_captures where case_id=p_case;
+ return coalesce(s,'not_requested');
+end $$;
+revoke all on function public.manual_capture_request(bigint),public.manual_capture_state(bigint) from public,anon,authenticated;
+
+revoke all on function public.manual_capture_claim(bigint,uuid),public.manual_capture_record(bigint,uuid,uuid,text,text,text),public.manual_capture_lookup(bigint,uuid),public.manual_capture_result(bigint,text,text,text,bigint) from public,anon,authenticated;
+grant execute on function public.manual_capture_claim(bigint,uuid),public.manual_capture_record(bigint,uuid,uuid,text,text,text),public.manual_capture_lookup(bigint,uuid),public.manual_capture_result(bigint,text,text,text,bigint) to service_role;
+
+create or replace function public.manual_evidence_reserve(p_case bigint,p_actor uuid,p_mime text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; fid uuid:=gen_random_uuid(); suffix text; path text;
+begin
+ if p_mime is null or p_mime not in ('image/jpeg','image/png','image/webp') then raise exception 'Unsupported image type' using errcode='22023'; end if;
+ select * into c from public.manual_verification_cases where id=p_case for update;
+ if not found or c.status<>'open' or not exists(select 1 from public.profiles where id=c.member_id and auth_user_id=p_actor) then raise exception 'Application unavailable' using errcode='42501'; end if;
+ if (select count(*) from public.manual_verification_files where case_id=p_case and created_at>public.now_ms()-3600000)>=12 then raise exception 'Please try again later' using errcode='54000'; end if;
+ if (select count(*) from public.manual_verification_files where case_id=p_case and state in ('reserved','ready'))>=6 then raise exception 'Maximum of six images per application' using errcode='54000'; end if;
+ suffix:=case p_mime when 'image/jpeg' then 'jpg' when 'image/png' then 'png' else 'webp' end;
+ path:='cases/'||p_case::text||'/'||fid::text||'.'||suffix;
+ insert into public.manual_verification_files(id,case_id,storage_path,mime_type) values(fid,p_case,path,p_mime);
+ return jsonb_build_object('id',fid,'path',path);
+end $$;
+create or replace function public.manual_evidence_finish(p_file uuid,p_actor uuid,p_success boolean) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare f public.manual_verification_files; c public.manual_verification_cases;
+begin
+ select * into f from public.manual_verification_files where id=p_file for update;
+ if not found then raise exception 'Image unavailable' using errcode='42501'; end if;
+ select * into c from public.manual_verification_cases where id=f.case_id for update;
+ if c.status<>'open' or not exists(select 1 from public.profiles where id=c.member_id and auth_user_id=p_actor) then raise exception 'Application unavailable' using errcode='42501'; end if;
+ update public.manual_verification_files set state=case when p_success then 'ready' else 'deleted' end where id=p_file and state='reserved';
+ if not found then raise exception 'Image already processed' using errcode='55000'; end if;
+ return true;
+end $$;
+create or replace function public.manual_evidence_list(p_case bigint) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; result jsonb;
+begin
+ select * into c from public.manual_verification_cases where id=p_case;
+ if not found or public.me_id() is null or (c.member_id<>public.me_id() and not public.holup_is_admin()) then perform public.crushly_fail(404,'','Application unavailable.'); end if;
+ if public.holup_is_admin() and c.member_id<>public.me_id() then insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_verification_file_list',jsonb_build_object('caseId',p_case)); end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',id,'createdAt',created_at) order by created_at,id),'[]'::jsonb) into result from public.manual_verification_files where case_id=p_case and state='ready';
+ return result;
+end $$;
+create or replace function public.manual_evidence_authorize(p_file uuid,p_actor uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare f public.manual_verification_files; c public.manual_verification_cases; reviewer boolean;
+begin
+ select * into f from public.manual_verification_files where id=p_file and state='ready';
+ if not found then raise exception 'Image unavailable' using errcode='42501'; end if;
+ select * into c from public.manual_verification_cases where id=f.case_id;
+ reviewer:=exists(select 1 from public.holup_admins where auth_user_id=p_actor);
+ if not exists(select 1 from public.profiles where id=c.member_id and auth_user_id=p_actor) and not reviewer then raise exception 'Image unavailable' using errcode='42501'; end if;
+ if reviewer then insert into public.holup_admin_events(actor,kind,details) values(p_actor,'open_verification_file',jsonb_build_object('caseId',c.id,'fileId',f.id)); end if;
+ return jsonb_build_object('path',f.storage_path,'mime',f.mime_type);
+end $$;
+revoke all on function public.manual_evidence_list(bigint) from public,anon,authenticated;
+
+revoke all on function public.manual_evidence_reserve(bigint,uuid,text),public.manual_evidence_finish(uuid,uuid,boolean),public.manual_evidence_authorize(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.manual_evidence_reserve(bigint,uuid,text),public.manual_evidence_finish(uuid,uuid,boolean),public.manual_evidence_authorize(uuid,uuid) to service_role;
+
+create or replace function public.manual_evidence_hide(p_file uuid,p_actor uuid) returns text
+language plpgsql security definer set search_path='' as $$
+declare f public.manual_verification_files; c public.manual_verification_cases;
+begin
+ select * into f from public.manual_verification_files where id=p_file for update;
+ if not found or f.state='deleted' then raise exception 'Image unavailable' using errcode='42501'; end if;
+ select * into c from public.manual_verification_cases where id=f.case_id;
+ if not exists(select 1 from public.profiles where id=c.member_id and auth_user_id=p_actor) then raise exception 'Image unavailable' using errcode='42501'; end if;
+ update public.manual_verification_files set state='deleted' where id=p_file;
+ return f.storage_path;
+end $$;
+-- Release a reservation after a failed/incomplete upload even if the case was
+-- closed while the object was being transferred. Account ownership still wins.
+create or replace function public.manual_evidence_abort(p_file uuid,p_actor uuid) returns void
+language plpgsql security definer set search_path='' as $$
+declare f public.manual_verification_files;
+begin
+ select * into f from public.manual_verification_files where id=p_file for update;
+ if not found then return; end if;
+ if not exists(select 1 from public.manual_verification_cases c join public.profiles p on p.id=c.member_id where c.id=f.case_id and p.auth_user_id=p_actor) then raise exception 'Image unavailable' using errcode='42501'; end if;
+ update public.manual_verification_files set state='deleted' where id=p_file and state='reserved';
+end $$;
+
+revoke all on function public.manual_evidence_hide(uuid,uuid),public.manual_evidence_abort(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.manual_evidence_hide(uuid,uuid),public.manual_evidence_abort(uuid,uuid) to service_role;
+
+create or replace function public.manual_verification_ready_counts() returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+declare creator_count bigint; person_count bigint;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ select count(*) filter(where c.kind='creator'),count(*) filter(where c.kind='person_id') into creator_count,person_count
+ from public.manual_verification_cases c
+ join public.manual_verification_capture_evidence e on e.case_id=c.id and e.approved
+ join public.manual_verification_captures d on d.case_id=c.id and d.state='approved' and d.provider_session_id=e.provider_session_id
+ join public.profiles p on p.id=c.member_id and p.badge_tier not in ('gold','diamond')
+ where c.status='open';
+ return jsonb_build_object('creator',creator_count,'personId',person_count,'total',creator_count+person_count);
+end $$;
+
+-- One confirmed admin action decides every case ready at execution. The query
+-- rechecks the provider result and category under locks; counts are advisory,
+-- not the source of truth. Cases arriving after the query snapshot wait for the
+-- next action. Two concurrent batch actions serialize. No unready case changes.
+create or replace function public.manual_verification_award_ready() returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; chosen text; creator_count int:=0; person_count int:=0; reason text:='Verified after completed Didit identity checks and Holup review.';
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ perform pg_advisory_xact_lock(hashtextextended('holup-verification-batch',0));
+ for c in select v.* from public.manual_verification_cases v
+  join public.manual_verification_capture_evidence e on e.case_id=v.id and e.approved
+  join public.manual_verification_captures d on d.case_id=v.id and d.state='approved' and d.provider_session_id=e.provider_session_id
+  join public.profiles p on p.id=v.member_id and p.badge_tier not in ('gold','diamond')
+  where v.status='open' order by v.id for update of v loop
+  -- Case locks serialize this decision against provider-result and individual
+  -- reviewer actions. The provider result is checked again after the lock.
+  if not exists(select 1 from public.manual_verification_capture_evidence e
+    join public.manual_verification_captures d on d.case_id=e.case_id and d.state='approved' and d.provider_session_id=e.provider_session_id
+    where e.case_id=c.id and e.approved) then continue; end if;
+  perform 1 from public.profiles p where p.id=c.member_id and p.badge_tier not in ('gold','diamond') for update;
+  if not found then continue; end if;
+  chosen:=case when c.kind='creator' then 'gold' else 'diamond' end;
+  update public.profiles set verification='verified',badge_tier=chosen where id=c.member_id;
+  update public.manual_verification_cases set status='approved',reviewer=auth.uid(),decided_at=public.now_ms(),decision_reason=reason where id=c.id and status='open';
+  insert into public.manual_verification_messages(case_id,sender_auth,sender_role,body) values(c.id,auth.uid(),'admin','Application approved. '||reason);
+  insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'verification_decision',jsonb_build_object('caseId',c.id,'memberId',c.member_id,'decision','approve','badge',chosen,'method','batch'));
+  if c.kind='creator' then creator_count:=creator_count+1; else person_count:=person_count+1; end if;
+ end loop;
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'verification_batch',jsonb_build_object('creator',creator_count,'personId',person_count));
+ return jsonb_build_object('creator',creator_count,'personId',person_count,'total',creator_count+person_count);
+end $$;
+revoke all on function public.manual_verification_ready_counts(),public.manual_verification_award_ready() from public,anon,authenticated;
+
+
+create table public.manual_capture_events (
+ event_id text primary key check(length(event_id) between 1 and 200),
+ received_at timestamptz not null default now()
+);
+alter table public.manual_capture_events enable row level security;
+revoke all on public.manual_capture_events from public,anon,authenticated;
+create or replace function public.manual_capture_apply_event(p_case bigint,p_session text,p_workflow text,p_state text,p_event text,p_observed_at bigint)
+returns boolean language plpgsql security definer set search_path='' as $$
+begin
+ if p_event is null or length(p_event) not between 1 and 200 then raise exception 'Invalid event' using errcode='22023'; end if;
+ -- This checks case/session/workflow binding and transactionally updates only
+ -- evidence, never the badge. Rollback leaves an event retryable if creation
+ -- has not yet committed; replay is safe after success.
+ insert into public.manual_capture_events(event_id) values(p_event) on conflict do nothing;
+ if not found then return true; end if;
+ perform public.manual_capture_result(p_case,p_session,p_workflow,p_state,p_observed_at);
+ return true;
+end $$;
+revoke all on function public.manual_capture_apply_event(bigint,text,text,text,text,bigint) from public,anon,authenticated;
+grant execute on function public.manual_capture_apply_event(bigint,text,text,text,text,bigint) to service_role;
+
+create or replace function public.manual_evidence_list(p_case bigint) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare c public.manual_verification_cases; result jsonb;
+begin
+ select * into c from public.manual_verification_cases where id=p_case;
+ if not found or public.me_id() is null or (c.member_id<>public.me_id() and not public.holup_is_admin()) then perform public.crushly_fail(404,'','Application unavailable.'); end if;
+ if public.holup_is_admin() and c.member_id<>public.me_id() then insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_verification_file_list',jsonb_build_object('caseId',p_case)); end if;
+ if c.status<>'open' and (c.decided_at is null or c.decided_at<=public.now_ms()-2592000000) then return '[]'::jsonb; end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',id,'createdAt',created_at) order by created_at,id),'[]'::jsonb) into result from public.manual_verification_files where case_id=p_case and state='ready';
+ return result;
+end $$;
+create or replace function public.manual_evidence_authorize(p_file uuid,p_actor uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare f public.manual_verification_files; c public.manual_verification_cases; reviewer boolean;
+begin
+ select * into f from public.manual_verification_files where id=p_file and state='ready';
+ if not found then raise exception 'Image unavailable' using errcode='42501'; end if;
+ select * into c from public.manual_verification_cases where id=f.case_id;
+ if not found or (c.status<>'open' and (c.decided_at is null or c.decided_at<=public.now_ms()-2592000000)) then raise exception 'Image unavailable' using errcode='42501'; end if;
+ reviewer:=exists(select 1 from public.holup_admins where auth_user_id=p_actor);
+ if not exists(select 1 from public.profiles where id=c.member_id and auth_user_id=p_actor) and not reviewer then raise exception 'Image unavailable' using errcode='42501'; end if;
+ if reviewer then insert into public.holup_admin_events(actor,kind,details) values(p_actor,'open_verification_file',jsonb_build_object('caseId',c.id,'fileId',f.id)); end if;
+ return jsonb_build_object('path',f.storage_path,'mime',f.mime_type);
+end $$;
+
+create or replace function public.manual_evidence_cleanup_health() returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+declare s public.manual_evidence_cleanup_health_state; pending bigint; overdue bigint;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ select * into s from public.manual_evidence_cleanup_health_state where singleton;
+ select count(*) into pending from public.manual_verification_file_deletions;
+ select count(*) into overdue from public.manual_verification_files f join public.manual_verification_cases c on c.id=f.case_id
+ where f.state<>'deleted' and ((c.status<>'open' and (c.decided_at is null or c.decided_at<=public.now_ms()-2592000000))
+   or (f.state='reserved' and f.created_at<=public.now_ms()-86400000));
+ return jsonb_build_object('lastAttemptAt',s.last_attempt_at,'lastSuccessAt',s.last_success_at,'lastFailed',s.last_failed,
+   'queuedObjects',pending,'overdueImages',overdue,
+   'attention',s.last_success_at is null or s.last_success_at<public.now_ms()-3600000 or s.last_failed>0 or pending>0 or overdue>0);
+end $$;
+
+revoke all on function public.manual_evidence_cleanup_health() from public,anon,authenticated;
+
+commit;
+
+-- ================================ 20261109152125_schedule_verification_image_cleanup.sql
+
+-- Historical production experiment, immediately disabled and rolled back by
+-- 20261109152214 and 20261109152300. This replay-safe marker intentionally does
+-- NOT install pg_net, create a scheduler or expose a credential. Exact applied
+-- statements and the reason for the safety rollback are recorded in
+-- supabase/manual-verification-work/disabled-pg-net-scheduler-history.md.
+select 1;
+
+-- ================================ 20261109152214_disable_unsafe_evidence_scheduler.sql
+
+-- Replay-safe marker for the immediate production rollback of an unsafe
+-- pg_net experiment. See disabled-pg-net-scheduler-history.md for exact SQL.
+select 1;
+
+-- ================================ 20261109152300_remove_unused_evidence_scheduler_extensions.sql
+
+-- Replay-safe marker for removal of extensions introduced solely for the
+-- disabled pg_net experiment. See disabled-pg-net-scheduler-history.md.
+select 1;
+
+-- ================================ 20261109153400_post_location.sql
+
+-- A manually entered place name, never device coordinates. It has the same
+-- audience and visibility as the post itself.
+alter table public.posts add column if not exists location text;
+alter table public.posts drop constraint if exists posts_location_length;
+alter table public.posts add constraint posts_location_length check (location is null or (length(btrim(location)) between 1 and 80));
+
+create or replace function public.post_engagement(p_post_id bigint, p_viewer bigint)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'location', (select po.location from public.posts po where po.id=p_post_id and public.can_view_post(po, public.me_id())),
+    -- A direct RPC caller cannot forge p_viewer to learn a restricted count.
+    'viewCount', case when exists (select 1 from posts po where po.id=p_post_id and public.can_view_post(po, public.me_id())) then (select count(distinct pf.viewer_id) from post_feedback pf join posts po on po.id=pf.post_id where pf.post_id=p_post_id and pf.kind='view' and pf.viewer_id<>po.author_id) else null end,
+    'likeCount', (select count(*) from post_reactions r where r.post_id = p_post_id),
+    'commentCount', (
+      select count(*) from post_comments c
+       where c.post_id = p_post_id
+         and not c.hidden
+         and not public.is_blocked_pair(p_viewer, c.author_id)
+    ),
+    'liked', exists (
+      select 1 from post_reactions r where r.post_id = p_post_id and r.user_id = p_viewer
+    ),
+    'myReaction', (
+      select r.kind from post_reactions r
+       where r.post_id = p_post_id and r.user_id = p_viewer
+    ),
+    'reactionKinds', coalesce((
+      select jsonb_object_agg(s.kind, s.n)
+        from (select r.kind, count(*) as n
+                from post_reactions r
+               where r.post_id = p_post_id
+               group by r.kind) s
+    ), '{}'::jsonb),
+    'saved', exists (
+      select 1 from post_saves s where s.post_id = p_post_id and s.user_id = p_viewer
+    ),
+    'sound', (
+      select jsonb_build_object('id', s.id, 'title', s.title, 'ownerId', s.owner_id)
+        from posts po join sounds s on s.id = po.sound_id
+       where po.id = p_post_id
+    )
+  );
+$$;
+revoke all on function public.post_engagement(bigint,bigint) from public, anon, authenticated;
+grant execute on function public.post_engagement(bigint,bigint) to service_role;
+
+create or replace function public.create_post_with_location(
+  p_body text, p_media_url text, p_audience text, p_circle_id bigint,
+  p_edit jsonb, p_comments_enabled boolean, p_location text
+) returns jsonb language plpgsql security definer set search_path=public as $$
+declare result jsonb; place text := nullif(btrim(coalesce(p_location,'')),'');
+begin
+  if length(coalesce(place,''))>80 or coalesce(place,'') ~ '[[:cntrl:]]' then
+    perform public.crushly_fail(400, '', 'Choose a place name of at most 80 characters.');
+  end if;
+  result := public.create_post_with_options(p_body,p_media_url,p_audience,p_circle_id,p_edit,p_comments_enabled);
+  update public.posts set location=place where id=(result->>'id')::bigint and author_id=public.me_id();
+  if not found then perform public.crushly_fail(500, '', 'Could not save the location.'); end if;
+  return result || jsonb_build_object('location',place);
+end $$;
+revoke all on function public.create_post_with_location(text,text,text,bigint,jsonb,boolean,text) from public, anon, authenticated;
+grant execute on function public.create_post_with_location(text,text,text,bigint,jsonb,boolean,text) to authenticated, service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109153925_whisper_moment_links.sql
+
+-- Prepare per-member hide metadata without exposing it to clients.
+create table if not exists public.hidden_whispers (
+  message_id bigint not null references public.messages(id) on delete cascade,
+  user_id bigint not null references public.profiles(id) on delete cascade,
+  primary key(message_id,user_id)
+);
+alter table public.hidden_whispers enable row level security;
+revoke all on public.hidden_whispers from public, anon, authenticated;
+
+-- Moment replies are references, not permanent snapshots of private content.
+update public.messages
+   set meta=coalesce(meta,'{}'::jsonb) - array['momentKind','momentBody','momentMedia','momentStyle']::text[]
+ where kind='moment_reply'
+   and coalesce(meta,'{}'::jsonb) ?| array['momentKind','momentBody','momentMedia','momentStyle'];
+update public.notifications set body='' where kind='moment_reply' and body<>'';
+
+create or replace function public.reply_to_moment(p_moment_id bigint,p_body text) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); m public.moments; reason text; conv_id bigint; clean_body text:=coalesce(p_body,'');
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into m from public.moments where id=p_moment_id;
+  if not found or m.expires_at<=public.now_ms() or not public.can_view_moment(m,me) then
+    perform public.crushly_fail(404,'','This Moment isn’t available.'); end if;
+  if m.user_id=me then perform public.crushly_fail(400,'','You can’t reply to your own Moment.'); end if;
+  if btrim(clean_body)='' then perform public.crushly_fail(400,'','Write a reply first.'); end if;
+  clean_body:=left(clean_body,1000);
+  reason:=public.messaging_block_reason(me,m.user_id);
+  if reason is not null then perform public.crushly_fail(403,'messaging_restricted',reason); end if;
+  conv_id:=public.ensure_conversation(me,m.user_id);
+  insert into public.messages(conversation_id,sender_id,kind,body,meta)
+    values(conv_id,me,'moment_reply',clean_body,jsonb_build_object('momentId',m.id));
+  update public.conversations set last_message_at=public.now_ms() where id=conv_id;
+  perform public.notify_to(m.user_id,'moment_reply',me,conv_id,'');
+  return jsonb_build_object('conversationId',conv_id);
+end $$;
+
+create or replace function public.whisper_moment_target(p_message_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); msg public.messages; conv public.conversations; mo public.moments; raw_id text;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into msg from public.messages where id=p_message_id and kind='moment_reply'
+    and not exists(select 1 from public.hidden_whispers h where h.message_id=p_message_id and h.user_id=me);
+  if not found then return null; end if;
+  select * into conv from public.conversations where id=msg.conversation_id;
+  if not found or (conv.user_a<>me and conv.user_b<>me) or public.is_blocked_pair(conv.user_a,conv.user_b) then return null; end if;
+  raw_id:=msg.meta->>'momentId';
+  if raw_id is null or raw_id !~ '^[1-9][0-9]{0,17}$' then return null; end if;
+  select * into mo from public.moments where id=raw_id::bigint;
+  if not found or mo.expires_at<=public.now_ms() or mo.user_id=msg.sender_id
+     or mo.user_id not in (conv.user_a,conv.user_b) or not public.can_view_moment(mo,me) then return null; end if;
+  return jsonb_build_object('momentId',mo.id,'userId',mo.user_id,'mine',mo.user_id=me);
+end $$;
+revoke all on function public.whisper_moment_target(bigint) from public,anon,authenticated;
+grant execute on function public.whisper_moment_target(bigint) to authenticated,service_role;
+notify pgrst,'reload schema';
+
+-- ================================ 20261109161552_whisper_activity_notifications.sql
+
+-- Whispers have their own notification category. Do not duplicate private text:
+-- each event is only a signal to open the authorized conversation.
+create or replace function public.notify_to(
+  p_uid bigint, p_kind text, p_actor_id bigint default null, p_ref_id bigint default null, p_body text default ''
+) returns void language plpgsql security definer set search_path=public as $$
+declare existing_id bigint;
+begin
+  if not public.notification_allowed(p_uid,p_kind) then return; end if;
+  if p_kind in ('post_mention','keep','message') and p_actor_id is not null then
+    select id into existing_id from public.notifications
+      where user_id=p_uid and kind=p_kind and actor_id=p_actor_id
+        and ref_id is not distinct from p_ref_id and read_at is null limit 1;
+    if existing_id is not null then
+      update public.notifications set created_at=public.now_ms(), body=case when p_kind='message' then '' else p_body end where id=existing_id;
+      return;
+    end if;
+  end if;
+  insert into public.notifications(user_id,kind,actor_id,ref_id,body)
+  values(p_uid,p_kind,p_actor_id,p_ref_id,case when p_kind='message' then '' else p_body end);
+end $$;
+revoke all on function public.notify_to(bigint,text,bigint,bigint,text) from public, anon, authenticated;
+grant execute on function public.notify_to(bigint,text,bigint,bigint,text) to service_role;
+
+-- ================================ 20261109163131_admin_report_triage.sql
+
+-- Admin-only report triage, limited account lookup and audit history.
+create or replace function public.holup_admin_reports(p_handled boolean default false,p_limit integer default 50,p_offset integer default 0)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare result jsonb;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_reports',jsonb_build_object('handled',coalesce(p_handled,false)));
+ select coalesce(jsonb_agg(jsonb_build_object('id',q.id,'reporterId',q.reporter_id,'reporterName',q.reporter_name,
+  'reportedId',q.reported_id,'reportedName',q.reported_name,'reason',q.reason,'details',q.details,
+  'context',q.context,'handled',q.handled,'createdAt',q.created_at) order by q.created_at desc,q.id desc),'[]'::jsonb) into result
+ from (select r.*,rp.name reporter_name,tp.name reported_name from public.reports r
+  left join public.profiles rp on rp.id=r.reporter_id left join public.profiles tp on tp.id=r.reported_id
+  where r.handled=coalesce(p_handled,false) order by r.created_at desc,r.id desc
+  limit least(greatest(coalesce(p_limit,50),1),100) offset greatest(coalesce(p_offset,0),0)) q;
+ return result;
+end $$;
+
+create or replace function public.holup_admin_set_report_handled(p_report_id bigint,p_handled boolean)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare previous boolean;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ if p_handled is null then perform public.crushly_fail(400,'','Choose a status.'); end if;
+ select handled into previous from public.reports where id=p_report_id for update;
+ if not found then perform public.crushly_fail(404,'','Report unavailable.'); end if;
+ if previous is distinct from p_handled then
+  update public.reports set handled=p_handled where id=p_report_id;
+  insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'report_status',jsonb_build_object('reportId',p_report_id,'before',previous,'after',p_handled));
+ end if;
+ return true;
+end $$;
+
+create or replace function public.holup_admin_accounts(p_query text,p_limit integer default 30)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare term text:=lower(btrim(coalesce(p_query,''))); result jsonb;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ if length(term)>100 or (length(term)<2 and term !~ '^[0-9]+$') then perform public.crushly_fail(400,'','Enter a member ID or at least 2 characters.'); end if;
+ insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'search_accounts','{}'::jsonb);
+ select coalesce(jsonb_agg(jsonb_build_object('id',q.id,'name',q.name,'username',q.username,'status',q.status,
+  'onboarded',q.onboarded,'verification',q.verification) order by q.id desc),'[]'::jsonb) into result
+ from (select p.id,p.name,p.username,p.status,p.onboarded,p.verification from public.profiles p
+  where strpos(lower(p.name),term)>0 or strpos(lower(coalesce(p.username,'')),term)>0 or p.id::text=term
+  order by p.id desc limit least(greatest(coalesce(p_limit,30),1),100)) q;
+ return result;
+end $$;
+
+create or replace function public.holup_admin_audit(p_limit integer default 50)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare result jsonb;
+begin
+ if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',q.id,'actor',q.actor,'kind',q.kind,'details',q.details,'createdAt',q.created_at) order by q.id desc),'[]'::jsonb) into result
+ from (select id,actor,kind,details,created_at from public.holup_admin_events order by id desc limit least(greatest(coalesce(p_limit,50),1),100)) q;
+ return result;
+end $$;
+revoke all on function public.holup_admin_reports(boolean,integer,integer), public.holup_admin_set_report_handled(bigint,boolean), public.holup_admin_accounts(text,integer), public.holup_admin_audit(integer) from public,anon,authenticated;
+grant execute on function public.holup_admin_reports(boolean,integer,integer), public.holup_admin_set_report_handled(bigint,boolean), public.holup_admin_accounts(text,integer), public.holup_admin_audit(integer) to authenticated,service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109170000_space_counts.sql
+
+-- Identity lists are private unless their owner deliberately grants access.
+-- Counts include active relationships; individual Spaces still obey their own
+-- privacy and block rules, so a list can contain fewer identities than a count.
+alter table public.privacy add column if not exists add_up_list_visibility text not null default 'private';
+alter table public.privacy drop constraint if exists privacy_add_up_list_visibility_check;
+alter table public.privacy add constraint privacy_add_up_list_visibility_check check (add_up_list_visibility in ('everyone','close','private'));
+
+create or replace function public.space_relationship_stats(p_target_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); visibility text; allowed_close boolean;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if (me <> p_target_id and not exists (select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+     where p.id=p_target_id and p.onboarded and p.status='active' and not public.is_blocked_pair(me,p_target_id)
+       and ((pr.profile_visibility='everyone' and not pr.incognito) or
+            (exists(select 1 from public.keeps where keeper_id=me and kept_id=p_target_id) and exists(select 1 from public.keeps where keeper_id=p_target_id and kept_id=me)))))
+     or public.load_visible_profile(me,p_target_id,false) is null then
+    perform public.crushly_fail(404,'','Space not available.'); end if;
+  select add_up_list_visibility into visibility from public.privacy where user_id=p_target_id;
+  allowed_close := me=p_target_id or (exists (select 1 from public.keeps where keeper_id=me and kept_id=p_target_id) and exists (select 1 from public.keeps where keeper_id=p_target_id and kept_id=me));
+  return jsonb_build_object(
+    'addUps', (select count(*) from public.crushes c join public.profiles p on p.id=c.from_id
+      where c.to_id=p_target_id and c.status in ('pending','accepted') and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.from_id,p_target_id)),
+    'keptClose', (select count(*) from public.keeps k join public.profiles p on p.id=k.keeper_id
+      where k.kept_id=p_target_id and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(k.keeper_id,k.kept_id)),
+    'canViewAddUps', me=p_target_id or visibility='everyone' or (visibility='close' and allowed_close),
+    'canViewKeptClose', allowed_close,
+    'addUpVisibility', case when me=p_target_id then visibility else null end
+  );
+end $$;
+
+-- A directory list must never use the legacy profile exception that treats an
+-- old declined/cancelled Add Up as enough to view a connections-only profile.
+-- Treat incognito as private here as well: the list is a discoverability surface.
+create or replace function public.relationship_list_profile(p_viewer bigint,p_person bigint) returns jsonb
+language sql stable security definer set search_path=public as $$
+  select case when p_viewer=p_person or exists (
+    select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+    where p.id=p_person and p.onboarded and p.status='active'
+      and not public.is_blocked_pair(p_viewer,p_person)
+      and ((pr.profile_visibility='everyone' and not pr.incognito) or (exists(select 1 from public.keeps where keeper_id=p_viewer and kept_id=p_person) and exists(select 1 from public.keeps where keeper_id=p_person and kept_id=p_viewer)))
+  ) then public.load_visible_profile(p_viewer,p_person,false) else null end
+$$;
+revoke all on function public.relationship_list_profile(bigint,bigint) from public,anon,authenticated;
+
+create or replace function public.space_relationship_people(p_target_id bigint, p_kind text, p_offset integer default 0, p_limit integer default 40)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+  if p_kind is null or p_kind not in ('addUps','keptClose') then perform public.crushly_fail(400,'','Unknown list.'); end if;
+  stats:=public.space_relationship_stats(p_target_id);
+  if (p_kind='addUps' and not (stats->>'canViewAddUps')::boolean) or (p_kind='keptClose' and not (stats->>'canViewKeptClose')::boolean) then
+    perform public.crushly_fail(403,'','This list is private.'); end if;
+  with ids as (
+    select c.from_id as person, c.created_at as at from public.crushes c
+      where p_kind='addUps' and c.to_id=p_target_id and c.status in ('pending','accepted')
+    union all
+    select k.keeper_id, k.created_at from public.keeps k
+      where p_kind='keptClose' and k.kept_id=p_target_id
+  ), readable as (
+    select ids.person, ids.at, public.relationship_list_profile(me,ids.person) as member
+      from ids join public.profiles p on p.id=ids.person
+     where p.onboarded and p.status='active' and not public.is_blocked_pair(p_target_id,ids.person)
+       and not public.is_blocked_pair(me,ids.person)
+  ), page as (
+    select member,at,person from readable where member is not null order by at desc,person desc offset off limit lim+1
+  )
+  select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+    'hasMore',(select count(*)>lim from page)) into result;
+  return result;
+end $$;
+
+create or replace function public.set_add_up_list_visibility(p_visibility text) returns text
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if p_visibility is null or p_visibility not in ('everyone','close','private') then perform public.crushly_fail(400,'','Choose who can see the list.'); end if;
+  update public.privacy set add_up_list_visibility=p_visibility where user_id=me;
+  if not found then perform public.crushly_fail(404,'','Privacy settings not found.'); end if;
+  return p_visibility;
+end $$;
+revoke all on function public.space_relationship_stats(bigint) from public,anon,authenticated;
+revoke all on function public.space_relationship_people(bigint,text,integer,integer) from public,anon,authenticated;
+revoke all on function public.set_add_up_list_visibility(text) from public,anon,authenticated;
+grant execute on function public.space_relationship_stats(bigint),public.space_relationship_people(bigint,text,integer,integer),public.set_add_up_list_visibility(text) to authenticated,service_role;
+notify pgrst,'reload schema';
+
+-- ================================ 20261109180000_space_stats_safety.sql
+
+-- Until approved Keep Close requests are in production, a pair of legacy
+-- one-way Keeps is not evidence of an accepted friendship. Fail closed on
+-- Close Ones-only identity lists rather than disclosing them prematurely.
+create or replace function public.space_relationship_stats(p_target_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); visibility text;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if (me <> p_target_id and not exists (select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+     where p.id=p_target_id and p.onboarded and p.status='active' and not public.is_blocked_pair(me,p_target_id)
+       and pr.profile_visibility='everyone' and not pr.incognito))
+     or public.load_visible_profile(me,p_target_id,false) is null then
+    perform public.crushly_fail(404,'','Space not available.'); end if;
+  select add_up_list_visibility into visibility from public.privacy where user_id=p_target_id;
+  return jsonb_build_object(
+    'addUps', (select count(*) from public.crushes c join public.profiles p on p.id=c.from_id
+      where c.to_id=p_target_id and c.status in ('pending','accepted') and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.from_id,p_target_id)),
+    -- Legacy Keeps are requests/subscriptions, not approved friendships.
+    'keptClose', null,
+    'postLikes', (select count(*) from public.post_reactions r join public.posts po on po.id=r.post_id
+      where po.author_id=p_target_id and (me=p_target_id or (po.audience='everyone' and public.can_view_post(po,me)))),
+    'canViewAddUps', me=p_target_id or visibility='everyone',
+    'canViewKeptClose', false,
+    'addUpVisibility', case when me=p_target_id then visibility else null end
+  );
+end $$;
+revoke all on function public.space_relationship_stats(bigint) from public,anon,authenticated;
+grant execute on function public.space_relationship_stats(bigint) to authenticated,service_role;
+notify pgrst,'reload schema';
+
+-- A legacy reciprocal Keep is not an approved Close One. Directory identities
+-- must still be public to the requesting viewer until approval is implemented.
+create or replace function public.relationship_list_profile(p_viewer bigint,p_person bigint) returns jsonb
+language sql stable security definer set search_path=public as $$
+  select case when p_viewer=p_person or exists (
+    select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+    where p.id=p_person and p.onboarded and p.status='active'
+      and not public.is_blocked_pair(p_viewer,p_person)
+      and pr.profile_visibility='everyone' and not pr.incognito
+  ) then public.load_visible_profile(p_viewer,p_person,false) else null end
+$$;
+revoke all on function public.relationship_list_profile(bigint,bigint) from public,anon,authenticated;
+
+-- ================================ 20261109180001_admin_analytics.sql
+
+-- Aggregates only: no message text, personal identifiers or fake event history.
+create or replace function public.holup_admin_analytics() returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare since7 bigint:=public.now_ms()-7*86400000; result jsonb;
+begin
+  if not public.holup_is_admin() then perform public.crushly_fail(403,'forbidden','Admin access required.'); end if;
+  insert into public.holup_admin_events(actor,kind,details) values(auth.uid(),'view_analytics','{}'::jsonb);
+  select jsonb_build_object(
+    'members', (select count(*) from public.profiles where onboarded),
+    'seenLast7Days', (select count(*) from public.profiles where onboarded and last_active_at>=since7),
+    'newMembersLast7Days', (select count(*) from public.profiles where onboarded and created_at>=since7),
+    'postsLast7Days', (select count(*) from public.posts where created_at>=since7),
+    'reactionsLast7Days', (select count(*) from public.post_reactions where created_at>=since7),
+    'commentsLast7Days', (select count(*) from public.post_comments where created_at>=since7),
+    'whispersLast7Days', (select count(*) from public.messages where created_at>=since7),
+    'openReports', (select count(*) from public.reports where not handled)
+  ) into result;
+  return result;
+end $$;
+revoke all on function public.holup_admin_analytics() from public,anon,authenticated;
+grant execute on function public.holup_admin_analytics() to authenticated,service_role;
+notify pgrst,'reload schema';
+
+-- ================================ 20261109181652_legacy_didit_manual_hold.sql
+
+-- Pause automatic badge assignment while manual, category-specific verification
+-- is being completed. Existing badges are preserved. Old in-flight provider
+-- sessions can still be recorded, but a provider approval is not an admin award.
+create or replace function public.apply_didit_status(
+  p_session_id text, p_status text, p_decision jsonb default null, p_event_id text default null
+) returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_user_id bigint;
+  v_row public.verification_requests%rowtype;
+  v_latest bigint;
+  v_rank int;
+  v_old_rank int;
+  v_status text;
+begin
+  select user_id into strict v_user_id from public.verification_requests
+    where didit_session_id = p_session_id order by id desc limit 1;
+  perform 1 from public.profiles where id = v_user_id for update;
+  select * into strict v_row from public.verification_requests
+    where didit_session_id = p_session_id order by id desc limit 1 for update;
+  if p_event_id is not null then
+    insert into public.didit_events (event_id, session_id) values (p_event_id, p_session_id)
+      on conflict do nothing;
+    if not found then return; end if;
+  end if;
+  select max(id) into v_latest from public.verification_requests where user_id = v_user_id;
+  if v_row.id <> v_latest or v_row.status in ('superseded','approved','rejected') then return; end if;
+  -- Provider documentation uses both upper case and title case. Unknown
+  -- statuses never change a request or profile.
+  v_status := case upper(trim(coalesce(p_status,'')))
+    when 'NOT STARTED' then 'Not Started' when 'IN PROGRESS' then 'In Progress'
+    when 'IN REVIEW' then 'In Review' when 'APPROVED' then 'Approved'
+    when 'DECLINED' then 'Declined' when 'EXPIRED' then 'Expired'
+    when 'ABANDONED' then 'Abandoned' else null end;
+  if v_status is null then return; end if;
+  v_rank := case v_status when 'Not Started' then 0 when 'In Progress' then 1
+    when 'In Review' then 2 else 3 end;
+  v_old_rank := case upper(coalesce(v_row.didit_status,''))
+    when 'IN PROGRESS' then 1 when 'IN REVIEW' then 2
+    when 'APPROVED' then 3 when 'DECLINED' then 3
+    when 'EXPIRED' then 3 when 'ABANDONED' then 3 else 0 end;
+  if v_rank < v_old_rank or v_old_rank = 3 then return; end if;
+  update public.verification_requests set
+    status = case v_status when 'Declined' then 'rejected'
+      when 'Expired' then 'superseded' when 'Abandoned' then 'superseded' else 'pending' end,
+    didit_status = v_status, decision = coalesce(p_decision, decision),
+    didit_event_id = coalesce(p_event_id, didit_event_id)
+    where id = v_row.id;
+  update public.profiles set verification = case v_status
+    when 'Declined' then 'rejected' when 'In Progress' then 'pending'
+    when 'In Review' then 'pending' when 'Approved' then 'pending' else 'none' end
+    where id = v_user_id and verification <> 'verified';
+end $$;
+-- Preserve service-only access and explicitly close default grants.
+revoke all on function public.apply_didit_status(text,text,jsonb,text) from public,anon,authenticated;
+grant execute on function public.apply_didit_status(text,text,jsonb,text) to service_role;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261109182606_existing_close_ones.sql
+
+begin;
+-- Existing connections were explicitly confirmed as accepted Close Ones.
+-- An unapproved legacy Keep is still not an accepted friendship. This change
+-- exposes counts and identities only for existing accepted connections.
+-- Only pairs existing at the time of this migration are grandfathered.
+-- A later legacy Add Up acceptance is NOT a Keep Close approval.
+create table if not exists public.holup_existing_close_pairs (
+  user_a bigint not null references public.profiles(id) on delete cascade,
+  user_b bigint not null references public.profiles(id) on delete cascade,
+  primary key(user_a,user_b), check(user_a < user_b)
+);
+alter table public.holup_existing_close_pairs enable row level security;
+revoke all on public.holup_existing_close_pairs from public,anon,authenticated;
+create table if not exists public.holup_close_conversion_markers (name text primary key);
+alter table public.holup_close_conversion_markers enable row level security;
+revoke all on public.holup_close_conversion_markers from public,anon,authenticated;
+lock table public.connections in share row exclusive mode;
+do $$ begin
+  if not exists(select 1 from public.holup_close_conversion_markers where name='existing-connections-v1') then
+    insert into public.holup_existing_close_pairs(user_a,user_b) select user_a,user_b from public.connections on conflict do nothing;
+    insert into public.holup_close_conversion_markers(name) values('existing-connections-v1');
+  end if;
+end $$;
+create or replace function public.holup_existing_close(a bigint,b bigint) returns boolean
+language sql stable security definer set search_path=public as $$
+  select exists (select 1 from public.holup_existing_close_pairs e join public.connections c using(user_a,user_b)
+    where e.user_a=least(a,b) and e.user_b=greatest(a,b)) and not public.is_blocked_pair(a,b)
+$$;
+revoke all on function public.holup_existing_close(bigint,bigint) from public,anon,authenticated;
+
+create or replace function public.space_relationship_stats(p_target_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); visibility text;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if (me <> p_target_id and not exists (select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+     where p.id=p_target_id and p.onboarded and p.status='active' and not public.is_blocked_pair(me,p_target_id)
+       and ((pr.profile_visibility='everyone' and not pr.incognito) or public.holup_existing_close(me,p_target_id))))
+     or public.load_visible_profile(me,p_target_id,false) is null then
+    perform public.crushly_fail(404,'','Space not available.'); end if;
+  select add_up_list_visibility into visibility from public.privacy where user_id=p_target_id;
+  return jsonb_build_object(
+    'addUps', (select count(*) from public.crushes c join public.profiles p on p.id=c.from_id
+      where c.to_id=p_target_id and c.status in ('pending','accepted') and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.from_id,p_target_id)),
+    'keptClose', (select count(*) from public.connections c join public.holup_existing_close_pairs e using(user_a,user_b) join public.profiles p
+      on p.id=case when c.user_a=p_target_id then c.user_b else c.user_a end
+      where (c.user_a=p_target_id or c.user_b=p_target_id) and p.onboarded and p.status='active'
+        and not public.is_blocked_pair(c.user_a,c.user_b)),
+    'postLikes', (select count(*) from public.post_reactions r join public.posts po on po.id=r.post_id
+      where po.author_id=p_target_id and (me=p_target_id or (po.audience='everyone' and public.can_view_post(po,me)))),
+    'canViewAddUps', me=p_target_id or visibility='everyone' or (visibility='close' and public.holup_existing_close(me,p_target_id)),
+    'canViewKeptClose', me=p_target_id or public.holup_existing_close(me,p_target_id),
+    'addUpVisibility', case when me=p_target_id then visibility else null end
+  );
+end $$;
+revoke all on function public.space_relationship_stats(bigint) from public,anon,authenticated;
+grant execute on function public.space_relationship_stats(bigint) to authenticated,service_role;
+notify pgrst,'reload schema';
+
+create or replace function public.relationship_list_profile(p_viewer bigint,p_person bigint) returns jsonb
+language sql stable security definer set search_path=public as $$
+  select case when p_viewer=p_person or exists (
+    select 1 from public.profiles p join public.privacy pr on pr.user_id=p.id
+    where p.id=p_person and p.onboarded and p.status='active'
+      and not public.is_blocked_pair(p_viewer,p_person)
+      and ((pr.profile_visibility='everyone' and not pr.incognito) or public.holup_existing_close(p_viewer,p_person))
+  ) then public.load_visible_profile(p_viewer,p_person,false) else null end
+$$;
+revoke all on function public.relationship_list_profile(bigint,bigint) from public,anon,authenticated;
+
+create or replace function public.space_relationship_people(p_target_id bigint, p_kind text, p_offset integer default 0, p_limit integer default 40)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+  if p_kind is null or p_kind not in ('addUps','keptClose') then perform public.crushly_fail(400,'','Unknown list.'); end if;
+  stats:=public.space_relationship_stats(p_target_id);
+  if (p_kind='addUps' and not (stats->>'canViewAddUps')::boolean) or (p_kind='keptClose' and not (stats->>'canViewKeptClose')::boolean) then
+    perform public.crushly_fail(403,'','This list is private.'); end if;
+  with ids as (
+    select c.from_id as person, c.created_at as at from public.crushes c
+      where p_kind='addUps' and c.to_id=p_target_id and c.status in ('pending','accepted')
+    union all
+    select case when c.user_a=p_target_id then c.user_b else c.user_a end, c.created_at from public.connections c
+      join public.holup_existing_close_pairs e using(user_a,user_b) where p_kind='keptClose' and (c.user_a=p_target_id or c.user_b=p_target_id)
+  ), readable as (
+    select ids.person, ids.at, public.relationship_list_profile(me,ids.person) as member
+      from ids join public.profiles p on p.id=ids.person
+     where p.onboarded and p.status='active' and not public.is_blocked_pair(p_target_id,ids.person)
+       and not public.is_blocked_pair(me,ids.person)
+  ), page as (
+    select member,at,person from readable where member is not null order by at desc,person desc offset off limit lim+1
+  )
+  select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+    'hasMore',(select count(*)>lim from page)) into result;
+  return result;
+end $$;
+
+
+notify pgrst,'reload schema';
+
+create or replace function public.holup_forget_existing_close_on_disconnect() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+  delete from public.holup_existing_close_pairs where user_a=old.user_a and user_b=old.user_b;
+  return old;
+end $$;
+revoke all on function public.holup_forget_existing_close_on_disconnect() from public,anon,authenticated;
+drop trigger if exists holup_forget_existing_close_on_disconnect on public.connections;
+create trigger holup_forget_existing_close_on_disconnect after delete on public.connections
+for each row execute function public.holup_forget_existing_close_on_disconnect();
+
+-- Grandfathered accepted Close Ones are permanent except when a member blocks.
+-- The existing block/report flows insert a block then call disconnect_pair.
+create or replace function public.remove_connection(p_target_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  lock table public.connections in share row exclusive mode;
+  if public.holup_existing_close(me,p_target_id) then
+    perform public.crushly_fail(409,'permanent_close','Accepted Close Ones are permanent. You can block someone if you need to.');
+  end if;
+  perform public.disconnect_pair(me,p_target_id);
+  insert into public.passes(from_id,to_id) values(me,p_target_id)
+    on conflict(from_id,to_id) do update set created_at=public.now_ms();
+  return true;
+end $$;
+
+create or replace function public.let_go(p_member_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  lock table public.connections in share row exclusive mode;
+  if public.holup_existing_close(me,p_member_id) then
+    perform public.crushly_fail(409,'permanent_close','Accepted Close Ones are permanent. You can block someone if you need to.');
+  end if;
+  delete from public.keeps where keeper_id=me and kept_id=p_member_id;
+  return true;
+end $$;
+
+commit;
+
+-- ================================ 20261109225634_minimum_age_16.sql
+
+-- Holup is one 16+ product: nobody younger than 16 is granted access.
+--
+-- This supersedes the 18+ gate applied in 20261109110817. It changes only the
+-- minimum age and the preference floor/default. It does not create a teen
+-- account type, a teen-mode branch, or a second project, and it does not touch
+-- the relationship objects.
+--
+-- Ordering note: this ships before the matching client copy because the server
+-- becoming more permissive is harmless to already-installed 18+ clients, while
+-- the reverse (16+ copy in front of an 18+ server) would show an eligible
+-- person a rejection they cannot resolve.
+
+begin;
+
+-- 1. Preflight. Abort the whole migration rather than half-applying a policy
+--    change if any stored age preference would violate the new floor.
+do $$
+begin
+  if exists (
+    select 1
+      from public.preferences
+     where age_min is null
+        or age_max is null
+        or age_min < 16
+        or age_max < 16
+        or age_min > 99
+        or age_max > 99
+        or age_min > age_max
+  ) then
+    raise exception using
+      errcode = 'check_violation',
+      message = 'Cannot apply the 16+ policy: stored age preferences fall outside 16-99.';
+  end if;
+end
+$$;
+
+-- 2. New accounts start at the floor of the product, not at 18.
+alter table public.preferences
+  alter column age_min set default 16;
+
+-- 3. Keep the floor true for every writer, including direct PostgREST writers.
+alter table public.preferences
+  drop constraint if exists preferences_age_range_check;
+alter table public.preferences
+  add constraint preferences_age_range_check
+  check (
+    age_min between 16 and 99
+    and age_max between 16 and 99
+    and age_min <= age_max
+  );
+
+-- 4. The access gate. Function and trigger names are kept so the deployed
+--    trigger definition continues to cover every insert and every birthdate or
+--    onboarding change; only the threshold, the error code and the wording move.
+create or replace function public.experimental_check_adult_profile() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare birth date;
+begin
+  if new.birthdate is null and not new.onboarded then return new; end if;
+  if new.birthdate is null or new.birthdate !~ '^\d{4}-\d{2}-\d{2}$'
+     or not pg_input_is_valid(new.birthdate,'date') then
+    perform public.crushly_fail(400,'invalid_birthday','Please enter a valid birthday.');
+  end if;
+  birth := new.birthdate::date;
+  -- Exactly 16 today is eligible; anyone younger is refused.
+  if birth > (current_date - interval '16 years')::date then
+    perform public.crushly_fail(403,'minimum_age','Holup is for people aged 16 and over.');
+  end if;
+  if birth <= (current_date - interval '100 years')::date then
+    perform public.crushly_fail(400,'invalid_birthday','Please check your birthday.');
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.experimental_check_adult_profile() from public, anon, authenticated;
+
+-- 5. The gate must exist and stay enabled, whatever the deployed history is.
+drop trigger if exists experimental_adult_profile_gate on public.profiles;
+create trigger experimental_adult_profile_gate
+  before insert or update of birthdate, onboarded on public.profiles
+  for each row execute function public.experimental_check_adult_profile();
+
+notify pgrst, 'reload schema';
+
+commit;
+
+-- ================================ 20261110023805_restore_adult_gate_until_teen_protections.sql
+
+begin;
+-- Restore the previously required adult gate until a separately protected teen mode exists.
+-- Serialize with profile and preference writes. Do not make assumptions about existing minors.
+lock table public.profiles, public.preferences in share row exclusive mode;
+do $$ begin
+ if exists(select 1 from public.profiles where birthdate is not null and pg_input_is_valid(birthdate,'date') and birthdate::date > (current_date - interval '18 years')::date) then
+  raise exception 'Existing under-18 profiles require a separate safeguarding plan; migration aborted.';
+ end if;
+end $$;
+update public.preferences set age_min=greatest(age_min,18), age_max=greatest(age_max,18) where age_min<18 or age_max<18;
+alter table public.preferences alter column age_min set default 18;
+alter table public.preferences drop constraint if exists preferences_age_range_check;
+alter table public.preferences add constraint preferences_age_range_check check(age_min between 18 and 99 and age_max between 18 and 99 and age_min <= age_max);
+create or replace function public.experimental_check_adult_profile() returns trigger language plpgsql security definer set search_path=public as $$
+declare birth date;
+begin
+ if new.birthdate is null and not new.onboarded then return new; end if;
+ if new.birthdate is null or new.birthdate !~ '^\d{4}-\d{2}-\d{2}$' or not pg_input_is_valid(new.birthdate,'date') then
+  perform public.crushly_fail(400,'invalid_birthday','Please enter a valid birthday.');
+ end if;
+ birth:=new.birthdate::date;
+ if birth > (current_date - interval '18 years')::date then
+  perform public.crushly_fail(403,'adult_only','Holup is for adults aged 18 or older.');
+ end if;
+ if birth <= (current_date - interval '100 years')::date then
+  perform public.crushly_fail(400,'invalid_birthday','Please check your birthday.');
+ end if;
+ return new;
+end $$;
+revoke all on function public.experimental_check_adult_profile() from public,anon,authenticated;
+notify pgrst,'reload schema';
+commit;
+
+-- ================================ 20261110032856_restrict_internal_profile_serializer.sql
+
+-- The serializer accepts caller-supplied viewer and target ids and does not enforce visibility.
+-- Only server-side security-definer functions should invoke it after authorization.
+revoke execute on function public.public_profile(bigint, bigint, boolean) from public, anon, authenticated;
+
+-- ================================ 20261110033516_restrict_identity_sensitive_policy_helpers.sql
+
+-- Preserve RLS checks while preventing callers from choosing another identity.
+create or replace function public.holup_can_view_post_as_me(p_post public.posts) returns boolean language sql stable security definer set search_path=public as $$ select public.me_id() is not null and public.can_view_post(p_post,public.me_id()) $$;
+revoke all on function public.holup_can_view_post_as_me(public.posts) from public,anon; grant execute on function public.holup_can_view_post_as_me(public.posts) to authenticated;
+create or replace function public.holup_circle_member_as_me(p_circle_id bigint) returns boolean language sql stable security definer set search_path=public as $$ select public.me_id() is not null and public.is_circle_member(p_circle_id,public.me_id()) $$;
+revoke all on function public.holup_circle_member_as_me(bigint) from public,anon; grant execute on function public.holup_circle_member_as_me(bigint) to authenticated;
+alter policy post_reactions_select on public.post_reactions using (exists (select 1 from public.posts p where p.id=post_reactions.post_id and public.holup_can_view_post_as_me(p.*)));
+alter policy post_comments_select on public.post_comments using (exists (select 1 from public.posts p where p.id=post_comments.post_id and public.holup_can_view_post_as_me(p.*)));
+alter policy post_comments_insert on public.post_comments with check (author_id=public.me_id() and exists (select 1 from public.posts p where p.id=post_comments.post_id and public.holup_can_view_post_as_me(p.*)));
+alter policy post_comment_likes_select on public.post_comment_likes using (exists (select 1 from public.post_comments c join public.posts p on p.id=c.post_id where c.id=post_comment_likes.comment_id and public.holup_can_view_post_as_me(p.*)));
+alter policy circle_members_select_member on public.circle_members using (public.holup_circle_member_as_me(circle_id));
+alter policy circle_messages_select_member on public.circle_messages using (public.holup_circle_member_as_me(circle_id));
+alter policy circles_select_member on public.circles using (public.holup_circle_member_as_me(id));
+revoke execute on function public.can_view_post(public.posts,bigint) from public,anon,authenticated;
+revoke execute on function public.is_circle_member(bigint,bigint) from public,anon,authenticated;
+notify pgrst, 'reload schema';
+
+-- ================================ 20261110072702_guard_closed_whisper_presence.sql
+
+create or replace function public.peer_presence(p_conversation_id bigint) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  r record;
+  v record;
+  see_online boolean;
+  see_activity boolean;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select * into conv from conversations c
+   where c.id = p_conversation_id and (c.user_a = me or c.user_b = me);
+  if not found then
+    perform public.crushly_fail(404, '', 'Conversation not found.');
+  end if;
+  peer := case when conv.user_a = me then conv.user_b else conv.user_a end;
+
+  -- Closed or blocked threads must not disclose either person's current
+  -- presence, activity, or receipt preferences. Keep the established return
+  -- shape so older clients stop announcing rather than crashing.
+  if conv.closed or public.is_blocked_pair(conv.user_a, conv.user_b) then
+    return jsonb_build_object('peerId', peer, 'online', null, 'activity', null,
+      'receipts', false, 'announce', false, 'closed', true);
+  end if;
+
+  select p.last_active_at, pr.show_online, pr.show_activity into r
+    from profiles p join privacy pr on pr.user_id = p.id where p.id = peer;
+  select pr.show_online, pr.show_activity into v from privacy pr where pr.user_id = me;
+
+  see_online := coalesce(r.show_online, true) and coalesce(v.show_online, true);
+  see_activity := see_online and coalesce(r.show_activity, true) and coalesce(v.show_activity, true);
+
+  return jsonb_build_object(
+    'peerId', peer,
+    'online', case when see_online then public.is_online_at(r.last_active_at) else null end,
+    'activity', case when see_activity then public.activity_label_at(r.last_active_at) else null end,
+    'receipts', public.receipts_visible(me, peer),
+    'announce', coalesce(v.show_online, true),
+    'closed', conv.closed
+  );
+end $$;
+
+-- ================================ 20261110074427_guard_raw_blocked_whispers.sql
+
+-- Raw message reads must apply the same block check as the message RPC.
+create or replace function public.session_can_select_whisper(p_conversation_id bigint)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists (
+   select 1 from public.conversations c
+   where c.id=p_conversation_id and public.me_id() in (c.user_a,c.user_b)
+     and not public.is_blocked_pair(c.user_a,c.user_b)
+ );
+$$;
+revoke all on function public.session_can_select_whisper(bigint) from public,anon,authenticated;
+grant execute on function public.session_can_select_whisper(bigint) to authenticated,service_role;
+alter policy messages_pair on public.messages using (public.session_can_select_whisper(conversation_id));
+
+-- ================================ 20261110080000_relationship_cutover.sql
+
+-- CUTOVER CANDIDATE — not a production migration until the release is signed off.
+-- A single ordered unit: the Add Up rules, the Homies rules, the Whisper rules,
+-- then the guard that closes the eight legacy relationship write endpoints.
+-- Everything below runs in one transaction; nothing here belongs in
+-- supabase/migrations/ until it is the release that ships with the new client.
+begin;
+-- ISOLATED CANDIDATE: disposable database only, NOT a deployment migration.
+-- Old RPCs, notification formatting, client transition and concurrency must be
+-- reconciled before it can be wired or applied to production.
+create table public.holup_follow_settings (
+ user_id bigint primary key references public.profiles(id) on delete cascade,
+ approval_required boolean not null default false,
+ outgoing_visibility text not null default 'private' check(outgoing_visibility in ('everyone','close','private'))
+);
+create table public.holup_follows (
+ follower_id bigint not null references public.profiles(id) on delete cascade,
+ followed_id bigint not null references public.profiles(id) on delete cascade,
+ status text not null check(status in ('active','pending','declined')),
+ created_at bigint not null default public.now_ms(), decided_at bigint,
+ primary key(follower_id,followed_id), check(follower_id<>followed_id)
+);
+create table public.holup_follow_attempts (
+ follower_id bigint not null references public.profiles(id) on delete cascade,
+ created_at bigint not null default public.now_ms()
+);
+create index holup_follow_attempts_recent on public.holup_follow_attempts(follower_id,created_at);
+alter table public.holup_follow_attempts enable row level security;
+revoke all on public.holup_follow_attempts from public,anon,authenticated;
+create index holup_follows_incoming on public.holup_follows(followed_id,status,created_at desc);
+create index holup_follows_outgoing on public.holup_follows(follower_id,status,created_at desc);
+alter table public.holup_follows enable row level security;
+alter table public.holup_follow_settings enable row level security;
+revoke all on public.holup_follows,public.holup_follow_settings from public,anon,authenticated;
+
+-- Preserve only explicitly accepted follows; a pending legacy request remains
+-- pending rather than being represented as consent. Keeps are NOT follows.
+lock table public.crushes,public.blocks in share row exclusive mode;
+insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
+ select c.from_id,c.to_id,case c.status when 'accepted' then 'active' else 'pending' end,c.created_at,c.responded_at
+ from public.crushes c where c.status in ('pending','accepted') and not public.is_blocked_pair(c.from_id,c.to_id);
+
+create or replace function public.holup_follow_pair_lock(a bigint,b bigint) returns void
+language sql volatile security definer set search_path=public as $$
+ select pg_advisory_xact_lock(hashtextextended('holup-follow:'||least(a,b)||':'||greatest(a,b),0));
+$$;
+revoke all on function public.holup_follow_pair_lock(bigint,bigint) from public,anon,authenticated;
+
+create or replace function public.holup_set_follow_settings(p_approval boolean,p_outgoing_visibility text) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); s public.holup_follow_settings;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if (p_approval is null and p_outgoing_visibility is null) or (p_outgoing_visibility is not null and p_outgoing_visibility not in ('everyone','close','private')) then
+  perform public.crushly_fail(400,'','Choose a valid privacy setting.'); end if;
+ insert into public.holup_follow_settings(user_id,approval_required,outgoing_visibility) values(me,coalesce(p_approval,false),coalesce(p_outgoing_visibility,'private'))
+ on conflict(user_id) do update set approval_required=coalesce(p_approval,holup_follow_settings.approval_required),outgoing_visibility=coalesce(p_outgoing_visibility,holup_follow_settings.outgoing_visibility) returning * into s;
+ return jsonb_build_object('approvalRequired',s.approval_required,'outgoingVisibility',s.outgoing_visibility);
+end $$;
+
+create or replace function public.holup_follow(p_target bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); r public.holup_follows; needs_approval boolean; target record;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+ -- Per-sender lock makes the quota hold even for concurrent different targets.
+ perform pg_advisory_xact_lock(hashtextextended('holup-follow-rate:'||me,0));
+ perform public.holup_follow_pair_lock(me,p_target);
+ if not exists(select 1 from public.profiles where id=me and onboarded and status='active') or
+    public.is_blocked_pair(me,p_target) or public.load_visible_profile(me,p_target,false) is null then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ -- This stricter Space gate excludes the legacy historical-request exception.
+ perform public.space_relationship_stats(p_target);
+ select p.name,pr.who_can_crush into target from public.profiles p join public.privacy pr on pr.user_id=p.id
+ where p.id=p_target and p.onboarded and p.status='active';
+ if not found then perform public.crushly_fail(404,'','Space not available.'); end if;
+ if target.who_can_crush='verified' and not exists(select 1 from public.profiles where id=me and verification='verified') then
+   perform public.crushly_fail(403,'verification_required','This member only accepts Add Ups from verified members.'); end if;
+ select * into r from public.holup_follows where follower_id=me and followed_id=p_target;
+ if found and r.status in ('active','pending') then return jsonb_build_object('status',r.status,'changed',false); end if;
+ if found and r.status='declined' and r.decided_at > public.now_ms()-604800000 then
+   perform public.crushly_fail(429,'request_cooldown','Please wait before requesting again.'); end if;
+ delete from public.holup_follow_attempts where follower_id=me and created_at<=public.now_ms()-86400000;
+ if (select count(*) from public.holup_follow_attempts where follower_id=me)>=100 then
+   perform public.crushly_fail(429,'rate_limit','Please wait before adding up more people.'); end if;
+ insert into public.holup_follow_attempts(follower_id) values(me);
+ -- Serialize with settings writes. The row exists even for the default.
+ insert into public.holup_follow_settings(user_id) values(p_target) on conflict do nothing;
+ select approval_required into needs_approval from public.holup_follow_settings where user_id=p_target for update;
+ insert into public.holup_follows(follower_id,followed_id,status,created_at,decided_at)
+ values(me,p_target,case when needs_approval then 'pending' else 'active' end,public.now_ms(),case when needs_approval then null else public.now_ms() end)
+ on conflict(follower_id,followed_id) do update set status=excluded.status,created_at=excluded.created_at,decided_at=excluded.decided_at returning * into r;
+ -- An Add Up is announced, once. `notify_to` collapses a repeat into the unread
+ -- row that is already there, and the member's own "Add Ups" switch can silence
+ -- it without touching anything else.
+ perform public.notify_to(p_target,'keep',me,null,'');
+ return jsonb_build_object('status',r.status,'changed',true);
+end $$;
+
+create or replace function public.holup_respond_follow(p_follower bigint,p_accept boolean) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); r public.holup_follows;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_accept is null or p_follower is null or p_follower=me then perform public.crushly_fail(400,'','Invalid request.'); end if;
+ perform public.holup_follow_pair_lock(me,p_follower);
+ if public.is_blocked_pair(me,p_follower) or public.load_visible_profile(me,p_follower,false) is null then
+   perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ update public.holup_follows set status=case when p_accept then 'active' else 'declined' end,decided_at=public.now_ms()
+ where follower_id=p_follower and followed_id=me and status='pending' returning * into r;
+ if not found then perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ return jsonb_build_object('status',r.status);
+end $$;
+
+create or replace function public.holup_unfollow(p_target bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+ perform public.holup_follow_pair_lock(me,p_target);
+ delete from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending');
+ return true;
+end $$;
+
+-- Blocking removes both directions regardless of which member initiates it.
+create or replace function public.holup_remove_follows_on_block() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+ perform public.holup_follow_pair_lock(new.blocker_id,new.blocked_id);
+ delete from public.holup_follows where (follower_id=new.blocker_id and followed_id=new.blocked_id)
+ or (follower_id=new.blocked_id and followed_id=new.blocker_id);
+ return new;
+end $$;
+revoke all on function public.holup_remove_follows_on_block() from public,anon,authenticated;
+create trigger holup_remove_follows_on_block after insert on public.blocks for each row execute function public.holup_remove_follows_on_block();
+
+create or replace function public.holup_follow_stats(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); base jsonb; outgoing text; incoming text; homies boolean;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ -- Uses the deployed Space authorization gate; a follow never grants access.
+ base:=public.space_relationship_stats(p_target);
+ select coalesce((select outgoing_visibility from public.holup_follow_settings where user_id=p_target),'private'),
+        (select add_up_list_visibility from public.privacy where user_id=p_target),
+        public.holup_existing_close(me,p_target) into outgoing,incoming,homies;
+ return jsonb_build_object(
+  'addUps',(select count(*) from public.holup_follows f join public.profiles p on p.id=f.follower_id where f.followed_id=p_target and f.status='active' and p.onboarded and p.status='active' and not public.is_blocked_pair(p_target,p.id)),
+  'addedUp',(select count(*) from public.holup_follows f join public.profiles p on p.id=f.followed_id where f.follower_id=p_target and f.status='active' and p.onboarded and p.status='active' and not public.is_blocked_pair(p_target,p.id)),
+  'canViewAddUps',me=p_target or incoming='everyone' or (incoming='close' and homies),
+  'canViewAddedUp',me=p_target or outgoing='everyone' or (outgoing='close' and homies),
+  'outgoingVisibility',case when me=p_target then outgoing else null end,
+  'approvalRequired',case when me=p_target then coalesce((select approval_required from public.holup_follow_settings where user_id=p_target),false) else null end,
+  'myStatus',case when me<>p_target then (select status from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending')) else null end,
+  'keptClose',base->'keptClose','canViewKeptClose',base->'canViewKeptClose','postLikes',base->'postLikes','addUpVisibility',base->'addUpVisibility');
+end $$;
+
+create or replace function public.holup_follow_people(p_target bigint,p_kind text,p_offset integer default 0,p_limit integer default 40) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+ if p_kind is null or p_kind not in ('addUps','addedUp') then perform public.crushly_fail(400,'','Unknown list.'); end if;
+ stats:=public.holup_follow_stats(p_target);
+ if not (stats->>case when p_kind='addUps' then 'canViewAddUps' else 'canViewAddedUp' end)::boolean then
+   perform public.crushly_fail(403,'','This list is private.'); end if;
+ with ids as (
+  select case when p_kind='addUps' then f.follower_id else f.followed_id end person, f.created_at at
+  from public.holup_follows f where f.status='active' and ((p_kind='addUps' and f.followed_id=p_target) or (p_kind='addedUp' and f.follower_id=p_target))
+ ), readable as (
+  select ids.person,ids.at,public.relationship_list_profile(me,ids.person) member from ids join public.profiles p on p.id=ids.person
+  where p.onboarded and p.status='active' and not public.is_blocked_pair(p_target,ids.person) and not public.is_blocked_pair(me,ids.person)
+ ), page as (select * from readable where member is not null order by at desc,person desc offset off limit lim+1)
+ select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+ 'hasMore',(select count(*)>lim from page)) into result;
+ return result;
+end $$;
+-- Cheap status-only lookup for buttons in feeds; it cannot grant access to a
+-- private Space and never reveals a relationship between two other members.
+create or replace function public.holup_follow_status(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me or public.relationship_list_profile(me,p_target) is null then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ return jsonb_build_object('status',(select status from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending')));
+end $$;
+revoke all on function public.holup_follow_status(bigint) from public,anon,authenticated;
+grant execute on function public.holup_follow_status(bigint) to authenticated,service_role;
+
+-- Only the recipient may enumerate approval requests. Individual profiles still
+-- pass the same relationship-list privacy gate; a hidden identity is not sent.
+create or replace function public.holup_pending_follow_requests(p_offset integer default 0,p_limit integer default 40) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ with readable as (
+  select f.follower_id person,f.created_at at,public.relationship_list_profile(me,f.follower_id) member
+  from public.holup_follows f join public.profiles p on p.id=f.follower_id
+  where f.followed_id=me and f.status='pending' and p.onboarded and p.status='active' and not public.is_blocked_pair(me,f.follower_id)
+ ), page as (select * from readable where member is not null order by at desc,person desc offset off limit lim+1)
+ select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+ 'hasMore',(select count(*)>lim from page)) into result;
+ return result;
+end $$;
+revoke all on function public.holup_pending_follow_requests(integer,integer) from public,anon,authenticated;
+grant execute on function public.holup_pending_follow_requests(integer,integer) to authenticated,service_role;
+revoke all on function public.holup_set_follow_settings(boolean,text),public.holup_follow(bigint),public.holup_respond_follow(bigint,boolean),public.holup_unfollow(bigint),public.holup_follow_stats(bigint),public.holup_follow_people(bigint,text,integer,integer) from public,anon,authenticated;
+grant execute on function public.holup_set_follow_settings(boolean,text),public.holup_follow(bigint),public.holup_respond_follow(bigint,boolean),public.holup_unfollow(bigint),public.holup_follow_stats(bigint),public.holup_follow_people(bigint,text,integer,integer) to authenticated,service_role;
+
+-- DISPOSABLE EXPERIMENT ONLY. Not a production migration. Requires the follow
+-- candidate and a reviewed atomic old-client/privacy/Whisper cutover.
+lock table public.connections,public.keeps,public.blocks,public.holup_existing_close_pairs in share row exclusive mode;
+create table public.holup_homies (
+  user_a bigint not null references public.profiles(id) on delete cascade,
+  user_b bigint not null references public.profiles(id) on delete cascade,
+  accepted_at bigint not null default public.now_ms(),
+  primary key(user_a,user_b), check(user_a<user_b)
+);
+create table public.holup_homie_requests (
+  sender_id bigint not null references public.profiles(id) on delete cascade,
+  recipient_id bigint not null references public.profiles(id) on delete cascade,
+  status text not null check(status in ('pending','declined','withdrawn')),
+  created_at bigint not null default public.now_ms(), decided_at bigint,
+  primary key(sender_id,recipient_id), check(sender_id<>recipient_id)
+);
+create index holup_homie_requests_inbox on public.holup_homie_requests(recipient_id,status,created_at desc);
+create table public.holup_homie_attempts (
+  sender_id bigint not null references public.profiles(id) on delete cascade,
+  created_at bigint not null default public.now_ms()
+);
+create index holup_homie_attempts_recent on public.holup_homie_attempts(sender_id,created_at);
+alter table public.holup_homies enable row level security;
+alter table public.holup_homie_requests enable row level security;
+alter table public.holup_homie_attempts enable row level security;
+revoke all on public.holup_homies,public.holup_homie_requests,public.holup_homie_attempts from public,anon,authenticated;
+
+-- The previously deployed bridge defines the precise grandfathered snapshot;
+-- later legacy connections are not mistaken for explicit Homie acceptance.
+insert into public.holup_homies(user_a,user_b,accepted_at)
+ select e.user_a,e.user_b,c.created_at from public.holup_existing_close_pairs e
+ join public.connections c using(user_a,user_b)
+ where not public.is_blocked_pair(e.user_a,e.user_b);
+-- A Keep is a request, not consent; reciprocal Keeps are two pending requests.
+insert into public.holup_homie_requests(sender_id,recipient_id,status,created_at)
+ select k.keeper_id,k.kept_id,'pending',k.created_at from public.keeps k
+ where not public.is_blocked_pair(k.keeper_id,k.kept_id)
+ and not exists(select 1 from public.holup_homies h where h.user_a=least(k.keeper_id,k.kept_id) and h.user_b=greatest(k.keeper_id,k.kept_id));
+
+create or replace function public.holup_homie_pair(a bigint,b bigint) returns boolean
+language sql stable security definer set search_path=public as $$
+ select a is not null and b is not null and a<>b and not public.is_blocked_pair(a,b)
+ and exists(select 1 from public.holup_homies where user_a=least(a,b) and user_b=greatest(a,b))
+$$;
+revoke all on function public.holup_homie_pair(bigint,bigint) from public,anon,authenticated;
+
+create or replace function public.holup_homie_status(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me or public.is_blocked_pair(me,p_target) or public.relationship_list_profile(me,p_target) is null then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ return jsonb_build_object('homies',public.holup_homie_pair(me,p_target),
+   'outgoingPending',exists(select 1 from public.holup_homie_requests where sender_id=me and recipient_id=p_target and status='pending'),
+   'incomingPending',exists(select 1 from public.holup_homie_requests where sender_id=p_target and recipient_id=me and status='pending'));
+end $$;
+
+create or replace function public.holup_request_homie(p_target bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); old_request public.holup_homie_requests;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+ perform pg_advisory_xact_lock(hashtextextended('holup-homie-rate:'||me,0));
+ perform public.holup_follow_pair_lock(me,p_target);
+ if not exists(select 1 from public.profiles where id=me and onboarded and status='active') or
+    public.is_blocked_pair(me,p_target) or public.relationship_list_profile(me,p_target) is null then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ if public.holup_homie_pair(me,p_target) then return jsonb_build_object('status','accepted','changed',false); end if;
+ select * into old_request from public.holup_homie_requests where sender_id=me and recipient_id=p_target;
+ if found and old_request.status='pending' then return jsonb_build_object('status','pending','changed',false); end if;
+ if found and old_request.status='declined' and old_request.decided_at>public.now_ms()-604800000 then
+   perform public.crushly_fail(429,'request_cooldown','Please wait before requesting again.'); end if;
+ delete from public.holup_homie_attempts where sender_id=me and created_at<=public.now_ms()-86400000;
+ if (select count(*) from public.holup_homie_attempts where sender_id=me)>=100 then
+   perform public.crushly_fail(429,'rate_limit','Please wait before sending more requests.'); end if;
+ insert into public.holup_homie_attempts(sender_id) values(me);
+ insert into public.holup_homie_requests(sender_id,recipient_id,status,created_at,decided_at)
+ values(me,p_target,'pending',public.now_ms(),null)
+ on conflict(sender_id,recipient_id) do update set status='pending',created_at=excluded.created_at,decided_at=null;
+ return jsonb_build_object('status','pending','changed',true);
+end $$;
+
+create or replace function public.holup_respond_homie(p_sender bigint,p_accept boolean) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_sender is null or p_sender=me or p_accept is null then perform public.crushly_fail(400,'','Invalid request.'); end if;
+ perform public.holup_follow_pair_lock(me,p_sender);
+ if public.is_blocked_pair(me,p_sender) or public.relationship_list_profile(me,p_sender) is null then
+   perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ if not exists(select 1 from public.holup_homie_requests where sender_id=p_sender and recipient_id=me and status='pending') then
+   perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ if p_accept then
+   insert into public.holup_homies(user_a,user_b) values(least(me,p_sender),greatest(me,p_sender)) on conflict do nothing;
+   delete from public.holup_homie_requests where (sender_id=me and recipient_id=p_sender) or (sender_id=p_sender and recipient_id=me);
+   return jsonb_build_object('status','accepted');
+ end if;
+ update public.holup_homie_requests set status='declined',decided_at=public.now_ms() where sender_id=p_sender and recipient_id=me;
+ return jsonb_build_object('status','declined');
+end $$;
+
+create or replace function public.holup_withdraw_homie(p_target bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+ perform public.holup_follow_pair_lock(me,p_target);
+ update public.holup_homie_requests set status='withdrawn',decided_at=public.now_ms()
+ where sender_id=me and recipient_id=p_target and status='pending';
+ return true;
+end $$;
+
+create or replace function public.holup_homie_requests_inbox(p_offset integer default 0,p_limit integer default 40) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ with readable as (
+ select r.sender_id person,r.created_at at,public.relationship_list_profile(me,r.sender_id) member
+ from public.holup_homie_requests r join public.profiles p on p.id=r.sender_id
+ where r.recipient_id=me and r.status='pending' and p.onboarded and p.status='active' and not public.is_blocked_pair(me,r.sender_id)
+ ), page as (select * from readable where member is not null order by at desc,person desc offset off limit lim+1)
+ select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+ 'hasMore',(select count(*)>lim from page)) into result;
+ return result;
+end $$;
+
+
+-- Identity lists are owner-and-accepted-Homies only, even for public Spaces.
+-- Reuses the deployed stricter Space/profile gates. Wiring new Homies into all
+-- privacy semantics is deliberately postponed to the atomic cutover review.
+create or replace function public.holup_homie_stats(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); base jsonb;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ base:=public.space_relationship_stats(p_target);
+ return jsonb_build_object('count',(
+  select count(*) from public.holup_homies h join public.profiles p on p.id=case when h.user_a=p_target then h.user_b else h.user_a end
+  where (h.user_a=p_target or h.user_b=p_target) and p.onboarded and p.status='active' and not public.is_blocked_pair(p_target,p.id)
+ ),'canView',me=p_target or public.holup_homie_pair(me,p_target));
+end $$;
+create or replace function public.holup_homie_people(p_target bigint,p_offset integer default 0,p_limit integer default 40) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint:=public.me_id(); stats jsonb; result jsonb; lim int:=least(greatest(coalesce(p_limit,40),1),100); off int:=greatest(coalesce(p_offset,0),0);
+begin
+ stats:=public.holup_homie_stats(p_target);
+ if not (stats->>'canView')::boolean then perform public.crushly_fail(403,'','This list is private.'); end if;
+ with readable as (
+  select p.id person,h.accepted_at at,public.relationship_list_profile(me,p.id) member
+  from public.holup_homies h join public.profiles p on p.id=case when h.user_a=p_target then h.user_b else h.user_a end
+  where (h.user_a=p_target or h.user_b=p_target) and p.onboarded and p.status='active'
+   and not public.is_blocked_pair(p_target,p.id) and not public.is_blocked_pair(me,p.id)
+ ), page as (select * from readable where member is not null order by at desc,person desc offset off limit lim+1)
+ select jsonb_build_object('items',coalesce((select jsonb_agg(member order by at desc,person desc) from (select * from page order by at desc,person desc limit lim) x),'[]'::jsonb),
+ 'hasMore',(select count(*)>lim from page)) into result;
+ return result;
+end $$;
+revoke all on function public.holup_homie_stats(bigint),public.holup_homie_people(bigint,integer,integer) from public,anon,authenticated;
+grant execute on function public.holup_homie_stats(bigint),public.holup_homie_people(bigint,integer,integer) to authenticated,service_role;
+
+-- Block acquires the same pair lock *before* inserting. Accept/send then either
+-- completes first and is removed by block, or sees the committed block.
+create or replace function public.holup_homie_lock_block() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin perform public.holup_follow_pair_lock(new.blocker_id,new.blocked_id); return new; end $$;
+create trigger holup_homie_lock_block before insert on public.blocks for each row execute function public.holup_homie_lock_block();
+create or replace function public.holup_homie_cleanup_block() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+ delete from public.holup_homies where user_a=least(new.blocker_id,new.blocked_id) and user_b=greatest(new.blocker_id,new.blocked_id);
+ delete from public.holup_homie_requests where (sender_id=new.blocker_id and recipient_id=new.blocked_id) or (sender_id=new.blocked_id and recipient_id=new.blocker_id);
+ return new;
+end $$;
+create trigger holup_homie_cleanup_block after insert on public.blocks for each row execute function public.holup_homie_cleanup_block();
+revoke all on function public.holup_homie_lock_block(),public.holup_homie_cleanup_block() from public,anon,authenticated;
+revoke all on function public.holup_homie_status(bigint),public.holup_request_homie(bigint),public.holup_respond_homie(bigint,boolean),public.holup_withdraw_homie(bigint),public.holup_homie_requests_inbox(integer,integer) from public,anon,authenticated;
+grant execute on function public.holup_homie_status(bigint),public.holup_request_homie(bigint),public.holup_respond_homie(bigint,boolean),public.holup_withdraw_homie(bigint),public.holup_homie_requests_inbox(integer,integer) to authenticated,service_role;
+
+-- DISPOSABLE EXPERIMENT ONLY, not production. Requires follow + Homies candidate.
+-- Must be integrated with all message APIs, read/media/realtime security and
+-- old-client migration as a single reviewed cutover before any deployment.
+lock table public.conversations,public.blocks,public.privacy,public.messages in share row exclusive mode;
+alter table public.privacy add column holup_whisper_open boolean not null default false;
+create table public.holup_whisper_permissions (
+ conversation_id bigint primary key references public.conversations(id) on delete cascade,
+ requester_id bigint not null references public.profiles(id) on delete cascade,
+ recipient_id bigint not null references public.profiles(id) on delete cascade,
+ state text not null check(state in ('pending','accepted','declined','blocked')),
+ request_messages smallint not null default 0 check(request_messages between 0 and 2),
+ created_at bigint not null default public.now_ms(),decided_at bigint,
+ check(requester_id<>recipient_id)
+);
+alter table public.holup_whisper_permissions enable row level security;
+revoke all on public.holup_whisper_permissions from public,anon,authenticated;
+-- Preserve all existing open threads; neither the presence of a Homie nor an
+-- Add Up is used as consent. Closed threads remain closed and fail closed.
+insert into public.holup_whisper_permissions(conversation_id,requester_id,recipient_id,state)
+ select id,user_a,user_b,'accepted' from public.conversations where not closed and not public.is_blocked_pair(user_a,user_b);
+update public.privacy set holup_whisper_open=(who_can_message='everyone');
+create or replace function public.holup_set_whisper_open(p_open boolean) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id();
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_open is null then perform public.crushly_fail(400,'','Choose a setting.'); end if;
+ update public.privacy set holup_whisper_open=p_open where user_id=me;
+ if not found then perform public.crushly_fail(404,'','Privacy settings not found.'); end if;
+ return p_open;
+end $$;
+
+create or replace function public.holup_begin_whisper_request(p_target bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); cv public.conversations; permission public.holup_whisper_permissions;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ if p_target is null or p_target=me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+ perform public.holup_follow_pair_lock(me,p_target);
+ if public.is_blocked_pair(me,p_target) or public.relationship_list_profile(me,p_target) is null then
+   perform public.crushly_fail(404,'','Space not available.'); end if;
+ select * into cv from public.conversations where user_a=least(me,p_target) and user_b=greatest(me,p_target);
+ if not found then
+   insert into public.conversations(user_a,user_b) values(least(me,p_target),greatest(me,p_target)) returning * into cv;
+   insert into public.holup_whisper_permissions(conversation_id,requester_id,recipient_id,state) values(cv.id,me,p_target,'pending');
+ end if;
+ select * into permission from public.holup_whisper_permissions where conversation_id=cv.id;
+ if not found or permission.state in ('declined','blocked') or cv.closed then
+   perform public.crushly_fail(404,'','Whisper unavailable.'); end if;
+ return jsonb_build_object('id',cv.id,'state',permission.state,'sent',permission.request_messages,
+  'requester',permission.requester_id=me,'open',coalesce((select holup_whisper_open from public.privacy where user_id=permission.recipient_id),false));
+end $$;
+
+create or replace function public.holup_accept_whisper(p_conversation_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); c public.conversations; permission public.holup_whisper_permissions;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ select * into c from public.conversations where id=p_conversation_id;
+ if not found or me not in (c.user_a,c.user_b) then perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ perform public.holup_follow_pair_lock(c.user_a,c.user_b);
+ select * into permission from public.holup_whisper_permissions where conversation_id=c.id;
+ if not found or permission.recipient_id<>me or permission.state<>'pending' or permission.request_messages=0 or public.is_blocked_pair(c.user_a,c.user_b)
+    or not exists(select 1 from public.conversations where id=c.id and not closed) then
+   perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ update public.holup_whisper_permissions set state='accepted',decided_at=public.now_ms() where conversation_id=c.id;
+ return true;
+end $$;
+
+create or replace function public.holup_decline_whisper(p_conversation_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); c public.conversations; permission public.holup_whisper_permissions;
+begin
+ if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+ select * into c from public.conversations where id=p_conversation_id;
+ if not found or me not in (c.user_a,c.user_b) then perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ perform public.holup_follow_pair_lock(c.user_a,c.user_b);
+ select * into permission from public.holup_whisper_permissions where conversation_id=c.id;
+ if not found or permission.recipient_id<>me or permission.state<>'pending' or public.is_blocked_pair(c.user_a,c.user_b) then
+   perform public.crushly_fail(404,'','Request unavailable.'); end if;
+ update public.holup_whisper_permissions set state='declined',decided_at=public.now_ms() where conversation_id=c.id;
+ return true;
+end $$;
+
+-- Every inserted Whisper (including Moment replies) uses a durable counter;
+-- deleting the original message cannot reset the two-message allowance.
+-- Pair lock serializes two simultaneous sends and block/accept races.
+create or replace function public.holup_whisper_insert_guard() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); c public.conversations; perm public.holup_whisper_permissions; open_now boolean;
+begin
+ select * into c from public.conversations where id=new.conversation_id;
+ if not found or me is null or new.sender_id<>me or me not in (c.user_a,c.user_b) then
+   perform public.crushly_fail(404,'','Whisper unavailable.'); end if;
+ perform public.holup_follow_pair_lock(c.user_a,c.user_b);
+ select * into c from public.conversations where id=new.conversation_id;
+ select * into perm from public.holup_whisper_permissions where conversation_id=c.id;
+ if not found or c.closed or public.is_blocked_pair(c.user_a,c.user_b) or perm.state in ('declined','blocked') then
+   perform public.crushly_fail(404,'','Whisper unavailable.'); end if;
+ if perm.state='accepted' then return new; end if;
+ -- Opening an empty composer does not reserve or accept a request. Whichever
+ -- participant actually sends the first message becomes the requester.
+ if perm.request_messages=0 and me=perm.recipient_id then
+   if public.relationship_list_profile(me,perm.requester_id) is null then
+     perform public.crushly_fail(404,'','Space not available.'); end if;
+   update public.holup_whisper_permissions set requester_id=me,recipient_id=perm.requester_id where conversation_id=c.id;
+   select * into perm from public.holup_whisper_permissions where conversation_id=c.id;
+ end if;
+ -- Serialize with setting updates; a message sent while open starts a lasting conversation.
+ select holup_whisper_open into open_now from public.privacy where user_id=perm.recipient_id for update;
+ if coalesce(open_now,false) then
+   -- An actual message, not simply opening an empty composer, starts an
+   -- ongoing conversation. It survives a later change to the open preference.
+   if me<>perm.requester_id and perm.request_messages=0 then
+     perform public.crushly_fail(403,'request_pending','There is no request to reply to.'); end if;
+   update public.holup_whisper_permissions set state='accepted',decided_at=public.now_ms() where conversation_id=c.id;
+   return new;
+ end if;
+ if me=perm.recipient_id then
+   if perm.request_messages=0 then perform public.crushly_fail(403,'request_pending','There is no request to reply to.'); end if;
+   -- The recipient's reply is consent. The decision and insert commit together.
+   update public.holup_whisper_permissions set state='accepted',decided_at=public.now_ms() where conversation_id=c.id;
+   return new;
+ end if;
+ if new.kind='call' then perform public.crushly_fail(403,'request_pending','Calls require an accepted Whisper.'); end if;
+ update public.holup_whisper_permissions set request_messages=request_messages+1 where conversation_id=c.id and request_messages<2;
+ if not found then perform public.crushly_fail(403,'request_limit','Wait for this Whisper request to be accepted.'); end if;
+ return new;
+end $$;
+revoke all on function public.holup_whisper_insert_guard() from public,anon,authenticated;
+drop trigger if exists holup_whisper_insert_guard on public.messages;
+create trigger holup_whisper_insert_guard before insert on public.messages for each row execute function public.holup_whisper_insert_guard();
+
+-- The Homies candidate already takes the shared pair lock before a block.
+create or replace function public.holup_whisper_cleanup_block() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ update public.holup_whisper_permissions set state='blocked',decided_at=public.now_ms()
+  where conversation_id in (select id from public.conversations where user_a=least(new.blocker_id,new.blocked_id) and user_b=greatest(new.blocker_id,new.blocked_id));
+ update public.conversations set closed=true where user_a=least(new.blocker_id,new.blocked_id) and user_b=greatest(new.blocker_id,new.blocked_id);
+ return new;
+end $$;
+create trigger holup_whisper_cleanup_block after insert on public.blocks for each row execute function public.holup_whisper_cleanup_block();
+revoke all on function public.holup_whisper_cleanup_block() from public,anon,authenticated;
+revoke all on function public.holup_set_whisper_open(boolean),public.holup_begin_whisper_request(bigint),public.holup_accept_whisper(bigint),public.holup_decline_whisper(bigint) from public,anon,authenticated;
+grant execute on function public.holup_set_whisper_open(boolean),public.holup_begin_whisper_request(bigint),public.holup_accept_whisper(bigint),public.holup_decline_whisper(bigint) to authenticated,service_role;
+
+/* --------------------------------------------------------------------------
+   Cutover guard — the old write endpoints.
+
+   Every relationship write in the deployed app goes through one of these eight
+   routines: member rows in crushes/keeps/connections are not directly writable,
+   because the only policies on those tables are SELECT. That is what makes a
+   clean cutover possible — close the routines and nothing else can create
+   relationship state behind the new model's back.
+
+   They are refused rather than translated. Legacy `crushes` has no concept of a
+   one-way Add Up, so "translate a crush into an Add Up" would either invent a
+   pending request or claim a connection nobody agreed to — exactly the silent
+   mutation the cutover exists to prevent. Refusing names what happened and
+   points at the update; the client already renders that message.
+   -------------------------------------------------------------------------- */
+create or replace function public.holup_legacy_relationship_closed() returns void
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.crushly_fail(409, 'relationship_upgrade_required',
+    'Add Ups and Homies moved. Update Holup to keep using them.');
+end $$;
+revoke all on function public.holup_legacy_relationship_closed() from public,anon,authenticated;
+
+create or replace function public.crush_member(p_target_id bigint, p_is_deep boolean default false, p_note text default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return null;
+end $$;
+
+create or replace function public.uncrush_member(p_target_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return false;
+end $$;
+
+create or replace function public.accept_connection_request(p_from_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return null;
+end $$;
+
+create or replace function public.decline_connection_request(p_from_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return null;
+end $$;
+
+create or replace function public.cancel_connection_request(p_to_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return null;
+end $$;
+
+create or replace function public.keep_close(p_member_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return null;
+end $$;
+
+create or replace function public.let_go(p_member_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return false;
+end $$;
+
+create or replace function public.remove_connection(p_target_id bigint) returns boolean
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.holup_legacy_relationship_closed();
+  return false;
+end $$;
+
+-- The old read endpoints stay open and keep reading the tables the migration
+-- filled, so an un-updated client shows the state as of the cutover instead of
+-- an empty Space. Read-only and stale is survivable; divergence is not.
+
+/* --------------------------------------------------------------------------
+   Answering a Moment is asking for a Whisper.
+
+   A Moment reply used to slip straight into a thread because a connection was
+   assumed. It is a message from someone the owner may not know, so it opens a
+   request like any other: the reply counts as the first of the two, and the
+   owner accepts or declines it in the thread the reply lands in.
+   -------------------------------------------------------------------------- */
+create or replace function public.reply_to_moment(p_moment_id bigint, p_body text) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint:=public.me_id(); m public.moments; reason text; conv_id bigint; clean_body text:=coalesce(p_body,'');
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into m from public.moments where id=p_moment_id;
+  if not found or m.expires_at<=public.now_ms() or not public.can_view_moment(m,me) then
+    perform public.crushly_fail(404,'','This Moment isn’t available.'); end if;
+  if m.user_id=me then perform public.crushly_fail(400,'','You can’t reply to your own Moment.'); end if;
+  if btrim(clean_body)='' then perform public.crushly_fail(400,'','Write a reply first.'); end if;
+  clean_body:=left(clean_body,1000);
+  reason:=public.messaging_block_reason(me,m.user_id);
+  if reason is not null then perform public.crushly_fail(403,'messaging_restricted',reason); end if;
+  conv_id:=public.ensure_conversation(me,m.user_id);
+  -- The request is recorded before the message, so the insert guard has an
+  -- answer to count against. Declined and blocked requests stay dead.
+  if not exists(select 1 from public.holup_whisper_permissions where conversation_id=conv_id) then
+    insert into public.holup_whisper_permissions(conversation_id,requester_id,recipient_id,state)
+      values(conv_id,me,m.user_id,'pending');
+  elsif exists(select 1 from public.holup_whisper_permissions
+                where conversation_id=conv_id and state in ('declined','blocked')) then
+    perform public.crushly_fail(404,'','Whisper unavailable.');
+  end if;
+  insert into public.messages(conversation_id,sender_id,kind,body,meta)
+    values(conv_id,me,'moment_reply',clean_body,jsonb_build_object('momentId',m.id));
+  update public.conversations set last_message_at=public.now_ms() where id=conv_id;
+  perform public.notify_to(m.user_id,'moment_reply',me,conv_id,'');
+  return jsonb_build_object('conversationId',conv_id);
+end $$;
+
+/* --------------------------------------------------------------------------
+   Who may be written to at all.
+
+   The deployed rule was "messages only from crushes / Mutual Crushes", which is
+   the rule the Whisper request replaces: you ask, they answer. Keeping the old
+   refusal would make the request impossible to send — the request itself is the
+   permission to write two messages. What still refuses is a block, or writing
+   to yourself; everything else is decided by the request rules in the trigger.
+   -------------------------------------------------------------------------- */
+create or replace function public.messaging_block_reason(p_viewer bigint, p_target bigint) returns text
+language plpgsql stable security definer set search_path=public as $$
+declare member_name text;
+begin
+  if p_viewer = p_target then
+    return 'You can''t message yourself.';
+  end if;
+  if public.is_blocked_pair(p_viewer, p_target) then
+    return 'This member is no longer available.';
+  end if;
+  -- Asking is allowed; answering is the other person's. The two-message limit,
+  -- the decline and the open-messaging preference are enforced when a message
+  -- is actually written, not here.
+  select coalesce(p.name, 'This member') into member_name from profiles p where p.id = p_target;
+  if member_name is null then return 'This member is no longer available.'; end if;
+  return null;
+end $$;
+
+/* --------------------------------------------------------------------------
+   The Whisper request, as the chat shows it.
+
+   A Whisper starts as a request, not as an open line. Asking for one opens the
+   conversation so both people are looking at the same thread: the sender writes
+   (two messages, no more), and the recipient decides inside that thread —
+   accept or decline, without leaving the chat. Nothing about this touches
+   Add Ups or Homies; a Homie does not get to skip the request, and an Add Up
+   grants nothing here.
+   -------------------------------------------------------------------------- */
+create or replace function public.holup_whisper_state(p_conversation_id bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  c public.conversations;
+  perm public.holup_whisper_permissions;
+  peer bigint;
+  open_now boolean;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into c from public.conversations where id=p_conversation_id;
+  if not found or me not in (c.user_a,c.user_b) then
+    perform public.crushly_fail(404,'','Conversation not found.'); end if;
+  peer := case when c.user_a=me then c.user_b else c.user_a end;
+  select * into perm from public.holup_whisper_permissions where conversation_id=c.id;
+  if not found then
+    -- No permission row: a thread that predates the request model. It is open,
+    -- which is how it was, and it stays open until somebody closes it or blocks.
+    return jsonb_build_object('state','accepted','sent',0,'requester',false,
+      'remaining',null,'canSend',not c.closed,'needsDecision',false);
+  end if;
+  select holup_whisper_open into open_now from public.privacy where user_id=perm.recipient_id;
+  return jsonb_build_object(
+    'state', perm.state,
+    'sent', perm.request_messages,
+    -- Whose request this is, from the caller's side.
+    'requester', perm.requester_id=me,
+    -- How many more they may write before the other person answers.
+    'remaining', case when perm.state='pending' and perm.requester_id=me
+                      then greatest(0, 2-perm.request_messages) else null end,
+    'canSend', not c.closed and perm.state not in ('declined','blocked')
+      and (perm.state='accepted'
+           -- The sender gets two messages to make their case.
+           or (perm.requester_id=me and perm.request_messages<2)
+           -- The recipient replying is itself an answer; the guard accepts it.
+           or (perm.recipient_id=me and perm.request_messages>0)),
+    -- The recipient has something to answer, and can answer it in the thread.
+    'needsDecision', perm.state='pending' and perm.recipient_id=me and perm.request_messages>0,
+    -- Shown to the sender so "they may reply when they like" is not a mystery.
+    'peerOpen', coalesce(open_now,false)
+  );
+end $$;
+revoke all on function public.holup_whisper_state(bigint) from public,anon,authenticated;
+grant execute on function public.holup_whisper_state(bigint) to authenticated,service_role;
+
+-- Asking for a Whisper is what creates the pending request. Opening a Space's
+-- chat therefore cannot quietly open a line to somebody who never agreed:
+-- trading messages needs an answer, whichever page the request began on.
+create or replace function public.open_conversation(p_target_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  conv_id bigint;
+  perm public.holup_whisper_permissions;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if p_target_id is null or p_target_id <= 0 then
+    perform public.crushly_fail(400,'','Who would you like to message?'); end if;
+  if p_target_id = me then perform public.crushly_fail(400,'','That is your own Space.'); end if;
+  -- `who_can_message` is deliberately not consulted. Under the request model the
+  -- way to reach someone is to ask, and they answer; a setting that pre-refused
+  -- the ask made "request a Whisper" impossible for everyone who had not already
+  -- connected. Blocking still refuses, and so does a Space that is not visible.
+  if public.is_blocked_pair(me,p_target_id) then
+    perform public.crushly_fail(404,'','This Space isn’t available.'); end if;
+  if public.relationship_list_profile(me,p_target_id) is null then
+    perform public.crushly_fail(404,'','This Space isn’t available.'); end if;
+
+  perform public.holup_follow_pair_lock(me,p_target_id);
+  conv_id := public.ensure_conversation(me,p_target_id);
+  insert into public.holup_whisper_permissions(conversation_id,requester_id,recipient_id,state)
+    values(conv_id,me,p_target_id,'pending')
+  on conflict (conversation_id) do nothing;
+  select * into perm from public.holup_whisper_permissions where conversation_id=conv_id;
+  if perm.state in ('declined','blocked') then
+    perform public.crushly_fail(404,'','Whisper unavailable.'); end if;
+  return jsonb_build_object('id',conv_id,'whisper',public.holup_whisper_state(conv_id));
+end $$;
+
+create or replace function public.load_conversation(p_conversation_id bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  conv record;
+  peer bigint;
+  reason text;
+  w jsonb;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select * into conv from conversations c where c.id=p_conversation_id;
+  if not found or (conv.user_a<>me and conv.user_b<>me) then
+    perform public.crushly_fail(404,'','Conversation not found.'); end if;
+  peer := case when conv.user_a=me then conv.user_b else conv.user_a end;
+  if public.is_blocked_pair(me,peer) then
+    perform public.crushly_fail(404,'','Conversation not found.'); end if;
+  reason := public.messaging_block_reason(me,peer);
+  w := public.holup_whisper_state(conv.id);
+  return jsonb_build_object(
+    'id',conv.id,
+    'closed',conv.closed,
+    'peer',public.peer_summary(peer,me),
+    -- The request decides whether the composer opens, not the connection alone.
+    'canSend',(w->>'canSend')::boolean and not conv.closed and reason is null,
+    'blockReason',case when conv.closed then 'This connection has ended.' else reason end,
+    'whisper',w
+  );
+end $$;
+
+create or replace function public.list_conversations() returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare
+  me bigint := public.me_id();
+  items jsonb;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',c.id,
+    'peer',public.peer_summary(case when c.user_a=me then c.user_b else c.user_a end,me),
+    'lastMessage',(
+      select public.serialize_message(m,me,false) from messages m
+       where m.conversation_id=c.id order by m.id desc limit 1
+    ),
+    'unread',(
+      select count(*)::int from messages m
+       where m.conversation_id=c.id and m.sender_id<>me and m.read_at is null
+    ),
+    'updatedAt',coalesce(c.last_message_at,c.created_at),
+    'whisper',public.holup_whisper_state(c.id)
+  ) order by coalesce(c.last_message_at,c.created_at) desc),'[]'::jsonb)
+  into items
+  from conversations c
+  where (c.user_a=me or c.user_b=me) and not c.closed
+    and not public.is_blocked_pair(me,case when c.user_a=me then c.user_b else c.user_a end);
+  return jsonb_build_object('items',items);
+end $$;
+
+commit;
+
+-- ================================ 20261110090000_restore_minimum_age_16.sql
+
+-- Holup is one 16+ product: nobody younger than 16 is granted access.
+--
+-- This re-applies the rule from 20261109225634, which
+-- 20261110023805_restore_adult_gate_until_teen_protections replaced with an 18+
+-- gate. The owner's requirement is 16+, not 18+, and no separate teen account
+-- type, teen-mode branch or second project is introduced here — the same
+-- function, the same trigger and the same gate, with the threshold the product
+-- actually promises.
+--
+-- What this does NOT do: it does not widen anyone's saved age filters. Members
+-- whose age_min/age_max were raised to 18 by the previous migration keep the
+-- range they now see; the floor only says what values are *permitted* from here
+-- on. Their original 16/17 values are not recoverable, and silently lowering a
+-- preference a member can see would be a worse lie than leaving it.
+
+begin;
+
+-- 1. Preflight against real people, not just stored preferences. If any account
+--    on this project is younger than 16, applying the rule retroactively is a
+--    safeguarding decision about a named person, so abort and make it explicit
+--    rather than letting an UPDATE decide it.
+lock table public.profiles, public.preferences in share row exclusive mode;
+do $$
+begin
+  if exists (
+    select 1 from public.profiles
+     where birthdate is not null
+       and pg_input_is_valid(birthdate, 'date')
+       and birthdate::date > (current_date - interval '16 years')::date
+  ) then
+    raise exception 'Existing under-16 profiles require a safeguarding decision; migration aborted.';
+  end if;
+
+  if exists (
+    select 1 from public.preferences
+     where age_min is null or age_max is null
+        or age_min > 99 or age_max > 99
+        or age_min > age_max
+  ) then
+    raise exception using
+      errcode = 'check_violation',
+      message = 'Cannot apply the 16+ policy: stored age preferences are inconsistent.';
+  end if;
+end
+$$;
+
+-- 2. New accounts start at the floor of the product, not at 18.
+alter table public.preferences alter column age_min set default 16;
+
+-- 3. Keep the floor true for every writer, including direct PostgREST writes.
+alter table public.preferences drop constraint if exists preferences_age_range_check;
+alter table public.preferences add constraint preferences_age_range_check
+  check (age_min between 16 and 99 and age_max between 16 and 99 and age_min <= age_max);
+
+-- 4. The access gate. The function and trigger names stay as they are, so the
+--    deployed trigger definition keeps covering every insert and every birthdate
+--    or onboarding change; only the threshold, the error code and the wording
+--    move. Exactly 16 today is eligible.
+create or replace function public.experimental_check_adult_profile() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare birth date;
+begin
+  if new.birthdate is null and not new.onboarded then return new; end if;
+  if new.birthdate is null or new.birthdate !~ '^\d{4}-\d{2}-\d{2}$'
+     or not pg_input_is_valid(new.birthdate,'date') then
+    perform public.crushly_fail(400,'invalid_birthday','Please enter a valid birthday.');
+  end if;
+  birth := new.birthdate::date;
+  if birth > (current_date - interval '16 years')::date then
+    perform public.crushly_fail(403,'minimum_age','Holup is for people aged 16 and over.');
+  end if;
+  if birth <= (current_date - interval '100 years')::date then
+    perform public.crushly_fail(400,'invalid_birthday','Please check your birthday.');
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.experimental_check_adult_profile() from public, anon, authenticated;
+
+-- 5. The gate must exist and stay enabled, whatever the deployed history is.
+drop trigger if exists experimental_adult_profile_gate on public.profiles;
+create trigger experimental_adult_profile_gate
+  before insert or update of birthdate, onboarded on public.profiles
+  for each row execute function public.experimental_check_adult_profile();
+
+notify pgrst, 'reload schema';
+
+commit;
+
+-- ================================ 20261110092915_add_up_needs_no_approval.sql
+
+-- REQUIRES: relationship_cutover
+--
+-- This is a correction to a database that already carries the relationship
+-- cutover (20261110080000). A database built from scratch never needs it: the
+-- cutover file already contains the corrected rules, and applying this on top of
+-- nothing would fail on a missing table. `scripts/validate-cutover.sh` skips any
+-- migration carrying this marker for exactly that reason, and applies the
+-- cutover candidate instead.
+--
+-- An Add Up needs nobody's approval. Only a Homie does.
+--
+-- APPLIED in production (yzcssyebozfkmojqqdhc) and recorded in
+-- supabase_migrations.schema_migrations as 20261110092915_add_up_needs_no_approval.
+-- Verified on the live database afterwards: pending Add Ups 1 -> 0, active
+-- 2 -> 3, every Keep now an active follow, approval_required gone, the status
+-- check is (active|declined), and the three routines answer approvalRequired
+-- false.
+--
+-- The first cut of this feature let a member switch on "require my approval"
+-- before anybody could Add them Up. That is not the product: adding somebody up
+-- is immediate and one-way, and the only relationship that has to be agreed to is
+-- a Homie. This migration removes the rule rather than leaving it switched off,
+-- so it cannot be switched back on by a stray client or a forgotten setting.
+--
+-- It also corrects what the backfill in 20261110080000 got wrong once the rule is
+-- stated plainly:
+--
+--   * a Keep was a one-way, unanswered follow. That is an Add Up, so it arrives
+--     active — it does not ask anybody to answer it;
+--   * a *pending* Crush was a request to connect. Connecting is a Homie, so that
+--     is where it belongs: an unanswered Homie request.
+
+begin;
+
+-- 1. Undo what the previous backfill made of a pending Crush. It imported every
+--    pending Crush as a pending Add Up, which is the wrong relationship: a Crush
+--    request was a request to connect, and connecting is a Homie. The imported
+--    row is identified by the exact creation time the backfill copied from the
+--    Crush, so an Add Up the member made for themselves is never touched.
+lock table public.keeps, public.crushes, public.holup_homies in share row exclusive mode;
+delete from public.holup_follows f
+ using public.crushes c
+ where c.status = 'pending'
+   and f.follower_id = c.from_id
+   and f.followed_id = c.to_id
+   and f.created_at = c.created_at;
+
+-- 2. Keeps are Add Ups that already happened: one-way, unanswered, lived. They
+--    arrive active, and they arrive after step 1 so that a pair which had both a
+--    Keep and a Crush keeps its follow.
+insert into public.holup_follows(follower_id, followed_id, status, created_at, decided_at)
+ select k.keeper_id, k.kept_id, 'active', k.created_at, k.created_at
+   from public.keeps k
+  where not public.is_blocked_pair(k.keeper_id, k.kept_id)
+ on conflict (follower_id, followed_id) do nothing;
+
+-- 3. Any pending follow left can only exist because approval was switched on.
+--    There is no such switch any more, so they are promoted rather than left in a
+--    state the product cannot reach.
+update public.holup_follows set status = 'active', decided_at = coalesce(decided_at, created_at)
+ where status = 'pending';
+
+-- 4. The Homie requests the previous backfill built out of Keeps were never
+--    asked for by the sender, so they go: a decline would put words in their
+--    mouth. Matched on the pair *and* the millisecond the Keep was created, which
+--    is what the backfill copied — a request somebody actually tapped will not
+--    match. Then a pending Crush, which IS a request to connect, is written where
+--    it belongs, as an unanswered Homie request.
+delete from public.holup_homie_requests r
+ using public.keeps k
+ where r.sender_id = k.keeper_id
+   and r.recipient_id = k.kept_id
+   and r.status = 'pending'
+   and r.created_at = k.created_at;
+
+insert into public.holup_homie_requests(sender_id, recipient_id, status, created_at)
+ select c.from_id, c.to_id, 'pending', c.created_at
+   from public.crushes c
+  where c.status = 'pending'
+    and not public.is_blocked_pair(c.from_id, c.to_id)
+    and not exists (
+      select 1 from public.holup_homies h
+       where h.user_a = least(c.from_id, c.to_id) and h.user_b = greatest(c.from_id, c.to_id)
+    )
+ on conflict (sender_id, recipient_id) do nothing;
+
+-- 5. Now the table can only hold the two honest states.
+alter table public.holup_follows drop constraint if exists holup_follows_status_check;
+alter table public.holup_follows add constraint holup_follows_status_check
+  check (status in ('active', 'declined'));
+
+-- 6. The setting itself. A column nobody may write is a rule waiting to be
+--    rediscovered, so it goes.
+alter table public.holup_follow_settings drop column if exists approval_required;
+
+-- 7. The routines. `p_approval` stays in the signature and is ignored: installed
+--    clients still send it, and dropping the argument would turn their settings
+--    call into a PGRST202 for a feature they are not using.
+create or replace function public.holup_set_follow_settings(p_approval boolean, p_outgoing_visibility text) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint := public.me_id(); s public.holup_follow_settings;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if p_outgoing_visibility is not null and p_outgoing_visibility not in ('everyone','close','private') then
+    perform public.crushly_fail(400,'','Choose a valid privacy setting.');
+  end if;
+  insert into public.holup_follow_settings(user_id, outgoing_visibility)
+    values(me, coalesce(p_outgoing_visibility,'private'))
+  on conflict(user_id) do update
+    set outgoing_visibility = coalesce(p_outgoing_visibility, holup_follow_settings.outgoing_visibility)
+  returning * into s;
+  return jsonb_build_object('approvalRequired', false, 'outgoingVisibility', s.outgoing_visibility);
+end $$;
+
+create or replace function public.holup_follow(p_target bigint) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare me bigint := public.me_id(); r public.holup_follows; target record;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if p_target is null or p_target = me then perform public.crushly_fail(400,'','Invalid member.'); end if;
+  perform pg_advisory_xact_lock(hashtextextended('holup-follow-rate:'||me,0));
+  perform public.holup_follow_pair_lock(me, p_target);
+  if not exists(select 1 from public.profiles where id = me and onboarded and status = 'active') or
+     public.is_blocked_pair(me, p_target) or public.load_visible_profile(me, p_target, false) is null then
+    perform public.crushly_fail(404,'','Space not available.'); end if;
+  perform public.space_relationship_stats(p_target);
+  select p.name, pr.who_can_crush into target
+    from public.profiles p join public.privacy pr on pr.user_id = p.id
+   where p.id = p_target and p.onboarded and p.status = 'active';
+  if not found then perform public.crushly_fail(404,'','Space not available.'); end if;
+  if target.who_can_crush = 'verified' and not exists(select 1 from public.profiles where id = me and verification = 'verified') then
+    perform public.crushly_fail(403,'verification_required','This member only accepts Add Ups from verified members.'); end if;
+  select * into r from public.holup_follows where follower_id = me and followed_id = p_target;
+  if found and r.status = 'active' then return jsonb_build_object('status','active','changed',false); end if;
+  if found and r.status = 'declined' and r.decided_at > public.now_ms() - 604800000 then
+    perform public.crushly_fail(429,'request_cooldown','Please wait before requesting again.'); end if;
+  delete from public.holup_follow_attempts where follower_id = me and created_at <= public.now_ms() - 86400000;
+  if (select count(*) from public.holup_follow_attempts where follower_id = me) >= 100 then
+    perform public.crushly_fail(429,'rate_limit','Please wait before adding up more people.'); end if;
+  insert into public.holup_follow_attempts(follower_id) values(me);
+  -- Immediate. There is no approval step to wait for, so there is no pending
+  -- state to reach: the row is written active, now, and they are told.
+  insert into public.holup_follows(follower_id, followed_id, status, created_at, decided_at)
+    values(me, p_target, 'active', public.now_ms(), public.now_ms())
+  on conflict(follower_id, followed_id) do update
+    set status = 'active', created_at = excluded.created_at, decided_at = excluded.decided_at
+  returning * into r;
+  perform public.notify_to(p_target, 'keep', me, null, '');
+  return jsonb_build_object('status', r.status, 'changed', true);
+end $$;
+
+create or replace function public.holup_follow_stats(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare me bigint := public.me_id(); base jsonb; outgoing text; incoming text; homies boolean;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  base := public.space_relationship_stats(p_target);
+  select coalesce((select outgoing_visibility from public.holup_follow_settings where user_id = p_target),'private'),
+         (select add_up_list_visibility from public.privacy where user_id = p_target),
+         public.holup_existing_close(me, p_target) into outgoing, incoming, homies;
+  return jsonb_build_object(
+    'addUps', (select count(*) from public.holup_follows f join public.profiles p on p.id = f.follower_id
+                where f.followed_id = p_target and f.status = 'active' and p.onboarded and p.status = 'active'
+                  and not public.is_blocked_pair(p_target, p.id)),
+    'addedUp', (select count(*) from public.holup_follows f join public.profiles p on p.id = f.followed_id
+                where f.follower_id = p_target and f.status = 'active' and p.onboarded and p.status = 'active'
+                  and not public.is_blocked_pair(p_target, p.id)),
+    'canViewAddUps', me = p_target or incoming = 'everyone' or (incoming = 'close' and homies),
+    'canViewAddedUp', me = p_target or outgoing = 'everyone' or (outgoing = 'close' and homies),
+    'outgoingVisibility', case when me = p_target then outgoing else null end,
+    'approvalRequired', false,
+    'myStatus', case when me <> p_target then
+      (select status from public.holup_follows where follower_id = me and followed_id = p_target and status = 'active')
+      else null end,
+    'keptClose', base->'keptClose', 'canViewKeptClose', base->'canViewKeptClose',
+    'postLikes', base->'postLikes', 'addUpVisibility', base->'addUpVisibility');
+end $$;
+
+notify pgrst, 'reload schema';
+
+commit;
+
+-- ================================ 20261110132705_public_space_preview.sql
+
+-- A shared Space can unfurl without telling a stranger anything the member
+-- has not already chosen to show everyone.
+--
+-- This is the anonymous twin of the Space screen: no viewer, so no viewer-dependent
+-- field exists (no distance, no shared interests, no "they are online", no Add Up
+-- counts). It answers only for a profile whose owner set profile_visibility to
+-- 'everyone' and is not incognito - the same gate public_post_preview uses - and
+-- only for a profile that is onboarded and active.
+--
+-- Deliberately absent: photos, follower-shaped counts, activity, location. A link
+-- should read like a name card, not like a dossier.
+create or replace function public.public_space_preview(p_id bigint)
+returns jsonb language sql stable security definer set search_path=public as $$
+  select jsonb_build_object(
+    'id', p.id,
+    'name', nullif(p.name, ''),
+    'username', nullif(p.username, ''),
+    'city', case when pr.show_city then nullif(p.city, '') else null end,
+    'bio', nullif(left(coalesce(p.bio, ''), 200), ''),
+    'verified', p.verification = 'verified',
+    'badgeTier', case
+      when p.badge_tier = 'diamond' then 'diamond'
+      when p.badge_tier = 'gold' then 'gold'
+      when p.verification = 'verified' then 'verified'
+      else 'none'
+    end
+  )
+  from public.profiles p
+  join public.privacy pr on pr.user_id = p.id
+  where p.id = p_id
+    and p.onboarded
+    and p.status = 'active'
+    and pr.profile_visibility = 'everyone'
+    and not pr.incognito
+  limit 1
+$$;
+
+revoke all on function public.public_space_preview(bigint) from public;
+grant execute on function public.public_space_preview(bigint) to anon, authenticated, service_role;
+
+-- ================================ 20261110132728_space_share_token_preview.sql
+
+-- A shared Space link must not be a member directory.
+--
+-- Profile ids are sequential, so a preview answered by id would let anyone
+-- enumerate /s/1, /s/2, ... and harvest names, cities and bios with no sign-in.
+-- Every member's privacy row defaults to profile_visibility 'everyone', so the
+-- visibility gate alone does not protect against that - it was never designed to
+-- resist enumeration, only to answer "may this viewer see this profile".
+--
+-- So a preview is answered by a token the member themselves minted, at the moment
+-- they tapped share. Tokens are revocable, one per member, and unguessable; the
+-- id never appears in a preview URL.
+create table if not exists public.space_share_links (
+  user_id    bigint primary key references public.profiles(id) on delete cascade,
+  token      text not null unique,
+  created_at bigint not null default public.now_ms(),
+  revoked_at bigint
+);
+
+alter table public.space_share_links enable row level security;
+
+-- No policies at all: this table is only ever read through the two security
+-- definer routines below. A member cannot enumerate other members' tokens, and
+-- an anonymous visitor cannot read the table.
+revoke all on public.space_share_links from public, anon, authenticated;
+
+create or replace function public.holup_space_share_token() returns text
+language plpgsql security definer set search_path=public as $$
+declare me bigint := public.me_id(); tok text;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  select token into tok from public.space_share_links
+   where user_id = me and revoked_at is null;
+  if found then return tok; end if;
+  -- gen_random_uuid is core since PostgreSQL 13, so this needs no extension.
+  tok := replace(gen_random_uuid()::text, '-', '');
+  insert into public.space_share_links(user_id, token, created_at, revoked_at)
+    values(me, tok, public.now_ms(), null)
+  on conflict(user_id) do update
+    set token = excluded.token, created_at = excluded.created_at, revoked_at = null
+  returning token into tok;
+  return tok;
+end $$;
+
+-- Cutting a link off: the member's own toggle. The next share mints a new one.
+create or replace function public.holup_revoke_space_share_token() returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint := public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  update public.space_share_links set revoked_at = public.now_ms()
+   where user_id = me and revoked_at is null;
+  return found;
+end $$;
+
+-- The anonymous card. Same shape as before, but reached only by holding a token.
+-- Still gated on the member's own choices, so withdrawing visibility withdraws
+-- the card even while a link is in circulation.
+create or replace function public.public_space_preview(p_token text)
+returns jsonb language sql stable security definer set search_path=public as $$
+  select jsonb_build_object(
+    'id', p.id,
+    'name', nullif(p.name, ''),
+    'username', nullif(p.username, ''),
+    'city', case when pr.show_city then nullif(p.city, '') else null end,
+    'bio', nullif(left(coalesce(p.bio, ''), 200), ''),
+    'verified', p.verification = 'verified',
+    'badgeTier', case
+      when p.badge_tier = 'diamond' then 'diamond'
+      when p.badge_tier = 'gold' then 'gold'
+      when p.verification = 'verified' then 'verified'
+      else 'none'
+    end
+  )
+  from public.space_share_links l
+  join public.profiles p on p.id = l.user_id
+  join public.privacy pr on pr.user_id = p.id
+  where l.token = nullif(trim(p_token), '')
+    and l.revoked_at is null
+    and p.onboarded
+    and p.status = 'active'
+    and pr.profile_visibility = 'everyone'
+    and not pr.incognito
+  limit 1
+$$;
+
+-- The id-only version from the previous revision is retired: it was the
+-- enumerable form. Dropped rather than left reachable.
+drop function if exists public.public_space_preview(bigint);
+
+revoke all on function public.holup_space_share_token(), public.holup_revoke_space_share_token(), public.public_space_preview(text) from public;
+grant execute on function public.holup_space_share_token(), public.holup_revoke_space_share_token() to authenticated, service_role;
+grant execute on function public.public_space_preview(text) to anon, authenticated, service_role;
+
+-- ================================ 20261110132752_space_share_token_targets_space.sql
+
+-- A token names the Space being shared, not necessarily the person sharing it.
+--
+-- The previous revision minted a token for "me", which would have made every
+-- share button on somebody else's Space hand out a link to your own. The target
+-- is now explicit and defaults to you.
+--
+-- Minting is not open to the world: it needs a signed-in member who can already
+-- see that Space (load_visible_profile), so a link can never be created for a
+-- profile its owner has hidden, and an anonymous crawler never reaches this
+-- routine at all. The token stays one per Space, so the link people share is the
+-- same one, and revoking it kills every copy in circulation.
+create or replace function public.holup_space_share_token(p_target bigint default null) returns text
+language plpgsql security definer set search_path=public as $$
+declare me bigint := public.me_id(); who bigint := coalesce(p_target, public.me_id()); tok text;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  if public.load_visible_profile(me, who, false) is null then
+    perform public.crushly_fail(404,'','Space not available.'); end if;
+  select token into tok from public.space_share_links
+   where user_id = who and revoked_at is null;
+  if found then return tok; end if;
+  tok := replace(gen_random_uuid()::text, '-', '');
+  insert into public.space_share_links(user_id, token, created_at, revoked_at)
+    values(who, tok, public.now_ms(), null)
+  on conflict(user_id) do update
+    set token = excluded.token, created_at = excluded.created_at, revoked_at = null
+  returning token into tok;
+  return tok;
+end $$;
+
+-- Revoking is the owner's alone: you cut off links to your own Space.
+create or replace function public.holup_revoke_space_share_token() returns boolean
+language plpgsql security definer set search_path=public as $$
+declare me bigint := public.me_id();
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  update public.space_share_links set revoked_at = public.now_ms()
+   where user_id = me and revoked_at is null;
+  return found;
+end $$;
+
+revoke all on function public.holup_space_share_token(bigint), public.holup_revoke_space_share_token() from public;
+grant execute on function public.holup_space_share_token(bigint), public.holup_revoke_space_share_token() to authenticated, service_role;
+
+-- ================================ 20261110150000_post_downloads.sql
+
+-- Marked copies: a saveable clip, with the creator's name on it.
+--
+-- Saving a clip to a device is the one way a post leaves Holup, so the file that
+-- leaves must carry the mark. That file is produced outside the request path: a
+-- job downloads the original from the private bucket, burns in the mark and the
+-- creator's handle, appends the end splash, and records the object key here. The
+-- app never re-encodes anything, and the copy that plays inside Holup is
+-- untouched.
+--
+-- Two rules this migration keeps, both of which are the whole point:
+--
+--   * a marked copy is only ever handed out to somebody who could already see
+--     the post — the same `can_view_post` the feed uses, so a block, a private
+--     audience or an expired Moment means no download either;
+--   * the object key is never sent to a client. The Worker asks for it by post
+--     id, with the member's own token, and streams the bytes itself. A key that
+--     never leaves the server cannot be guessed, forwarded or replayed.
+
+create table if not exists public.post_downloads (
+  post_id bigint primary key references public.posts(id) on delete cascade,
+  -- Where the marked file sits in the private bucket. Server-side only.
+  object_key text not null,
+  bytes bigint,
+  created_at bigint not null default public.now_ms()
+);
+
+-- Nothing reads this table directly. A direct grant would let a member enumerate
+-- which posts have marked copies, including posts they cannot see.
+alter table public.post_downloads enable row level security;
+revoke all on table public.post_downloads from public, anon, authenticated;
+
+comment on table public.post_downloads is
+  'Marked copies of clips, produced by the marking job. Reached only through post_download().';
+
+/**
+ * The object key for a post's marked copy, or null.
+ *
+ * Returns `{ path }` — never a full URL — so the caller (the media Worker) can
+ * fetch from the bucket itself. Null, not an error, for every refusal: a member
+ * who cannot see the post learns nothing about whether a marked copy exists.
+ */
+create or replace function public.post_download(p_post_id bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  po public.posts;
+  d public.post_downloads;
+begin
+  if me is null then
+    return null;
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    return null;
+  end if;
+
+  select * into d from post_downloads pd where pd.post_id = p_post_id;
+  if not found then
+    return null;
+  end if;
+
+  return jsonb_build_object('path', d.object_key, 'bytes', d.bytes);
+end $function$;
+
+revoke all on function public.post_download(bigint) from public, anon;
+grant execute on function public.post_download(bigint) to authenticated, service_role;
+
+/**
+ * The marking job's way in: which clips still need a copy, and the original to
+ * work from.
+ *
+ * Deliberately restricted to the service role. A member calling this would be
+ * asking the server to list every video post in the database, which is exactly
+ * the enumeration `post_download` avoids.
+ */
+create or replace function public.posts_needing_download(p_limit integer default 20)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  -- Service role calls carry no member id; a member's call does, and is refused.
+  if me is not null then
+    return null;
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', p.id,
+      'mediaUrl', p.media_url,
+      'authorId', p.author_id
+    ) order by p.id)
+    from (
+      select po.id, po.media_url, po.author_id
+      from posts po
+      where po.media_url ~* '\.(mp4|webm|mov|m4v)(\?|$)'
+        and not exists (select 1 from post_downloads pd where pd.post_id = po.id)
+      order by po.id
+      limit greatest(1, least(coalesce(p_limit, 20), 100))
+    ) p
+  ), '[]'::jsonb);
+end $function$;
+
+revoke all on function public.posts_needing_download(integer) from public, anon, authenticated;
+grant execute on function public.posts_needing_download(integer) to service_role;
+
+/** The job's write. One row per post; re-running replaces the copy. */
+create or replace function public.register_post_download(
+  p_post_id bigint,
+  p_object_key text,
+  p_bytes bigint default null
+)
+returns boolean
+language plpgsql
+volatile security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is not null then
+    return false;
+  end if;
+  if p_object_key is null or p_object_key = '' then
+    return false;
+  end if;
+  if not exists (select 1 from posts where id = p_post_id) then
+    return false;
+  end if;
+
+  insert into post_downloads (post_id, object_key, bytes)
+  values (p_post_id, p_object_key, p_bytes)
+  on conflict (post_id) do update
+    set object_key = excluded.object_key,
+        bytes = excluded.bytes,
+        created_at = public.now_ms();
+
+  return true;
+end $function$;
+
+revoke all on function public.register_post_download(bigint, text, bigint) from public, anon, authenticated;
+grant execute on function public.register_post_download(bigint, text, bigint) to service_role;
+
+-- A post that is deleted takes its marked copy with it (the foreign key), and a
+-- clip replaced by an edit leaves a stale row: the job overwrites on re-run, and
+-- the Worker only serves what the row points at.
+
+-- ================================ 20261112090000_moment_clip_25_seconds.sql
+
+-- A Moment clip is 25 seconds, not a minute.
+--
+-- The app enforced the old limit in four places and the database in one, which
+-- is the right shape — but the limit itself was wrong: a Moment is a glimpse,
+-- and a minute of glimpse is a post. This raises nothing; it lowers the ceiling
+-- and restates it in the one place every client has to agree with.
+--
+-- Existing clips longer than 25 seconds are left alone. They expire within a
+-- day, and shortening somebody's live Moment would be a stranger change than the
+-- one being made here: new clips are capped, old ones run out.
+
+-- `p_duration_ms` is required and comes before the optional p_edit. Keeping it
+-- required gives PostgREST a unique match for new video clients while the older
+-- six-argument RPC remains compatible with clients that do not send duration.
+create or replace function public.create_moment(
+  p_kind text,
+  p_body text,
+  p_media_url text,
+  p_style text,
+  p_audience text,
+  p_duration_ms bigint,
+  p_edit jsonb default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  clean_kind text := coalesce(p_kind, 'text');
+  clean_body text := coalesce(p_body, '');
+  clean_style text := coalesce(p_style, 'noir');
+  clean_audience text := coalesce(p_audience, 'everyone');
+  clean_edit jsonb := public.clean_video_edit(p_edit);
+  new_id bigint;
+  m public.moments;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_kind not in ('text', 'photo', 'video') then
+    perform public.crushly_fail(400, '', 'Moments are words, a photo or a short clip.');
+  end if;
+  if clean_style not in ('noir', 'champagne', 'crimson', 'midnight', 'emerald') then
+    clean_style := 'noir';
+  end if;
+  if clean_audience not in ('everyone', 'connections') then
+    clean_audience := 'everyone';
+  end if;
+  if clean_kind = 'text' and btrim(clean_body) = '' then
+    perform public.crushly_fail(400, '', 'Say something in your Moment.');
+  end if;
+  if clean_kind = 'video' and (p_duration_ms is null or p_duration_ms < 100 or p_duration_ms > 25000) then
+    perform public.crushly_fail(400, 'moment_too_long', 'Choose a clip that is no longer than 25 seconds.');
+  end if;
+  clean_body := left(clean_body, case when clean_kind = 'text' then 280 else 200 end);
+
+  if clean_kind in ('photo', 'video') and nullif(coalesce(p_media_url, ''), '') is null then
+    perform public.crushly_fail(400, '', clean_kind || ' Moments need a file.');
+  end if;
+
+  insert into moments (user_id, kind, body, media_url, style, audience, expires_at, edit, duration_ms)
+  values (me, clean_kind, clean_body, nullif(coalesce(p_media_url, ''), ''), clean_style, clean_audience,
+          public.now_ms() + 24 * 60 * 60 * 1000, clean_edit,
+          case when clean_kind = 'video' then p_duration_ms else null end)
+  returning id into new_id;
+  select * into m from moments mo where mo.id = new_id;
+  return public.serialize_moment(m, me);
+end $$;
+
+revoke all on function public.create_moment(text, text, text, text, text, bigint, jsonb) from public, anon, authenticated;
+grant execute on function public.create_moment(text, text, text, text, text, bigint, jsonb) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261112120000_moment_circles_come_across.sql
+
+-- 20261112120000_moment_circles_come_across
+--
+-- What this migration owns: who appears in the ring of Moments above the
+-- Crushes feed, and the record of whose Space a member has actually opened.
+--
+-- The ring used to be `visible_moments()` — everybody whose Moment this member
+-- was allowed to see. On a public-audience Moment that is effectively everyone
+-- in the app, so the row filled with strangers: people you had never opened,
+-- never clicked with, never kept. A face at the top of your own feed should be
+-- somebody you have actually met here.
+--
+-- So the ring reads a smaller set. One row per person, and only if this member
+-- has done at least one of:
+--
+--   * added them up          — `crushes.from_id = me`
+--   * clicked with them      — `connections`
+--   * kept them close        — `keeps.keeper_id = me`
+--   * spoken to them         — `conversations`
+--   * opened their Space     — `space_views` (added below)
+--
+-- Liking a post is deliberately *not* on that list. A like is a reaction to one
+-- piece of writing, and it should not put a face in front of you every time
+-- that person posts a Moment. Same for viewing a Moment: watching somebody's
+-- Moment is not the same as having come across them.
+--
+-- `visible_moments()` is untouched. Discover still browses the wider set, and a
+-- Moment you can see there is still a Moment you can open.
+
+-- ---------------------------------------------------------------- space views
+--
+-- There was no record of a member opening somebody's Space, so "viewed their
+-- profile" could not be answered anywhere in the database. This is that record,
+-- and it is one-way on purpose.
+--
+-- It is private in the strongest sense the schema allows: there is no table
+-- grant to `authenticated` at all, only the two functions below, which are
+-- security definer. Nobody can read who viewed whom — not the owner of the
+-- Space, not an admin surface, not a query in the app. Its only consumer is
+-- `moment_circles()`, for the viewer's own row set.
+
+create table if not exists public.space_views (
+  viewer_id      bigint not null references public.profiles(id) on delete cascade,
+  viewed_id      bigint not null references public.profiles(id) on delete cascade,
+  first_seen_at  bigint not null default public.now_ms(),
+  last_seen_at   bigint not null default public.now_ms(),
+  views          integer not null default 1 check (views > 0),
+  primary key (viewer_id, viewed_id),
+  check (viewer_id <> viewed_id)
+);
+
+create index if not exists space_views_viewer_idx
+  on public.space_views (viewer_id, last_seen_at desc);
+
+alter table public.space_views enable row level security;
+
+-- No policies: the table is invisible to every client role. Reading and writing
+-- happen only inside the security-definer functions below, which decide for
+-- themselves who is allowed to do what.
+revoke all on table public.space_views from public, anon, authenticated;
+
+/**
+ * "I opened this person's Space."
+ *
+ * Called by the Space screen once it has a member to show. Silent, cheap, and
+ * idempotent: the second visit updates a timestamp instead of adding a row.
+ *
+ * Refuses to record a view of yourself, of somebody who blocked you, or of
+ * somebody you blocked — a blocked Space is not one you "came across".
+ */
+create or replace function public.record_space_view(p_member_id bigint)
+returns boolean
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_member_id is null or p_member_id = me then
+    return false;
+  end if;
+  if not exists (select 1 from public.profiles p where p.id = p_member_id) then
+    return false;
+  end if;
+  if public.is_blocked_pair(me, p_member_id) then
+    return false;
+  end if;
+
+  insert into public.space_views as sv (viewer_id, viewed_id)
+  values (me, p_member_id)
+  on conflict (viewer_id, viewed_id) do update
+    set last_seen_at = public.now_ms(),
+        views = sv.views + 1;
+
+  return true;
+end $function$;
+
+revoke all on function public.record_space_view(bigint) from public, anon;
+grant execute on function public.record_space_view(bigint) to authenticated, service_role;
+
+-- ------------------------------------------------------------- the ring itself
+--
+-- Same shape as `visible_moments()` — serialized jsonb rows, oldest first, so
+-- the client groups and orders them exactly as it already does. The only
+-- difference is the set: `can_view_moment` still has the last word, so expiry,
+-- audience, blocks, incognito and profile visibility keep their meaning.
+
+create or replace function public.moment_circles()
+returns setof jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  m public.moments;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  for m in
+    select mo.*
+      from public.moments mo
+     where mo.expires_at > public.now_ms()
+       and public.can_view_moment(mo, me)
+       and (
+         -- Mine always belongs in the row: it is how you see what you have live.
+         mo.user_id = me
+         -- Kept in my Close Ones.
+         or exists (select 1 from public.keeps k
+                     where k.keeper_id = me and k.kept_id = mo.user_id)
+         -- Clicked with: the connection is mutual, so either column order works,
+         -- but the table stores user_a < user_b.
+         or exists (select 1 from public.connections c
+                     where c.user_a = least(me, mo.user_id)
+                       and c.user_b = greatest(me, mo.user_id))
+         -- Added up: I sent the Add Up. One I merely received is not a meeting.
+         or exists (select 1 from public.crushes cr
+                     where cr.from_id = me and cr.to_id = mo.user_id)
+         -- We have a Whisper thread.
+         or exists (select 1 from public.conversations cv
+                     where cv.user_a = least(me, mo.user_id)
+                       and cv.user_b = greatest(me, mo.user_id))
+         -- I opened their Space.
+         or exists (select 1 from public.space_views sv
+                     where sv.viewer_id = me and sv.viewed_id = mo.user_id)
+       )
+       -- Passing on someone removes them from the ring even if the rest is true.
+       and not exists (select 1 from public.passes pa
+                        where pa.from_id = me and pa.to_id = mo.user_id)
+     order by mo.created_at asc
+  loop
+    return next public.serialize_moment(m, me);
+  end loop;
+end $function$;
+
+revoke all on function public.moment_circles() from public, anon, authenticated;
+grant execute on function public.moment_circles() to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261112150000_seven_reactions.sql
+
+-- 20261112150000_seven_reactions
+--
+-- What this migration owns: the seven reactions a member can give a post or a
+-- comment, and the record of which one each person gave.
+--
+-- The set was five — crush, fire, laugh, wow, clap — and it was reached through a
+-- single tap on a heart. A tap is one bit, so five kinds behind one gesture is
+-- five kinds nobody could reach: the app only ever sent `crush`. Press and hold
+-- opens a row, and the row has seven: the three that were there, plus sad, angry
+-- and tired, because a feed that only lets you be delighted is a feed where you
+-- are not being honest.
+--
+-- `clap` stays legal in the constraint even though it is no longer offered: real
+-- rows carry it, and a constraint that invalidates live data is a migration that
+-- breaks the ones who already reacted. It is simply not in the row any more.
+
+-- ------------------------------------------------------------------- on a post
+alter table public.post_reactions drop constraint if exists post_reactions_kind_check;
+alter table public.post_reactions
+  add constraint post_reactions_kind_check
+  check (kind in ('crush', 'laugh', 'wow', 'fire', 'sad', 'angry', 'tired', 'clap'));
+
+-- ---------------------------------------------------------------- on a comment
+--
+-- A comment's like was a boolean row keyed (comment_id, user_id) — reactive to
+-- nothing but "yes". It gets a kind, defaulting to crush so every existing row
+-- still means exactly what it meant.
+alter table public.post_comment_likes
+  add column if not exists kind text not null default 'crush';
+
+alter table public.post_comment_likes drop constraint if exists post_comment_likes_kind_check;
+alter table public.post_comment_likes
+  add constraint post_comment_likes_kind_check
+  check (kind in ('crush', 'laugh', 'wow', 'fire', 'sad', 'angry', 'tired', 'clap'));
+
+/**
+ * Give a comment one of the seven, or take yours back.
+ *
+ * One reaction per person per comment, and choosing a different one replaces it
+ * rather than stacking: that is what a row of reactions means everywhere else,
+ * and two feelings at once on one sentence is not a thing anybody asked for.
+ *
+ * A new name rather than an overload of `like_post_comment`: that function takes
+ * `(bigint, boolean)`, and adding a `(bigint, text)` candidate would make a
+ * two-argument call ambiguous — PostgREST answers 300 to an ambiguous call, and
+ * every existing client would break at once.
+ */
+create or replace function public.react_to_comment(p_comment_id bigint, p_kind text default 'crush')
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  c   public.post_comments;
+  po  public.posts;
+  k   text := coalesce(p_kind, 'crush');
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if k not in ('crush', 'laugh', 'wow', 'fire', 'sad', 'angry', 'tired', 'clap') then
+    perform public.crushly_fail(400, 'kind', 'That is not a reaction.');
+  end if;
+
+  select * into c from post_comments pc where pc.id = p_comment_id;
+  if not found or c.hidden then
+    perform public.crushly_fail(404, '', 'That comment isn’t there.');
+  end if;
+
+  select * into po from posts p where p.id = c.post_id;
+  -- You cannot react to a comment on a post you cannot read, and a block
+  -- silences both ways here exactly as it does everywhere else.
+  if not found or not public.can_view_post(po, me) or public.is_blocked_pair(me, c.author_id) then
+    perform public.crushly_fail(404, '', 'That comment isn’t there.');
+  end if;
+
+  -- Same reaction again means "take it back": the row goes, and nobody has to
+  -- find a separate control to undo a tap.
+  if exists (
+    select 1 from post_comment_likes l
+     where l.comment_id = c.id and l.user_id = me and l.kind = k
+  ) then
+    delete from post_comment_likes l where l.comment_id = c.id and l.user_id = me;
+    return jsonb_build_object(
+      'myReaction', null,
+      'likeCount', (select count(*) from post_comment_likes l where l.comment_id = c.id)
+    );
+  end if;
+
+  insert into post_comment_likes (comment_id, user_id, kind) values (c.id, me, k)
+  on conflict (comment_id, user_id) do update set kind = excluded.kind, created_at = public.now_ms();
+
+  return jsonb_build_object(
+    'myReaction', k,
+    'likeCount', (select count(*) from post_comment_likes l where l.comment_id = c.id)
+  );
+end $function$;
+
+revoke all on function public.react_to_comment(bigint, text) from public, anon;
+grant execute on function public.react_to_comment(bigint, text) to authenticated, service_role;
+
+/**
+ * The comment list, now saying which reaction each comment has from you.
+ *
+ * `liked` stays, so nothing that already reads it breaks; `myReaction` is the
+ * new fact, and it is what the row draws.
+ */
+create or replace function public.post_comments_feed(p_post_id bigint, p_limit integer default 200)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  po public.posts;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+
+  return (
+    select jsonb_build_object('items', coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', c.id,
+        'body', case when c.hidden then null else c.body end,
+        'parentId', c.parent_id,
+        'hidden', c.hidden,
+        'createdAt', c.created_at,
+        'mine', c.author_id = me,
+        'canDelete', c.author_id = me or po.author_id = me,
+        'likeCount', (select count(*) from post_comment_likes l where l.comment_id = c.id),
+        'liked', exists (
+          select 1 from post_comment_likes l where l.comment_id = c.id and l.user_id = me
+        ),
+        'myReaction', (
+          select l.kind from post_comment_likes l
+           where l.comment_id = c.id and l.user_id = me
+        ),
+        'replyCount', (
+          select count(*) from post_comments r
+           where r.parent_id = c.id
+             and not public.is_blocked_pair(me, r.author_id)
+        ),
+        'author', public.public_profile(me, c.author_id, false)
+      ) order by c.created_at, c.id
+    ), '[]'::jsonb))
+    from post_comments c
+    where c.post_id = po.id
+      and not public.is_blocked_pair(me, c.author_id)
+    limit least(greatest(coalesce(p_limit, 200), 1), 400)
+  );
+end $function$;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261113100000_whisper_kinds_and_feed_cursors.sql
+
+-- Whisper reactions take the seven, and every paged feed reports where it ends.
+--
+-- Two things, both of them bugs a member could see.
+--
+-- 1. A Whisper's reactions were capped at four kinds in the database. The app
+--    started offering seven, so sad, angry and tired failed on a Whisper while
+--    working on a post. The constraint is the only thing that refused them.
+--
+-- 2. `flow_feed`, `public_flow_feed`, `circle_feed` and `saved_posts` returned
+--    `items` and nothing else. The client paged by "after this id" and had no way
+--    to know whether one existed, so the four hooks in the app were written as a
+--    plain query keyed on that id — which *replaces* the page instead of
+--    extending it. Scrolling Home, a Circle or Picked therefore swapped the whole
+--    list for the next page and looked exactly like everything vanishing. The
+--    cursor is what lets the client append, so the cursor is what these return
+--    now: the same shape `crush_posts_feed` and `space_posts` already had.
+
+alter table public.message_reactions drop constraint if exists message_reactions_kind_check;
+alter table public.message_reactions add constraint message_reactions_kind_check
+  check (kind in ('crush', 'laugh', 'wow', 'fire', 'sad', 'angry', 'tired', 'clap'));
+
+/* ------------------------------------------------------------- flow_feed */
+
+create or replace function public.flow_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me      bigint := public.me_id();
+  lim     integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items   jsonb := '[]'::jsonb;
+  r       record;
+  post    public.posts;
+  last_id bigint;
+  taken   integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.circle_id is null
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+/* ------------------------------------------------------ public_flow_feed */
+
+create or replace function public.public_flow_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me      bigint := public.me_id();
+  lim     integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items   jsonb := '[]'::jsonb;
+  r       record;
+  post    public.posts;
+  last_id bigint;
+  taken   integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.audience = 'everyone'
+       and po.circle_id is null
+       and po.author_id <> me
+       and (
+         p_after is null
+         or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+         or (
+           po.created_at = (select p2.created_at from posts p2 where p2.id = p_after)
+           and po.id < p_after
+         )
+       )
+     order by po.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', false
+        ) || public.post_engagement(r.id, me)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+/* ------------------------------------------------------------ circle_feed */
+
+create or replace function public.circle_feed(p_circle_id bigint, p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me      bigint := public.me_id();
+  lim     integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items   jsonb := '[]'::jsonb;
+  r       record;
+  post    public.posts;
+  last_id bigint;
+  taken   integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if not public.is_circle_member(p_circle_id, me) then
+    perform public.crushly_fail(404, '', 'Circle not found.');
+  end if;
+
+  for r in
+    select po.* from posts po
+     where public.can_view_post(po, me)
+       and po.circle_id = p_circle_id
+       and (p_after is null or po.created_at < (select p2.created_at from posts p2 where p2.id = p_after)
+                             or (po.created_at = (select p2.created_at from posts p2 where p2.id = p_after) and po.id < p_after))
+     order by po.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+/* ------------------------------------------------------------ saved_posts */
+
+create or replace function public.saved_posts(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me      bigint := public.me_id();
+  lim     integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items   jsonb := '[]'::jsonb;
+  r       record;
+  post    public.posts;
+  last_id bigint;
+  taken   integer := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  -- Cursor is the save's own timestamp, not the post's: you want the things you
+  -- kept most recently, whatever order they were posted in.
+  for r in
+    select po.* from post_saves s
+      join posts po on po.id = s.post_id
+     where s.user_id = me
+       and (p_after is null
+            or s.created_at < (select s2.created_at from post_saves s2
+                                where s2.user_id = me and s2.post_id = p_after)
+            or (s.created_at = (select s2.created_at from post_saves s2
+                                 where s2.user_id = me and s2.post_id = p_after)
+                and po.id < p_after))
+     order by s.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from posts where id = r.id;
+    if found and public.can_view_post(post, me) then
+      items := items || jsonb_build_array(
+        jsonb_build_object(
+          'id', r.id,
+          'body', r.body,
+          'mediaUrl', r.media_url,
+          'mediaKind', case
+            when r.media_url is null then null
+            when r.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'edit', r.edit,
+          'audience', r.audience,
+          'circleId', r.circle_id,
+          'createdAt', r.created_at,
+          'author', public.public_profile(me, r.author_id, false),
+          'mine', r.author_id = me
+        ) || public.post_engagement(r.id, me) || jsonb_build_object('saved', true)
+      );
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'items', items,
+    'nextCursor', case when taken >= lim then last_id else null end
+  );
+end $function$;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261113120000_moment_post_preview.sql
+
+-- A Moment can now be a whole post, nine seconds of it.
+--
+-- Sharing a post to Moments used to mean re-uploading the file, so a clip that
+-- was fifteen seconds long could not be shared at all (Moments cap at 25 s but
+-- the point of this feature is a *preview*, not a re-post) and a written post had
+-- nothing to share. A shared post is now a reference: the Moment points at the
+-- post, plays nine seconds of it, and shows the author's handle under the card.
+--
+-- What this buys, on purpose:
+--
+--  · Nothing is copied. The post keeps its own audience and its own rules; the
+--    Moment's audience decides who sees the *preview*, and `can_view_post` is
+--    applied when the Moment is read. So somebody who loses access to the post
+--    stops seeing the preview too, which re-uploading could never do.
+--  · The name under the card is the post's author, not whoever shared it, and it
+--    is read at display time. A rename is a rename, not a stale copy.
+--  · Nine seconds is a constant here as well as in the client, so a client that
+--    asks for sixty is not granted sixty.
+
+alter table public.moments
+  add column if not exists post_id bigint references public.posts(id) on delete cascade;
+
+-- A shared post is its own kind of Moment, so the existing check has to allow it.
+alter table public.moments drop constraint if exists moments_kind_check;
+alter table public.moments add constraint moments_kind_check
+  check (kind in ('text', 'photo', 'video', 'post'));
+
+create index if not exists moments_post_id_idx on public.moments(post_id) where post_id is not null;
+
+comment on column public.moments.post_id is
+  'Set when this Moment is a nine-second preview of a post rather than a new upload.';
+
+/* ------------------------------------------------- creating a shared Moment */
+
+create or replace function public.share_post_to_moment(
+  p_post_id bigint,
+  p_audience text default 'everyone',
+  p_body text default ''
+) returns jsonb
+language plpgsql security definer set search_path to 'public' as $$
+declare
+  me            bigint := public.me_id();
+  po            public.posts;
+  clean_audience text := coalesce(p_audience, 'everyone');
+  clean_body    text := left(coalesce(p_body, ''), 200);
+  new_id        bigint;
+  m             public.moments;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean_audience not in ('everyone', 'connections') then
+    clean_audience := 'everyone';
+  end if;
+
+  select * into po from posts p where p.id = p_post_id;
+  -- You can only share what you can see. The same refusal for "no such post" and
+  -- "not yours to see", so a share cannot be used to probe for post ids.
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+
+  -- One live preview per post per person. Sharing the same post twice in a day
+  -- replaces the earlier card rather than stacking two identical ones in
+  -- everybody's row.
+  update moments
+     set expires_at = 0
+   where user_id = me and post_id = p_post_id and expires_at > public.now_ms();
+
+  insert into moments (user_id, kind, body, style, audience, expires_at, post_id)
+  values (me, 'post', clean_body, 'noir', clean_audience, public.now_ms() + 24 * 60 * 60 * 1000, p_post_id)
+  returning id into new_id;
+
+  select * into m from moments mo where mo.id = new_id;
+  return public.serialize_moment(m, me);
+end $$;
+
+grant execute on function public.share_post_to_moment(bigint, text, text) to authenticated, service_role;
+
+/* ------------------------------------------------------ reading them back */
+
+/*
+ * `serialize_moment` is replaced *verbatim* from what is live, plus one field.
+ *
+ * Rewriting it from memory would have quietly dropped the author card, the
+ * seen flag, the viewer's own reaction and the owner-only view count. The whole
+ * function is restated so the only difference is the `post` block at the end.
+ */
+create or replace function public.serialize_moment(m moments, p_viewer bigint)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  mine boolean := m.user_id = p_viewer;
+  result jsonb;
+  po public.posts;
+  pa public.profiles;
+begin
+  result := jsonb_build_object(
+    'id', m.id,
+    'userId', m.user_id,
+    'kind', m.kind,
+    'body', m.body,
+    'mediaUrl', m.media_url,
+    'style', m.style,
+    'audience', m.audience,
+    'createdAt', m.created_at,
+    'expiresAt', m.expires_at,
+    'edit', m.edit,
+    'durationMs', m.duration_ms,
+    'seen', exists (select 1 from moment_views mv where mv.moment_id = m.id and mv.user_id = p_viewer),
+    'myReaction', (select r.kind from moment_reactions r where r.moment_id = m.id and r.user_id = p_viewer),
+    'author', (
+      select jsonb_build_object(
+        'id', pf.id,
+        'name', pf.name,
+        'verified', pf.verification = 'verified',
+        'photo', public.photos_of(pf.id) -> 0 ->> 'url',
+        'mutual', pf.id <> p_viewer and public.is_connected_pair(p_viewer, pf.id)
+      ) from profiles pf where pf.id = m.user_id
+    )
+  );
+
+  /* A Moment that is a preview of a post carries what the card needs and no
+     more: the post's own media, its author's handle, and nine seconds. */
+  if m.post_id is not null then
+    select * into po from posts pp where pp.id = m.post_id;
+    if found and public.can_view_post(po, p_viewer) then
+      select * into pa from profiles pr where pr.id = po.author_id;
+      result := result || jsonb_build_object(
+        'post', jsonb_build_object(
+          'id', po.id,
+          'body', po.body,
+          'mediaUrl', po.media_url,
+          'mediaKind', case
+            when po.media_url is null then null
+            when po.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+            else 'photo'
+          end,
+          'authorId', po.author_id,
+          'authorName', pa.name,
+          'username', nullif(pa.username, ''),
+          'previewMs', 9000
+        )
+      );
+    end if;
+  end if;
+
+  if mine then
+    result := result || jsonb_build_object(
+      'viewCount', (select count(*)::int from moment_views mv where mv.moment_id = m.id and mv.user_id <> p_viewer),
+      'reactions', coalesce((
+        select jsonb_agg(jsonb_build_object('kind', r.kind, 'userId', r.user_id, 'name', p.name)
+                         order by r.created_at desc)
+          from moment_reactions r join profiles p on p.id = r.user_id
+         where r.moment_id = m.id
+      ), '[]'::jsonb)
+    );
+  end if;
+  return result;
+end $function$;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261113120000_own_post_download.sql
+
+-- Let the poster register the marked copy of their own clip, without letting
+-- anybody choose where a download points.
+--
+-- Why this is needed. `register_post_download` is service_role only, and it must
+-- stay that way: it takes an object key, and an app that can name the key can
+-- point a member's Save button at any file in the bucket. That was the right
+-- call while the only writer was the scheduled job.
+--
+-- But it is also why the Save row appeared minutes after posting. The mark is
+-- now produced on the phone, before the upload, so the row can exist immediately
+-- — as long as the client can record it. The compromise here is the key: the
+-- client cannot pass one. It is derived from the post's own media key, which the
+-- database already holds, so the worst a modified app can do is register a
+-- different file *inside that post's own folder* — a file it could have uploaded
+-- as the post itself anyway.
+
+/**
+ * The bucket key of a post's original clip.
+ *
+ * `posts.media_url` is a full URL (`https://host/m/posts/<uid>/<ts>.mp4`); the
+ * bucket key is everything after `/m/`. Mirrors `object_key()` in
+ * `scripts/mark_pending_clips.py`, which must keep agreeing with it.
+ */
+create or replace function public.media_object_key(p_media_url text)
+returns text
+language sql
+immutable
+as $function$
+  select case
+    when p_media_url is null or p_media_url = '' then null
+    when position('/m/' in p_media_url) = 0 then null
+    else ltrim(split_part(p_media_url, '/m/', 2), '/')
+  end;
+$function$;
+
+/** `posts/<uid>/<ts>.mp4` -> `posts/<uid>/<ts>-marked.mp4`, as the job does it. */
+create or replace function public.marked_download_key(p_object_key text)
+returns text
+language sql
+immutable
+as $function$
+  select case
+    when p_object_key is null or p_object_key = '' then null
+    when p_object_key ~ '\.[A-Za-z0-9]+$' then regexp_replace(p_object_key, '\.[A-Za-z0-9]+$', '-marked.mp4')
+    else p_object_key || '-marked.mp4'
+  end;
+$function$;
+
+create or replace function public.register_own_post_download(p_post_id bigint)
+returns boolean
+language plpgsql
+volatile security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  key text;
+begin
+  if me is null then
+    return false;                      -- signed out: nothing to own
+  end if;
+
+  -- The post must be mine AND a clip. Kind is decided by extension because
+  -- `posts` has no media_kind column; this is the same test the feed uses.
+  select public.marked_download_key(public.media_object_key(media_url))
+    into key
+    from posts
+   where id = p_post_id
+     and author_id = me
+     and media_url ~* '\.(mp4|mov|m4v|webm)([?#].*)?$';
+
+  if key is null then
+    return false;                      -- not mine, not a clip, or no file
+  end if;
+
+  insert into post_downloads (post_id, object_key, bytes)
+  values (p_post_id, key, null)
+  on conflict (post_id) do update
+    set object_key = excluded.object_key,
+        created_at = public.now_ms();
+
+  return true;
+end $function$;
+
+revoke all on function public.register_own_post_download(bigint) from public, anon;
+grant execute on function public.register_own_post_download(bigint) to authenticated;
+revoke all on function public.marked_download_key(text) from public, anon;
+grant execute on function public.marked_download_key(text) to authenticated, service_role;
+revoke all on function public.media_object_key(text) from public, anon;
+grant execute on function public.media_object_key(text) to authenticated, service_role;
+
+-- ================================ 20261113140000_whisper_photos_and_no_video.sql
+
+-- Two rules for the Whisper, both enforced here rather than in the app.
+--
+-- 1. No video. A Whisper carries pictures and voice notes. Video was the most
+--    expensive thing a member could send and it was also the thing that played
+--    back silent, so it is closed off at the door: the app no longer offers it,
+--    and this function refuses it, which means an older install that still has
+--    the button cannot send one either.
+--
+-- 2. Two photos per member per 24 hours, across every conversation at once. A
+--    per-conversation cap is trivial to walk around — open the next Whisper and
+--    carry on — and a client-side cap is not a cap at all, because the client
+--    can be reinstalled or replaced. So the count is taken from the rows, for
+--    the sender, over the last day. Voice notes are not counted: they are small
+--    and they are how people who cannot type talk.
+--
+-- Both checks live in a thin wrapper. The body of `send_message` is long, was
+-- verified against production, and rewriting it wholesale to add two guards
+-- would put every existing rule — blocks, closed connections, quote rebuilding,
+-- the post snapshot — back on the table for no reason. The old body is renamed
+-- and kept exactly as it was; the wrapper refuses the two cases and otherwise
+-- delegates to it untouched.
+
+-- The kind list still allows 'video' on purpose. Rows that were sent before
+-- today are still legal messages and still have to render; making the column
+-- reject them would fail on the next update of those rows and would rewrite
+-- history a member was actually part of. The refusal belongs in the send path,
+-- which is where it now is.
+
+do $$
+begin
+  -- Only the original body is renamed. A second run of this file finds the
+  -- wrapper under `send_message` and the body already renamed, and must do
+  -- nothing — otherwise the rename collides with itself and the migration is
+  -- not re-runnable, which the test harness checks by applying every file
+  -- twice.
+  if exists (
+      select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'send_message'
+    )
+    and not exists (
+      select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'send_message_unchecked'
+    )
+  then
+    execute 'alter function public.send_message(bigint, text, text, text, jsonb) rename to send_message_unchecked';
+  end if;
+end $$;
+
+-- The renamed body must not be reachable on its own, or the guards are a
+-- suggestion. Only the wrapper below may call it.
+revoke all on function public.send_message_unchecked(bigint, text, text, text, jsonb)
+  from public, anon, authenticated;
+
+create or replace function public.send_message(
+  p_conversation_id bigint, p_kind text default 'text', p_body text default '',
+  p_media_url text default null, p_meta jsonb default '{}'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  photo_limit constant int := 2;
+  window_ms constant bigint := 24 * 60 * 60 * 1000;
+  recent_photos int;
+  next_allowed_ms bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if p_kind = 'video' then
+    perform public.crushly_fail(403, 'video_not_allowed',
+      'Whispers carry photos and voice notes. Send a photo instead.');
+  end if;
+
+  if p_kind = 'photo' then
+    select count(*) into recent_photos
+      from messages m
+     where m.sender_id = me
+       and m.kind = 'photo'
+       and m.created_at > public.now_ms() - window_ms;
+
+    if recent_photos >= photo_limit then
+      -- Tell the member when the oldest of their photos falls out of the
+      -- window, so the refusal is a fact they can act on rather than a wall.
+      select min(m.created_at) + window_ms into next_allowed_ms
+        from messages m
+       where m.sender_id = me
+         and m.kind = 'photo'
+         and m.created_at > public.now_ms() - window_ms;
+      perform public.crushly_fail(429, 'photo_limit',
+        format('You can send %s photos a day. The next one is free in about %s hours.',
+               photo_limit,
+               greatest(1, ceil((next_allowed_ms - public.now_ms()) / 3600000.0)::int)));
+    end if;
+  end if;
+
+  return public.send_message_unchecked(p_conversation_id, p_kind, p_body, p_media_url, p_meta);
+end $$;
+
+revoke all on function public.send_message(bigint, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.send_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+
+-- The count above runs on every photo send, so it needs its index. Partial,
+-- because only photo rows are ever counted and they are a small share of a
+-- conversation.
+create index if not exists messages_photos_by_sender_idx
+  on public.messages (sender_id, created_at)
+  where kind = 'photo';
+
+comment on function public.send_message(bigint, text, text, text, jsonb) is
+  'Sends a Whisper. Refuses video, and refuses a third photo within 24 hours.';
+
+-- ================================ 20261113160000_permanent_deletion.sql
+
+-- Deleting a post or a file deletes it everywhere. No tombstones, no orphans.
+--
+-- The promise the app makes — "it disappears for everyone, right away" — was
+-- only ever kept in the database. Three separate leaks made it false at the
+-- storage layer, and all three are fixed here:
+--
+--   1. `delete_post` removed the row. Nothing removed the file. A deleted post's
+--      photo or clip stayed in the bucket forever, fetchable by anyone who still
+--      held the link.
+--   2. `cleanup_expired_moments` deliberately skipped *absolute* URLs, on the
+--      reasoning that the bucket's lifecycle rule would deal with them. That is
+--      true for Moments written to R2 — the `moments/` rule does expire them —
+--      but nothing expires anything in B2, where every Moment written before the
+--      move lives. Those files were kept by nobody and deleted by nothing.
+--   3. `delete_account` removed the auth user and cascaded the rows. Every photo,
+--      Moment, Whisper attachment and post media of that person stayed behind,
+--      nameless, in the bucket.
+--
+-- The shape of the fix is a queue, not a fire-and-forget call. A client cannot be
+-- trusted to finish a deletion: the app can be killed between the row going and
+-- the file going, and an older install has no idea this step exists. So the
+-- database writes down what must be deleted, inside the same transaction that
+-- deletes the row, and a drain empties the queue afterwards. If the queue cannot
+-- be emptied — no Worker, no credential — the intent is still recorded, and the
+-- next run picks it up.
+
+create table if not exists public.media_deletions (
+  path        text primary key,
+  reason      text not null,
+  created_at  bigint not null default public.now_ms(),
+  attempts    int not null default 0,
+  last_error  text,
+  deleted_at  bigint
+);
+
+create index if not exists media_deletions_pending_idx
+  on public.media_deletions (created_at)
+  where deleted_at is null;
+
+alter table public.media_deletions enable row level security;
+-- Nothing but the service role touches this table: it is a work list, not a
+-- record a member has any business reading.
+
+/**
+ * Write down a file that must go.
+ *
+ * Accepts any of the shapes a media reference takes — a Worker URL, a Supabase
+ * public URL, a bare path — and reduces it to the object key, because that is
+ * what both stores are addressed by. Anything that is not ours (a remote URL, a
+ * data URI, a file still only on somebody's phone) is ignored rather than
+ * queued, so a drain can never be talked into deleting an arbitrary key.
+ */
+create or replace function public.queue_media_deletion(p_ref text, p_reason text)
+returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_path text := nullif(btrim(coalesce(public.media_object_path(p_ref), '')), '');
+  v_kind text;
+begin
+  if v_path is null then return; end if;
+
+  -- Only the six kinds the uploader mints. A path that does not start with one
+  -- of them never came from this app, and is not ours to delete.
+  v_kind := split_part(ltrim(v_path, '/'), '/', 1);
+  if v_kind not in ('photos', 'moments', 'messages', 'posts', 'circles', 'banners') then
+    return;
+  end if;
+
+  insert into public.media_deletions (path, reason)
+  values (ltrim(v_path, '/'), coalesce(nullif(btrim(coalesce(p_reason, '')), ''), 'deleted'))
+  on conflict (path) do nothing;
+end $$;
+
+-- ------------------------------------------------------------------ the posts
+
+create or replace function public.delete_post(p_post_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  v_path text;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select media_url into v_path
+    from posts where id = p_post_id and author_id = me;
+
+  /*
+   * The row and the work item go together or not at all.
+   *
+   * If the delete below rolls back, so does the queue entry — there is no
+   * version of this where a file is deleted for a post that still exists.
+   */
+  if v_path is not null and btrim(v_path) <> '' then
+    perform public.queue_media_deletion(v_path, 'post_deleted');
+  end if;
+
+  delete from posts where id = p_post_id and author_id = me;
+  return found;
+end $$;
+
+revoke all on function public.delete_post(bigint) from public, anon, authenticated;
+grant execute on function public.delete_post(bigint) to authenticated, service_role;
+
+-- ------------------------------------------------------------------ the Moments
+
+create or replace function public.delete_moment(p_moment_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  m public.moments;
+begin
+  select * into m from moments mo where mo.id = p_moment_id and mo.user_id = me;
+  if not found then
+    perform public.crushly_fail(404, '', 'Moment not found.');
+  end if;
+
+  perform public.queue_media_deletion(m.media_url, 'moment_deleted');
+  delete from moments mo where mo.id = m.id;
+  return true;
+end $$;
+
+revoke all on function public.delete_moment(bigint) from public, anon, authenticated;
+grant execute on function public.delete_moment(bigint) to authenticated, service_role;
+
+/**
+ * Expired Moments, including the ones in the object store.
+ *
+ * The previous version deleted Supabase Storage objects and left every absolute
+ * URL to a lifecycle rule that only exists for `moments/` in R2. Everything
+ * written before the move — which is nearly all of it — was skipped, so an
+ * expired Moment's row went and its file did not.
+ */
+create or replace function public.cleanup_expired_moments(p_limit int default 500)
+returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  v_row record;
+  v_deleted int := 0;
+begin
+  for v_row in
+    select id, media_url
+      from public.moments
+     where expires_at <= public.now_ms()
+     order by expires_at
+     limit greatest(coalesce(p_limit, 500), 1)
+  loop
+    begin
+      perform public.queue_media_deletion(v_row.media_url, 'moment_expired');
+      delete from public.moments m where m.id = v_row.id;
+      v_deleted := v_deleted + 1;
+    exception when others then
+      -- One bad row must never stop the sweep, and must never be silent.
+      insert into public.media_cleanup_log (media_path, reason, ok, detail)
+        values (coalesce(v_row.media_url, ''), 'moment_row', false, sqlerrm);
+    end;
+  end loop;
+
+  return v_deleted;
+end $$;
+
+revoke all on function public.cleanup_expired_moments(int) from public, anon, authenticated;
+grant execute on function public.cleanup_expired_moments(int) to service_role;
+
+-- ------------------------------------------------------------- closing a Space
+
+/**
+ * Everything this member ever uploaded, queued before the account goes.
+ *
+ * `delete_account` removes the auth user, and the cascades take every row with
+ * it — which means that after this call there is nothing left to say *which*
+ * files belonged to them. So the list is written down first, while the rows are
+ * still there to be read.
+ */
+create or replace function public.queue_all_member_media(p_user bigint, p_reason text default 'account_deleted')
+returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  n int := 0;
+begin
+  if p_user is null then return 0; end if;
+
+  perform public.queue_media_deletion(url, p_reason) from public.photos where user_id = p_user;
+  perform public.queue_media_deletion(media_url, p_reason) from public.moments where user_id = p_user;
+  perform public.queue_media_deletion(media_url, p_reason) from public.messages where sender_id = p_user;
+  perform public.queue_media_deletion(media_url, p_reason) from public.posts where author_id = p_user;
+  perform public.queue_media_deletion(url, p_reason) from public.profile_banners where profile_id = p_user;
+  select count(*) into n from public.media_deletions where deleted_at is null and reason = p_reason;
+  return n;
+end $$;
+
+revoke all on function public.queue_all_member_media(bigint, text) from public, anon, authenticated;
+grant execute on function public.queue_all_member_media(bigint, text) to service_role;
+
+create or replace function public.delete_account(p_password text) returns boolean
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  me uuid := auth.uid();
+  encrypted text;
+  profile bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  select u.encrypted_password into encrypted from auth.users u where u.id = me;
+  if encrypted is null or extensions.crypt(coalesce(p_password, ''), encrypted) <> encrypted then
+    perform public.crushly_fail(403, '', 'Enter your password to delete your account.');
+  end if;
+
+  -- Before the cascade: after it, their files are unattributable.
+  select id into profile from public.profiles where auth_user_id = me;
+  perform public.queue_all_member_media(profile, 'account_deleted');
+
+  delete from auth.users u where u.id = me;
+  return true;
+end $$;
+
+revoke all on function public.delete_account(text) from public, anon, authenticated;
+grant execute on function public.delete_account(text) to authenticated, service_role;
+
+-- ------------------------------------------------------------------- the drain
+--
+-- The Worker cannot read this table — it holds no service key, on purpose — so
+-- the workflow reads a batch with the database credential it already has, hands
+-- the paths to the Worker, and marks what the Worker confirmed.
+
+create or replace function public.media_deletion_batch(p_limit int default 200)
+returns table (path text, reason text)
+language sql stable security definer set search_path = public as $$
+  select d.path, d.reason
+    from public.media_deletions d
+   where d.deleted_at is null
+   order by d.created_at
+   limit greatest(coalesce(p_limit, 200), 1)
+$$;
+
+create or replace function public.media_deletion_result(p_path text, p_ok boolean, p_error text default null)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.media_deletions d
+     set attempts = d.attempts + 1,
+         last_error = case when p_ok then null else coalesce(p_error, 'delete failed') end,
+         deleted_at = case when p_ok then public.now_ms() else d.deleted_at end
+   where d.path = p_path;
+end $$;
+
+revoke all on function public.media_deletion_batch(int) from public, anon, authenticated;
+revoke all on function public.media_deletion_result(text, boolean, text) from public, anon, authenticated;
+grant execute on function public.media_deletion_batch(int) to service_role;
+grant execute on function public.media_deletion_result(text, boolean, text) to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261113180000_delete_whisper_message.sql
+
+-- Deleting a Whisper message.
+--
+-- There was no delete. Long-pressing a message offered reactions, "Copy text"
+-- and "Flag this Whisper" — and nothing else, for anybody, on any message. The
+-- owner asked for deleting that reaches the server, so this is the whole path:
+-- the row, the file behind it, and the other person's screen.
+--
+-- Three decisions worth writing down:
+--
+--   1. Only the sender may delete, and it deletes for both of them. A message
+--      that stayed visible on the recipient's phone would not be deleted, and a
+--      recipient who could delete would be able to edit a conversation they did
+--      not write.
+--
+--   2. There is no time limit. "Delete for everyone" windows exist so a message
+--      cannot be quietly rewritten after it was read; but this app already
+--      promises a member control over their own content, and a Whisper that
+--      cannot be taken back is the thing people complain about. The row and the
+--      file both go.
+--
+--   3. Deleting a photo does NOT give the day's allowance back. The limit would
+--      otherwise be a formality: send two, delete two, send two more. So the
+--      count comes from a ledger that outlives the message.
+
+-- ------------------------------------------------------------------ the ledger
+--
+-- One row per photo sent. Written in the same call that sends the photo, read by
+-- the limit, and never touched by a delete — that is the entire point of it.
+create table if not exists public.whisper_photo_ledger (
+  message_id  bigint primary key,
+  sender_id   bigint not null references public.profiles(id) on delete cascade,
+  created_at  bigint not null default public.now_ms()
+);
+create index if not exists whisper_photo_ledger_sender_idx
+  on public.whisper_photo_ledger (sender_id, created_at);
+
+alter table public.whisper_photo_ledger enable row level security;
+
+-- Photos sent before this ledger existed still count. Without this backfill the
+-- first deploy would hand everybody a fresh two.
+insert into public.whisper_photo_ledger (message_id, sender_id, created_at)
+select m.id, m.sender_id, m.created_at
+  from public.messages m
+ where m.kind = 'photo'
+on conflict (message_id) do nothing;
+
+-- ------------------------------------------------------------ the send wrapper
+--
+-- Same two guards as before — no video, two photos a day — but the count now
+-- comes from the ledger rather than from the messages table, so deleting a photo
+-- no longer buys another one.
+
+create or replace function public.send_message(
+  p_conversation_id bigint, p_kind text default 'text', p_body text default '',
+  p_media_url text default null, p_meta jsonb default '{}'
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  photo_limit constant int := 2;
+  window_ms constant bigint := 24 * 60 * 60 * 1000;
+  recent_photos int;
+  next_allowed_ms bigint;
+  saved jsonb;
+  new_id bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if p_kind = 'video' then
+    perform public.crushly_fail(403, 'video_not_allowed',
+      'Whispers carry photos and voice notes. Send a photo instead.');
+  end if;
+
+  if p_kind = 'photo' then
+    select count(*) into recent_photos
+      from public.whisper_photo_ledger l
+     where l.sender_id = me
+       and l.created_at > public.now_ms() - window_ms;
+
+    if recent_photos >= photo_limit then
+      select min(l.created_at) + window_ms into next_allowed_ms
+        from public.whisper_photo_ledger l
+       where l.sender_id = me
+         and l.created_at > public.now_ms() - window_ms;
+      perform public.crushly_fail(429, 'photo_limit',
+        format('You can send %s photos a day. The next one is free in about %s hours.',
+               photo_limit,
+               greatest(1, ceil((next_allowed_ms - public.now_ms()) / 3600000.0)::int)));
+    end if;
+  end if;
+
+  saved := public.send_message_unchecked(p_conversation_id, p_kind, p_body, p_media_url, p_meta);
+
+  -- The ledger is written only once the message really exists, so a refused send
+  -- never costs a photo.
+  if p_kind = 'photo' then
+    new_id := (saved ->> 'id')::bigint;
+    insert into public.whisper_photo_ledger (message_id, sender_id)
+    values (new_id, me)
+    on conflict (message_id) do nothing;
+  end if;
+
+  return saved;
+end $$;
+
+revoke all on function public.send_message(bigint, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.send_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+
+-- ------------------------------------------------------------------- deleting
+
+create or replace function public.delete_message(p_message_id bigint)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  m public.messages;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select * into m from public.messages msg where msg.id = p_message_id;
+  if not found then
+    perform public.crushly_fail(404, '', 'That Whisper is already gone.');
+  end if;
+
+  -- Not "not found": the message exists and this member may not touch it. Saying
+  -- so is the difference between a bug report and a bug.
+  if m.sender_id <> me then
+    perform public.crushly_fail(403, 'not_your_message', 'You can only delete your own Whisper.');
+  end if;
+
+  -- Queued in the same transaction as the delete: a photo or voice note left in
+  -- the bucket would be a message that is gone from the thread and still
+  -- reachable by anybody holding its URL.
+  perform public.queue_media_deletion(m.media_url, 'message_deleted');
+
+  delete from public.messages msg where msg.id = m.id;
+  return true;
+end $$;
+
+revoke all on function public.delete_message(bigint) from public, anon, authenticated;
+grant execute on function public.delete_message(bigint) to authenticated, service_role;
+
+comment on function public.delete_message(bigint) is
+  'Deletes one of your own Whispers — the row, and the file behind it.';
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261115120000_marked_copy_is_the_uploaded_file.sql
+
+-- The saved copy a member is given has to be the copy the database points at.
+--
+-- The report: tap Save on a clip, and the media host answers
+--
+--   {"error":"The saved copy of this clip isn't ready yet. Try again in a minute."}
+--
+-- forever. Not "in a minute" — every time, for that clip, for good.
+--
+-- Why. Screen side, the mark is produced on the phone before the upload, and the
+-- app then registered a `post_downloads` row pointing at
+--
+--   posts/<uid>/<ts>-marked.mp4
+--
+-- derived from `posts.media_url`. But an upload through the media Worker does not
+-- choose its own object key: `media_upload_ticket` mints one
+-- (`posts/<uid>/<ts>-<hash>.mp4`) so a client can never name a path in the
+-- bucket. The marked file was therefore written somewhere real, and the row
+-- pointed at somewhere that never existed. `/d/<post id>` looked up the row,
+-- found a key, asked both stores for it, got nothing, and said "not ready yet".
+--
+-- The second half was worse. `posts_needing_download` skipped any post that
+-- already had a row — so the row that was wrong was also the reason the marking
+-- job never came back to fix it. A clip could not be saved, and nothing was ever
+-- going to change that.
+--
+-- The fix, in this file:
+--
+--   * `register_own_post_download` now takes the address the marked copy was
+--     actually uploaded to, and stores the key of *that* object. A row can no
+--     longer describe a file that was never written. Without an address it
+--     refuses, so an older app that cannot say where the file went leaves no row
+--     at all — the job then makes the copy, which is the truth this feature
+--     needs rather than a Save button that always fails.
+--   * the address must live under `posts/<this member>/`, so a modified app can
+--     only ever point its own post's Save at its own folder — never at another
+--     member's media, and never at the APK channel.
+--   * a row with no `bytes` is a row nobody has confirmed. The marking job now
+--     gets those back (`posts_needing_download`), checks whether the object is
+--     really there, and either records its size or makes the copy properly.
+
+/**
+ * `register_own_post_download`, with the address of the file that was uploaded.
+ *
+ * Old signature (post id only) is replaced rather than overloaded: a row derived
+ * from `posts.media_url` is exactly the bug this migration exists to remove, and
+ * leaving the old path callable means leaving the bug reachable.
+ */
+drop function if exists public.register_own_post_download(bigint);
+
+create or replace function public.register_own_post_download(
+  p_post_id bigint,
+  p_marked_url text default null
+)
+returns boolean
+language plpgsql
+volatile security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  key text;
+  original text;
+begin
+  if me is null then
+    return false;                      -- signed out: nothing to own
+  end if;
+
+  -- The post must be mine AND a clip.
+  select public.media_object_key(media_url)
+    into original
+    from posts
+   where id = p_post_id
+     and author_id = me
+     and media_url ~* '\.(mp4|mov|m4v|webm)([?#].*)?$';
+
+  if original is null then
+    return false;                      -- not mine, not a clip, or no file
+  end if;
+
+  /*
+   * No address, no row.
+   *
+   * This is the whole point of the parameter. The previous version guessed the
+   * key, and the guess is what every broken Save button in the app was made of.
+   */
+  if p_marked_url is null or p_marked_url = '' then
+    return false;
+  end if;
+
+  key := public.media_object_key(p_marked_url);
+
+  /*
+   * The address has to be this member's own media.
+   *
+   * A key outside `posts/<me>/` is refused rather than rewritten: rewriting it
+   * would silently register a different file than the one served, which is the
+   * same class of mistake as the guess this function just stopped making.
+   */
+  if key is null
+     or key !~ ('^posts/' || me::text || '/')
+     or key !~* '\.(mp4|mov|m4v|webm)$'
+     or key = original then
+    return false;
+  end if;
+
+  insert into post_downloads (post_id, object_key, bytes)
+  values (p_post_id, key, null)
+  on conflict (post_id) do update
+    set object_key = excluded.object_key,
+        bytes = null,
+        created_at = public.now_ms();
+
+  return true;
+end $function$;
+
+revoke all on function public.register_own_post_download(bigint, text) from public, anon;
+grant execute on function public.register_own_post_download(bigint, text) to authenticated;
+
+/**
+ * What the marking job should look at.
+ *
+ * Two kinds of post:
+ *
+ *   · no copy at all — as before;
+ *   · a copy nobody has verified — `bytes` is null, which is what every row
+ *     written by the app looks like. The job checks the object first and only
+ *     re-marks when it really is missing, so this does not re-encode clips that
+ *     were fine.
+ *
+ * Ordered oldest first so a backlog drains instead of the newest clips always
+ * winning, and capped so one run cannot become an hour of ffmpeg.
+ */
+create or replace function public.posts_needing_download(p_limit integer default 20)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  -- Service role calls carry no member id; a member's call does, and is refused.
+  if me is not null then
+    return null;
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', p.id,
+      'mediaUrl', p.media_url,
+      'authorId', p.author_id,
+      'unverified', p.unverified
+    ) order by p.id)
+    from (
+      select po.id, po.media_url, po.author_id, (pd.bytes is null) as unverified
+      from posts po
+      left join post_downloads pd on pd.post_id = po.id
+      where po.media_url ~* '\.(mp4|webm|mov|m4v)(\?|$)'
+        and (pd.post_id is null or pd.bytes is null)
+      order by po.id
+      limit greatest(1, least(coalesce(p_limit, 20), 100))
+    ) p
+  ), '[]'::jsonb);
+end $function$;
+
+revoke all on function public.posts_needing_download(integer) from public, anon, authenticated;
+grant execute on function public.posts_needing_download(integer) to service_role;
+
+comment on function public.posts_needing_download(integer) is
+  'Clips with no marked copy, or with one the app registered but nothing confirmed (bytes is null).';
+
+-- ================================ 20261116190000_push_notifications.sql
+
+-- Push notifications: the table that remembers a phone, and the trigger that
+-- wakes the sender.
+--
+-- Until now the app could only tell somebody about a Whisper while it was open,
+-- because a closed app is not running to ask. Android's answer to that is FCM: the
+-- server hands a message to Google, Google wakes the phone. That needs two things
+-- this migration provides — somewhere to keep each phone's token, and a trigger
+-- that tells the `push-dispatch` function the moment something arrives.
+--
+-- Deliberately no new event model: it hangs off the `notifications` and
+-- `messages` rows that already exist. If a row is not there, nobody is told.
+
+/* ------------------------------------------------------------- device tokens */
+
+create table if not exists public.device_tokens (
+  id          bigserial primary key,
+  profile_id  bigint not null references public.profiles (id) on delete cascade,
+  -- The FCM registration token. Unique: the same phone re-registering after a
+  -- reinstall must update the row, not create a second one that never gets cleaned.
+  token       text not null unique,
+  platform    text not null default 'android',
+  -- Which chime this phone has chosen, so a notification that arrives while the
+  -- app is closed plays the sound its owner picked rather than a default.
+  sound       text,
+  created_at  bigint not null,
+  updated_at  bigint not null
+);
+
+create index if not exists device_tokens_profile_idx on public.device_tokens (profile_id);
+
+alter table public.device_tokens enable row level security;
+
+drop policy if exists device_tokens_own on public.device_tokens;
+create policy device_tokens_own on public.device_tokens
+  for all to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid()))
+  with check (profile_id in (select id from public.profiles where auth_user_id = auth.uid()));
+
+grant select, insert, update, delete on public.device_tokens to authenticated;
+grant usage, select on sequence public.device_tokens_id_seq to authenticated;
+
+-- The app never needs to know its own profile id to register a phone, and a
+-- function that resolves it server-side cannot be talked into registering a token
+-- against somebody else's account.
+create or replace function public.register_device_token(
+  p_token text,
+  p_platform text default 'android',
+  p_sound text default null
+) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_profile bigint;
+  v_now bigint := (extract(epoch from now()) * 1000)::bigint;
+begin
+  if p_token is null or length(p_token) < 20 then
+    raise exception 'invalid device token';
+  end if;
+  select id into v_profile from public.profiles where auth_user_id = auth.uid();
+  if v_profile is null then
+    raise exception 'no profile for this session';
+  end if;
+  insert into public.device_tokens as d (profile_id, token, platform, sound, created_at, updated_at)
+  values (v_profile, p_token, coalesce(nullif(p_platform, ''), 'android'), p_sound, v_now, v_now)
+  on conflict (token) do update set
+    profile_id = excluded.profile_id,
+    platform   = excluded.platform,
+    sound      = coalesce(excluded.sound, d.sound),
+    updated_at = excluded.updated_at;
+end $$;
+
+create or replace function public.set_device_sound(p_token text, p_sound text)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.device_tokens d set sound = p_sound, updated_at = (extract(epoch from now()) * 1000)::bigint
+  where d.token = p_token
+    and d.profile_id in (select id from public.profiles where auth_user_id = auth.uid());
+end $$;
+
+create or replace function public.unregister_device_token(p_token text)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.device_tokens d
+  where d.token = p_token
+    and d.profile_id in (select id from public.profiles where auth_user_id = auth.uid());
+end $$;
+
+revoke all on function public.register_device_token(text, text, text) from public, anon;
+revoke all on function public.set_device_sound(text, text) from public, anon;
+revoke all on function public.unregister_device_token(text) from public, anon;
+grant execute on function public.register_device_token(text, text, text) to authenticated;
+grant execute on function public.set_device_sound(text, text) to authenticated;
+grant execute on function public.unregister_device_token(text) to authenticated;
+
+/* ---------------------------------------------------------------- dispatch */
+
+-- Every send is recorded. A push system that cannot be inspected is one that is
+-- "working" right up until somebody says it never arrived.
+create table if not exists public.push_attempts (
+  id           bigserial primary key,
+  created_at   bigint not null default (extract(epoch from now()) * 1000)::bigint,
+  recipient_id bigint,
+  source       text,
+  record_id    bigint,
+  title        text,
+  body         text,
+  sent         int not null default 0,
+  failed       int not null default 0,
+  note         text
+);
+
+alter table public.push_attempts enable row level security;
+revoke all on public.push_attempts from anon, authenticated;
+
+-- Where to call and with what. Server-only: no grants to anon/authenticated, so
+-- the dispatch key cannot be read by a client even if a policy were misconfigured.
+create table if not exists public.push_config (
+  id           int primary key default 1,
+  dispatch_url text not null,
+  dispatch_key text not null,
+  enabled      boolean not null default true
+);
+-- The service account lives here as well as (optionally) in an environment
+-- variable, because this is a store the project can actually write to. RLS plus a
+-- full revoke keeps it as unreachable from a client as any secret.
+alter table public.push_config add column if not exists fcm_service_account jsonb;
+alter table public.push_config add column if not exists fcm_account_id text;
+alter table public.push_config enable row level security;
+revoke all on public.push_config from anon, authenticated;
+
+-- `pg_net` is what the trigger uses to make the HTTP call. It is present on Supabase
+-- and absent from a bare Postgres, which is what CI applies these migrations to —
+-- so its absence must not fail the migration. Without it the trigger still compiles
+-- and simply returns early, and the app's own poll keeps working.
+do $$
+begin
+  create extension if not exists pg_net;
+exception when others then
+  raise notice 'pg_net unavailable (%): push trigger will not queue', sqlerrm;
+end $$;
+
+-- One trigger function for both tables: it does not decide anything about who is
+-- told or what it says — that judgement lives in `push-dispatch`, where it can be
+-- changed without a migration.
+create or replace function public.push_dispatch_trigger()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  v_url text;
+  v_key text;
+  v_on  boolean;
+begin
+  select dispatch_url, dispatch_key, enabled into v_url, v_key, v_on from public.push_config where id = 1;
+  if v_url is null or v_key is null or v_on is not true then
+    return new;
+  end if;
+  begin
+    perform net.http_post(
+      url := v_url,
+      body := jsonb_build_object(
+        'source', tg_table_name,
+        'record', to_jsonb(new)
+      ),
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer ' || v_key
+      ),
+      timeout_milliseconds := 5000
+    );
+  exception when others then
+    -- A push that cannot be queued must never block the Whisper it was about.
+    insert into public.push_attempts (source, record_id, failed, note)
+    values (tg_table_name, (to_jsonb(new) ->> 'id')::bigint, 1, 'queue failed: ' || sqlerrm);
+  end;
+  return new;
+end $$;
+
+drop trigger if exists push_on_notification on public.notifications;
+create trigger push_on_notification
+  after insert on public.notifications
+  for each row execute function public.push_dispatch_trigger();
+
+drop trigger if exists push_on_message on public.messages;
+create trigger push_on_message
+  after insert on public.messages
+  for each row execute function public.push_dispatch_trigger();
+
+/* ------------------------------------------------------- google sign-up name */
+
+-- A Google sign-up arrives with a name already (raw_user_meta_data.full_name). It
+-- was being thrown away, so a new member met an empty name field in onboarding.
+-- Kept here so a fresh database matches production.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_id bigint;
+  v_name text;
+begin
+  v_name := coalesce(
+    nullif(btrim(new.raw_user_meta_data->>'full_name'), ''),
+    nullif(btrim(new.raw_user_meta_data->>'name'), ''),
+    ''
+  );
+  insert into profiles (auth_user_id, email, name, created_at, updated_at, last_active_at)
+  values (new.id, coalesce(new.email, ''), v_name, public.now_ms(), public.now_ms(), public.now_ms())
+  returning id into new_id;
+  insert into preferences (user_id) values (new_id);
+  insert into privacy (user_id) values (new_id);
+  insert into notification_settings (user_id) values (new_id);
+  return new;
+end $$;
+
+-- ================================ 20261117080000_platform_console_tables.sql
+
+-- ============================================================================
+-- Platform console, advertising and payments tables — baseline
+-- ============================================================================
+-- These nine tables exist in the live project but were never written into the
+-- migrations directory: they were created directly against the database while
+-- the Control Centre was being built. The effect was invisible in production and
+-- fatal to the repository's own test suite, which builds a database from the
+-- migrations and therefore had no holup_admin_members to alter.
+--
+-- This file records them as they already are — column names, types, defaults,
+-- keys, foreign keys and check constraints taken from the live catalogue — so
+-- that a database built from this repository matches the one that is running.
+--
+-- Everything here is `if not exists`, so applying it to the live project changes
+-- nothing. Columns added later by the Sponsored Flow migration are deliberately
+-- NOT included here: that migration adds them, and including them in both places
+-- would mean the baseline disagrees with itself over time.
+-- ============================================================================
+
+-- ------------------------------------------------------------- identities ---
+alter table public.profiles
+  add column if not exists country_code         text,
+  add column if not exists country_source       text,
+  add column if not exists country_verified_at  bigint,
+  add column if not exists lat                  double precision,
+  add column if not exists lng                  double precision;
+
+-- The administrator allowlist the Control Centre reads.
+create table if not exists public.holup_admins (
+  auth_user_id uuid primary key,
+  created_at   bigint not null default public.now_ms()
+);
+
+-- Administrator membership, with a role and per-member permissions.
+create table if not exists public.holup_admin_members (
+  auth_user_id uuid primary key,
+  email        text,
+  display_name text,
+  role         text not null default 'administrator',
+  permissions  jsonb not null default '{}'::jsonb,
+  status       text not null default 'active',
+  invited_by   uuid,
+  invited_at   bigint,
+  accepted_at  bigint,
+  last_seen_at bigint,
+  created_at   bigint not null default public.now_ms(),
+  updated_at   bigint not null default public.now_ms()
+);
+
+alter table public.holup_admin_members drop constraint if exists holup_admin_members_status_check;
+alter table public.holup_admin_members
+  add constraint holup_admin_members_status_check check (status in ('active','suspended'));
+
+-- The role vocabulary. The HGRI RBAC migration replaces this with a constraint
+-- that also carries the security/monetisation/advertising/analytics roles; both
+-- files agree on the five roles the console already used.
+alter table public.holup_admin_members drop constraint if exists holup_admin_members_role_check;
+alter table public.holup_admin_members
+  add constraint holup_admin_members_role_check check (role in (
+    'super_admin','administrator','verification_officer','moderator','analyst','support_officer',
+    'security_admin','fraud_investigator','monetisation_admin','advertising_admin','analytics_admin'));
+
+-- Append-only audit trail for administrative actions. Every `holup_cc_*` action
+-- and every HGRI admin function writes here.
+create table if not exists public.holup_admin_audit (
+  id          bigserial primary key,
+  actor       uuid,
+  actor_email text,
+  actor_label text,
+  actor_role  text,
+  module      text not null,
+  action      text not null,
+  target_type text,
+  target_id   text,
+  before      jsonb,
+  after       jsonb,
+  result      text not null default 'success',
+  detail      text,
+  ip          text,
+  user_agent  text,
+  created_at  bigint not null default public.now_ms()
+);
+create index if not exists holup_admin_audit_created_idx on public.holup_admin_audit (created_at desc);
+create index if not exists holup_admin_audit_actor_idx on public.holup_admin_audit (actor, created_at desc);
+
+-- Enforcement actions taken against a member's account.
+create table if not exists public.holup_account_actions (
+  id          bigserial primary key,
+  member_id   bigint not null references public.profiles(id) on delete cascade,
+  action      text not null,
+  reason      text,
+  until_at    bigint,
+  detail      jsonb,
+  actor       uuid,
+  actor_label text,
+  created_at  bigint not null default public.now_ms(),
+  reverted_at bigint,
+  reverted_by uuid
+);
+alter table public.holup_account_actions drop constraint if exists holup_account_actions_action_check;
+alter table public.holup_account_actions
+  add constraint holup_account_actions_action_check check (action in
+    ('restrict','suspend','ban','restore','warn','unrestrict'));
+create index if not exists holup_account_actions_member_idx on public.holup_account_actions (member_id, created_at desc);
+
+-- ------------------------------------------------------------ advertising ---
+create table if not exists public.holup_advertisers (
+  id            bigserial primary key,
+  name          text not null,
+  contact_email text,
+  status        text not null default 'pending',
+  notes         text,
+  created_by    uuid,
+  created_at    bigint not null default public.now_ms()
+);
+alter table public.holup_advertisers drop constraint if exists holup_advertisers_status_check;
+alter table public.holup_advertisers
+  add constraint holup_advertisers_status_check check (status in ('pending','active','suspended'));
+
+create table if not exists public.holup_ad_campaigns (
+  id           bigserial primary key,
+  advertiser_id bigint references public.holup_advertisers(id) on delete set null,
+  name         text not null,
+  objective    text,
+  status       text not null default 'draft',
+  budget_minor bigint not null default 0,
+  currency     text not null default 'NGN',
+  starts_at    bigint,
+  ends_at      bigint,
+  creative_url text,
+  targeting    jsonb,
+  impressions  bigint not null default 0,
+  clicks       bigint not null default 0,
+  created_by   uuid,
+  created_at   bigint not null default public.now_ms(),
+  updated_at   bigint
+);
+-- The lifecycle vocabulary is lowercase, and the Sponsored Flow migration uses
+-- the same words rather than adding an 'ACTIVE' variant alongside it.
+alter table public.holup_ad_campaigns drop constraint if exists holup_ad_campaigns_status_check;
+alter table public.holup_ad_campaigns
+  add constraint holup_ad_campaigns_status_check check (status in
+    ('draft','pending_review','scheduled','running','paused','completed','rejected','disabled'));
+
+-- Single-row switch for the advertising module as a whole.
+create table if not exists public.holup_ads_settings (
+  singleton  boolean primary key default true,
+  enabled    boolean not null default false,
+  notes      text,
+  updated_by uuid,
+  updated_at bigint,
+  constraint holup_ads_settings_singleton_check check (singleton)
+);
+insert into public.holup_ads_settings (singleton) values (true) on conflict (singleton) do nothing;
+
+-- --------------------------------------------------------------- payments ---
+-- Which providers exist, and whether they are actually connected. `status` is
+-- the honest field: everything starts at not_configured and nothing is presented
+-- as working until it is not.
+create table if not exists public.holup_payment_providers (
+  key             text primary key,
+  label           text not null,
+  status          text not null default 'not_configured',
+  supports_payouts boolean not null default false,
+  notes           text,
+  updated_by      uuid,
+  updated_at      bigint not null default public.now_ms()
+);
+alter table public.holup_payment_providers drop constraint if exists holup_payment_providers_status_check;
+alter table public.holup_payment_providers
+  add constraint holup_payment_providers_status_check check (status in
+    ('not_configured','pending_integration','sandbox','live','disabled'));
+
+insert into public.holup_payment_providers (key, label, supports_payouts) values
+  ('flutterwave', 'Flutterwave', true),
+  ('paystack', 'Paystack', true),
+  ('stripe', 'Stripe', false)
+on conflict (key) do nothing;
+
+create table if not exists public.holup_payment_settings (
+  singleton        boolean primary key default true,
+  default_currency text not null default 'NGN',
+  module_status    text not null default 'pending',
+  notes            text,
+  updated_by       uuid,
+  updated_at       bigint,
+  constraint holup_payment_settings_singleton_check check (singleton)
+);
+alter table public.holup_payment_settings drop constraint if exists holup_payment_settings_module_status_check;
+alter table public.holup_payment_settings
+  add constraint holup_payment_settings_module_status_check check (module_status in
+    ('disabled','pending','active'));
+insert into public.holup_payment_settings (singleton) values (true) on conflict (singleton) do nothing;
+
+create table if not exists public.holup_payment_transactions (
+  id             bigserial primary key,
+  provider       text not null,
+  reference      text unique,
+  user_id        bigint,
+  kind           text,
+  amount_minor   bigint not null default 0,
+  currency       text not null default 'NGN',
+  status         text not null default 'pending',
+  failure_reason text,
+  metadata       jsonb,
+  created_at     bigint not null default public.now_ms()
+);
+alter table public.holup_payment_transactions drop constraint if exists holup_payment_transactions_status_check;
+alter table public.holup_payment_transactions
+  add constraint holup_payment_transactions_status_check check (status in
+    ('pending','successful','failed','refunded','abandoned'));
+create index if not exists holup_payment_transactions_user_idx on public.holup_payment_transactions (user_id, created_at desc);
+
+-- ------------------------------------------------------------------- RLS ----
+-- These tables were reachable only through SECURITY DEFINER functions, which is
+-- why they had no policies. RLS is enabled here so that stays true even if
+-- somebody later grants table access by mistake.
+alter table public.holup_admins              enable row level security;
+alter table public.holup_admin_members        enable row level security;
+alter table public.holup_admin_audit          enable row level security;
+alter table public.holup_account_actions      enable row level security;
+alter table public.holup_advertisers          enable row level security;
+alter table public.holup_ad_campaigns         enable row level security;
+alter table public.holup_ads_settings         enable row level security;
+alter table public.holup_payment_providers    enable row level security;
+alter table public.holup_payment_settings     enable row level security;
+alter table public.holup_payment_transactions enable row level security;
+
+-- Administrators may read the console tables. Nothing is writable from a client.
+drop policy if exists holup_admin_audit_read on public.holup_admin_audit;
+create policy holup_admin_audit_read on public.holup_admin_audit
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_admin_members_read on public.holup_admin_members;
+create policy holup_admin_members_read on public.holup_admin_members
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_account_actions_read on public.holup_account_actions;
+create policy holup_account_actions_read on public.holup_account_actions
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_advertisers_read on public.holup_advertisers;
+create policy holup_advertisers_read on public.holup_advertisers
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_ad_campaigns_read on public.holup_ad_campaigns;
+create policy holup_ad_campaigns_read on public.holup_ad_campaigns
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_ads_settings_read on public.holup_ads_settings;
+create policy holup_ads_settings_read on public.holup_ads_settings
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_payment_providers_read on public.holup_payment_providers;
+create policy holup_payment_providers_read on public.holup_payment_providers
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_payment_settings_read on public.holup_payment_settings;
+create policy holup_payment_settings_read on public.holup_payment_settings
+  for select to authenticated using (public.holup_is_admin());
+
+drop policy if exists holup_payment_transactions_read on public.holup_payment_transactions;
+create policy holup_payment_transactions_read on public.holup_payment_transactions
+  for select to authenticated using (public.holup_is_admin());
+
+-- ================================ 20261117090000_hgri_regions.sql
+
+-- ============================================================================
+-- HGRI 001 — the region registry, member regions and change history
+-- ============================================================================
+-- One self-referencing table rather than four, because every level answers the
+-- same questions (code, name, parent, is it a market) and four tables would mean
+-- four sets of policies and four joins that all look alike.
+--
+--   world → continent → subregion → country
+--
+-- The registry is reference data: readable by the app so it can show why a
+-- country is or is not eligible, writable by nobody but a migration.
+--
+-- Member regions keep the declared country and the measured country apart. They
+-- are allowed to disagree — that is the whole point — and `effective_country_code`
+-- is derived from them rather than replacing either.
+-- ============================================================================
+
+create table if not exists public.holup_regions (
+  id               serial primary key,
+  level            text not null check (level in ('world','continent','subregion','country')),
+  code             text not null,
+  name             text not null,
+  iso3             text,
+  source_subregion text,
+  parent_id        integer references public.holup_regions(id) on delete restrict,
+  is_market        boolean not null default true,
+  created_at       bigint not null default public.now_ms(),
+  unique (level, code)
+);
+create index if not exists holup_regions_parent_idx on public.holup_regions (parent_id);
+create index if not exists holup_regions_level_idx on public.holup_regions (level);
+
+comment on table public.holup_regions is
+  'ISO 3166-1 countries grouped by UN M49 subregion, continent and world. Antarctica is classified but is never a market.';
+
+create table if not exists public.holup_user_regions (
+  profile_id             bigint primary key references public.profiles(id) on delete cascade,
+  -- What the member said, at sign-up or in settings.
+  selected_country_code  text,
+  -- What the last IP observation actually measured.
+  detected_country_code  text,
+  -- selected ?? detected. Never silently overwritten by a detection.
+  effective_country_code text,
+  continent              text,
+  subregion              text,
+  state_region           text,
+  city                   text,
+  timezone               text,
+  detection_method       text not null default 'IP_GEOLOCATION'
+                         check (detection_method in ('IP_GEOLOCATION','MANUAL','ACCOUNT_IMPORT','NONE')),
+  detection_confidence   smallint check (detection_confidence between 0 and 100),
+  detection_provider     text,
+  region_status          text not null default 'UNVERIFIED'
+                         check (region_status in ('IDENTIFIED','UNVERIFIED','MISMATCH','SUSPECTED_VPN','NEEDS_REVIEW')),
+  last_detected_at       bigint,
+  created_at             bigint not null default public.now_ms(),
+  updated_at             bigint not null default public.now_ms()
+);
+create index if not exists holup_user_regions_detected_idx on public.holup_user_regions (detected_country_code);
+create index if not exists holup_user_regions_effective_idx on public.holup_user_regions (effective_country_code);
+create index if not exists holup_user_regions_continent_idx on public.holup_user_regions (continent);
+
+-- Append-only. A region change is history, not a column that gets overwritten.
+create table if not exists public.holup_region_history (
+  id                    bigserial primary key,
+  profile_id            bigint not null references public.profiles(id) on delete cascade,
+  previous_country_code text,
+  new_country_code      text,
+  previous_continent    text,
+  new_continent         text,
+  reason                text not null
+                        check (reason in ('DETECTION','SELECTION','CORRECTION','TRAVEL','PROVIDER_CHANGE')),
+  detection_provider    text,
+  detection_confidence  smallint,
+  note                  text,
+  created_at            bigint not null default public.now_ms()
+);
+create index if not exists holup_region_history_profile_idx on public.holup_region_history (profile_id, created_at desc);
+
+-- --------------------------------------------------------------- helpers ---
+-- The role of the caller, read from holup_admin_members, falling back to the
+-- older holup_admins allowlist so existing administrators keep working.
+create or replace function public.holup_admin_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select m.role from holup_admin_members m where m.auth_user_id = auth.uid() and m.status = 'active'),
+    case when exists (select 1 from holup_admins a where a.auth_user_id = auth.uid()) then 'super_admin' end
+  );
+$$;
+
+create or replace function public.holup_has_admin_role(roles text[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$ select coalesce(public.holup_admin_role() = any (roles), false); $$;
+
+-- The caller's own region, for the member-facing settings screen.
+create or replace function public.holup_my_region()
+returns table (
+  selected_country_code text, detected_country_code text, effective_country_code text,
+  continent text, subregion text, region_status text, last_detected_at bigint
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select r.selected_country_code, r.detected_country_code, r.effective_country_code,
+         r.continent, r.subregion, r.region_status, r.last_detected_at
+  from holup_user_regions r
+  join profiles p on p.id = r.profile_id
+  where p.auth_user_id = auth.uid();
+$$;
+
+-- ------------------------------------------------------------------- RLS ---
+alter table public.holup_regions        enable row level security;
+alter table public.holup_user_regions   enable row level security;
+alter table public.holup_region_history enable row level security;
+
+drop policy if exists holup_regions_admin_read on public.holup_regions;
+drop policy if exists holup_regions_public_read on public.holup_regions;
+drop policy if exists holup_user_regions_admin on public.holup_user_regions;
+drop policy if exists holup_region_history_admin on public.holup_region_history;
+
+-- The world row is an implementation detail (it exists to hang continents from);
+-- nobody needs to read it.
+create policy holup_regions_public_read on public.holup_regions
+  for select to anon, authenticated
+  using (level <> 'world');
+
+create policy holup_user_regions_admin on public.holup_user_regions
+  for select to authenticated
+  using (public.holup_is_admin());
+
+create policy holup_region_history_admin on public.holup_region_history
+  for select to authenticated
+  using (public.holup_is_admin());
+
+-- No client write policies anywhere in this file: regions are written by the
+-- region-intel function using server credentials, never by a browser.
+
+grant execute on function public.holup_admin_role() to authenticated;
+grant execute on function public.holup_has_admin_role(text[]) to authenticated;
+grant execute on function public.holup_my_region() to authenticated;
+
+-- ================================ 20261117090100_hgri_region_seed.sql
+
+-- ============================================================================
+-- HGRI 002 — the region registry seed
+-- ============================================================================
+-- Source: ISO 3166-1 alpha-2 / alpha-3 country codes with their UN M49 subregion,
+-- via the mledoze/countries dataset (250 territories), grouped into seven
+-- continents. Generated rather than typed, then applied to the live project and
+-- verified at 276 rows: 1 world + 7 continents + 18 subregions + 250 countries.
+--
+-- Antarctica is inserted with is_market = false: it is classified (it is a
+-- continent, and a member can be there) but it is never an advertising market and
+-- never eligible for Creator Rewards.
+--
+-- The rows carry a parent code rather than a parent id, because ids are assigned
+-- by the database. The insert therefore runs in the order world → continent →
+-- subregion → country and resolves each parent by (level, code).
+-- ============================================================================
+
+insert into public.holup_regions (level, code, name, iso3, source_subregion, is_market, parent_id)
+select v.level, v.code, v.name, v.iso3, v.src, v.is_market, p.id
+from (values
+  ('world','WORLD','World',null,null,true,null),
+  ('continent','AF','Africa',null,null,true,'WORLD'),
+  ('continent','EU','Europe',null,null,true,'WORLD'),
+  ('continent','NA','North America',null,null,true,'WORLD'),
+  ('continent','SA','South America',null,null,true,'WORLD'),
+  ('continent','AS','Asia',null,null,true,'WORLD'),
+  ('continent','OC','Oceania',null,null,true,'WORLD'),
+  ('continent','AN','Antarctica',null,null,false,'WORLD'),
+  ('subregion','AF-East Africa','East Africa',null,'Eastern Africa',true,'AF'),
+  ('subregion','AF-West Africa','West Africa',null,'Western Africa',true,'AF'),
+  ('subregion','AF-North Africa','North Africa',null,'Northern Africa',true,'AF'),
+  ('subregion','AF-Central Africa','Central Africa',null,'Middle Africa',true,'AF'),
+  ('subregion','AF-Southern Africa','Southern Africa',null,'Southern Africa',true,'AF'),
+  ('subregion','EU-Northern Europe','Northern Europe',null,'Northern Europe',true,'EU'),
+  ('subregion','EU-Southern Europe','Southern Europe',null,'Southern Europe',true,'EU'),
+  ('subregion','EU-Eastern Europe','Eastern Europe',null,'Eastern Europe',true,'EU'),
+  ('subregion','EU-Western Europe','Western Europe',null,'Western Europe',true,'EU'),
+  ('subregion','NA-North America','North America',null,'North America',true,'NA'),
+  ('subregion','SA-South America','South America',null,'South America',true,'SA'),
+  ('subregion','AS-East Asia','East Asia',null,'Eastern Asia',true,'AS'),
+  ('subregion','AS-South Asia','South Asia',null,'Southern Asia',true,'AS'),
+  ('subregion','AS-Southeast Asia','Southeast Asia',null,'South-Eastern Asia',true,'AS'),
+  ('subregion','AS-Central Asia','Central Asia',null,'Central Asia',true,'AS'),
+  ('subregion','AS-Western Asia','Western Asia',null,'Western Asia',true,'AS'),
+  ('subregion','OC-Oceania','Oceania',null,'Australia and New Zealand',true,'OC'),
+  ('subregion','AN-Antarctica','Antarctica',null,null,false,'AN'),
+  ('country','AW','Aruba','ABW','Caribbean',true,'NA-North America'),
+  ('country','AF','Afghanistan','AFG','Southern Asia',true,'AS-South Asia'),
+  ('country','AO','Angola','AGO','Middle Africa',true,'AF-Central Africa'),
+  ('country','AI','Anguilla','AIA','Caribbean',true,'NA-North America'),
+  ('country','AX','Åland Islands','ALA','Northern Europe',true,'EU-Northern Europe'),
+  ('country','AL','Albania','ALB','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','AD','Andorra','AND','Southern Europe',true,'EU-Southern Europe'),
+  ('country','AE','United Arab Emirates','ARE','Western Asia',true,'AS-Western Asia'),
+  ('country','AR','Argentina','ARG','South America',true,'SA-South America'),
+  ('country','AM','Armenia','ARM','Western Asia',true,'AS-Western Asia'),
+  ('country','AS','American Samoa','ASM','Polynesia',true,'OC-Oceania'),
+  ('country','AQ','Antarctica','ATA',null,false,'AN-Antarctica'),
+  ('country','TF','French Southern and Antarctic Lands','ATF',null,false,'AN-Antarctica'),
+  ('country','AG','Antigua and Barbuda','ATG','Caribbean',true,'NA-North America'),
+  ('country','AU','Australia','AUS','Australia and New Zealand',true,'OC-Oceania'),
+  ('country','AT','Austria','AUT','Central Europe',true,'EU-Eastern Europe'),
+  ('country','AZ','Azerbaijan','AZE','Western Asia',true,'AS-Western Asia'),
+  ('country','BI','Burundi','BDI','Eastern Africa',true,'AF-East Africa'),
+  ('country','BE','Belgium','BEL','Western Europe',true,'EU-Western Europe'),
+  ('country','BJ','Benin','BEN','Western Africa',true,'AF-West Africa'),
+  ('country','BF','Burkina Faso','BFA','Western Africa',true,'AF-West Africa'),
+  ('country','BD','Bangladesh','BGD','Southern Asia',true,'AS-South Asia'),
+  ('country','BG','Bulgaria','BGR','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','BH','Bahrain','BHR','Western Asia',true,'AS-Western Asia'),
+  ('country','BS','Bahamas','BHS','Caribbean',true,'NA-North America'),
+  ('country','BA','Bosnia and Herzegovina','BIH','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','BL','Saint Barthélemy','BLM','Caribbean',true,'NA-North America'),
+  ('country','SH','Saint Helena, Ascension and Tristan da Cunha','SHN','Western Africa',true,'AF-West Africa'),
+  ('country','BY','Belarus','BLR','Eastern Europe',true,'EU-Eastern Europe'),
+  ('country','BZ','Belize','BLZ','Central America',true,'NA-North America'),
+  ('country','BM','Bermuda','BMU','North America',true,'NA-North America'),
+  ('country','BO','Bolivia','BOL','South America',true,'SA-South America'),
+  ('country','BQ','Caribbean Netherlands','BES','Caribbean',true,'NA-North America'),
+  ('country','BR','Brazil','BRA','South America',true,'SA-South America'),
+  ('country','BB','Barbados','BRB','Caribbean',true,'NA-North America'),
+  ('country','BN','Brunei','BRN','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','BT','Bhutan','BTN','Southern Asia',true,'AS-South Asia'),
+  ('country','BV','Bouvet Island','BVT',null,false,'AN-Antarctica'),
+  ('country','BW','Botswana','BWA','Southern Africa',true,'AF-Southern Africa'),
+  ('country','CF','Central African Republic','CAF','Middle Africa',true,'AF-Central Africa'),
+  ('country','CA','Canada','CAN','North America',true,'NA-North America'),
+  ('country','CC','Cocos (Keeling) Islands','CCK','Australia and New Zealand',true,'OC-Oceania'),
+  ('country','CH','Switzerland','CHE','Western Europe',true,'EU-Western Europe'),
+  ('country','CL','Chile','CHL','South America',true,'SA-South America'),
+  ('country','CN','China','CHN','Eastern Asia',true,'AS-East Asia'),
+  ('country','CI','Ivory Coast','CIV','Western Africa',true,'AF-West Africa'),
+  ('country','CM','Cameroon','CMR','Middle Africa',true,'AF-Central Africa'),
+  ('country','CD','DR Congo','COD','Middle Africa',true,'AF-Central Africa'),
+  ('country','CG','Congo','COG','Middle Africa',true,'AF-Central Africa'),
+  ('country','CK','Cook Islands','COK','Polynesia',true,'OC-Oceania'),
+  ('country','CO','Colombia','COL','South America',true,'SA-South America'),
+  ('country','KM','Comoros','COM','Eastern Africa',true,'AF-East Africa'),
+  ('country','CV','Cape Verde','CPV','Western Africa',true,'AF-West Africa'),
+  ('country','CR','Costa Rica','CRI','Central America',true,'NA-North America'),
+  ('country','CU','Cuba','CUB','Caribbean',true,'NA-North America'),
+  ('country','CW','Curaçao','CUW','Caribbean',true,'NA-North America'),
+  ('country','CX','Christmas Island','CXR','Australia and New Zealand',true,'OC-Oceania'),
+  ('country','KY','Cayman Islands','CYM','Caribbean',true,'NA-North America'),
+  ('country','CY','Cyprus','CYP','Southern Europe',true,'EU-Southern Europe'),
+  ('country','CZ','Czechia','CZE','Central Europe',true,'EU-Eastern Europe'),
+  ('country','DE','Germany','DEU','Western Europe',true,'EU-Western Europe'),
+  ('country','DJ','Djibouti','DJI','Eastern Africa',true,'AF-East Africa'),
+  ('country','DM','Dominica','DMA','Caribbean',true,'NA-North America'),
+  ('country','DK','Denmark','DNK','Northern Europe',true,'EU-Northern Europe'),
+  ('country','DO','Dominican Republic','DOM','Caribbean',true,'NA-North America'),
+  ('country','DZ','Algeria','DZA','Northern Africa',true,'AF-North Africa'),
+  ('country','EC','Ecuador','ECU','South America',true,'SA-South America'),
+  ('country','EG','Egypt','EGY','Northern Africa',true,'AF-North Africa'),
+  ('country','ER','Eritrea','ERI','Eastern Africa',true,'AF-East Africa'),
+  ('country','EH','Western Sahara','ESH','Northern Africa',true,'AF-North Africa'),
+  ('country','ES','Spain','ESP','Southern Europe',true,'EU-Southern Europe'),
+  ('country','EE','Estonia','EST','Northern Europe',true,'EU-Northern Europe'),
+  ('country','ET','Ethiopia','ETH','Eastern Africa',true,'AF-East Africa'),
+  ('country','FI','Finland','FIN','Northern Europe',true,'EU-Northern Europe'),
+  ('country','FJ','Fiji','FJI','Melanesia',true,'OC-Oceania'),
+  ('country','FK','Falkland Islands','FLK','South America',true,'SA-South America'),
+  ('country','FR','France','FRA','Western Europe',true,'EU-Western Europe'),
+  ('country','FO','Faroe Islands','FRO','Northern Europe',true,'EU-Northern Europe'),
+  ('country','FM','Micronesia','FSM','Micronesia',true,'OC-Oceania'),
+  ('country','GA','Gabon','GAB','Middle Africa',true,'AF-Central Africa'),
+  ('country','GB','United Kingdom','GBR','Northern Europe',true,'EU-Northern Europe'),
+  ('country','GE','Georgia','GEO','Western Asia',true,'AS-Western Asia'),
+  ('country','GG','Guernsey','GGY','Northern Europe',true,'EU-Northern Europe'),
+  ('country','GH','Ghana','GHA','Western Africa',true,'AF-West Africa'),
+  ('country','GI','Gibraltar','GIB','Southern Europe',true,'EU-Southern Europe'),
+  ('country','GN','Guinea','GIN','Western Africa',true,'AF-West Africa'),
+  ('country','GP','Guadeloupe','GLP','Caribbean',true,'NA-North America'),
+  ('country','GM','Gambia','GMB','Western Africa',true,'AF-West Africa'),
+  ('country','GW','Guinea-Bissau','GNB','Western Africa',true,'AF-West Africa'),
+  ('country','GQ','Equatorial Guinea','GNQ','Middle Africa',true,'AF-Central Africa'),
+  ('country','GR','Greece','GRC','Southern Europe',true,'EU-Southern Europe'),
+  ('country','GD','Grenada','GRD','Caribbean',true,'NA-North America'),
+  ('country','GL','Greenland','GRL','North America',true,'NA-North America'),
+  ('country','GT','Guatemala','GTM','Central America',true,'NA-North America'),
+  ('country','GF','French Guiana','GUF','South America',true,'SA-South America'),
+  ('country','GU','Guam','GUM','Micronesia',true,'OC-Oceania'),
+  ('country','GY','Guyana','GUY','South America',true,'SA-South America'),
+  ('country','HK','Hong Kong','HKG','Eastern Asia',true,'AS-East Asia'),
+  ('country','HM','Heard Island and McDonald Islands','HMD',null,false,'AN-Antarctica'),
+  ('country','HN','Honduras','HND','Central America',true,'NA-North America'),
+  ('country','HR','Croatia','HRV','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','HT','Haiti','HTI','Caribbean',true,'NA-North America'),
+  ('country','HU','Hungary','HUN','Central Europe',true,'EU-Eastern Europe'),
+  ('country','ID','Indonesia','IDN','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','IM','Isle of Man','IMN','Northern Europe',true,'EU-Northern Europe'),
+  ('country','IN','India','IND','Southern Asia',true,'AS-South Asia'),
+  ('country','IO','British Indian Ocean Territory','IOT','Eastern Africa',true,'AF-East Africa'),
+  ('country','IE','Ireland','IRL','Northern Europe',true,'EU-Northern Europe'),
+  ('country','IR','Iran','IRN','Southern Asia',true,'AS-South Asia'),
+  ('country','IQ','Iraq','IRQ','Western Asia',true,'AS-Western Asia'),
+  ('country','IS','Iceland','ISL','Northern Europe',true,'EU-Northern Europe'),
+  ('country','IL','Israel','ISR','Western Asia',true,'AS-Western Asia'),
+  ('country','IT','Italy','ITA','Southern Europe',true,'EU-Southern Europe'),
+  ('country','JM','Jamaica','JAM','Caribbean',true,'NA-North America'),
+  ('country','JE','Jersey','JEY','Northern Europe',true,'EU-Northern Europe'),
+  ('country','JO','Jordan','JOR','Western Asia',true,'AS-Western Asia'),
+  ('country','JP','Japan','JPN','Eastern Asia',true,'AS-East Asia'),
+  ('country','KZ','Kazakhstan','KAZ','Central Asia',true,'AS-Central Asia'),
+  ('country','KE','Kenya','KEN','Eastern Africa',true,'AF-East Africa'),
+  ('country','KG','Kyrgyzstan','KGZ','Central Asia',true,'AS-Central Asia'),
+  ('country','KH','Cambodia','KHM','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','KI','Kiribati','KIR','Micronesia',true,'OC-Oceania'),
+  ('country','KN','Saint Kitts and Nevis','KNA','Caribbean',true,'NA-North America'),
+  ('country','KR','South Korea','KOR','Eastern Asia',true,'AS-East Asia'),
+  ('country','XK','Kosovo','UNK','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','KW','Kuwait','KWT','Western Asia',true,'AS-Western Asia'),
+  ('country','LA','Laos','LAO','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','LB','Lebanon','LBN','Western Asia',true,'AS-Western Asia'),
+  ('country','LR','Liberia','LBR','Western Africa',true,'AF-West Africa'),
+  ('country','LY','Libya','LBY','Northern Africa',true,'AF-North Africa'),
+  ('country','LC','Saint Lucia','LCA','Caribbean',true,'NA-North America'),
+  ('country','LI','Liechtenstein','LIE','Western Europe',true,'EU-Western Europe'),
+  ('country','LK','Sri Lanka','LKA','Southern Asia',true,'AS-South Asia'),
+  ('country','LS','Lesotho','LSO','Southern Africa',true,'AF-Southern Africa'),
+  ('country','LT','Lithuania','LTU','Northern Europe',true,'EU-Northern Europe'),
+  ('country','LU','Luxembourg','LUX','Western Europe',true,'EU-Western Europe'),
+  ('country','LV','Latvia','LVA','Northern Europe',true,'EU-Northern Europe'),
+  ('country','MO','Macau','MAC','Eastern Asia',true,'AS-East Asia'),
+  ('country','MF','Saint Martin','MAF','Caribbean',true,'NA-North America'),
+  ('country','MA','Morocco','MAR','Northern Africa',true,'AF-North Africa'),
+  ('country','MC','Monaco','MCO','Western Europe',true,'EU-Western Europe'),
+  ('country','MD','Moldova','MDA','Eastern Europe',true,'EU-Eastern Europe'),
+  ('country','MG','Madagascar','MDG','Eastern Africa',true,'AF-East Africa'),
+  ('country','MV','Maldives','MDV','Southern Asia',true,'AS-South Asia'),
+  ('country','MX','Mexico','MEX','North America',true,'NA-North America'),
+  ('country','MH','Marshall Islands','MHL','Micronesia',true,'OC-Oceania'),
+  ('country','MK','North Macedonia','MKD','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','ML','Mali','MLI','Western Africa',true,'AF-West Africa'),
+  ('country','MT','Malta','MLT','Southern Europe',true,'EU-Southern Europe'),
+  ('country','MM','Myanmar','MMR','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','ME','Montenegro','MNE','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','MN','Mongolia','MNG','Eastern Asia',true,'AS-East Asia'),
+  ('country','MP','Northern Mariana Islands','MNP','Micronesia',true,'OC-Oceania'),
+  ('country','MZ','Mozambique','MOZ','Eastern Africa',true,'AF-East Africa'),
+  ('country','MR','Mauritania','MRT','Western Africa',true,'AF-West Africa'),
+  ('country','MS','Montserrat','MSR','Caribbean',true,'NA-North America'),
+  ('country','MQ','Martinique','MTQ','Caribbean',true,'NA-North America'),
+  ('country','MU','Mauritius','MUS','Eastern Africa',true,'AF-East Africa'),
+  ('country','MW','Malawi','MWI','Eastern Africa',true,'AF-East Africa'),
+  ('country','MY','Malaysia','MYS','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','YT','Mayotte','MYT','Eastern Africa',true,'AF-East Africa'),
+  ('country','NA','Namibia','NAM','Southern Africa',true,'AF-Southern Africa'),
+  ('country','NC','New Caledonia','NCL','Melanesia',true,'OC-Oceania'),
+  ('country','NE','Niger','NER','Western Africa',true,'AF-West Africa'),
+  ('country','NF','Norfolk Island','NFK','Australia and New Zealand',true,'OC-Oceania'),
+  ('country','NG','Nigeria','NGA','Western Africa',true,'AF-West Africa'),
+  ('country','NI','Nicaragua','NIC','Central America',true,'NA-North America'),
+  ('country','NU','Niue','NIU','Polynesia',true,'OC-Oceania'),
+  ('country','NL','Netherlands','NLD','Western Europe',true,'EU-Western Europe'),
+  ('country','NO','Norway','NOR','Northern Europe',true,'EU-Northern Europe'),
+  ('country','NP','Nepal','NPL','Southern Asia',true,'AS-South Asia'),
+  ('country','NR','Nauru','NRU','Micronesia',true,'OC-Oceania'),
+  ('country','NZ','New Zealand','NZL','Australia and New Zealand',true,'OC-Oceania'),
+  ('country','OM','Oman','OMN','Western Asia',true,'AS-Western Asia'),
+  ('country','PK','Pakistan','PAK','Southern Asia',true,'AS-South Asia'),
+  ('country','PA','Panama','PAN','Central America',true,'NA-North America'),
+  ('country','PN','Pitcairn Islands','PCN','Polynesia',true,'OC-Oceania'),
+  ('country','PE','Peru','PER','South America',true,'SA-South America'),
+  ('country','PH','Philippines','PHL','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','PW','Palau','PLW','Micronesia',true,'OC-Oceania'),
+  ('country','PG','Papua New Guinea','PNG','Melanesia',true,'OC-Oceania'),
+  ('country','PL','Poland','POL','Central Europe',true,'EU-Eastern Europe'),
+  ('country','PR','Puerto Rico','PRI','Caribbean',true,'NA-North America'),
+  ('country','KP','North Korea','PRK','Eastern Asia',true,'AS-East Asia'),
+  ('country','PT','Portugal','PRT','Southern Europe',true,'EU-Southern Europe'),
+  ('country','PY','Paraguay','PRY','South America',true,'SA-South America'),
+  ('country','PS','Palestine','PSE','Western Asia',true,'AS-Western Asia'),
+  ('country','PF','French Polynesia','PYF','Polynesia',true,'OC-Oceania'),
+  ('country','QA','Qatar','QAT','Western Asia',true,'AS-Western Asia'),
+  ('country','RE','Réunion','REU','Eastern Africa',true,'AF-East Africa'),
+  ('country','RO','Romania','ROU','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','RU','Russia','RUS','Eastern Europe',true,'EU-Eastern Europe'),
+  ('country','RW','Rwanda','RWA','Eastern Africa',true,'AF-East Africa'),
+  ('country','SA','Saudi Arabia','SAU','Western Asia',true,'AS-Western Asia'),
+  ('country','SD','Sudan','SDN','Northern Africa',true,'AF-North Africa'),
+  ('country','SN','Senegal','SEN','Western Africa',true,'AF-West Africa'),
+  ('country','SG','Singapore','SGP','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','GS','South Georgia','SGS',null,false,'AN-Antarctica'),
+  ('country','SJ','Svalbard and Jan Mayen','SJM','Northern Europe',true,'EU-Northern Europe'),
+  ('country','SB','Solomon Islands','SLB','Melanesia',true,'OC-Oceania'),
+  ('country','SL','Sierra Leone','SLE','Western Africa',true,'AF-West Africa'),
+  ('country','SV','El Salvador','SLV','Central America',true,'NA-North America'),
+  ('country','SM','San Marino','SMR','Southern Europe',true,'EU-Southern Europe'),
+  ('country','SO','Somalia','SOM','Eastern Africa',true,'AF-East Africa'),
+  ('country','PM','Saint Pierre and Miquelon','SPM','North America',true,'NA-North America'),
+  ('country','RS','Serbia','SRB','Southeast Europe',true,'EU-Southern Europe'),
+  ('country','SS','South Sudan','SSD','Middle Africa',true,'AF-Central Africa'),
+  ('country','ST','São Tomé and Príncipe','STP','Middle Africa',true,'AF-Central Africa'),
+  ('country','SR','Suriname','SUR','South America',true,'SA-South America'),
+  ('country','SK','Slovakia','SVK','Central Europe',true,'EU-Eastern Europe'),
+  ('country','SI','Slovenia','SVN','Central Europe',true,'EU-Eastern Europe'),
+  ('country','SE','Sweden','SWE','Northern Europe',true,'EU-Northern Europe'),
+  ('country','SZ','Eswatini','SWZ','Southern Africa',true,'AF-Southern Africa'),
+  ('country','SX','Sint Maarten','SXM','Caribbean',true,'NA-North America'),
+  ('country','SC','Seychelles','SYC','Eastern Africa',true,'AF-East Africa'),
+  ('country','SY','Syria','SYR','Western Asia',true,'AS-Western Asia'),
+  ('country','TC','Turks and Caicos Islands','TCA','Caribbean',true,'NA-North America'),
+  ('country','TD','Chad','TCD','Middle Africa',true,'AF-Central Africa'),
+  ('country','TG','Togo','TGO','Western Africa',true,'AF-West Africa'),
+  ('country','TH','Thailand','THA','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','TJ','Tajikistan','TJK','Central Asia',true,'AS-Central Asia'),
+  ('country','TK','Tokelau','TKL','Polynesia',true,'OC-Oceania'),
+  ('country','TM','Turkmenistan','TKM','Central Asia',true,'AS-Central Asia'),
+  ('country','TL','Timor-Leste','TLS','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','TO','Tonga','TON','Polynesia',true,'OC-Oceania'),
+  ('country','TT','Trinidad and Tobago','TTO','Caribbean',true,'NA-North America'),
+  ('country','TN','Tunisia','TUN','Northern Africa',true,'AF-North Africa'),
+  ('country','TR','Türkiye','TUR','Western Asia',true,'AS-Western Asia'),
+  ('country','TV','Tuvalu','TUV','Polynesia',true,'OC-Oceania'),
+  ('country','TW','Taiwan','TWN','Eastern Asia',true,'AS-East Asia'),
+  ('country','TZ','Tanzania','TZA','Eastern Africa',true,'AF-East Africa'),
+  ('country','UG','Uganda','UGA','Eastern Africa',true,'AF-East Africa'),
+  ('country','UA','Ukraine','UKR','Eastern Europe',true,'EU-Eastern Europe'),
+  ('country','UM','United States Minor Outlying Islands','UMI','North America',true,'NA-North America'),
+  ('country','UY','Uruguay','URY','South America',true,'SA-South America'),
+  ('country','US','United States','USA','North America',true,'NA-North America'),
+  ('country','UZ','Uzbekistan','UZB','Central Asia',true,'AS-Central Asia'),
+  ('country','VA','Vatican City','VAT','Southern Europe',true,'EU-Southern Europe'),
+  ('country','VC','Saint Vincent and the Grenadines','VCT','Caribbean',true,'NA-North America'),
+  ('country','VE','Venezuela','VEN','South America',true,'SA-South America'),
+  ('country','VG','British Virgin Islands','VGB','Caribbean',true,'NA-North America'),
+  ('country','VI','United States Virgin Islands','VIR','Caribbean',true,'NA-North America'),
+  ('country','VN','Vietnam','VNM','South-Eastern Asia',true,'AS-Southeast Asia'),
+  ('country','VU','Vanuatu','VUT','Melanesia',true,'OC-Oceania'),
+  ('country','WF','Wallis and Futuna','WLF','Polynesia',true,'OC-Oceania'),
+  ('country','WS','Samoa','WSM','Polynesia',true,'OC-Oceania'),
+  ('country','YE','Yemen','YEM','Western Asia',true,'AS-Western Asia'),
+  ('country','ZA','South Africa','ZAF','Southern Africa',true,'AF-Southern Africa'),
+  ('country','ZM','Zambia','ZMB','Eastern Africa',true,'AF-East Africa'),
+  ('country','ZW','Zimbabwe','ZWE','Eastern Africa',true,'AF-East Africa')
+) as v(level, code, name, iso3, src, is_market, parent_code)
+left join public.holup_regions p
+  on p.code = v.parent_code
+ and p.level = case
+       when v.level = 'continent' then 'world'
+       when v.level = 'subregion' then 'continent'
+       when v.level = 'country'   then 'subregion'
+     end
+on conflict (level, code) do update
+  set name = excluded.name, iso3 = excluded.iso3,
+      source_subregion = excluded.source_subregion,
+      parent_id = excluded.parent_id, is_market = excluded.is_market;
+
+-- A registry that inserted nothing is a registry the app will silently treat as
+-- "no country", so assert the shape after seeding.
+do $$
+declare v_countries integer; v_continents integer; v_antarctic integer;
+begin
+  select count(*) into v_countries from public.holup_regions where level = 'country';
+  select count(*) into v_continents from public.holup_regions where level = 'continent';
+  select count(*) into v_antarctic from public.holup_regions where code = 'AQ' and not is_market;
+  if v_countries < 240 then
+    raise exception 'region seed incomplete: % countries', v_countries;
+  end if;
+  if v_continents <> 7 then
+    raise exception 'region seed incomplete: % continents', v_continents;
+  end if;
+  if v_antarctic <> 1 then
+    raise exception 'Antarctica must be present and non-market';
+  end if;
+end $$;
+
+select level, count(*) from public.holup_regions group by level order by level;
+
+-- ================================ 20261117091000_security_intelligence.sql
+
+-- ============================================================================
+-- HGRI 003 — HolUpp Security Intelligence + the IP registry
+-- ============================================================================
+-- Three separate records, because they answer three different questions:
+--
+--   holup_network_records     — "what network did this request arrive on?"
+--   holup_security_events     — "was that behaviour suspicious, and how much?"
+--   holup_investigation_cases — "who looked into it, and what did they decide?"
+--
+-- The spec is explicit that an IP change, a VPN or a country mismatch must never
+-- ban anybody on its own, so nothing here has an automatic enforcement path. An
+-- event is a *question*; a case is a human answering it.
+-- ============================================================================
+
+-- ------------------------------------------------------------ IP registry ---
+create table if not exists public.holup_network_records (
+  id                   bigserial primary key,
+  profile_id           bigint not null references public.profiles(id) on delete cascade,
+  -- inet, not text: '102.89.33.1' and '102.089.033.001' must not become two rows.
+  ip                   inet not null,
+  ip_version           smallint generated always as (case when family(ip) = 6 then 6 else 4 end) stored,
+  country_code         text,
+  region               text,
+  city                 text,
+  -- Autonomous system and network organisation, where the provider returns them.
+  asn                  text,
+  isp                  text,
+  device_category      text check (device_category in ('android','ios','web','desktop','unknown')),
+  auth_session_id      uuid,
+  request_id           text,
+  -- REGISTER | LOGIN | SESSION_REFRESH | SENSITIVE_ACTION | WITHDRAWAL | SECURITY_EVENT
+  event                text not null default 'LOGIN',
+  -- The header the request actually arrived with, after the trusted-proxy rules
+  -- in the region-intel function have been applied. Recorded so an investigation
+  -- can see how an address was established.
+  source_header        text,
+  detection_provider   text,
+  detection_confidence smallint check (detection_confidence between 0 and 100),
+  -- Provisioned for the column-level encryption path; plaintext stays for
+  -- investigation, this is what analytics and joins should use.
+  ip_hash              text,
+  occurred_at          bigint not null default public.now_ms(),
+  -- Retention is enforced by holup_prune_network_records, not hoped for.
+  expires_at           bigint
+);
+
+create index if not exists holup_network_profile_idx on public.holup_network_records (profile_id, occurred_at desc);
+create index if not exists holup_network_ip_idx on public.holup_network_records (ip);
+create index if not exists holup_network_country_idx on public.holup_network_records (country_code, occurred_at desc);
+create index if not exists holup_network_expiry_idx on public.holup_network_records (expires_at)
+  where expires_at is not null;
+
+comment on table public.holup_network_records is
+  'Internal IP registry. Never readable by ordinary members or advertisers; an IP is never shown to another user.';
+
+-- ------------------------------------------------------- security events ---
+create table if not exists public.holup_security_events (
+  id                bigserial primary key,
+  profile_id        bigint references public.profiles(id) on delete cascade,
+  category          text not null check (category in (
+                      'SUSPICIOUS_LOGIN','AUTH_FAILURES','MULTI_ACCOUNT','AUTOMATION',
+                      'ENGAGEMENT_FRAUD','VIEW_FRAUD','SPAM','SESSION_HIJACK',
+                      'DEVICE_CHANGE','GEO_CHANGE','WITHDRAWAL_RISK','API_ABUSE',
+                      'MONETISATION_MANIPULATION')),
+  severity          text not null default 'INFO' check (severity in ('INFO','LOW','MEDIUM','HIGH','CRITICAL')),
+  -- Severity is what it means; risk is how much evidence supports it. Keeping
+  -- them apart is what stops "it was a VPN" from becoming "it was fraud".
+  risk_score        smallint not null default 0 check (risk_score between 0 and 100),
+  headline          text not null,
+  -- Everything the finding rests on: counts, thresholds crossed, row ids.
+  evidence          jsonb not null default '{}'::jsonb,
+  network_record_id bigint references public.holup_network_records(id) on delete set null,
+  auth_session_id   uuid,
+  country_code      text,
+  continent         text,
+  status            text not null default 'OPEN' check (status in ('OPEN','INVESTIGATING','RESOLVED','DISMISSED')),
+  decision          text check (decision in ('NO_ACTION','WARNED','RESTRICTED','SESSIONS_REVOKED','SUSPENDED','RESTORED')),
+  decided_by        uuid,
+  decided_at        bigint,
+  decision_note     text,
+  created_at        bigint not null default public.now_ms(),
+  updated_at        bigint not null default public.now_ms()
+);
+
+create index if not exists holup_security_events_profile_idx on public.holup_security_events (profile_id, created_at desc);
+create index if not exists holup_security_events_status_idx on public.holup_security_events (status, created_at desc);
+create index if not exists holup_security_events_severity_idx on public.holup_security_events (severity, created_at desc);
+create index if not exists holup_security_events_category_idx on public.holup_security_events (category, created_at desc);
+
+-- --------------------------------------------------------- investigations ---
+create table if not exists public.holup_investigation_cases (
+  id          bigserial primary key,
+  case_ref    text not null unique,
+  profile_id  bigint references public.profiles(id) on delete set null,
+  title       text not null,
+  summary     text,
+  severity    text not null default 'MEDIUM' check (severity in ('LOW','MEDIUM','HIGH','CRITICAL')),
+  status      text not null default 'OPEN' check (status in ('OPEN','IN_PROGRESS','PENDING_REVIEW','CLOSED','DISMISSED')),
+  assigned_to uuid,
+  -- The events this case is about: a working set, not a taxonomy.
+  event_ids   bigint[] not null default '{}',
+  findings    text,
+  decision    text,
+  decision_by uuid,
+  decision_at bigint,
+  opened_by   uuid,
+  opened_at   bigint not null default public.now_ms(),
+  updated_at  bigint not null default public.now_ms(),
+  closed_at   bigint
+);
+create index if not exists holup_cases_status_idx on public.holup_investigation_cases (status, opened_at desc);
+create index if not exists holup_cases_profile_idx on public.holup_investigation_cases (profile_id);
+
+-- Case references are issued by the database so two investigators cannot mint
+-- the same one.
+create sequence if not exists public.holup_case_ref_seq start 1000;
+
+create or replace function public.holup_next_case_ref()
+returns text
+language sql
+volatile
+as $$ select 'HLP-SI-' || lpad(nextval('public.holup_case_ref_seq')::text, 6, '0'); $$;
+
+-- --------------------------------------------------------- device records ---
+-- One row per (profile, device), not per request: this is an inventory.
+create table if not exists public.holup_device_records (
+  id              bigserial primary key,
+  profile_id      bigint not null references public.profiles(id) on delete cascade,
+  device_hash     text not null,
+  device_category text check (device_category in ('android','ios','web','desktop','unknown')),
+  label           text,
+  first_seen_at   bigint not null default public.now_ms(),
+  last_seen_at    bigint not null default public.now_ms(),
+  trust           text not null default 'UNKNOWN' check (trust in ('UNKNOWN','TRUSTED','REVOKED')),
+  unique (profile_id, device_hash)
+);
+create index if not exists holup_device_profile_idx on public.holup_device_records (profile_id, last_seen_at desc);
+
+-- -------------------------------------------------------------- retention ---
+-- A retention period that only exists in a document is not a retention period.
+create or replace function public.holup_prune_network_records(p_batch integer default 5000)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare removed integer;
+begin
+  with doomed as (
+    select id from holup_network_records
+    where expires_at is not null and expires_at < public.now_ms()
+    limit greatest(1, least(p_batch, 50000))
+  )
+  delete from holup_network_records n using doomed d where n.id = d.id;
+  get diagnostics removed = row_count;
+  return removed;
+end $$;
+
+-- ------------------------------------------------------------------- RLS ---
+alter table public.holup_network_records     enable row level security;
+alter table public.holup_security_events     enable row level security;
+alter table public.holup_investigation_cases enable row level security;
+alter table public.holup_device_records      enable row level security;
+
+-- Read by administrators only, scoped by role: a monetisation administrator has
+-- no business reading somebody's IP history.
+drop policy if exists holup_network_admin on public.holup_network_records;
+create policy holup_network_admin on public.holup_network_records
+  for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']));
+
+drop policy if exists holup_security_events_admin on public.holup_security_events;
+create policy holup_security_events_admin on public.holup_security_events
+  for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']));
+
+drop policy if exists holup_cases_admin on public.holup_investigation_cases;
+create policy holup_cases_admin on public.holup_investigation_cases
+  for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']));
+
+drop policy if exists holup_devices_admin on public.holup_device_records;
+create policy holup_devices_admin on public.holup_device_records
+  for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']));
+
+-- Enforcement is written by functions, never by a client: no write policies.
+
+-- ---------------------------------------------------------- admin surface ---
+-- One function per screen, so the dashboard asks a question rather than
+-- assembling a query in the browser. Each is SECURITY DEFINER and re-checks the
+-- role itself — the RLS policy above is a second lock, not the only one.
+
+create or replace function public.holup_security_overview()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare out jsonb;
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']) then
+    perform public.crushly_fail(403, 'forbidden', 'You do not have access to security intelligence.');
+  end if;
+
+  select jsonb_build_object(
+    'events_total',        (select count(*) from holup_security_events),
+    'events_open',         (select count(*) from holup_security_events where status in ('OPEN','INVESTIGATING')),
+    'events_critical',     (select count(*) from holup_security_events where severity = 'CRITICAL' and status <> 'DISMISSED'),
+    'events_high_7d',      (select count(*) from holup_security_events where severity in ('HIGH','CRITICAL')
+                              and created_at > public.now_ms() - 604800000),
+    'cases_open',          (select count(*) from holup_investigation_cases where status in ('OPEN','IN_PROGRESS','PENDING_REVIEW')),
+    'suspicious_accounts', (select count(distinct profile_id) from holup_security_events
+                              where risk_score >= 60 and status not in ('RESOLVED','DISMISSED')),
+    'network_records',     (select count(*) from holup_network_records),
+    'countries_seen',      (select count(distinct country_code) from holup_network_records where country_code is not null),
+    'recent_actions',      coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', a.id, 'module', a.module, 'action', a.action, 'actor', a.actor_email,
+        'target', a.target_id, 'at', a.created_at, 'result', a.result) order by a.id desc)
+      from (select * from holup_admin_audit order by id desc limit 10) a), '[]'::jsonb)
+  ) into out;
+  return out;
+end $$;
+
+create or replace function public.holup_security_events_list(
+  p_status   text default null,
+  p_severity text default null,
+  p_limit    integer default 50,
+  p_offset   integer default 0
+)
+returns table (
+  id bigint, profile_id bigint, member_name text, category text, severity text,
+  risk_score smallint, headline text, country_code text, status text,
+  decision text, created_at bigint, evidence jsonb
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']) then
+    perform public.crushly_fail(403, 'forbidden', 'You do not have access to security intelligence.');
+  end if;
+  return query
+    select e.id, e.profile_id, p.name, e.category, e.severity, e.risk_score, e.headline,
+           e.country_code, e.status, e.decision, e.created_at, e.evidence
+    from holup_security_events e
+    left join profiles p on p.id = e.profile_id
+    where (p_status is null or e.status = p_status)
+      and (p_severity is null or e.severity = p_severity)
+    order by e.created_at desc
+    limit greatest(1, least(coalesce(p_limit, 50), 200))
+    offset greatest(0, coalesce(p_offset, 0));
+end $$;
+
+-- The account movement history the spec describes, as data rather than a
+-- paragraph. The output columns are prefixed because unprefixed names collide
+-- with the query's own columns, and the window is computed once in bigint
+-- because computing it inline overflowed integer arithmetic.
+create or replace function public.holup_account_movement(p_profile_id bigint, p_days integer default 30)
+returns table (
+  movement_day date, movement_country text, movement_country_name text,
+  movement_device text, movement_records bigint, movement_first bigint, movement_last bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare v_since bigint;
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']) then
+    perform public.crushly_fail(403, 'forbidden', 'You do not have access to account movement.');
+  end if;
+  v_since := public.now_ms() - (greatest(1, least(coalesce(p_days, 30), 365))::bigint * 86400000);
+  return query
+    select (to_timestamp(n.occurred_at / 1000.0))::date as movement_day,
+           n.country_code, r.name, n.device_category,
+           count(*) as movement_records, min(n.occurred_at), max(n.occurred_at)
+    from holup_network_records n
+    left join holup_regions r on r.level = 'country' and r.code = n.country_code
+    where n.profile_id = p_profile_id and n.occurred_at > v_since
+    group by 1, 2, 3, 4
+    order by 1 desc, 6 desc;
+end $$;
+
+grant execute on function public.holup_security_overview() to authenticated;
+grant execute on function public.holup_security_events_list(text, text, integer, integer) to authenticated;
+grant execute on function public.holup_account_movement(bigint, integer) to authenticated;
+
+-- ================================ 20261117092000_creator_rewards.sql
+
+-- ============================================================================
+-- HGRI 004 — HolUpp Creator Rewards, funding pool, wallets and payouts
+-- ============================================================================
+-- The rule this whole file exists to enforce: money that has not been funded
+-- cannot be distributed, and no figure is ever computed in a client.
+--
+-- Two economies, deliberately not one:
+--   * Creator Rewards — a pool fed by real revenue, shared by qualified views.
+--   * Sponsored Flow  — advertisers paying for placements (migration 005).
+-- They touch only at pool funding, where advertiser revenue is booked as a
+-- funding event with a reference. Everything else about them is separate:
+-- separate tables, separate ledgers, separate administrators.
+--
+-- Every amount is an integer in the minor unit of its currency (kobo, cents,
+-- pesewas). No floats anywhere.
+-- ============================================================================
+
+-- ---------------------------------------------------------------- policy ---
+create table if not exists public.holup_rewards_policy (
+  id                     boolean primary key default true check (id),
+  -- Off until a pool has actually been funded. A member cannot request a
+  -- withdrawal against zero.
+  enabled                boolean not null default false,
+  currency               text not null default 'USD',
+  -- Allocation of a funded pool, in basis points, and required to total 100%.
+  creator_share_bps      integer not null default 4000 check (creator_share_bps between 0 and 10000),
+  reserve_bps            integer not null default 4500 check (reserve_bps between 0 and 10000),
+  platform_bps           integer not null default 1500 check (platform_bps between 0 and 10000),
+  min_payout_minor       bigint not null default 2000 check (min_payout_minor >= 0),
+  -- A view counts once per viewer per window, and only after this much watch
+  -- time. This is the difference between "views" and "qualified views".
+  qualified_view_seconds integer not null default 3 check (qualified_view_seconds between 0 and 600),
+  view_dedup_hours       integer not null default 24 check (view_dedup_hours between 1 and 720),
+  -- A sanity rail against a miscalculated pool, not a business number.
+  rpm_cap_minor          bigint not null default 4000 check (rpm_cap_minor >= 0),
+  monthly_payout_day     smallint not null default 5 check (monthly_payout_day between 1 and 28),
+  disclosure_version     integer not null default 1,
+  updated_by             uuid,
+  updated_at             bigint not null default public.now_ms(),
+  constraint holup_rewards_policy_alloc_total check (creator_share_bps + reserve_bps + platform_bps = 10000)
+);
+
+insert into public.holup_rewards_policy (id) values (true) on conflict (id) do nothing;
+
+-- -------------------------------------------------------- regional rules ---
+-- The opening position from the specification (Africa eligible, Europe eligible,
+-- North America not eligible, South America / Asia / Oceania configurable) lives
+-- here, as data, and can be changed by an administrator without a release.
+create table if not exists public.holup_region_eligibility_rules (
+  id         bigserial primary key,
+  level      text not null check (level in ('continent','subregion','country')),
+  code       text not null,
+  status     text not null check (status in ('ELIGIBLE','NOT_ELIGIBLE','CONFIGURABLE','SUSPENDED')),
+  reason     text,
+  updated_by uuid,
+  updated_at bigint not null default public.now_ms(),
+  unique (level, code)
+);
+
+insert into public.holup_region_eligibility_rules (level, code, status, reason) values
+  ('continent', 'AF', 'ELIGIBLE',     'Initial policy: Africa is eligible.'),
+  ('continent', 'EU', 'ELIGIBLE',     'Initial policy: Europe is eligible.'),
+  ('continent', 'NA', 'NOT_ELIGIBLE', 'Initial policy: North America is not eligible.'),
+  ('continent', 'SA', 'CONFIGURABLE', 'Initial policy: configurable, pending commercial review.'),
+  ('continent', 'AS', 'CONFIGURABLE', 'Initial policy: configurable, pending commercial review.'),
+  ('continent', 'OC', 'CONFIGURABLE', 'Initial policy: configurable, pending commercial review.'),
+  ('continent', 'AN', 'NOT_ELIGIBLE', 'Antarctica is classified but is never a market.')
+on conflict (level, code) do nothing;
+
+-- Most specific rule wins: country, then subregion, then continent, then
+-- CONFIGURABLE. Nothing is tested against nationality — residence and
+-- verification, exactly as the policy requires.
+create or replace function public.holup_region_eligibility(p_country_code text)
+returns table (status text, matched_level text, matched_code text, reason text, continent_code text, subregion text)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare v_country record; v_sub record; v_cont record; v_rule record;
+begin
+  if p_country_code is null then
+    return query select 'CONFIGURABLE'::text, 'none'::text, null::text, 'No country on record.'::text, null::text, null::text;
+    return;
+  end if;
+
+  select * into v_country from holup_regions where level = 'country' and code = p_country_code;
+  if v_country.id is null then
+    return query select 'CONFIGURABLE'::text, 'none'::text, p_country_code, 'Country not in the registry.'::text, null::text, null::text;
+    return;
+  end if;
+
+  select * into v_sub from holup_regions where id = v_country.parent_id;
+  select * into v_cont from holup_regions where id = v_sub.parent_id;
+
+  select * into v_rule from holup_region_eligibility_rules where level = 'country' and code = p_country_code;
+  if v_rule.id is null then
+    select * into v_rule from holup_region_eligibility_rules where level = 'subregion' and code = v_sub.code;
+  end if;
+  if v_rule.id is null then
+    select * into v_rule from holup_region_eligibility_rules where level = 'continent' and code = v_cont.code;
+  end if;
+
+  return query select
+    coalesce(v_rule.status, 'CONFIGURABLE'),
+    coalesce(v_rule.level, 'default'),
+    coalesce(v_rule.code, p_country_code),
+    v_rule.reason,
+    v_cont.code,
+    v_sub.name;
+end $$;
+
+-- --------------------------------------------------- creator eligibility ---
+create table if not exists public.holup_creator_eligibility (
+  profile_id             bigint primary key references public.profiles(id) on delete cascade,
+  status                 text not null default 'NOT_APPLIED'
+                         check (status in ('NOT_APPLIED','PENDING','ELIGIBLE','INELIGIBLE','CONFIGURABLE','SUSPENDED')),
+  residence_country_code text,
+  residence_source       text check (residence_source in ('DECLARED','DOCUMENT','DIDIT','MANUAL')),
+  residence_verified_at  bigint,
+  verification_method    text check (verification_method in ('DIDIT','DOCUMENT','MANUAL')),
+  verified_by            uuid,
+  policy_note            text,
+  -- An account cannot be paid on an unverified residence claim. This is a
+  -- constraint, not a paragraph in a policy document.
+  constraint holup_creator_eligible_needs_verification
+    check (status <> 'ELIGIBLE' or residence_verified_at is not null),
+  created_at             bigint not null default public.now_ms(),
+  updated_at             bigint not null default public.now_ms()
+);
+
+-- Corrections are a documented process, not a support email.
+create table if not exists public.holup_eligibility_corrections (
+  id                bigserial primary key,
+  profile_id        bigint not null references public.profiles(id) on delete cascade,
+  requested_country text not null,
+  current_country   text,
+  reason            text not null,
+  evidence_note     text,
+  status            text not null default 'OPEN' check (status in ('OPEN','APPROVED','REJECTED')),
+  decided_by        uuid,
+  decided_at        bigint,
+  decision_note     text,
+  created_at        bigint not null default public.now_ms()
+);
+create index if not exists holup_corrections_status_idx on public.holup_eligibility_corrections (status, created_at desc);
+create index if not exists holup_corrections_profile_idx on public.holup_eligibility_corrections (profile_id, created_at desc);
+
+-- ------------------------------------------------------- view accounting ---
+-- Daily grain, one row per (post, day). A member watching a video does not write
+-- a row, and there is no per-heartbeat table anywhere in this system.
+create table if not exists public.holup_content_daily_metrics (
+  post_id            bigint not null references public.posts(id) on delete cascade,
+  day                date not null,
+  creator_profile_id bigint not null references public.profiles(id) on delete cascade,
+  total_views        integer not null default 0 check (total_views >= 0),
+  qualified_views    integer not null default 0 check (qualified_views >= 0),
+  monetised_views    integer not null default 0 check (monetised_views >= 0),
+  ad_impressions     integer not null default 0 check (ad_impressions >= 0),
+  watch_seconds      bigint not null default 0 check (watch_seconds >= 0),
+  region_breakdown   jsonb not null default '{}'::jsonb,
+  updated_at         bigint not null default public.now_ms(),
+  primary key (post_id, day),
+  constraint holup_metrics_qualified_le_total check (qualified_views <= total_views),
+  constraint holup_metrics_monetised_le_qualified check (monetised_views <= qualified_views)
+);
+create index if not exists holup_metrics_creator_idx on public.holup_content_daily_metrics (creator_profile_id, day desc);
+create index if not exists holup_metrics_day_idx on public.holup_content_daily_metrics (day desc);
+
+-- ------------------------------------------------------------- the pool ---
+create table if not exists public.holup_rewards_pools (
+  id                bigserial primary key,
+  period_start      date not null,
+  period_end        date not null,
+  currency          text not null,
+  funded_minor      bigint not null default 0 check (funded_minor >= 0),
+  committed_minor   bigint not null default 0 check (committed_minor >= 0),
+  distributed_minor bigint not null default 0 check (distributed_minor >= 0),
+  status            text not null default 'OPEN'
+                    check (status in ('OPEN','CALCULATED','APPROVED','FROZEN','CLOSED')),
+  allocation        jsonb not null default '{}'::jsonb,
+  calculated_at     bigint,
+  approved_by       uuid,
+  approved_at       bigint,
+  notes             text,
+  created_at        bigint not null default public.now_ms(),
+  updated_at        bigint not null default public.now_ms(),
+  unique (period_start),
+  constraint holup_pool_period_order check (period_end >= period_start),
+  -- The invariant, in the schema: a pool can never commit more than it holds.
+  constraint holup_pool_never_over_commits check (committed_minor <= funded_minor)
+);
+
+-- Funding is an event with a source and a reference, not a number typed into a
+-- column. Reversing it is a negative funding event, never a deletion.
+create table if not exists public.holup_pool_funding (
+  id           bigserial primary key,
+  pool_id      bigint not null references public.holup_rewards_pools(id) on delete restrict,
+  source       text not null check (source in ('AD_REVENUE','SUBSCRIPTION','MANUAL','ADJUSTMENT')),
+  amount_minor bigint not null,
+  currency     text not null,
+  reference    text,
+  note         text,
+  created_by   uuid,
+  created_at   bigint not null default public.now_ms()
+);
+create index if not exists holup_pool_funding_pool_idx on public.holup_pool_funding (pool_id, created_at desc);
+
+create or replace function public.holup_pool_funding_apply()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_currency text; v_after bigint;
+begin
+  select currency into v_currency from holup_rewards_pools where id = new.pool_id for update;
+  if v_currency is null then raise exception 'pool % does not exist', new.pool_id; end if;
+  if new.currency <> v_currency then
+    raise exception 'funding currency % does not match pool currency %', new.currency, v_currency;
+  end if;
+  update holup_rewards_pools
+     set funded_minor = funded_minor + new.amount_minor, updated_at = public.now_ms()
+   where id = new.pool_id;
+  select funded_minor into v_after from holup_rewards_pools where id = new.pool_id;
+  if v_after < 0 then raise exception 'funding reversal would take pool % below zero', new.pool_id; end if;
+  return new;
+end $$;
+
+drop trigger if exists holup_pool_funding_apply on public.holup_pool_funding;
+create trigger holup_pool_funding_apply
+  after insert on public.holup_pool_funding
+  for each row execute function public.holup_pool_funding_apply();
+
+-- ------------------------------------------------------ creator rewards ----
+create table if not exists public.holup_creator_rewards (
+  id               bigserial primary key,
+  pool_id          bigint not null references public.holup_rewards_pools(id) on delete restrict,
+  profile_id       bigint not null references public.profiles(id) on delete cascade,
+  qualified_views  bigint not null default 0 check (qualified_views >= 0),
+  monetised_views  bigint not null default 0 check (monetised_views >= 0),
+  pool_total_views bigint not null default 0,
+  share_bps        integer not null default 0,
+  amount_minor     bigint not null default 0 check (amount_minor >= 0),
+  currency         text not null,
+  status           text not null default 'PENDING'
+                   check (status in ('PENDING','APPROVED','FROZEN','PAID','CANCELLED')),
+  computed_at      bigint not null default public.now_ms(),
+  approved_by      uuid,
+  approved_at      bigint,
+  note             text,
+  unique (pool_id, profile_id)
+);
+create index if not exists holup_creator_rewards_profile_idx on public.holup_creator_rewards (profile_id, computed_at desc);
+
+-- -------------------------------------------------------------- wallets ---
+create table if not exists public.holup_creator_wallets (
+  profile_id      bigint primary key references public.profiles(id) on delete cascade,
+  currency        text not null default 'USD',
+  pending_minor   bigint not null default 0 check (pending_minor >= 0),
+  available_minor bigint not null default 0 check (available_minor >= 0),
+  lifetime_minor  bigint not null default 0 check (lifetime_minor >= 0),
+  paid_minor      bigint not null default 0,
+  threshold_minor bigint,
+  status          text not null default 'ACTIVE' check (status in ('ACTIVE','HOLD','CLOSED')),
+  updated_at      bigint not null default public.now_ms()
+);
+
+-- Append-only and hash-chained. Rewriting history is not a permission problem to
+-- solve with RLS: the rows refuse to be updated or deleted at all.
+create table if not exists public.holup_wallet_ledger (
+  id            bigserial primary key,
+  profile_id    bigint not null references public.profiles(id) on delete cascade,
+  entry_type    text not null check (entry_type in
+                  ('REWARD_ACCRUAL','RELEASE','PAYOUT_HOLD','PAYOUT','PAYOUT_REVERSAL','ADJUSTMENT','FREEZE')),
+  amount_minor  bigint not null,
+  currency      text not null,
+  balance_after bigint not null,
+  ref_type      text,
+  ref_id        text,
+  memo          text,
+  actor         uuid,
+  prev_hash     text,
+  entry_hash    text,
+  created_at    bigint not null default public.now_ms()
+);
+create index if not exists holup_ledger_profile_idx on public.holup_wallet_ledger (profile_id, id desc);
+
+create or replace function public.holup_ledger_immutable()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'holup_wallet_ledger is append-only (attempted %)', tg_op;
+end $$;
+
+drop trigger if exists holup_ledger_no_update on public.holup_wallet_ledger;
+create trigger holup_ledger_no_update
+  before update or delete on public.holup_wallet_ledger
+  for each row execute function public.holup_ledger_immutable();
+
+-- Each entry commits to the one before it, so a silent edit anywhere in the
+-- ledger breaks every hash after it.
+create or replace function public.holup_wallet_write(
+  p_profile_id bigint,
+  p_entry_type text,
+  p_amount_minor bigint,
+  p_currency text,
+  p_ref_type text default null,
+  p_ref_id text default null,
+  p_memo text default null,
+  p_actor uuid default null
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_prev text; v_hash text; v_balance bigint; v_new_id bigint;
+begin
+  select entry_hash into v_prev from holup_wallet_ledger
+   where profile_id = p_profile_id order by id desc limit 1;
+
+  insert into holup_wallet_ledger
+    (profile_id, entry_type, amount_minor, currency, balance_after, ref_type, ref_id, memo, actor, prev_hash, entry_hash)
+  values
+    (p_profile_id, p_entry_type, p_amount_minor, p_currency, 0, p_ref_type, p_ref_id, p_memo, p_actor, v_prev, null)
+  returning id into v_new_id;
+
+  select coalesce(sum(amount_minor), 0) into v_balance
+    from holup_wallet_ledger where profile_id = p_profile_id;
+
+  v_hash := encode(extensions.digest(
+    coalesce(v_prev, '') || '|' || p_profile_id || '|' || p_entry_type || '|' || p_amount_minor || '|' ||
+    p_currency || '|' || coalesce(p_ref_id, '') || '|' || v_new_id, 'sha256'), 'hex');
+
+  update holup_wallet_ledger set balance_after = v_balance, entry_hash = v_hash where id = v_new_id;
+  return v_new_id;
+end $$;
+
+-- --------------------------------------------------------- payout methods ---
+create table if not exists public.holup_payout_methods (
+  id                  bigserial primary key,
+  profile_id          bigint not null references public.profiles(id) on delete cascade,
+  provider_key        text not null references public.holup_payment_providers(key) on delete restrict,
+  country_code        text not null,
+  currency            text not null,
+  account_masked      text not null,        -- e.g. **** 4821
+  account_fingerprint text not null,        -- hash of the full account, for duplicate detection
+  holder_name         text not null,
+  status              text not null default 'PENDING' check (status in ('PENDING','VERIFIED','REJECTED','DISABLED')),
+  verified_at         bigint,
+  verified_by         uuid,
+  created_at          bigint not null default public.now_ms(),
+  unique (profile_id, provider_key, account_fingerprint)
+);
+create index if not exists holup_payout_methods_profile_idx on public.holup_payout_methods (profile_id);
+
+create table if not exists public.holup_payout_requests (
+  id                 bigserial primary key,
+  profile_id         bigint not null references public.profiles(id) on delete cascade,
+  method_id          bigint not null references public.holup_payout_methods(id) on delete restrict,
+  amount_minor       bigint not null check (amount_minor > 0),
+  currency           text not null,
+  status             text not null default 'REQUESTED'
+                     check (status in ('REQUESTED','UNDER_REVIEW','APPROVED','SENT','PAID','REJECTED','FAILED','CANCELLED')),
+  -- Two taps on a slow connection must not become two payouts.
+  idempotency_key    text not null unique,
+  provider_reference text,
+  failure_reason     text,
+  risk_flags         jsonb not null default '[]'::jsonb,
+  requested_at       bigint not null default public.now_ms(),
+  reviewed_by        uuid,
+  reviewed_at        bigint,
+  sent_at            bigint,
+  paid_at            bigint,
+  note               text
+);
+create index if not exists holup_payout_requests_profile_idx on public.holup_payout_requests (profile_id, requested_at desc);
+create index if not exists holup_payout_requests_status_idx on public.holup_payout_requests (status, requested_at desc);
+
+-- ------------------------------------------------------------------ RLS ----
+alter table public.holup_rewards_policy           enable row level security;
+alter table public.holup_region_eligibility_rules enable row level security;
+alter table public.holup_creator_eligibility      enable row level security;
+alter table public.holup_eligibility_corrections  enable row level security;
+alter table public.holup_content_daily_metrics    enable row level security;
+alter table public.holup_rewards_pools            enable row level security;
+alter table public.holup_pool_funding             enable row level security;
+alter table public.holup_creator_rewards          enable row level security;
+alter table public.holup_creator_wallets          enable row level security;
+alter table public.holup_wallet_ledger            enable row level security;
+alter table public.holup_payout_methods           enable row level security;
+alter table public.holup_payout_requests          enable row level security;
+
+-- Policy and rules are readable by any signed-in member — the app has to be able
+-- to explain why a country is or is not eligible — but writable only by admins.
+drop policy if exists holup_policy_read on public.holup_rewards_policy;
+create policy holup_policy_read on public.holup_rewards_policy for select to authenticated using (true);
+drop policy if exists holup_region_rules_read on public.holup_region_eligibility_rules;
+create policy holup_region_rules_read on public.holup_region_eligibility_rules for select to authenticated using (true);
+
+drop policy if exists holup_creator_elig_own on public.holup_creator_eligibility;
+create policy holup_creator_elig_own on public.holup_creator_eligibility for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_corrections_own on public.holup_eligibility_corrections;
+create policy holup_corrections_own on public.holup_eligibility_corrections for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_metrics_own on public.holup_content_daily_metrics;
+create policy holup_metrics_own on public.holup_content_daily_metrics for select to authenticated
+  using (creator_profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin','analytics_admin']));
+
+drop policy if exists holup_pools_read on public.holup_rewards_pools;
+create policy holup_pools_read on public.holup_rewards_pools for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_funding_read on public.holup_pool_funding;
+create policy holup_funding_read on public.holup_pool_funding for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_rewards_own on public.holup_creator_rewards;
+create policy holup_rewards_own on public.holup_creator_rewards for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_wallet_own on public.holup_creator_wallets;
+create policy holup_wallet_own on public.holup_creator_wallets for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_ledger_own on public.holup_wallet_ledger;
+create policy holup_ledger_own on public.holup_wallet_ledger for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_methods_own on public.holup_payout_methods;
+create policy holup_methods_own on public.holup_payout_methods for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+drop policy if exists holup_payouts_own on public.holup_payout_requests;
+create policy holup_payouts_own on public.holup_payout_requests for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','monetisation_admin']));
+
+-- ----------------------------------------------------------- calculation ---
+-- Called by a scheduled job for a closed period, or by an administrator
+-- reviewing a month. Idempotent while the pool is OPEN/CALCULATED, and refuses
+-- to run at all once approved: an approved month is history.
+create or replace function public.holup_rewards_calculate(p_pool_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pool      holup_rewards_pools;
+  v_policy    holup_rewards_policy;
+  v_available bigint;
+  v_total     bigint;
+  v_rows      integer := 0;
+  v_sum       bigint := 0;
+begin
+  if not public.holup_has_admin_role(array['super_admin','monetisation_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'Only a monetisation administrator can run a reward calculation.');
+  end if;
+
+  select * into v_pool from holup_rewards_pools where id = p_pool_id for update;
+  if v_pool.id is null then perform public.crushly_fail(404, 'not_found', 'Pool not found.'); end if;
+  if v_pool.status in ('APPROVED','CLOSED') then
+    perform public.crushly_fail(409, 'pool_locked', 'This pool is approved; a correction is a new funding or reward entry, not a recalculation.');
+  end if;
+
+  select * into v_policy from holup_rewards_policy;
+
+  -- Never distribute more than was funded, and never more than the creator share.
+  v_available := floor(v_pool.funded_minor * v_policy.creator_share_bps / 10000.0)::bigint;
+  if v_available > v_pool.funded_minor then v_available := v_pool.funded_minor; end if;
+
+  -- Qualified views in the period, only for creators who are eligible under the
+  -- current policy AND whose residence is verified.
+  select coalesce(sum(qv), 0) into v_total from (
+    select m.creator_profile_id, sum(m.qualified_views)::bigint as qv
+    from holup_content_daily_metrics m
+    join holup_creator_eligibility e
+      on e.profile_id = m.creator_profile_id and e.status = 'ELIGIBLE'
+    where m.day between v_pool.period_start and v_pool.period_end
+    group by 1) b;
+
+  delete from holup_creator_rewards where pool_id = p_pool_id and status = 'PENDING';
+
+  if v_total > 0 and v_available > 0 then
+    insert into holup_creator_rewards
+      (pool_id, profile_id, qualified_views, monetised_views, pool_total_views, share_bps, amount_minor, currency, status, computed_at)
+    select p_pool_id, b.profile_id, b.qv, b.mv, v_total,
+           floor(b.qv * 10000.0 / v_total)::integer,
+           floor(v_available * b.qv::numeric / v_total)::bigint,
+           v_pool.currency, 'PENDING', public.now_ms()
+    from (
+      select m.creator_profile_id as profile_id,
+             sum(m.qualified_views)::bigint as qv,
+             sum(m.monetised_views)::bigint as mv
+      from holup_content_daily_metrics m
+      join holup_creator_eligibility e
+        on e.profile_id = m.creator_profile_id and e.status = 'ELIGIBLE'
+      where m.day between v_pool.period_start and v_pool.period_end
+      group by 1) b
+    where b.qv > 0;
+    get diagnostics v_rows = row_count;
+
+    select coalesce(sum(amount_minor), 0) into v_sum
+      from holup_creator_rewards where pool_id = p_pool_id and status = 'PENDING';
+
+    -- Rounding down can never exceed the pool, but this is the assertion that
+    -- makes that a guarantee rather than an expectation.
+    if v_sum > v_available then
+      perform public.crushly_fail(500, 'over_allocation', 'Calculated rewards exceed the funded creator share.');
+    end if;
+  end if;
+
+  update holup_rewards_pools
+     set status = case when status = 'OPEN' then 'CALCULATED' else status end,
+         committed_minor = v_sum,
+         allocation = jsonb_build_object(
+           'creator_share_bps', v_policy.creator_share_bps,
+           'reserve_bps', v_policy.reserve_bps,
+           'platform_bps', v_policy.platform_bps,
+           'funded_minor', v_pool.funded_minor,
+           'available_minor', v_available,
+           'total_qualified_views', v_total),
+         calculated_at = public.now_ms(),
+         updated_at = public.now_ms()
+   where id = p_pool_id;
+
+  perform public.holup_cc_audit('monetisation', 'rewards_calculated', 'holup_rewards_pools', p_pool_id::text,
+    null, jsonb_build_object('committed_minor', v_sum, 'creators', v_rows, 'qualified_views', v_total));
+
+  return jsonb_build_object('pool_id', p_pool_id, 'creators', v_rows,
+    'committed_minor', v_sum, 'available_minor', v_available, 'qualified_views', v_total);
+end $$;
+
+-- Approval is the moment money moves from "calculated" to "owed": each creator's
+-- reward is credited to their pending balance with a ledger entry.
+create or replace function public.holup_pool_approve(p_pool_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_pool holup_rewards_pools; v_count integer := 0; r record;
+begin
+  if not public.holup_has_admin_role(array['super_admin','monetisation_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'Only a monetisation administrator can approve a pool.');
+  end if;
+
+  select * into v_pool from holup_rewards_pools where id = p_pool_id for update;
+  if v_pool.id is null then perform public.crushly_fail(404, 'not_found', 'Pool not found.'); end if;
+  if v_pool.status = 'APPROVED' then perform public.crushly_fail(409, 'already_approved', 'This pool is already approved.'); end if;
+  if v_pool.status = 'FROZEN' then perform public.crushly_fail(409, 'pool_frozen', 'This pool is frozen.'); end if;
+  if v_pool.committed_minor > v_pool.funded_minor then
+    perform public.crushly_fail(409, 'unfunded', 'Committed rewards exceed funded revenue; fund the pool first.');
+  end if;
+
+  for r in select * from holup_creator_rewards where pool_id = p_pool_id and status = 'PENDING' loop
+    insert into holup_creator_wallets (profile_id, currency, threshold_minor)
+    values (r.profile_id, v_pool.currency, (select min_payout_minor from holup_rewards_policy))
+    on conflict (profile_id) do nothing;
+
+    update holup_creator_wallets
+       set pending_minor = pending_minor + r.amount_minor,
+           lifetime_minor = lifetime_minor + r.amount_minor,
+           updated_at = public.now_ms()
+     where profile_id = r.profile_id;
+
+    perform holup_wallet_write(r.profile_id, 'REWARD_ACCRUAL', r.amount_minor, v_pool.currency,
+      'holup_creator_rewards', r.id::text, 'Reward accrual for pool ' || v_pool.period_start, auth.uid());
+
+    update holup_creator_rewards
+       set status = 'APPROVED', approved_by = auth.uid(), approved_at = public.now_ms()
+     where id = r.id;
+    v_count := v_count + 1;
+  end loop;
+
+  update holup_rewards_pools
+     set status = 'APPROVED', approved_by = auth.uid(), approved_at = public.now_ms(),
+         distributed_minor = committed_minor, updated_at = public.now_ms()
+   where id = p_pool_id;
+
+  perform public.holup_cc_audit('monetisation', 'pool_approved', 'holup_rewards_pools', p_pool_id::text,
+    null, jsonb_build_object('rewards_approved', v_count, 'committed_minor', v_pool.committed_minor));
+
+  return jsonb_build_object('pool_id', p_pool_id, 'rewards_approved', v_count);
+end $$;
+
+-- --------------------------------------------------------------- payouts ---
+-- Idempotent by key, refused when the wallet is on hold, the method is not
+-- verified, the amount is below the threshold or above the available balance.
+create or replace function public.holup_payout_request(
+  p_method_id bigint,
+  p_amount_minor bigint,
+  p_idempotency_key text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile  bigint;
+  v_wallet   holup_creator_wallets;
+  v_method   holup_payout_methods;
+  v_policy   holup_rewards_policy;
+  v_existing holup_payout_requests;
+  v_id       bigint;
+begin
+  select id into v_profile from profiles where auth_user_id = auth.uid();
+  if v_profile is null then perform public.crushly_fail(401, 'unauthorized', 'Sign in first.'); end if;
+
+  select * into v_existing from holup_payout_requests where idempotency_key = p_idempotency_key;
+  if v_existing.id is not null then
+    return jsonb_build_object('payout_id', v_existing.id, 'status', v_existing.status, 'duplicate', true);
+  end if;
+
+  select * into v_policy from holup_rewards_policy;
+  if not v_policy.enabled then
+    perform public.crushly_fail(409, 'rewards_disabled', 'Creator Rewards is not open yet.');
+  end if;
+
+  select * into v_wallet from holup_creator_wallets where profile_id = v_profile for update;
+  if v_wallet.profile_id is null then perform public.crushly_fail(409, 'no_wallet', 'No creator wallet yet.'); end if;
+  if v_wallet.status <> 'ACTIVE' then perform public.crushly_fail(409, 'wallet_held', 'This wallet is not open for payouts.'); end if;
+
+  select * into v_method from holup_payout_methods where id = p_method_id and profile_id = v_profile;
+  if v_method.id is null then perform public.crushly_fail(404, 'method_not_found', 'Payout method not found.'); end if;
+  if v_method.status <> 'VERIFIED' then
+    perform public.crushly_fail(409, 'method_unverified', 'Verify this payout account before withdrawing.');
+  end if;
+
+  if p_amount_minor < greatest(coalesce(v_wallet.threshold_minor, 0), v_policy.min_payout_minor) then
+    perform public.crushly_fail(409, 'below_threshold', 'Amount is below the minimum withdrawal.');
+  end if;
+  if p_amount_minor > v_wallet.available_minor then
+    perform public.crushly_fail(409, 'insufficient', 'Not enough released balance.');
+  end if;
+
+  update holup_creator_wallets
+     set available_minor = available_minor - p_amount_minor, updated_at = public.now_ms()
+   where profile_id = v_profile;
+
+  insert into holup_payout_requests (profile_id, method_id, amount_minor, currency, status, idempotency_key)
+  values (v_profile, p_method_id, p_amount_minor, v_wallet.currency, 'REQUESTED', p_idempotency_key)
+  returning id into v_id;
+
+  perform holup_wallet_write(v_profile, 'PAYOUT_HOLD', -p_amount_minor, v_wallet.currency,
+    'holup_payout_requests', v_id::text, 'Withdrawal requested', auth.uid());
+
+  perform public.holup_cc_audit('monetisation', 'payout_requested', 'holup_payout_requests', v_id::text,
+    null, jsonb_build_object('amount_minor', p_amount_minor, 'currency', v_wallet.currency));
+
+  return jsonb_build_object('payout_id', v_id, 'status', 'REQUESTED', 'amount_minor', p_amount_minor,
+                            'available_after', v_wallet.available_minor - p_amount_minor);
+end $$;
+
+grant execute on function public.holup_region_eligibility(text) to authenticated;
+grant execute on function public.holup_rewards_calculate(bigint) to authenticated;
+grant execute on function public.holup_pool_approve(bigint) to authenticated;
+grant execute on function public.holup_payout_request(bigint, bigint, text) to authenticated;
+
+-- ================================ 20261117093000_sponsored_flow.sql
+
+-- ============================================================================
+-- HGRI 005 — Sponsored Flow: creatives, targeting, delivery, billing
+-- ============================================================================
+-- Extends the existing holup_advertisers / holup_ad_campaigns rather than
+-- replacing them, because those already carry advertiser identity, budget,
+-- schedule and the impressions/clicks counters the existing console reads.
+--
+-- Three things this file has to get right:
+--   1. Advertisers never see an IP, a session or a security record. The
+--      targeting they *set* is regional; the data they *get back* is aggregate.
+--   2. Nothing is billed unless it was actually shown to a real member. An
+--      impression is written INVALID with a reason, not silently dropped.
+--   3. Frequency is decided on the server. The app asks "should I show an ad
+--      now?" and the server answers; the app cannot ask twice for the same slot.
+--
+-- Vocabulary note: the existing holup_ad_campaigns.status constraint uses
+-- lowercase lifecycle words (draft, pending_review, scheduled, running, paused,
+-- completed, rejected, disabled). Everything here uses the same words rather
+-- than inventing 'ACTIVE' alongside them.
+-- ============================================================================
+
+alter table public.holup_ad_campaigns
+  add column if not exists pricing_model      text not null default 'CPM'
+    check (pricing_model in ('CPM','CPC','CPV','FIXED')),
+  add column if not exists rate_minor         bigint not null default 0 check (rate_minor >= 0),
+  add column if not exists spent_minor        bigint not null default 0 check (spent_minor >= 0),
+  add column if not exists daily_budget_minor bigint,
+  add column if not exists submitted_at       bigint,
+  add column if not exists reviewed_by        uuid,
+  add column if not exists review_note        text,
+  add column if not exists paused_at          bigint,
+  add column if not exists ended_at           bigint,
+  add column if not exists priority           smallint not null default 5 check (priority between 1 and 10);
+
+alter table public.holup_ad_campaigns drop constraint if exists holup_ad_campaigns_spend_within_budget;
+alter table public.holup_ad_campaigns
+  add constraint holup_ad_campaigns_spend_within_budget check (spent_minor <= budget_minor);
+
+create index if not exists holup_ad_campaigns_status_idx on public.holup_ad_campaigns (status, starts_at, ends_at);
+
+-- ------------------------------------------------------------- creatives ----
+create table if not exists public.holup_ad_creatives (
+  id              bigserial primary key,
+  campaign_id     bigint not null references public.holup_ad_campaigns(id) on delete cascade,
+  format          text not null default 'FLOW_CARD'
+                  check (format in ('FLOW_CARD','SPONSORED_POST','CAROUSEL')),
+  -- The fields the Flow card actually renders.
+  advertiser_name text not null,
+  headline        text not null,
+  description     text,
+  logo_url        text,
+  media_url       text,
+  cta_label       text not null default 'Learn More'
+                  check (cta_label in ('Shop Now','Learn More','Download','Visit Website','Sign Up')),
+  destination_url text not null,
+  verified_badge  boolean not null default false,
+  -- Carousel formats use this list; a card has exactly one media_url.
+  carousel_items  jsonb not null default '[]'::jsonb,
+  status          text not null default 'DRAFT'
+                  check (status in ('DRAFT','PENDING_REVIEW','APPROVED','REJECTED','PAUSED')),
+  reviewed_by     uuid,
+  review_note     text,
+  created_at      bigint not null default public.now_ms(),
+  updated_at      bigint not null default public.now_ms()
+);
+create index if not exists holup_ad_creatives_campaign_idx on public.holup_ad_creatives (campaign_id, status);
+
+-- ------------------------------------------------------------- targeting ---
+-- Normalised so "every campaign targeting Nigeria" is an index lookup rather
+-- than a jsonb scan.
+create table if not exists public.holup_ad_targeting (
+  id          bigserial primary key,
+  campaign_id bigint not null references public.holup_ad_campaigns(id) on delete cascade,
+  level       text not null check (level in ('worldwide','continent','subregion','country','state','city')),
+  code        text,
+  name        text,
+  created_at  bigint not null default public.now_ms(),
+  unique (campaign_id, level, code, name)
+);
+create index if not exists holup_ad_targeting_lookup_idx on public.holup_ad_targeting (level, code);
+
+-- ----------------------------------------------------------- impressions ---
+-- One row per delivered ad. `billable` is the money question, `invalid_reason` is
+-- why it is not; both are stored so a disputed invoice can be reconstructed.
+create table if not exists public.holup_ad_impressions (
+  id              bigserial primary key,
+  campaign_id     bigint not null references public.holup_ad_campaigns(id) on delete cascade,
+  creative_id     bigint references public.holup_ad_creatives(id) on delete set null,
+  profile_id      bigint references public.profiles(id) on delete set null,
+  session_id      text,
+  request_id      text,
+  placement       text not null default 'FLOW',
+  country_code    text,
+  continent       text,
+  device_category text,
+  billable        boolean not null default false,
+  invalid_reason  text,
+  cost_minor      bigint not null default 0 check (cost_minor >= 0),
+  currency        text,
+  shown_at        bigint not null default public.now_ms(),
+  unique (campaign_id, request_id)
+);
+create index if not exists holup_ad_impressions_campaign_idx on public.holup_ad_impressions (campaign_id, shown_at desc);
+create index if not exists holup_ad_impressions_day_idx on public.holup_ad_impressions (shown_at desc);
+
+create table if not exists public.holup_ad_clicks (
+  id             bigserial primary key,
+  campaign_id    bigint not null references public.holup_ad_campaigns(id) on delete cascade,
+  creative_id    bigint references public.holup_ad_creatives(id) on delete set null,
+  profile_id     bigint references public.profiles(id) on delete set null,
+  request_id     text,
+  billable       boolean not null default false,
+  invalid_reason text,
+  cost_minor     bigint not null default 0 check (cost_minor >= 0),
+  currency       text,
+  clicked_at     bigint not null default public.now_ms(),
+  unique (campaign_id, request_id)
+);
+create index if not exists holup_ad_clicks_campaign_idx on public.holup_ad_clicks (campaign_id, clicked_at desc);
+
+-- Advertiser money in its own append-only ledger. Creator payouts are a
+-- different ledger in migration 004 and never mix with this one.
+create table if not exists public.holup_ad_spend_ledger (
+  id           bigserial primary key,
+  campaign_id  bigint not null references public.holup_ad_campaigns(id) on delete restrict,
+  entry_type   text not null check (entry_type in ('IMPRESSION','CLICK','VIEW','REFUND','ADJUSTMENT','TOPUP')),
+  amount_minor bigint not null,
+  currency     text not null,
+  spent_after  bigint not null,
+  ref_table    text,
+  ref_id       text,
+  memo         text,
+  created_at   bigint not null default public.now_ms()
+);
+create index if not exists holup_ad_spend_campaign_idx on public.holup_ad_spend_ledger (campaign_id, id desc);
+
+create or replace function public.holup_ad_spend_immutable()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'holup_ad_spend_ledger is append-only (attempted %)', tg_op;
+end $$;
+
+drop trigger if exists holup_ad_spend_no_update on public.holup_ad_spend_ledger;
+create trigger holup_ad_spend_no_update
+  before update or delete on public.holup_ad_spend_ledger
+  for each row execute function public.holup_ad_spend_immutable();
+
+-- -------------------------------------------------------------- delivery ---
+-- The frequency rules the spec suggests (no ad in the first five videos, one
+-- after the fifth, then one after every seven more) are here as data with those
+-- values, adjustable by an advertising administrator.
+create table if not exists public.holup_flow_ads_settings (
+  id                  boolean primary key default true check (id),
+  enabled             boolean not null default false,
+  free_videos_first   integer not null default 5 check (free_videos_first between 0 and 100),
+  videos_between_ads  integer not null default 7 check (videos_between_ads between 1 and 100),
+  max_per_session     integer not null default 6 check (max_per_session between 0 and 100),
+  min_gap_seconds     integer not null default 60 check (min_gap_seconds between 0 and 3600),
+  allow_skip_after_ms integer not null default 0 check (allow_skip_after_ms >= 0),
+  updated_by          uuid,
+  updated_at          bigint not null default public.now_ms()
+);
+insert into public.holup_flow_ads_settings (id) values (true) on conflict (id) do nothing;
+
+-- Delivery state per member session. Small, bounded, reset when the session
+-- changes — this is not a browsing history.
+create table if not exists public.holup_flow_ad_state (
+  profile_id         bigint primary key references public.profiles(id) on delete cascade,
+  session_id         text,
+  videos_since_ad    integer not null default 0,
+  ads_this_session   integer not null default 0,
+  last_ad_at         bigint,
+  session_started_at bigint not null default public.now_ms(),
+  updated_at         bigint not null default public.now_ms()
+);
+
+-- ------------------------------------------------------------------ RLS ----
+alter table public.holup_ad_creatives      enable row level security;
+alter table public.holup_ad_targeting      enable row level security;
+alter table public.holup_ad_impressions    enable row level security;
+alter table public.holup_ad_clicks         enable row level security;
+alter table public.holup_ad_spend_ledger   enable row level security;
+alter table public.holup_flow_ads_settings enable row level security;
+alter table public.holup_flow_ad_state     enable row level security;
+
+drop policy if exists holup_ads_settings_read on public.holup_flow_ads_settings;
+create policy holup_ads_settings_read on public.holup_flow_ads_settings for select to authenticated using (true);
+
+-- Advertisers read their own creatives and targeting; nothing else in here.
+drop policy if exists holup_creatives_advertiser on public.holup_ad_creatives;
+create policy holup_creatives_advertiser on public.holup_ad_creatives for select to authenticated
+  using (campaign_id in (
+           select c.id from public.holup_ad_campaigns c
+           join public.holup_advertisers a on a.id = c.advertiser_id
+           where a.created_by = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','advertising_admin']));
+
+drop policy if exists holup_ad_targeting_advertiser on public.holup_ad_targeting;
+create policy holup_ad_targeting_advertiser on public.holup_ad_targeting for select to authenticated
+  using (campaign_id in (
+           select c.id from public.holup_ad_campaigns c
+           join public.holup_advertisers a on a.id = c.advertiser_id
+           where a.created_by = auth.uid())
+         or public.holup_has_admin_role(array['super_admin','advertising_admin']));
+
+drop policy if exists holup_ad_impressions_admin on public.holup_ad_impressions;
+create policy holup_ad_impressions_admin on public.holup_ad_impressions for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','advertising_admin','analytics_admin']));
+
+drop policy if exists holup_ad_clicks_admin on public.holup_ad_clicks;
+create policy holup_ad_clicks_admin on public.holup_ad_clicks for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','advertising_admin','analytics_admin']));
+
+drop policy if exists holup_ad_spend_admin on public.holup_ad_spend_ledger;
+create policy holup_ad_spend_admin on public.holup_ad_spend_ledger for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','advertising_admin']));
+
+drop policy if exists holup_flow_state_own on public.holup_flow_ad_state;
+create policy holup_flow_state_own on public.holup_flow_ad_state for select to authenticated
+  using (profile_id in (select id from public.profiles where auth_user_id = auth.uid()));
+
+-- -------------------------------------------------------------- delivery ---
+-- The app calls this once per video it is about to show. The server decides
+-- whether an ad is due and, if so, which one — the client only renders it.
+create or replace function public.holup_flow_request_ad(p_session_id text, p_request_id text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile  bigint;
+  v_settings holup_flow_ads_settings;
+  v_state    holup_flow_ad_state;
+  v_movement holup_user_regions;
+  v_campaign record;
+  v_creative public.holup_ad_creatives;
+  v_id       bigint;
+begin
+  select id into v_profile from profiles where auth_user_id = auth.uid();
+  if v_profile is null then perform public.crushly_fail(401, 'unauthorized', 'Sign in first.'); end if;
+
+  select * into v_settings from holup_flow_ads_settings;
+  if not v_settings.enabled then
+    return jsonb_build_object('serve', false, 'reason', 'ads_disabled');
+  end if;
+
+  select * into v_state from holup_flow_ad_state where profile_id = v_profile for update;
+  if v_state.profile_id is null then
+    insert into holup_flow_ad_state (profile_id, session_id) values (v_profile, p_session_id)
+    on conflict (profile_id) do nothing;
+    select * into v_state from holup_flow_ad_state where profile_id = v_profile for update;
+  elsif v_state.session_id is distinct from p_session_id then
+    -- A new app session resets the counters, which is what "no ad in the first
+    -- five videos" means to a member opening the app.
+    update holup_flow_ad_state
+       set session_id = p_session_id, videos_since_ad = 0, ads_this_session = 0,
+           session_started_at = public.now_ms(), updated_at = public.now_ms()
+     where profile_id = v_profile;
+    select * into v_state from holup_flow_ad_state where profile_id = v_profile;
+  end if;
+
+  update holup_flow_ad_state
+     set videos_since_ad = videos_since_ad + 1, updated_at = public.now_ms()
+   where profile_id = v_profile;
+  v_state.videos_since_ad := v_state.videos_since_ad + 1;
+
+  if v_state.videos_since_ad <= v_settings.free_videos_first and v_state.ads_this_session = 0 then
+    return jsonb_build_object('serve', false, 'reason', 'warmup', 'videos_since_ad', v_state.videos_since_ad);
+  end if;
+  if v_state.ads_this_session >= v_settings.max_per_session then
+    return jsonb_build_object('serve', false, 'reason', 'session_cap');
+  end if;
+  if v_state.last_ad_at is not null
+     and public.now_ms() - v_state.last_ad_at < v_settings.min_gap_seconds * 1000 then
+    return jsonb_build_object('serve', false, 'reason', 'min_gap');
+  end if;
+
+  -- The spec's sequence, as a threshold rather than a modulo: no ad in the first
+  -- `free_videos_first` videos, then one on the next video, then one after every
+  -- `videos_between_ads` videos. `>=` (not `=`) so a video blocked by the minimum
+  -- gap is served at the first opportunity afterwards instead of being skipped
+  -- for the rest of the session.
+  if v_state.videos_since_ad <
+     (case when v_state.ads_this_session = 0
+           then v_settings.free_videos_first + 1
+           else v_settings.videos_between_ads + 1 end) then
+    return jsonb_build_object('serve', false, 'reason', 'interval',
+      'videos_since_ad', v_state.videos_since_ad);
+  end if;
+
+  select * into v_movement from holup_user_regions where profile_id = v_profile;
+
+  -- Eligible campaign: approved creative, running, inside schedule, budget
+  -- remaining, and either worldwide or targeting this member's country,
+  -- continent or city.
+  select c.* into v_campaign
+  from holup_ad_campaigns c
+  join holup_ad_creatives cr on cr.campaign_id = c.id and cr.status = 'APPROVED'
+  where c.status = 'running'
+    and c.spent_minor < c.budget_minor
+    and (c.starts_at is null or c.starts_at <= public.now_ms())
+    and (c.ends_at is null or c.ends_at > public.now_ms())
+    and (
+      not exists (select 1 from holup_ad_targeting t where t.campaign_id = c.id)
+      or exists (
+        select 1 from holup_ad_targeting t
+        where t.campaign_id = c.id
+          and (
+            t.level = 'worldwide'
+            or (t.level = 'country'   and t.code = coalesce(v_movement.effective_country_code, ''))
+            or (t.level = 'continent' and t.code = coalesce(v_movement.continent, ''))
+            or (t.level = 'city'      and lower(t.name) = lower(coalesce(v_movement.city, '')))
+          )
+      )
+    )
+  order by c.priority desc, random()
+  limit 1;
+
+  if v_campaign.id is null then
+    return jsonb_build_object('serve', false, 'reason', 'no_eligible_campaign');
+  end if;
+
+  select * into v_creative from holup_ad_creatives
+   where campaign_id = v_campaign.id and status = 'APPROVED'
+   order by random() limit 1;
+
+  insert into holup_ad_impressions
+    (campaign_id, creative_id, profile_id, session_id, request_id, placement,
+     country_code, continent, billable, invalid_reason, cost_minor, currency)
+  values (v_campaign.id, v_creative.id, v_profile, p_session_id, p_request_id, 'FLOW',
+          v_movement.effective_country_code, v_movement.continent, false, 'PENDING_VIEW', 0, v_campaign.currency)
+  on conflict (campaign_id, request_id) do nothing
+  returning id into v_id;
+
+  update holup_flow_ad_state
+     set ads_this_session = ads_this_session + 1,
+         videos_since_ad = 0,
+         last_ad_at = public.now_ms(),
+         updated_at = public.now_ms()
+   where profile_id = v_profile;
+
+  return jsonb_build_object(
+    'serve', true,
+    'impression_id', v_id,
+    'campaign_id', v_campaign.id,
+    'creative', jsonb_build_object(
+      'id', v_creative.id,
+      'format', v_creative.format,
+      'advertiser_name', v_creative.advertiser_name,
+      'headline', v_creative.headline,
+      'description', v_creative.description,
+      'logo_url', v_creative.logo_url,
+      'media_url', v_creative.media_url,
+      'cta_label', v_creative.cta_label,
+      'destination_url', v_creative.destination_url,
+      'verified_badge', v_creative.verified_badge,
+      'carousel_items', v_creative.carousel_items,
+      'sponsored_label', 'Sponsored'
+    ),
+    'skip_after_ms', v_settings.allow_skip_after_ms
+  );
+end $$;
+
+-- Billing. An impression becomes billable only when the view condition for the
+-- campaign's pricing model is met, and never beyond the remaining budget.
+create or replace function public.holup_ad_settle_impression(
+  p_impression_id bigint,
+  p_watch_ms integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_imp      holup_ad_impressions;
+  v_campaign holup_ad_campaigns;
+  v_policy   holup_rewards_policy;
+  v_cost     bigint := 0;
+  v_remaining bigint;
+  v_reason   text;
+begin
+  select * into v_imp from holup_ad_impressions where id = p_impression_id for update;
+  if v_imp.id is null then perform public.crushly_fail(404, 'not_found', 'Impression not found.'); end if;
+  -- A member may only settle their own impression.
+  if v_imp.profile_id is not null
+     and v_imp.profile_id <> (select id from profiles where auth_user_id = auth.uid())
+     and not public.holup_has_admin_role(array['super_admin','advertising_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'Not your impression.');
+  end if;
+  if v_imp.billable or v_imp.invalid_reason is distinct from 'PENDING_VIEW' then
+    return jsonb_build_object('settled', false, 'reason', 'already_settled', 'billable', v_imp.billable);
+  end if;
+
+  select * into v_campaign from holup_ad_campaigns where id = v_imp.campaign_id for update;
+  select * into v_policy from holup_rewards_policy;
+
+  if coalesce(p_watch_ms, 0) < v_policy.qualified_view_seconds * 1000 then
+    v_reason := 'VIEW_TOO_SHORT';
+  elsif v_campaign.status <> 'running' then
+    v_reason := 'CAMPAIGN_INACTIVE';
+  elsif v_campaign.spent_minor >= v_campaign.budget_minor then
+    v_reason := 'BUDGET_EXHAUSTED';
+  end if;
+
+  if v_reason is null then
+    if v_campaign.pricing_model = 'CPM' then
+      v_cost := floor(v_campaign.rate_minor / 1000.0)::bigint;
+    elsif v_campaign.pricing_model = 'CPV' then
+      v_cost := v_campaign.rate_minor;
+    else
+      -- Fixed-duration deals are billed by schedule; CPC bills on click.
+      v_cost := 0;
+    end if;
+
+    v_remaining := v_campaign.budget_minor - v_campaign.spent_minor;
+    if v_cost > v_remaining then v_cost := v_remaining; end if;
+  end if;
+
+  update holup_ad_impressions
+     set billable = (v_reason is null), invalid_reason = v_reason, cost_minor = coalesce(v_cost, 0)
+   where id = p_impression_id;
+
+  if v_reason is null then
+    update holup_ad_campaigns
+       set spent_minor = spent_minor + v_cost,
+           impressions = impressions + 1,
+           updated_at = public.now_ms()
+     where id = v_campaign.id;
+
+    if v_cost > 0 then
+      insert into holup_ad_spend_ledger
+        (campaign_id, entry_type, amount_minor, currency, spent_after, ref_table, ref_id, memo)
+      values (v_campaign.id, 'IMPRESSION', v_cost, v_campaign.currency,
+              v_campaign.spent_minor + v_cost, 'holup_ad_impressions', p_impression_id::text,
+              'Billable Flow impression');
+    end if;
+
+    -- An ad impression is an input to the Creator Rewards pool, decided later by
+    -- policy. It is not creator revenue, and it is not recorded as any.
+    update holup_content_daily_metrics
+       set ad_impressions = ad_impressions + 1, updated_at = public.now_ms()
+     where creator_profile_id = v_imp.profile_id
+       and day = (to_timestamp(v_imp.shown_at / 1000.0))::date;
+  end if;
+
+  return jsonb_build_object('settled', true, 'billable', v_reason is null,
+    'invalid_reason', v_reason, 'cost_minor', coalesce(v_cost, 0));
+end $$;
+
+create or replace function public.holup_ad_record_click(
+  p_campaign_id bigint,
+  p_creative_id bigint,
+  p_request_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_profile bigint; v_campaign holup_ad_campaigns; v_cost bigint := 0; v_id bigint;
+begin
+  select id into v_profile from profiles where auth_user_id = auth.uid();
+  if v_profile is null then perform public.crushly_fail(401, 'unauthorized', 'Sign in first.'); end if;
+
+  select * into v_campaign from holup_ad_campaigns where id = p_campaign_id for update;
+  if v_campaign.id is null then perform public.crushly_fail(404, 'not_found', 'Campaign not found.'); end if;
+  if v_campaign.status <> 'running' then
+    return jsonb_build_object('recorded', false, 'reason', 'CAMPAIGN_INACTIVE');
+  end if;
+
+  if v_campaign.pricing_model = 'CPC' then
+    v_cost := least(v_campaign.rate_minor, v_campaign.budget_minor - v_campaign.spent_minor);
+  end if;
+
+  insert into holup_ad_clicks (campaign_id, creative_id, profile_id, request_id, billable, cost_minor, currency)
+  values (p_campaign_id, p_creative_id, v_profile, p_request_id, v_cost > 0, v_cost, v_campaign.currency)
+  on conflict (campaign_id, request_id) do nothing
+  returning id into v_id;
+
+  if v_id is not null then
+    update holup_ad_campaigns set clicks = clicks + 1, updated_at = public.now_ms() where id = p_campaign_id;
+  end if;
+
+  if v_id is not null and v_cost > 0 then
+    update holup_ad_campaigns set spent_minor = spent_minor + v_cost where id = p_campaign_id;
+    insert into holup_ad_spend_ledger
+      (campaign_id, entry_type, amount_minor, currency, spent_after, ref_table, ref_id, memo)
+    values (p_campaign_id, 'CLICK', v_cost, v_campaign.currency, v_campaign.spent_minor + v_cost,
+            'holup_ad_clicks', v_id::text, 'Billable click');
+  end if;
+
+  return jsonb_build_object('recorded', v_id is not null, 'cost_minor', v_cost,
+    'destination_url', (select destination_url from holup_ad_creatives where id = p_creative_id));
+end $$;
+
+grant execute on function public.holup_flow_request_ad(text, text) to authenticated;
+grant execute on function public.holup_ad_settle_impression(bigint, integer) to authenticated;
+grant execute on function public.holup_ad_record_click(bigint, bigint, text) to authenticated;
+
+-- ================================ 20261117094000_analytics_rbac_admin.sql
+
+-- ============================================================================
+-- HGRI 006 — Regional analytics, RBAC and the administrative control surface
+-- ============================================================================
+-- Analytics here are pre-aggregated by day and dimension. Nothing in this file
+-- exposes an IP, a device or a member-level record: the smallest unit is a
+-- country-day figure.
+-- ============================================================================
+
+-- ------------------------------------------------------------- analytics ---
+create table if not exists public.holup_analytics_daily (
+  day         date not null,
+  metric      text not null,
+  -- 'world' | 'continent:<CODE>' | 'country:<ISO2>'
+  dimension   text not null default 'world',
+  value       numeric not null default 0,
+  computed_at bigint not null default public.now_ms(),
+  primary key (day, metric, dimension)
+);
+create index if not exists holup_analytics_metric_idx on public.holup_analytics_daily (metric, day desc);
+
+create table if not exists public.holup_analytics_runs (
+  id           bigserial primary key,
+  day          date not null,
+  status       text not null default 'RUNNING' check (status in ('RUNNING','COMPLETE','FAILED')),
+  rows_written integer not null default 0,
+  note         text,
+  started_at   bigint not null default public.now_ms(),
+  finished_at  bigint
+);
+
+alter table public.holup_analytics_daily enable row level security;
+alter table public.holup_analytics_runs  enable row level security;
+
+drop policy if exists holup_analytics_admin on public.holup_analytics_daily;
+create policy holup_analytics_admin on public.holup_analytics_daily for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','analytics_admin','monetisation_admin','advertising_admin']));
+
+drop policy if exists holup_analytics_runs_admin on public.holup_analytics_runs;
+create policy holup_analytics_runs_admin on public.holup_analytics_runs for select to authenticated
+  using (public.holup_has_admin_role(array['super_admin','analytics_admin']));
+
+-- One call per day, idempotent: re-running a day recomputes it.
+create or replace function public.holup_analytics_rollup(p_day date)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_rows integer := 0; v_run bigint; v_day_start bigint; v_day_end bigint;
+begin
+  -- Callable by an analytics administrator, or by a scheduled job/service role
+  -- with no end-user identity.
+  if auth.uid() is not null and not public.holup_has_admin_role(array['super_admin','analytics_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'Analytics rollup is restricted.');
+  end if;
+
+  v_day_start := (extract(epoch from p_day::timestamp) * 1000)::bigint;
+  v_day_end   := (extract(epoch from (p_day + 1)::timestamp) * 1000)::bigint;
+
+  insert into holup_analytics_runs (day) values (p_day) returning id into v_run;
+
+  begin
+    delete from holup_analytics_daily where day = p_day;
+
+    -- New accounts by country of record (declared, falling back to detected).
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, 'accounts_new', 'country:' || coalesce(r.effective_country_code, 'UNKNOWN'), count(*)
+    from profiles p left join holup_user_regions r on r.profile_id = p.id
+    where p.created_at >= v_day_start and p.created_at < v_day_end
+    group by 1, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    -- Daily active members by country, from the IP registry.
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, 'dau', 'country:' || coalesce(n.country_code, 'UNKNOWN'), count(distinct n.profile_id)
+    from holup_network_records n
+    where n.occurred_at >= v_day_start and n.occurred_at < v_day_end
+    group by 1, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    -- Content and monetisation by creator country.
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, 'qualified_views', 'country:' || coalesce(r.effective_country_code, 'UNKNOWN'), sum(m.qualified_views)
+    from holup_content_daily_metrics m
+    join profiles p on p.id = m.creator_profile_id
+    left join holup_user_regions r on r.profile_id = p.id
+    where m.day = p_day
+    group by 1, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, 'total_views', 'country:' || coalesce(r.effective_country_code, 'UNKNOWN'), sum(m.total_views)
+    from holup_content_daily_metrics m
+    join profiles p on p.id = m.creator_profile_id
+    left join holup_user_regions r on r.profile_id = p.id
+    where m.day = p_day
+    group by 1, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    -- Advertising revenue actually billed, by the country the ad was shown in.
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, 'ad_revenue_minor', 'country:' || coalesce(i.country_code, 'UNKNOWN'), sum(i.cost_minor)
+    from holup_ad_impressions i
+    where i.billable and i.shown_at >= v_day_start and i.shown_at < v_day_end
+    group by 1, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, 'ad_impressions', 'country:' || coalesce(i.country_code, 'UNKNOWN'), count(*)
+    from holup_ad_impressions i
+    where i.billable and i.shown_at >= v_day_start and i.shown_at < v_day_end
+    group by 1, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    -- Roll countries up to continents so a map has one series per continent.
+    insert into holup_analytics_daily (day, metric, dimension, value)
+    select p_day, a.metric, 'continent:' || coalesce(c.code, 'UNKNOWN'), sum(a.value)
+    from holup_analytics_daily a
+    join holup_regions r on r.level = 'country' and 'country:' || r.code = a.dimension
+    join holup_regions s on s.id = r.parent_id
+    join holup_regions c on c.id = s.parent_id and c.level = 'continent'
+    where a.day = p_day and a.dimension like 'country:%'
+    group by 1, 2, 3
+    on conflict (day, metric, dimension) do update set value = excluded.value, computed_at = public.now_ms();
+
+    get diagnostics v_rows = row_count;
+
+    update holup_analytics_runs
+       set status = 'COMPLETE', rows_written = v_rows, finished_at = public.now_ms()
+     where id = v_run;
+  exception when others then
+    update holup_analytics_runs
+       set status = 'FAILED', note = sqlerrm, finished_at = public.now_ms()
+     where id = v_run;
+    raise;
+  end;
+
+  return v_rows;
+end $$;
+
+-- Regional summary for the analytics screens and for RielOS. Aggregated only.
+create or replace function public.holup_regional_summary(p_days integer default 30)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare v_from date; v_out jsonb;
+begin
+  if not public.holup_has_admin_role(array['super_admin','analytics_admin','monetisation_admin','advertising_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'You do not have access to regional analytics.');
+  end if;
+  v_from := current_date - greatest(1, least(p_days, 365));
+
+  select jsonb_build_object(
+    'from', v_from, 'to', current_date,
+    'accounts_total', (select count(*) from profiles),
+    'accounts_by_continent', coalesce((
+      select jsonb_object_agg(x.code, x.n) from (
+        select coalesce(c.code, 'UNKNOWN') as code, count(*) as n
+        from holup_user_regions ur
+        join holup_regions r on r.level = 'country' and r.code = ur.effective_country_code
+        join holup_regions s on s.id = r.parent_id
+        join holup_regions c on c.id = s.parent_id and c.level = 'continent'
+        group by 1) x), '{}'::jsonb),
+    'dau_avg', coalesce((select round(avg(value)) from holup_analytics_daily
+                        where metric = 'dau' and dimension like 'country:%' and day >= v_from), 0),
+    'metrics', coalesce((
+      select jsonb_object_agg(m.metric, m.total) from (
+        select metric, sum(value) as total from holup_analytics_daily
+        where day >= v_from and dimension like 'country:%' group by 1) m), '{}'::jsonb),
+    'creators_eligible', (select count(*) from holup_creator_eligibility where status = 'ELIGIBLE'),
+    'ad_revenue_minor', coalesce((select sum(amount_minor) from holup_ad_spend_ledger
+                                  where created_at >= (extract(epoch from v_from::timestamp) * 1000)::bigint), 0),
+    'campaigns_active', (select count(*) from holup_ad_campaigns where status = 'running'),
+    'advertisers', (select count(*) from holup_advertisers)
+  ) into v_out;
+  return v_out;
+end $$;
+
+-- ------------------------------------------------------------------ RBAC ---
+-- The six roles the specification names, plus the five the existing console
+-- already uses. Both lists have to be allowed by the *same* constraint: a
+-- pre-existing holup_admin_members_role_check allowed only the console's roles,
+-- so with both constraints in force their intersection was super_admin alone and
+-- the five new roles could not be assigned at all.
+alter table public.holup_admin_members drop constraint if exists holup_admin_members_role_valid;
+alter table public.holup_admin_members drop constraint if exists holup_admin_members_role_check;
+alter table public.holup_admin_members
+  add constraint holup_admin_members_role_check check (role in (
+    -- introduced by this work
+    'super_admin','security_admin','fraud_investigator',
+    'monetisation_admin','advertising_admin','analytics_admin',
+    -- already used by the Control Centre
+    'administrator','verification_officer','moderator','analyst','support_officer'));
+
+-- What each role may open. Read server-side; every function enforces the same
+-- list, so a console bug cannot widen access.
+create or replace function public.holup_role_capabilities(p_role text)
+returns text[]
+language sql
+immutable
+as $$
+  select case p_role
+    when 'super_admin'        then array['security','ip_registry','investigations','fraud','enforcement','monetisation','advertising','analytics','roles']
+    when 'security_admin'     then array['security','ip_registry','investigations','enforcement','analytics_read']
+    when 'fraud_investigator' then array['security','ip_registry','investigations','fraud']
+    when 'monetisation_admin' then array['monetisation','analytics_read']
+    when 'advertising_admin'  then array['advertising','analytics_read']
+    when 'analytics_admin'    then array['analytics']
+    else array[]::text[]
+  end;
+$$;
+
+create or replace function public.holup_my_admin_permissions()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare v_role text;
+begin
+  v_role := public.holup_admin_role();
+  return jsonb_build_object(
+    'role', v_role,
+    'capabilities', to_jsonb(public.holup_role_capabilities(coalesce(v_role, ''))));
+end $$;
+
+create or replace function public.holup_admin_set_role(
+  p_auth_user_id uuid,
+  p_role text,
+  p_email text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.holup_admin_role() is distinct from 'super_admin' then
+    perform public.crushly_fail(403, 'forbidden', 'Only a Super Administrator can change roles.');
+  end if;
+  if not (p_role = any (array['super_admin','security_admin','fraud_investigator','monetisation_admin','advertising_admin','analytics_admin'])) then
+    perform public.crushly_fail(400, 'bad_role', 'Unknown role.');
+  end if;
+  -- Removing the last super administrator would lock everybody out.
+  if p_role <> 'super_admin'
+     and exists (select 1 from holup_admin_members where auth_user_id = p_auth_user_id and role = 'super_admin')
+     and (select count(*) from holup_admin_members where role = 'super_admin' and status = 'active') <= 1 then
+    perform public.crushly_fail(409, 'last_super_admin', 'There must always be at least one active Super Administrator.');
+  end if;
+
+  insert into holup_admin_members (auth_user_id, email, role, status, created_at, updated_at)
+  values (p_auth_user_id, p_email, p_role, 'active', public.now_ms(), public.now_ms())
+  on conflict (auth_user_id) do update
+    set role = excluded.role, status = 'active', updated_at = public.now_ms();
+
+  perform public.holup_cc_audit('roles', 'role_assigned', 'holup_admin_members', p_auth_user_id::text,
+    null, jsonb_build_object('role', p_role));
+  return jsonb_build_object('auth_user_id', p_auth_user_id, 'role', p_role);
+end $$;
+
+-- ------------------------------------------------------- security actions ---
+create or replace function public.holup_security_decide(
+  p_event_id bigint,
+  p_decision text,
+  p_note text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_event holup_security_events;
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']) then
+    perform public.crushly_fail(403, 'forbidden', 'You cannot decide security events.');
+  end if;
+  if p_decision not in ('NO_ACTION','WARNED','RESTRICTED','SESSIONS_REVOKED','SUSPENDED','RESTORED') then
+    perform public.crushly_fail(400, 'bad_decision', 'Unknown decision.');
+  end if;
+  if coalesce(length(trim(p_note)), 0) < 5 then
+    perform public.crushly_fail(400, 'note_required', 'Every decision needs a written reason.');
+  end if;
+
+  select * into v_event from holup_security_events where id = p_event_id for update;
+  if v_event.id is null then perform public.crushly_fail(404, 'not_found', 'Event not found.'); end if;
+
+  update holup_security_events
+     set decision = p_decision, decided_by = auth.uid(), decided_at = public.now_ms(),
+         decision_note = p_note,
+         status = case when p_decision = 'NO_ACTION' then 'DISMISSED' else 'RESOLVED' end,
+         updated_at = public.now_ms()
+   where id = p_event_id;
+
+  perform public.holup_cc_audit('security', 'event_decided', 'holup_security_events', p_event_id::text,
+    jsonb_build_object('status', v_event.status), jsonb_build_object('decision', p_decision, 'note', p_note));
+  return jsonb_build_object('event_id', p_event_id, 'decision', p_decision);
+end $$;
+
+create or replace function public.holup_security_open_case(
+  p_profile_id bigint,
+  p_title text,
+  p_severity text,
+  p_event_ids bigint[],
+  p_summary text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_ref text; v_id bigint;
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']) then
+    perform public.crushly_fail(403, 'forbidden', 'You cannot open investigations.');
+  end if;
+  if coalesce(length(trim(p_title)), 0) < 5 then
+    perform public.crushly_fail(400, 'title_required', 'A case needs a title.');
+  end if;
+
+  v_ref := public.holup_next_case_ref();
+  insert into holup_investigation_cases (case_ref, profile_id, title, summary, severity, event_ids, opened_by)
+  values (v_ref, p_profile_id, p_title, p_summary, coalesce(p_severity, 'MEDIUM'), coalesce(p_event_ids, '{}'), auth.uid())
+  returning id into v_id;
+
+  if p_event_ids is not null and array_length(p_event_ids, 1) > 0 then
+    update holup_security_events
+       set status = 'INVESTIGATING', updated_at = public.now_ms()
+     where id = any (p_event_ids) and status = 'OPEN';
+  end if;
+
+  perform public.holup_cc_audit('investigations', 'case_opened', 'holup_investigation_cases', v_id::text, null,
+    jsonb_build_object('case_ref', v_ref, 'severity', p_severity));
+  return jsonb_build_object('case_id', v_id, 'case_ref', v_ref);
+end $$;
+
+create or replace function public.holup_security_close_case(
+  p_case_id bigint,
+  p_findings text,
+  p_decision text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_case holup_investigation_cases;
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin','fraud_investigator']) then
+    perform public.crushly_fail(403, 'forbidden', 'You cannot close investigations.');
+  end if;
+  if coalesce(length(trim(p_findings)), 0) < 10 then
+    perform public.crushly_fail(400, 'findings_required', 'A case cannot close without recorded findings.');
+  end if;
+  select * into v_case from holup_investigation_cases where id = p_case_id for update;
+  if v_case.id is null then perform public.crushly_fail(404, 'not_found', 'Case not found.'); end if;
+
+  update holup_investigation_cases
+     set findings = p_findings, decision = p_decision, decision_by = auth.uid(),
+         decision_at = public.now_ms(), status = 'CLOSED', closed_at = public.now_ms(),
+         updated_at = public.now_ms()
+   where id = p_case_id;
+
+  perform public.holup_cc_audit('investigations', 'case_closed', 'holup_investigation_cases', p_case_id::text,
+    jsonb_build_object('status', v_case.status), jsonb_build_object('decision', p_decision));
+  return jsonb_build_object('case_id', p_case_id, 'status', 'CLOSED');
+end $$;
+
+-- Enforcement. A temporary action stands on its own; a permanent one requires a
+-- reviewed case, which is how "no permanent penalty without review" is enforced
+-- in the database rather than in a policy document.
+create or replace function public.holup_enforce_action(
+  p_profile_id bigint,
+  p_action text,
+  p_reason text,
+  p_until_at bigint default null,
+  p_case_id bigint default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_id bigint; v_case holup_investigation_cases;
+begin
+  if not public.holup_has_admin_role(array['super_admin','security_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'You cannot enforce.');
+  end if;
+  -- Accept the readable uppercase form, store the vocabulary the existing
+  -- holup_account_actions_action_check already enforces (warn/restrict/suspend/
+  -- ban/restore/unrestrict). Writing 'WARN' here used to violate that check and
+  -- make every enforcement attempt fail.
+  if p_action not in ('WARN','RESTRICT','SUSPEND','REINSTATE') then
+    perform public.crushly_fail(400, 'bad_action', 'Unknown action.');
+  end if;
+  if coalesce(length(trim(p_reason)), 0) < 10 then
+    perform public.crushly_fail(400, 'reason_required', 'Enforcement needs a recorded reason.');
+  end if;
+
+  if p_until_at is null and p_action in ('RESTRICT','SUSPEND') then
+    if p_case_id is null then
+      perform public.crushly_fail(409, 'review_required', 'A permanent action requires an investigation case.');
+    end if;
+    select * into v_case from holup_investigation_cases where id = p_case_id;
+    if v_case.id is null or v_case.status not in ('CLOSED','PENDING_REVIEW') then
+      perform public.crushly_fail(409, 'review_required', 'The case must be reviewed and closed before a permanent action.');
+    end if;
+  end if;
+
+  insert into holup_account_actions (member_id, action, reason, until_at, detail, actor, actor_label, created_at)
+  values (p_profile_id,
+          case p_action when 'WARN' then 'warn'
+                        when 'RESTRICT' then 'restrict'
+                        when 'SUSPEND' then 'suspend'
+                        when 'REINSTATE' then 'restore' end,
+          p_reason, p_until_at,
+          jsonb_build_object('case_id', p_case_id), auth.uid(), public.holup_admin_role(), public.now_ms())
+  returning id into v_id;
+
+  perform public.holup_cc_audit('enforcement', p_action, 'holup_account_actions', v_id::text, null,
+    jsonb_build_object('profile_id', p_profile_id, 'until_at', p_until_at, 'case_id', p_case_id, 'reason', p_reason));
+  return jsonb_build_object('action_id', v_id, 'action', p_action);
+end $$;
+
+-- -------------------------------------------------------- money overviews ---
+-- Administrative view of the pool and liabilities. Funding in, owed out.
+create or replace function public.holup_monetisation_overview()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.holup_has_admin_role(array['super_admin','monetisation_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'You do not have access to monetisation.');
+  end if;
+  return jsonb_build_object(
+    'policy', (select to_jsonb(p) from holup_rewards_policy p),
+    'wallet_totals', (select jsonb_build_object(
+        'pending_minor', coalesce(sum(pending_minor), 0),
+        'available_minor', coalesce(sum(available_minor), 0),
+        'lifetime_minor', coalesce(sum(lifetime_minor), 0),
+        'paid_minor', coalesce(sum(paid_minor), 0),
+        'wallets', count(*)) from holup_creator_wallets),
+    'pool_totals', (select jsonb_build_object(
+        'funded_minor', coalesce(sum(funded_minor), 0),
+        'committed_minor', coalesce(sum(committed_minor), 0),
+        'distributed_minor', coalesce(sum(distributed_minor), 0),
+        'pools', count(*)) from holup_rewards_pools),
+    'open_payouts', (select jsonb_build_object(
+        'count', count(*), 'amount_minor', coalesce(sum(amount_minor), 0))
+        from holup_payout_requests where status in ('REQUESTED','UNDER_REVIEW','APPROVED','SENT')),
+    'creators', (select jsonb_build_object(
+        'eligible', count(*) filter (where status = 'ELIGIBLE'),
+        'pending', count(*) filter (where status = 'PENDING'),
+        'total', count(*)) from holup_creator_eligibility),
+    'recent_rewards', coalesce((select jsonb_agg(to_jsonb(r) order by r.id desc) from
+        (select id, pool_id, profile_id, amount_minor, currency, status, computed_at
+         from holup_creator_rewards order by id desc limit 20) r), '[]'::jsonb));
+end $$;
+
+create or replace function public.holup_advertising_overview()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.holup_has_admin_role(array['super_admin','advertising_admin']) then
+    perform public.crushly_fail(403, 'forbidden', 'You do not have access to advertising.');
+  end if;
+  return jsonb_build_object(
+    'settings', (select to_jsonb(s) from holup_flow_ads_settings s),
+    'campaigns', (select jsonb_build_object(
+        'total', count(*),
+        'running', count(*) filter (where status = 'running'),
+        'pending_review', count(*) filter (where status = 'pending_review'),
+        'budget_minor', coalesce(sum(budget_minor), 0),
+        'spent_minor', coalesce(sum(spent_minor), 0),
+        'impressions', coalesce(sum(impressions), 0),
+        'clicks', coalesce(sum(clicks), 0)) from holup_ad_campaigns),
+    'advertisers', (select count(*) from holup_advertisers),
+    'impressions_24h', (select jsonb_build_object(
+        'billable', count(*) filter (where billable),
+        'invalid', count(*) filter (where not billable),
+        'revenue_minor', coalesce(sum(cost_minor) filter (where billable), 0))
+        from holup_ad_impressions where shown_at > public.now_ms() - 86400000),
+    'top_campaigns', coalesce((select jsonb_agg(to_jsonb(c) order by c.spent_minor desc) from
+        (select id, name, status, budget_minor, spent_minor, impressions, clicks, currency
+         from holup_ad_campaigns order by spent_minor desc limit 10) c), '[]'::jsonb));
+end $$;
+
+grant execute on function public.holup_analytics_rollup(date) to authenticated;
+grant execute on function public.holup_regional_summary(integer) to authenticated;
+grant execute on function public.holup_my_admin_permissions() to authenticated;
+grant execute on function public.holup_admin_set_role(uuid, text, text) to authenticated;
+grant execute on function public.holup_security_decide(bigint, text, text) to authenticated;
+grant execute on function public.holup_security_open_case(bigint, text, text, bigint[], text) to authenticated;
+grant execute on function public.holup_security_close_case(bigint, text, text) to authenticated;
+grant execute on function public.holup_enforce_action(bigint, text, text, bigint, bigint) to authenticated;
+grant execute on function public.holup_monetisation_overview() to authenticated;
+grant execute on function public.holup_advertising_overview() to authenticated;
+
+-- ----------------------------------------------------------------- RielOS ---
+-- Management visibility only, over service-to-service credentials: counts and
+-- sums, never a member or a security record.
+create or replace function public.holup_platform_summary()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare v_pools jsonb; v_regions jsonb;
+begin
+  if not (current_setting('role', true) = 'service_role' or public.holup_admin_role() = 'super_admin') then
+    perform public.crushly_fail(403, 'forbidden', 'Platform summary is service-to-service only.');
+  end if;
+  select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) into v_pools from
+    (select id, period_start, period_end, currency, funded_minor, committed_minor, status
+     from holup_rewards_pools order by id desc limit 24) t;
+  select coalesce(jsonb_object_agg(level, n), '{}'::jsonb) into v_regions from
+    (select level, count(*) as n from holup_regions group by level) q;
+  return jsonb_build_object(
+    'generated_at', public.now_ms(),
+    'accounts', (select count(*) from profiles),
+    'accounts_7d', (select count(*) from profiles where created_at > public.now_ms() - 604800000),
+    'regions', v_regions,
+    'rewards', (select jsonb_build_object('funded_minor', coalesce(sum(funded_minor), 0),
+        'committed_minor', coalesce(sum(committed_minor), 0)) from holup_rewards_pools),
+    'advertising', (select jsonb_build_object('spent_minor', coalesce(sum(spent_minor), 0),
+        'active_campaigns', count(*) filter (where status = 'running')) from holup_ad_campaigns),
+    'payouts', (select jsonb_build_object(
+        'open', count(*) filter (where status in ('REQUESTED','UNDER_REVIEW','APPROVED','SENT')),
+        'paid_minor', coalesce(sum(amount_minor) filter (where status = 'PAID'), 0)) from holup_payout_requests),
+    'security_events_open', (select count(*) from holup_security_events where status in ('OPEN','INVESTIGATING')),
+    'investigations_open', (select count(*) from holup_investigation_cases where status in ('OPEN','IN_PROGRESS','PENDING_REVIEW')),
+    'pools', v_pools);
+end $$;
+
+grant execute on function public.holup_platform_summary() to authenticated, service_role;
+
+-- ================================ 20261118120000_space_viewers.sql
+
+-- 20261118120000_space_viewers
+--
+-- "Who viewed my Space?"
+--
+-- The recording half has existed since 20261112120000: `record_space_view` writes
+-- a row every time a member opens a Space, and the migration comment is explicit
+-- that "viewed their profile" was previously unanswerable anywhere in the database.
+--
+-- What was missing is the reading half. `space_views` has no grant to
+-- `authenticated` at all — not even a select policy — so a Space owner could not
+-- ask the one question the table exists to answer. The only consumer was
+-- `moment_circles()`, for the viewer's own row set.
+--
+-- This adds the owner's read, and only the owner's. There is deliberately no
+-- function that returns "who viewed member X" to anybody but X.
+
+-- ------------------------------------------------------------- helpful indexes
+-- The owner reads by `viewed_id`, which had no index: the existing one is keyed
+-- on the viewer. Without this, every profile open would scan the whole table.
+create index if not exists space_views_viewed_idx
+  on public.space_views (viewed_id, last_seen_at desc);
+
+-- ------------------------------------------------------- one view per person
+-- `space_views` keeps a `views` counter and a `last_seen_at`, so somebody who
+-- opens your Space every morning for a week is one row with views = 7. That is
+-- right for the ring and wrong for a viewer list, which should read "today",
+-- not "seven times since Tuesday". The list below shows each person once, at
+-- their most recent visit, because showing the same face seven times is not
+-- more information.
+
+/**
+ * Who has viewed my Space.
+ *
+ * `p_days` bounds the window so the list has a beginning; 0 means all time.
+ * Rows are ordered most recent first, then by id so paging is stable when two
+ * visits share a millisecond.
+ *
+ * A viewer whose profile the owner is no longer allowed to see — blocked in
+ * either direction, deleted, gone incognito, status not active — comes back as
+ * `profile: null`. The visit still happened and the count still includes it;
+ * what changes is that the owner cannot see who it was. That is the same rule
+ * `post_viewers` and `moment_viewers` already apply through
+ * `load_visible_profile`, and it is why a blocked person cannot be found here.
+ */
+create or replace function public.space_viewers(
+  p_limit integer default 100,
+  p_offset integer default 0,
+  p_days integer default 0
+)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me      bigint := public.me_id();
+  lim     integer := least(greatest(coalesce(p_limit, 100), 1), 100);
+  off     integer := greatest(coalesce(p_offset, 0), 0);
+  since   bigint;
+  total   integer;
+  items   jsonb;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if coalesce(p_days, 0) > 0 then
+    since := public.now_ms() - (p_days::bigint * 86400000);
+  end if;
+
+  select count(*)
+    into total
+    from public.space_views sv
+   where sv.viewed_id = me
+     and (since is null or sv.last_seen_at >= since);
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'profile',  v.profile,
+           'viewedAt', v.last_seen_at,
+           'views',    v.views
+         ) order by v.last_seen_at desc, v.viewer_id desc), '[]'::jsonb)
+    into items
+    from (
+      select sv.viewer_id,
+             sv.last_seen_at,
+             sv.views,
+             public.load_visible_profile(me, sv.viewer_id, false) as profile
+        from public.space_views sv
+       where sv.viewed_id = me
+         and (since is null or sv.last_seen_at >= since)
+       order by sv.last_seen_at desc, sv.viewer_id desc
+       limit lim offset off
+    ) v;
+
+  return jsonb_build_object('count', total, 'items', items);
+end $function$;
+
+revoke all on function public.space_viewers(integer, integer, integer) from public, anon;
+grant execute on function public.space_viewers(integer, integer, integer) to authenticated, service_role;
+
+-- ------------------------------------------------------- the count, everyone
+-- The number a member can be shown without opening anything. Cheap, and it says
+-- nothing about who. Kept separate from `space_viewers` so the Space can render
+-- a count on first paint without pulling 100 profiles it may never show.
+create or replace function public.space_view_count(p_days integer default 0)
+returns integer
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  me    bigint := public.me_id();
+  since bigint;
+  n     integer;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if coalesce(p_days, 0) > 0 then
+    since := public.now_ms() - (p_days::bigint * 86400000);
+  end if;
+  select count(*) into n
+    from public.space_views sv
+   where sv.viewed_id = me
+     and (since is null or sv.last_seen_at >= since);
+  return n;
+end $function$;
+
+revoke all on function public.space_view_count(integer) from public, anon;
+grant execute on function public.space_view_count(integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261118154000_cutover_tables_as_schema.sql
+
+-- 20261118154000_cutover_tables_as_schema
+--
+-- Two tables that production has and the migration chain does not.
+--
+-- `20261110080000_relationship_cutover.sql` creates `holup_homies` and
+-- `holup_whisper_permissions`, but that file declares itself "DISPOSABLE
+-- EXPERIMENT ONLY. Not a production migration", locks four tables in share row
+-- exclusive mode and backfills them from live connection data. `supabase/tests/run.py`
+-- therefore exempts it from the replay, which is right — and leaves everything
+-- after it that mentions those tables broken on a clean database:
+--
+--   add_up_needs_no_approval            lock table public.holup_homies
+--   support_notifications_and_…         from public.holup_whisper_permissions
+--   control_messaging                   references both
+--
+-- Production works only because those tables were created there once,
+-- out-of-band. A branch database, a fresh environment or a restore could not be
+-- built at all.
+--
+-- So this file adds the *schema* and nothing else. No locks (nothing is being
+-- cut over here), no backfill, no policy changes: the exact columns, defaults,
+-- checks and indexes the cutover defines, `if not exists` throughout. The data
+-- migration stays where it belongs, in the one-shot file, and the request goes
+-- with the message that already asked for a reviewed cutover.
+
+create table if not exists public.holup_homies (
+  user_a      bigint not null references public.profiles(id) on delete cascade,
+  user_b      bigint not null references public.profiles(id) on delete cascade,
+  accepted_at bigint not null default public.now_ms(),
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+
+create table if not exists public.holup_homie_requests (
+  sender_id    bigint not null references public.profiles(id) on delete cascade,
+  recipient_id bigint not null references public.profiles(id) on delete cascade,
+  status       text   not null check (status in ('pending','declined','withdrawn')),
+  created_at   bigint not null default public.now_ms(),
+  decided_at   bigint,
+  primary key (sender_id, recipient_id),
+  check (sender_id <> recipient_id)
+);
+
+create index if not exists holup_homie_requests_inbox
+  on public.holup_homie_requests (recipient_id, status, created_at desc);
+
+create table if not exists public.holup_homie_attempts (
+  sender_id  bigint not null references public.profiles(id) on delete cascade,
+  created_at bigint not null default public.now_ms()
+);
+
+create index if not exists holup_homie_attempts_recent
+  on public.holup_homie_attempts (sender_id, created_at);
+
+create table if not exists public.holup_whisper_permissions (
+  conversation_id   bigint  primary key references public.conversations(id) on delete cascade,
+  requester_id      bigint  not null references public.profiles(id) on delete cascade,
+  recipient_id      bigint  not null references public.profiles(id) on delete cascade,
+  state             text    not null check (state in ('pending','accepted','declined','blocked')),
+  request_messages  smallint not null default 0 check (request_messages between 0 and 2),
+  created_at        bigint  not null default public.now_ms(),
+  decided_at        bigint,
+  check (requester_id <> recipient_id)
+);
+
+alter table public.holup_homies            enable row level security;
+alter table public.holup_homie_requests    enable row level security;
+alter table public.holup_homie_attempts    enable row level security;
+alter table public.holup_whisper_permissions enable row level security;
+
+-- Reachable only through SECURITY DEFINER functions, exactly as the cutover
+-- intended: no direct access for a client, anon or a signed-in member.
+do $$
+begin
+  execute 'revoke all on public.holup_homies, public.holup_homie_requests, public.holup_homie_attempts from public, anon, authenticated';
+  execute 'revoke all on public.holup_whisper_permissions from public, anon, authenticated';
+exception when undefined_object then
+  null; -- a role that does not exist in this environment; nothing to revoke
+end $$;
+
+comment on table public.holup_homies is
+  'Accepted Add Ups between two members. Schema only here; the data migration lives in the one-shot cutover file.';
+
+-- ================================ 20261118155000_web_sessions_table.sql
+
+-- 20261118155000_web_sessions_table
+--
+-- The browser clock's table, written down.
+--
+-- `20261118140000_web_clock` and `20261118160000_web_write_guard` both use
+-- `public.holup_web_sessions`, and neither of them creates it: the table was put
+-- on the live database by hand while the rule was being built, so production
+-- works and a clean replay of the migrations does not. CI found it the way it
+-- should — `type "public.holup_web_sessions" does not exist` on line 78 of the
+-- write guard — which means no fresh environment could ever be built from this
+-- repository, including a restore after a disaster.
+--
+-- It is numbered 155000 rather than 180000 for one reason: `web_write_guard` runs
+-- at 160000 and declares a variable of this type, so the table has to exist by
+-- then. A migration that fixes the chain has to sort before the thing that
+-- depends on it, or it fixes nothing.
+--
+-- Written defensively: `if not exists` everywhere, so applying it to the live
+-- database (where the table is already there, with rows) changes nothing, and a
+-- replay from zero gets the same shape production has.
+--
+-- The columns are exactly the ones the live table has:
+--
+--   profile_id     one row per member
+--   first_seen_at  when the browser day started — the 24 hours are counted from
+--                  here, once, and never reset
+--   last_seen_at   the last visit, for the console's activity view
+--   last_platform  'web' today; the column exists so a second surface does not
+--                  need a migration to be distinguishable
+--   opens          how many times the browser has been opened
+--
+-- Read-only by design: RLS is on and there is no policy granting a member write
+-- access. The only writers are `holup_web_open` and the heartbeat, both
+-- SECURITY DEFINER.
+
+create table if not exists public.holup_web_sessions (
+  profile_id     bigint primary key references public.profiles(id) on delete cascade,
+  first_seen_at  bigint not null,
+  last_seen_at   bigint not null,
+  last_platform  text   not null default 'web',
+  opens          integer not null default 1
+);
+
+alter table public.holup_web_sessions enable row level security;
+
+comment on table public.holup_web_sessions is
+  'One row per member who has used holUpp in a browser. The 24-hour web day is counted from first_seen_at, once, and never resets.';
+
+comment on column public.holup_web_sessions.first_seen_at is
+  'Start of the browser day, in epoch milliseconds. Never updated after the first insert.';
+
+-- A member may read their own row (the app shows the countdown); nobody else may.
+drop policy if exists "own web session" on public.holup_web_sessions;
+create policy "own web session" on public.holup_web_sessions
+  for select to authenticated
+  using (profile_id = public.me_id());
+
+-- No function is redefined here.
+--
+-- `holup_web_open(p_platform)` already exists on the live database and does more
+-- than a naive rewrite of it would: it counts `opens` once per calendar day
+-- rather than on every reload, and returns the remaining time and the platform.
+-- Replacing it from this file would have quietly downgraded the live rule to
+-- whatever this migration happened to say. The table is the only thing missing,
+-- so the table is the only thing this adds.
+
+-- ================================ 20261118160000_web_write_guard.sql
+
+-- 20261118160000_web_write_guard
+--
+-- Makes the 24-hour browser rule *true*, not merely drawn.
+--
+-- 20261118140000_web_clock records when somebody first used the browser and
+-- says when their day is over. That was only a verdict; nothing read it. A
+-- guard that lives in the client is a suggestion — clearing site data, or
+-- calling the RPC from a console, goes straight past it. So the refusal happens
+-- here, in the function that writes.
+--
+-- How the server knows it is a browser
+-- ------------------------------------
+-- It is told, by the one header the browser client sets
+-- (`x-holupp-browser-day`, added in `api/client.ts`) and PostgREST exposes as
+-- `request.headers`. Being told is the weak point, and it is contained by only
+-- ever *adding* restriction: the header can make a request refused, never
+-- allowed. A native app does not send it and is unaffected. A browser that
+-- omits it gains nothing new, because its first visit was already recorded by
+-- `holup_web_open` — the clock exists whether or not a later request admits
+-- where it came from. Sending an explicit `0` is treated the same as sending
+-- `1`; only absence means "not a browser".
+--
+-- What is blocked
+-- ---------------
+-- Writing: posts, Moments, messages, Circle messages, Circles, members, plus
+-- the two recording calls a browser fires while merely reading
+-- (`record_post_view`, `record_space_view`) — the read-only session should not
+-- keep writing to tables either.
+--
+-- What is never blocked: reads, and anything that removes. A member whose day
+-- is over can still delete their own post, leave a Circle, or block somebody.
+-- Taking away the ability to retreat would be indefensible.
+--
+-- The original bodies are preserved as `<name>__native`; each wrapper asserts
+-- and then calls through, so behaviour is identical once the guard passes.
+
+-- --------------------------------------------------------------- request state
+create or replace function public.holup_request_is_browser()
+returns boolean
+language plpgsql
+stable
+set search_path to 'public'
+as $function$
+declare
+  hdrs json;
+begin
+  begin
+    hdrs := nullif(current_setting('request.headers', true), '')::json;
+  exception when others then
+    hdrs := null;
+  end;
+  if hdrs is null then
+    return false;
+  end if;
+  return (hdrs ->> 'x-holupp-browser-day') is not null;
+end $function$;
+
+grant execute on function public.holup_request_is_browser() to authenticated, service_role;
+
+/**
+ * Whether writing is allowed right now, and why not.
+ *
+ * Null when allowed. `web_day_over` when this browser's 24 hours are spent.
+ *
+ * Deliberately does not create a clock row: a read-only guard should not write.
+ * A browser that never called `holup_web_open` has no day to run out of, and the
+ * next app load starts one.
+ */
+create or replace function public.holup_web_write_block()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me       bigint := public.me_id();
+  row      public.holup_web_sessions;
+  limit_ms constant bigint := 24::bigint * 3600000;
+begin
+  if me is null or not public.holup_request_is_browser() then
+    return null;
+  end if;
+  select * into row from public.holup_web_sessions where profile_id = me;
+  if not found then
+    return null;
+  end if;
+  if public.now_ms() - row.first_seen_at < limit_ms then
+    return null;
+  end if;
+  return jsonb_build_object(
+    'code', 'web_day_over',
+    'message', 'Your browser day is over. You can still read everything here — posting, Moments, clips and Whispers are in the app.',
+    'firstSeenAt', row.first_seen_at
+  );
+end $function$;
+
+revoke all on function public.holup_web_write_block() from public, anon;
+grant execute on function public.holup_web_write_block() to authenticated, service_role;
+
+-- One refusal, so every guarded function answers in the same words and the same
+-- HTTP status, and the app only has to recognise one code.
+create or replace function public.holup_assert_web_can_write()
+returns void
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  reason jsonb := public.holup_web_write_block();
+begin
+  if reason is not null then
+    perform public.crushly_fail(403, 'web_day_over', reason ->> 'message');
+  end if;
+end $function$;
+
+revoke all on function public.holup_assert_web_can_write() from public, anon;
+grant execute on function public.holup_assert_web_can_write() to authenticated, service_role;
+
+-- ============================================================ guarded writes
+--
+-- Idempotent: a name is only wrapped once, so re-running this file cannot wrap a
+-- wrapper.
+
+do $$
+declare
+  pairs constant text[][] := array[
+    array['create_post', 'p_body text default ''''::text, p_media_url text default null::text, p_audience text default ''connections''::text, p_circle_id bigint default null::bigint, p_edit jsonb default null::jsonb', 'p_body, p_media_url, p_audience, p_circle_id, p_edit'],
+    array['create_post_with_options', 'p_body text, p_media_url text, p_audience text, p_circle_id bigint, p_edit jsonb, p_comments_enabled boolean', 'p_body, p_media_url, p_audience, p_circle_id, p_edit, p_comments_enabled'],
+    array['create_post_with_location', 'p_body text, p_media_url text, p_audience text, p_circle_id bigint, p_edit jsonb, p_comments_enabled boolean, p_location text', 'p_body, p_media_url, p_audience, p_circle_id, p_edit, p_comments_enabled, p_location'],
+    array['create_moment', 'p_kind text default ''text''::text, p_body text default ''''::text, p_media_url text default null::text, p_style text default ''noir''::text, p_audience text default ''everyone''::text, p_edit jsonb default null::jsonb', 'p_kind, p_body, p_media_url, p_style, p_audience, p_edit'],
+    array['create_moment', 'p_kind text, p_body text, p_media_url text, p_style text, p_audience text, p_duration_ms bigint, p_edit jsonb', 'p_kind, p_body, p_media_url, p_style, p_audience, p_duration_ms, p_edit'],
+    array['send_message', 'p_conversation_id bigint, p_kind text default ''text''::text, p_body text default ''''::text, p_media_url text default null::text, p_meta jsonb default ''{}''::jsonb', 'p_conversation_id, p_kind, p_body, p_media_url, p_meta'],
+    array['open_conversation', 'p_target_id bigint', 'p_target_id'],
+    array['send_circle_message', 'p_circle_id bigint, p_body text default ''''::text, p_media_url text default null::text, p_kind text default ''text''::text, p_edit jsonb default null::jsonb', 'p_circle_id, p_body, p_media_url, p_kind, p_edit'],
+    array['create_circle', 'p_name text, p_about text default ''''::text, p_member_ids bigint[] default ''{}''::bigint[]', 'p_name, p_about, p_member_ids'],
+    array['add_circle_member', 'p_circle_id bigint, p_member_id bigint', 'p_circle_id, p_member_id'],
+    array['record_space_view', 'p_member_id bigint', 'p_member_id'],
+    array['record_post_view', 'p_post_id bigint, p_dwell_ms integer, p_completed boolean default false, p_position integer default null::integer', 'p_post_id, p_dwell_ms, p_completed, p_position']
+  ];
+  i integer;
+  fn text;
+  sig text;
+  call_args text;
+  res text;
+  ident text;
+begin
+  for i in 1 .. array_length(pairs, 1) loop
+    fn := pairs[i][1];
+    sig := pairs[i][2];
+    call_args := pairs[i][3];
+
+    select pg_get_function_result(p.oid), pg_get_function_identity_arguments(p.oid) into res, ident
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = fn
+       and pg_get_function_identity_arguments(p.oid) = regexp_replace(sig, ' default [^,]+', '', 'gi')
+     limit 1;
+
+    if res is null then
+      raise notice 'web_write_guard: % (%). skipped — signature not found', fn, sig;
+      continue;
+    end if;
+
+    if exists (select 1 from pg_proc q join pg_namespace nn on nn.oid = q.pronamespace
+                where nn.nspname = 'public' and q.proname = fn || '__native') then
+      -- Already wrapped. Drop the wrapper first so a changed signature can be
+      -- replaced cleanly.
+      execute format('drop function if exists public.%I(%s)', fn, ident);
+    else
+      execute format('alter function public.%I(%s) rename to %I', fn, ident, fn || '__native');
+    end if;
+
+    execute format(
+      'create or replace function public.%I(%s) returns %s language plpgsql security definer set search_path to ''public'' as $f$ begin perform public.holup_assert_web_can_write(); return public.%I__native(%s); end $f$;',
+      fn, sig, res, fn, call_args);
+  end loop;
+end $$;
+
+-- The wrappers are new objects, so they need the grants the originals had.
+grant execute on function public.create_post(text, text, text, bigint, jsonb) to authenticated, service_role;
+grant execute on function public.create_post_with_options(text, text, text, bigint, jsonb, boolean) to authenticated, service_role;
+grant execute on function public.create_post_with_location(text, text, text, bigint, jsonb, boolean, text) to authenticated, service_role;
+grant execute on function public.create_moment(text, text, text, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.create_moment(text, text, text, text, text, bigint, jsonb) to authenticated, service_role;
+grant execute on function public.send_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.open_conversation(bigint) to authenticated, service_role;
+grant execute on function public.send_circle_message(bigint, text, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.create_circle(text, text, bigint[]) to authenticated, service_role;
+grant execute on function public.add_circle_member(bigint, bigint) to authenticated, service_role;
+grant execute on function public.record_space_view(bigint) to authenticated, service_role;
+grant execute on function public.record_post_view(bigint, integer, boolean, integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261118180000_control_messaging.sql
+
+-- 20261118180000_control_messaging
+--
+-- Something the Control Centre could not do at all: start a conversation.
+--
+-- The centre could warn a member, restrict them, suspend them, ban them, restore
+-- them — a wall of consequences, and no way to say a sentence first. Support that
+-- only exists as a punishment is not support. This adds the missing verb.
+--
+-- Identity is the hard part, not delivery
+-- ---------------------------------------
+-- A staff account writing into a member's Whispers as itself would put a named
+-- person, with a staff profile and an opinion, inside somebody's private
+-- messages. That is a different product and a worse one. So every message sent
+-- from here is sent by **holUpp Support** — one fixed, unclaimable identity that
+-- the member sees, and staff never appear as themselves.
+--
+-- The conversation is a real thread on the member's side: it lands in their
+-- Whispers inbox, it appends to any thread they already have with Support, and
+-- their reply comes back here. Nothing is simulated, and nothing is delivered
+-- to the wrong person: `open_conversation` is bypassed on purpose, because that
+-- function asks the *member's* rules about who may message whom. Support is not
+-- a stranger asking; it is the platform answering.
+--
+-- Authorisation: every entry point calls `holup_cc_require('notifications')`.
+-- Reading requires 'read'; sending requires 'manage'. That is the same module
+-- the Inbox already uses, so an account that can read support mail can read these
+-- threads, and only an account that can act can answer.
+
+-- --------------------------------------------------------------- who we are
+-- Looked up rather than hardcoded: the Support profile is a real profile row, and
+-- if somebody renames it the centre follows.
+create or replace function public.holup_cc_support_profile()
+returns bigint
+language sql stable security definer set search_path to 'public'
+as $function$
+  select p.id
+    from public.profiles p
+   where p.username = 'holup'
+   order by p.id
+   limit 1;
+$function$;
+
+revoke all on function public.holup_cc_support_profile() from public, anon;
+grant execute on function public.holup_cc_support_profile() to authenticated, service_role;
+
+/**
+ * The list: every thread Support has with a member, newest activity first.
+ *
+ * Built from `conversations` where one side is the Support profile, so it can
+ * only ever contain real threads. `unread` counts the member's messages that
+ * Support has not read — the number that means somebody is waiting.
+ */
+create or replace function public.holup_cc_threads(p jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  support bigint := public.holup_cc_support_profile();
+  lim  integer := least(greatest(coalesce(nullif(p->>'limit','')::integer, 50), 1), 200);
+  off  integer := greatest(coalesce(nullif(p->>'offset','')::integer, 0), 0);
+  q    text := nullif(trim(p->>'q'), '');
+  items jsonb;
+  total integer;
+begin
+  perform public.holup_cc_require('notifications', false);
+
+  if support is null then
+    return jsonb_build_object('supportProfileId', null, 'total', 0, 'items', '[]'::jsonb,
+      'note', 'No profile with the username holup exists, so there is no Support identity to send from.');
+  end if;
+
+  select count(*) into total
+    from public.conversations c
+    join public.profiles other on other.id = case when c.user_a = support then c.user_b else c.user_a end
+   where support in (c.user_a, c.user_b)
+     and (q is null or other.name ilike '%' || q || '%' or other.username ilike '%' || q || '%');
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'conversationId', t.id,
+           'member', jsonb_build_object('id', t.other_id, 'name', t.other_name, 'username', t.other_username, 'status', t.other_status),
+           'lastMessageAt', t.last_message_at,
+           'lastBody', t.last_body,
+           'lastFromSupport', t.last_from_support,
+           'unread', t.unread
+         ) order by t.last_message_at desc nulls last, t.id desc), '[]'::jsonb)
+    into items
+    from (
+      select c.id, c.last_message_at, other.id as other_id, other.name as other_name,
+             other.username as other_username, other.status as other_status,
+             (select m.body from public.messages m where m.conversation_id = c.id order by m.created_at desc, m.id desc limit 1) as last_body,
+             (select m.sender_id = support from public.messages m where m.conversation_id = c.id order by m.created_at desc, m.id desc limit 1) as last_from_support,
+             (select count(*) from public.messages m
+               where m.conversation_id = c.id and m.sender_id <> support and m.read_at is null) as unread
+        from public.conversations c
+        join public.profiles other on other.id = case when c.user_a = support then c.user_b else c.user_a end
+       where support in (c.user_a, c.user_b)
+         and (q is null or other.name ilike '%' || q || '%' or other.username ilike '%' || q || '%')
+       order by c.last_message_at desc nulls last, c.id desc
+       limit lim offset off
+    ) t;
+
+  return jsonb_build_object('supportProfileId', support, 'total', total, 'items', items);
+end $function$;
+
+revoke all on function public.holup_cc_threads(jsonb) from public, anon;
+grant execute on function public.holup_cc_threads(jsonb) to authenticated, service_role;
+
+/**
+ * One thread, with both sides.
+ *
+ * Reading it marks the member's messages read — the same thing opening a mail in
+ * the Inbox does. That is the only write a read-level account can cause here.
+ */
+create or replace function public.holup_cc_thread(p jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  support bigint := public.holup_cc_support_profile();
+  cid bigint := nullif(p->>'conversationId','')::bigint;
+  member bigint := nullif(p->>'memberId','')::bigint;
+  conv public.conversations;
+  other public.profiles;
+  msgs jsonb;
+begin
+  perform public.holup_cc_require('notifications', false);
+  if support is null then
+    perform public.crushly_fail(409, 'no_support_identity', 'No profile with the username holup exists.');
+  end if;
+
+  if cid is not null then
+    select * into conv from public.conversations where id = cid;
+    if not found then
+      perform public.crushly_fail(404, 'not_found', 'That conversation does not exist.');
+    end if;
+    if support not in (conv.user_a, conv.user_b) then
+      perform public.crushly_fail(404, 'not_found', 'That conversation is not a Support thread.');
+    end if;
+  elsif member is not null then
+    select * into conv from public.conversations
+     where user_a = least(support, member) and user_b = greatest(support, member);
+    if not found then
+      select * into other from public.profiles where id = member;
+      if not found then
+        perform public.crushly_fail(404, 'not_found', 'No such member.');
+      end if;
+      -- A thread that does not exist yet is not an error: the centre is about to
+      -- start one, and it needs the member's name to write it.
+      return jsonb_build_object(
+        'conversationId', null,
+        'member', jsonb_build_object('id', other.id, 'name', other.name, 'username', other.username, 'status', other.status),
+        'messages', '[]'::jsonb
+      );
+    end if;
+  else
+    perform public.crushly_fail(400, 'bad_request', 'A conversation or a member is required.');
+  end if;
+
+  select p.* into other from public.profiles p
+   where p.id = case when conv.user_a = support then conv.user_b else conv.user_a end;
+
+  update public.messages
+     set read_at = coalesce(read_at, public.now_ms())
+   where conversation_id = conv.id and sender_id <> support and read_at is null;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', m.id, 'fromSupport', m.sender_id = support, 'kind', m.kind,
+           'body', m.body, 'mediaUrl', m.media_url, 'createdAt', m.created_at, 'readAt', m.read_at
+         ) order by m.created_at asc, m.id asc), '[]'::jsonb)
+    into msgs
+    from public.messages m where m.conversation_id = conv.id;
+
+  return jsonb_build_object(
+    'conversationId', conv.id,
+    'member', jsonb_build_object('id', other.id, 'name', other.name, 'username', other.username, 'status', other.status),
+    'messages', msgs
+  );
+end $function$;
+
+revoke all on function public.holup_cc_thread(jsonb) from public, anon;
+grant execute on function public.holup_cc_thread(jsonb) to authenticated, service_role;
+
+/**
+ * Say something to a member as Support — creating the thread if there is not one.
+ *
+ * `manage` on notifications, not `read`: this is an action, and it appears in
+ * the member's app as a message from the platform.
+ *
+ * The conversation is created directly rather than through `open_conversation`
+ * because that function applies the *member's* privacy rules about who may
+ * approach them. Support is not approaching; it is answering. But it still
+ * refuses two cases: a non-existent member, and a banned one — a thread with
+ * somebody who cannot read it is a lie about having contacted them.
+ */
+create or replace function public.holup_cc_send_support_message(p jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  support bigint := public.holup_cc_support_profile();
+  actor   uuid   := auth.uid();
+  member  bigint := nullif(p->>'memberId','')::bigint;
+  cid     bigint := nullif(p->>'conversationId','')::bigint;
+  body    text   := nullif(trim(p->>'body'), '');
+  other   public.profiles;
+  conv    public.conversations;
+  msg     public.messages;
+  nowms   bigint := public.now_ms();
+begin
+  perform public.holup_cc_require('notifications', true);
+
+  if support is null then
+    perform public.crushly_fail(409, 'no_support_identity', 'No profile with the username holup exists, so nothing can be sent as Support.');
+  end if;
+  if body is null or length(body) < 1 then
+    perform public.crushly_fail(400, 'empty', 'Write something before sending.');
+  end if;
+  if length(body) > 4000 then
+    perform public.crushly_fail(400, 'too_long', 'Keep it under 4000 characters.');
+  end if;
+
+  if cid is not null then
+    select * into conv from public.conversations where id = cid;
+    if not found or support not in (conv.user_a, conv.user_b) then
+      perform public.crushly_fail(404, 'not_found', 'That is not a Support conversation.');
+    end if;
+    member := case when conv.user_a = support then conv.user_b else conv.user_a end;
+  else
+    if member is null then
+      perform public.crushly_fail(400, 'bad_request', 'Choose a member to write to.');
+    end if;
+    select * into other from public.profiles where id = member;
+    if not found then
+      perform public.crushly_fail(404, 'not_found', 'No such member.');
+    end if;
+    if other.status = 'banned' then
+      perform public.crushly_fail(409, 'banned', 'That member is banned and cannot receive messages.');
+    end if;
+    select * into conv from public.conversations
+     where user_a = least(support, member) and user_b = greatest(support, member);
+    if not found then
+      insert into public.conversations (user_a, user_b, created_at, last_message_at)
+      values (least(support, member), greatest(support, member), nowms, nowms)
+      returning * into conv;
+    end if;
+  end if;
+
+  /*
+   * Support writes with permission, and the difference is not cosmetic.
+   *
+   * `holup_whisper_insert_guard` is the member-to-member rule: a stranger gets
+   * two requests, and the recipient decides. Applied to this function it would
+   * mean the platform's own support message sat *unreadable* behind a request
+   * the member had to accept — which is not support, it is a cold call. Support
+   * is also not a stranger: the member is writing to this same thread.
+   *
+   * So the permission row is accepted first, and the guard — which is not
+   * touched, and still runs — sees an accepted thread and lets the insert
+   * through. Every other property it enforces still holds: the conversation must
+   * exist, the sender must be in it, and neither side may have blocked the other.
+   */
+  insert into public.holup_whisper_permissions as wp
+    (conversation_id, requester_id, recipient_id, state, request_messages, created_at, decided_at)
+  values (conv.id, support, member, 'accepted', 0, nowms, nowms)
+  on conflict (conversation_id) do update
+    set state = 'accepted',
+        decided_at = coalesce(wp.decided_at, nowms);
+
+  insert into public.messages (conversation_id, sender_id, kind, body, meta, created_at)
+  values (conv.id, support, 'text', body, jsonb_build_object('fromControl', true, 'actor', actor), nowms)
+  returning * into msg;
+
+  update public.conversations set last_message_at = nowms where id = conv.id;
+
+  select * into other from public.profiles
+   where id = case when conv.user_a = support then conv.user_b else conv.user_a end;
+
+  return jsonb_build_object(
+    'conversationId', conv.id,
+    'messageId', msg.id,
+    'member', jsonb_build_object('id', other.id, 'name', other.name),
+    'sentAt', nowms
+  );
+end $function$;
+
+revoke all on function public.holup_cc_send_support_message(jsonb) from public, anon;
+grant execute on function public.holup_cc_send_support_message(jsonb) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261118220000_support_notifications_and_required_region.sql
+
+-- Two corrections to how holUpp Support reaches a member, and one new rule about
+-- where a member is.
+--
+-- 1. Support contact is a notification from holUpp, not a Whisper from a person
+--    called "Holup". A Whisper is a conversation between two members, and a
+--    support note arriving as one — among somebody's crushes, titled with a
+--    stranger's display name — is the wrong shape and the wrong voice. The
+--    message row stays (it is the record, and a member can still answer in the
+--    same thread); what changes is that the member is *told* through
+--    Notifications, as holUpp, and that thread is marked official.
+--
+-- 2. A region is required. Until now detection was a fire-and-forget call on
+--    session refresh, so 2 of 25 accounts had a region and every user page in
+--    the Control Centre read "Country not recorded". It now records on every
+--    session, sets the profile's country when nothing is declared, and can be
+--    asked whether the member has been located yet.
+--
+-- 3. Where a member is is private by default. It is never shown to other
+--    members unless they choose to show it.
+
+-- ---------------------------------------------------------------- 1. contact
+
+alter table public.notifications
+  drop constraint if exists notifications_kind_check;
+alter table public.notifications
+  add constraint notifications_kind_check check (kind in (
+    'crush','deep_crush','mutual','message','moment_reply','moment_reaction',
+    'verified','verification_rejected','post_reaction','post_comment','post_mention',
+    'keep','circle_request','circle_approved','circle_declined','circle_invite','circle_joined',
+    'verification','announcement','account','moderation','payment','system',
+    /* holUpp Support wrote to you. Deliberately its own kind: it must not be
+       filed under Whispers, because it is not a Whisper. */
+    'support'
+  ));
+
+-- A support thread is identifiable as one, so the member's app can label it and
+-- the Control Centre can list its own threads without guessing from a name.
+alter table public.conversations
+  add column if not exists official boolean not null default false;
+
+update public.conversations c
+   set official = true
+ where exists (
+   select 1 from public.holup_whisper_permissions wp
+    where wp.conversation_id = c.id and wp.state = 'accepted'
+ );
+
+-- Support messages now also land in Notifications, addressed from holUpp itself.
+create or replace function public.holup_cc_send_support_message(p jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  support bigint := public.holup_cc_support_profile();
+  actor   uuid   := auth.uid();
+  member  bigint := nullif(p->>'memberId','')::bigint;
+  cid     bigint := nullif(p->>'conversationId','')::bigint;
+  body    text   := nullif(trim(p->>'body'), '');
+  other   public.profiles;
+  conv    public.conversations;
+  msg     public.messages;
+  nowms   bigint := public.now_ms();
+begin
+  perform public.holup_cc_require('notifications', true);
+
+  if support is null then
+    perform public.crushly_fail(409, 'no_support_identity', 'No profile with the username holup exists, so nothing can be sent as Support.');
+  end if;
+  if body is null or length(body) < 1 then
+    perform public.crushly_fail(400, 'empty', 'Write something before sending.');
+  end if;
+  if length(body) > 4000 then
+    perform public.crushly_fail(400, 'too_long', 'Keep it under 4000 characters.');
+  end if;
+
+  if cid is not null then
+    select * into conv from public.conversations where id = cid;
+    if not found or support not in (conv.user_a, conv.user_b) then
+      perform public.crushly_fail(404, 'not_found', 'That is not a Support conversation.');
+    end if;
+    member := case when conv.user_a = support then conv.user_b else conv.user_a end;
+  else
+    if member is null then
+      perform public.crushly_fail(400, 'bad_request', 'Choose a member to write to.');
+    end if;
+    select * into other from public.profiles where id = member;
+    if not found then
+      perform public.crushly_fail(404, 'not_found', 'No such member.');
+    end if;
+    if other.status = 'banned' then
+      perform public.crushly_fail(409, 'banned', 'That member is banned and cannot receive messages.');
+    end if;
+    select * into conv from public.conversations
+     where user_a = least(support, member) and user_b = greatest(support, member);
+    if not found then
+      insert into public.conversations (user_a, user_b, created_at, last_message_at, official)
+      values (least(support, member), greatest(support, member), nowms, nowms, true)
+      returning * into conv;
+    end if;
+  end if;
+
+  update public.conversations set official = true where id = conv.id;
+
+  /*
+   * Support writes with permission. `holup_whisper_insert_guard` is the
+   * member-to-member rule: a stranger gets two requests and the recipient
+   * decides. Support is not a stranger — it is the platform, and the member is
+   * writing back in this same thread. The permission row is accepted first so
+   * the guard, which is not touched and still runs, lets the insert through.
+   */
+  insert into public.holup_whisper_permissions as wp
+    (conversation_id, requester_id, recipient_id, state, request_messages, created_at, decided_at)
+  values (conv.id, support, member, 'accepted', 0, nowms, nowms)
+  on conflict (conversation_id) do update
+    set state = 'accepted',
+        decided_at = coalesce(wp.decided_at, nowms);
+
+  insert into public.messages (conversation_id, sender_id, kind, body, meta, created_at)
+  values (conv.id, support, 'text', body, jsonb_build_object('fromControl', true, 'actor', actor), nowms)
+  returning * into msg;
+
+  update public.conversations set last_message_at = nowms where id = conv.id;
+
+  /*
+   * The notification is the point of this migration. actor_id stays null on
+   * purpose: nothing about this came from a member, and a null actor is what
+   * makes the member's app say "holUpp" instead of a name. ref_id is the
+   * conversation, so a tap opens the thread to answer in.
+   */
+  insert into public.notifications (user_id, kind, actor_id, ref_id, body, created_at)
+  values (member, 'support', null, conv.id, left(body, 300), nowms);
+
+  select * into other from public.profiles
+   where id = case when conv.user_a = support then conv.user_b else conv.user_a end;
+
+  return jsonb_build_object(
+    'conversationId', conv.id,
+    'messageId', msg.id,
+    'member', jsonb_build_object('id', other.id, 'name', other.name),
+    'sentAt', nowms
+  );
+end $function$;
+
+revoke all on function public.holup_cc_send_support_message(jsonb) from public, anon;
+grant execute on function public.holup_cc_send_support_message(jsonb) to authenticated, service_role;
+
+-- ------------------------------------------------------------------ 2. region
+
+-- Whether a member can be located at all, so the app can require it rather than
+-- hope. No location values are returned to the caller.
+create or replace function public.holup_region_status()
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+stable
+as $function$
+declare
+  me bigint := public.me_id();
+  r  public.holup_user_regions;
+begin
+  if me is null then return jsonb_build_object('located', false, 'required', true); end if;
+  select * into r from public.holup_user_regions where profile_id = me;
+  return jsonb_build_object(
+    'located', coalesce(r.detected_country_code, r.effective_country_code) is not null,
+    'required', true,
+    'declared', r.selected_country_code,
+    'method', r.detection_method,
+    'detectedAt', r.last_detected_at,
+    /* Detection is required; disclosure is not. False unless the member says
+       otherwise, and there is no profile field that leaks it in the meantime. */
+    'shared', coalesce(r.share_with_members, false)
+  );
+end $function$;
+
+revoke all on function public.holup_region_status() from public, anon;
+grant execute on function public.holup_region_status() to authenticated;
+
+alter table public.holup_user_regions
+  add column if not exists share_with_members boolean not null default false;
+
+create or replace function public.holup_region_share(p jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  want boolean := coalesce((p->>'share')::boolean, false);
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Sign in first.'); end if;
+  update public.holup_user_regions set share_with_members = want, updated_at = public.now_ms()
+   where profile_id = me;
+  if not found then
+    perform public.crushly_fail(409, 'not_located', 'Turn location on before choosing whether to share it.');
+  end if;
+  return jsonb_build_object('shared', want);
+end $function$;
+
+revoke all on function public.holup_region_share(jsonb) from public, anon;
+grant execute on function public.holup_region_share(jsonb) to authenticated;
+
+-- Support messages are not whispers. Keep them out of the section that says
+-- "where a Crush turns into a conversation".
+create or replace function public.holup_conversations_flag_official()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.official is null then new.official := false; end if;
+  return new;
+end $function$;
+
+drop trigger if exists conversations_flag_official on public.conversations;
+create trigger conversations_flag_official
+  before insert or update on public.conversations
+  for each row execute function public.holup_conversations_flag_official();
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261119200000_identity_engine_signals.sql
+
+-- holupp_identity_engine
+--
+-- Five behavioural identities, computed from activity that already exists.
+--
+-- ── What this does NOT do ────────────────────────────────────────────────────
+--
+-- It does not read a single message body. `messages.body` is never selected by
+-- anything in this file: the only facts taken from that table are its shape —
+-- was it a voice note, was it a text — plus who sent it and when. A voice note
+-- counts as communication; what was said in it is nobody's business, including
+-- this engine's.
+--
+-- ── Why there is no event table ──────────────────────────────────────────────
+--
+-- The brief proposes `holupp_identity_events`. Every signal it would hold
+-- already exists, with an author and a timestamp, in `posts`, `post_comments`,
+-- `post_reactions`, `messages`, `post_feedback` (views, with dwell),
+-- `space_views` and `moment_views`. Copying them into a second table would give
+-- the platform two sources of truth for "what did this person do", and the copy
+-- is the one that goes stale: a deleted post, a hidden comment or a moderated
+-- reaction would keep voting in the identity engine forever.
+--
+-- So the events are read where they live, inside a 30-day window. What is added
+-- here is the part that genuinely does not exist: a record of searches (for
+-- Explorer) and the computed result.
+--
+-- ── Trust ────────────────────────────────────────────────────────────────────
+--
+-- Every score is computed in this file, in the database. A client cannot submit
+-- one, cannot read anyone else's, and cannot write its own. The write paths are
+-- SECURITY DEFINER functions that take no score arguments at all.
+
+-- ---------------------------------------------------------------- search log
+--
+-- Explorer needs discovery, and holUpp recorded none: `search_holup` was called
+-- and forgotten. A search is one row per call, with the query kept only as a
+-- length and a category guess — not the words. What somebody typed into a search
+-- box is closer to a private message than to a public post, and the scoring
+-- engine only ever needs "how much did this person explore", never "what were
+-- they looking for". Admins can see counts; nobody sees terms.
+create table if not exists public.holupp_search_log (
+  id          bigserial primary key,
+  profile_id  bigint not null references public.profiles(id) on delete cascade,
+  -- What was being looked for, at the coarsest useful grain. Derived from the
+  -- term by `identity_note_search`, never the term itself.
+  category    text,
+  -- Whether the search found anything. A search that returns nothing is still
+  -- exploration — arguably more of it — so this is a fact to record, not a
+  -- filter.
+  had_results boolean not null default false,
+  created_at  bigint not null default public.now_ms()
+);
+
+create index if not exists holupp_search_log_profile_time
+  on public.holupp_search_log (profile_id, created_at desc);
+
+alter table public.holupp_search_log enable row level security;
+-- No policy at all: a client may not read, write or infer from this table. It is
+-- reached only through the SECURITY DEFINER functions below.
+
+comment on table public.holupp_search_log is
+  'One row per search. The term itself is never stored — only a coarse category and whether results came back.';
+
+-- ------------------------------------------------------------- score weights
+--
+-- The brief asks for weights an administrator can adjust without a deploy. They
+-- live in a table so that is true, and they are read on every calculation so a
+-- change takes effect on the next run rather than at the next release.
+create table if not exists public.holupp_identity_weights (
+  identity   text primary key check (identity in ('introvert','pen','talkative','explorer','fun')),
+  weights    jsonb not null,
+  updated_at bigint not null default public.now_ms()
+);
+
+insert into public.holupp_identity_weights (identity, weights) values
+  ('introvert', '{"passiveViewing":30,"lowEngagement":25,"postingFrequency":15,"publicInteraction":15,"communicationReserve":15}'),
+  ('pen',       '{"textPostFrequency":30,"writtenLength":20,"writtenComments":20,"textConversations":15,"expressionBreadth":15}'),
+  ('talkative', '{"messaging":25,"voiceNotes":20,"commentsReplies":20,"conversationParticipation":20,"consistency":15}'),
+  ('explorer',  '{"searchDiscovery":25,"profileExploration":20,"researchInteraction":20,"informativePosts":20,"discoverySharing":15}'),
+  ('fun',       '{"humourEngagement":25,"funnyComments":25,"entertainmentConversations":20,"humorousPosts":20,"positiveReactions":10}')
+on conflict (identity) do nothing;
+
+-- --------------------------------------------------------------- the signals
+--
+-- One row per member, over the rolling window, computed once and then scored.
+-- Kept as its own function so the scoring formula and the measurement can be
+-- read separately: this answers "what did they do", the next answers "what does
+-- that mean".
+create or replace function public.holupp_identity_signals(p_profile bigint, p_days integer default 30)
+returns jsonb
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  with win as (
+    select public.now_ms() - (least(greatest(coalesce(p_days, 30), 7), 90)::bigint * 86400000) as since
+  ),
+  mine as (
+    select
+      (select count(*) from posts p, win w
+        where p.author_id = p_profile and p.created_at >= w.since
+          and coalesce(to_jsonb(p)->>'moderation_state','visible') = 'visible') as posts,
+      -- Written words only. A photo with a three-word caption is not a Wordsmith.
+      (select coalesce(sum(length(coalesce(p.body,''))), 0) from posts p, win w
+        where p.author_id = p_profile and p.created_at >= w.since
+          and coalesce(to_jsonb(p)->>'moderation_state','visible') = 'visible') as post_chars,
+      (select count(*) from posts p, win w
+        where p.author_id = p_profile and p.created_at >= w.since
+          and coalesce(p.body,'') <> '' and p.media_url is null) as text_posts,
+      (select count(*) from posts p, win w
+        where p.author_id = p_profile and p.created_at >= w.since and p.media_url is not null) as media_posts,
+
+      (select count(*) from post_comments c, win w
+        where c.author_id = p_profile and c.created_at >= w.since and not c.hidden) as comments,
+      (select coalesce(sum(length(coalesce(c.body,''))), 0) from post_comments c, win w
+        where c.author_id = p_profile and c.created_at >= w.since and not c.hidden) as comment_chars,
+      (select count(*) from post_comments c, win w
+        where c.author_id = p_profile and c.created_at >= w.since and not c.hidden and c.parent_id is not null) as replies,
+
+      -- Reactions this member gave, by kind. 'crush' and 'fire' are the warm
+      -- ones; the same table carries whatever else the product adds later.
+      (select count(*) from post_reactions r, win w
+        where r.user_id = p_profile and r.created_at >= w.since) as reactions_given,
+
+      -- Views: the passive side. `dwell_ms` distinguishes a scroll-past from
+      -- actually watching, which is the difference the brief insists on.
+      (select count(*) from post_feedback f, win w
+        where f.viewer_id = p_profile and f.kind = 'view' and f.created_at >= w.since) as views,
+      (select count(*) from post_feedback f, win w
+        where f.viewer_id = p_profile and f.kind = 'view' and f.created_at >= w.since
+          and coalesce(f.dwell_ms, 0) >= 3000) as dwelled_views,
+      (select coalesce(avg(f.dwell_ms), 0) from post_feedback f, win w
+        where f.viewer_id = p_profile and f.kind = 'view' and f.created_at >= w.since) as avg_dwell_ms,
+
+      (select count(distinct s.viewed_id) from space_views s, win w
+        where s.viewer_id = p_profile and s.last_seen_at >= w.since) as profiles_explored,
+      (select count(*) from moment_views mv, win w
+        where mv.user_id = p_profile and mv.created_at >= w.since) as moments_viewed,
+
+      -- Messaging: shape only, never content. `body` is deliberately absent.
+      (select count(*) from messages m, win w
+        where m.sender_id = p_profile and m.created_at >= w.since) as messages,
+      (select count(*) from messages m, win w
+        where m.sender_id = p_profile and m.created_at >= w.since and m.kind = 'voice') as voice_notes,
+      (select count(*) from messages m, win w
+        where m.sender_id = p_profile and m.created_at >= w.since and m.kind = 'text') as text_messages,
+      (select count(distinct m.conversation_id) from messages m, win w
+        where m.sender_id = p_profile and m.created_at >= w.since) as conversations,
+      (select count(distinct date_trunc('day', to_timestamp(m.created_at / 1000.0))) from messages m, win w
+        where m.sender_id = p_profile and m.created_at >= w.since) as active_days,
+
+      (select count(*) from holupp_search_log l, win w
+        where l.profile_id = p_profile and l.created_at >= w.since) as searches,
+
+      -- What other people did with this member's writing: the fun signal reads
+      -- engagement *received*, not just produced.
+      (select count(*) from post_reactions r join posts p on p.id = r.post_id, win w
+        where p.author_id = p_profile and r.created_at >= w.since) as reactions_received,
+      (select count(*) from post_reactions r join posts p on p.id = r.post_id, win w
+        where p.author_id = p_profile and r.created_at >= w.since and r.kind = 'fire') as fire_received,
+      (select count(*) from post_comments c join posts p on p.id = c.post_id, win w
+        where p.author_id = p_profile and c.created_at >= w.since and c.author_id <> p_profile) as comments_received
+  )
+  select jsonb_build_object(
+    'window', coalesce((select since from win), 0),
+    'posts', posts, 'postChars', post_chars, 'textPosts', text_posts, 'mediaPosts', media_posts,
+    'avgPostChars', case when posts > 0 then round(post_chars::numeric / posts, 1) else 0 end,
+    'comments', comments, 'commentChars', comment_chars, 'replies', replies,
+    'avgCommentChars', case when comments > 0 then round(comment_chars::numeric / comments, 1) else 0 end,
+    'reactionsGiven', reactions_given,
+    'views', views, 'dwelledViews', dwelled_views, 'avgDwellMs', round(avg_dwell_ms::numeric, 0),
+    'profilesExplored', profiles_explored, 'momentsViewed', moments_viewed,
+    'messages', messages, 'voiceNotes', voice_notes, 'textMessages', text_messages,
+    'conversations', conversations, 'activeDays', active_days,
+    'searches', searches,
+    'reactionsReceived', reactions_received, 'fireReceived', fire_received, 'commentsReceived', comments_received
+  )
+  from mine;
+$function$;
+
+comment on function public.holupp_identity_signals(bigint, integer) is
+  'What a member did in the window, in counts. No message content is read or returned.';
+
+-- ================================ 20261119210000_identity_engine_scoring.sql
+
+-- holupp_identity_engine — scoring
+--
+-- Depends on 20261119200000 (signals, weights, search log).
+--
+-- ── The shape of a score ────────────────────────────────────────────────────
+--
+-- Every component is measured as a *strength* between 0 and 1 by a saturating
+-- curve, s(n, k) = n / (n + k). That single choice does most of the work the
+-- brief asks for:
+--
+--   * 100 comments does not equal 100%. s(100, 10) = 0.91; s(10, 10) = 0.50.
+--     The third comment changes the score far more than the hundredth. Spikes
+--     cannot buy an identity.
+--   * Someone with no activity scores 0 and is *not* classified — see
+--     eligibility below. Absence is never evidence of introversion.
+--
+-- An identity's score is the weighted sum of its components, so it lands in
+-- 0..100 by construction and the weights (percentages, admin-editable) always
+-- total 100.
+--
+-- ── Confidence, and why it gates publishing ─────────────────────────────────
+--
+-- A score of 62 means nothing on four events. Confidence multiplies evidence
+-- volume by how far clear of second place the winner is, and the platform
+-- publishes nothing until it clears `confidence_threshold`. Below that the
+-- member sees "Your identity is still developing" — which is the truth.
+--
+-- ── Hysteresis ──────────────────────────────────────────────────────────────
+--
+-- Recomputation runs frequently; publishing does not follow it immediately. A
+-- new winner must beat the published one by `flip_margin` *and* the published
+-- one must have been held for `min_hold_hours`. Scores are always recorded; only
+-- the published label is sticky. This is what stops a member watching their
+-- identity flip every few minutes.
+
+begin;
+
+-- ------------------------------------------------------------------ settings
+create table if not exists public.holupp_identity_settings (
+  key        text primary key,
+  value      jsonb not null,
+  updated_at bigint not null default public.now_ms()
+);
+
+insert into public.holupp_identity_settings (key, value) values
+  -- Master switch. False stops all recomputation and hides every identity.
+  ('enabled',              'true'::jsonb),
+  -- Rolling window in days. The brief says 30.
+  ('window_days',          '30'::jsonb),
+  -- Minimum confidence (0..1) before anything is published.
+  ('confidence_threshold', '0.42'::jsonb),
+  -- Minimum evidence before a member is eligible to be classified at all.
+  ('min_events',           '10'::jsonb),
+  -- Two identities within this many points are co-primary and both are shown.
+  ('match_tolerance',      '4'::jsonb),
+  -- Hysteresis: how far a challenger must win by, and how long a published
+  -- identity is held before it can be replaced.
+  ('flip_margin',          '6'::jsonb),
+  ('min_hold_hours',       '72'::jsonb),
+  -- How often the scheduled job recalculates, in minutes. Read by the cron job.
+  ('recalc_minutes',       '360'::jsonb)
+on conflict (key) do nothing;
+
+-- -------------------------------------------------------------------- scores
+--
+-- One row per member: the newest calculation, plus the published verdict. This
+-- table is never readable by a client. Owners reach their own row through
+-- holupp_identity_mine(); everybody else goes through holupp_identity_public(),
+-- which returns a title and nothing else.
+create table if not exists public.holupp_identity_scores (
+  profile_id        bigint primary key references public.profiles(id) on delete cascade,
+  -- Raw 0..100 per identity, highest first for convenience. JSON rather than
+  -- five columns so adding a sixth identity would be a config change — it never
+  -- will be, there are exactly five, but the storage should not pretend the
+  -- five are sculpted into the schema.
+  scores            jsonb not null default '{}'::jsonb,
+  -- Highest score, and everyone within match_tolerance of it.
+  top_identity      text,
+  co_primary        text[] not null default '{}',
+  confidence        numeric(4,3) not null default 0,
+  evidence          integer not null default 0,
+  eligible          boolean not null default false,
+  -- What is actually published. Equal to top_identity except during hysteresis.
+  published_identity text,
+  published_since   bigint,
+  -- Denormalised for ordering/queueing the recalc job.
+  computed_at       bigint not null default public.now_ms(),
+  engine_version    integer not null default 1
+);
+
+create index if not exists holupp_identity_scores_computed
+  on public.holupp_identity_scores (computed_at);
+create index if not exists holupp_identity_scores_published
+  on public.holupp_identity_scores (published_identity)
+  where published_identity is not null;
+
+alter table public.holupp_identity_scores enable row level security;
+-- Deliberately no policies: clients have no access. SECURITY DEFINER functions
+-- only.
+
+-- ------------------------------------------------------------------- history
+--
+-- Append-only. Every time the *published* identity changes, one row. Owners can
+-- read their own; admins can read all; nobody can write.
+create table if not exists public.holupp_identity_history (
+  id                 bigserial primary key,
+  profile_id         bigint not null references public.profiles(id) on delete cascade,
+  from_identity      text,
+  to_identity        text not null,
+  co_primary         text[] not null default '{}',
+  confidence         numeric(4,3) not null default 0,
+  -- Score snapshot at the moment of the change, for audit and for arguing with
+  -- yourself six months later about why someone's identity moved.
+  scores             jsonb not null default '{}'::jsonb,
+  reason             text not null,
+  created_at         bigint not null default public.now_ms()
+);
+
+create index if not exists holupp_identity_history_profile
+  on public.holupp_identity_history (profile_id, created_at desc);
+
+alter table public.holupp_identity_history enable row level security;
+
+drop policy if exists identity_history_own on public.holupp_identity_history;
+create policy identity_history_own on public.holupp_identity_history
+  for select using (profile_id = public.me_id());
+
+-- ------------------------------------------------------------- visibility flag
+--
+-- Public visibility is separate from classification: hiding an identity stops
+-- other people seeing a title, and nothing else. The engine keeps computing, and
+-- the owner keeps seeing their own — otherwise hiding would become a way to opt
+-- out of the platform's understanding of itself, which the brief rules out.
+alter table public.profiles
+  add column if not exists identity_visible boolean not null default true;
+
+commit;
+
+-- ================================ 20261119220000_identity_engine_calculate.sql
+
+-- holupp_identity_engine — the calculation
+--
+-- Depends on 20261119200000 and 20261119210000.
+--
+-- Everything here is pure: given signals and weights, produce five scores. The
+-- only side effects are in holupp_identity_recalc(), which calls this.
+
+-- Saturating strength: 0 at nothing, 0.5 at k, never reaches 1.
+-- Written out as SQL so it can be unit-tested on its own.
+create or replace function public.identity_strength(p_n numeric, p_k numeric)
+returns numeric
+language sql
+immutable
+as $function$
+  select case
+    when coalesce(p_n, 0) <= 0 then 0::numeric
+    else round(coalesce(p_n, 0)::numeric / (coalesce(p_n, 0)::numeric + greatest(p_k, 1)), 4)
+  end;
+$function$;
+
+-- Consistency across the window: active days out of the days available, with a
+-- soft ceiling at 60%. A burst of forty comments in one evening scores near 0
+-- here and cannot carry Fun Crusher or Talkative Crush on its own.
+create or replace function public.identity_consistency(p_active_days numeric, p_window_days numeric)
+returns numeric
+language sql
+immutable
+as $function$
+  select public.identity_strength(coalesce(p_active_days, 0), greatest(coalesce(p_window_days, 30) * 0.6, 1));
+$function$;
+
+-- Recency: recent activity counts more than old activity, so an identity can
+-- move as a member changes, without an old spike holding the label hostage.
+-- p_days_ago of 0 → 1.0, 30 → ~0.43, 60 → ~0.2.
+create or replace function public.identity_recency(p_days_ago numeric)
+returns numeric
+language sql
+immutable
+as $function$
+  select round(1.0 / (1.0 + greatest(coalesce(p_days_ago, 0), 0) / 30.0), 4);
+$function$;
+
+-- The five formulas. Each component returns 0..1 and is multiplied by its
+-- weight, which is a percentage; the sum is therefore 0..100.
+create or replace function public.holupp_identity_calculate(p_signals jsonb, p_weights jsonb)
+returns jsonb
+language plpgsql
+immutable
+as $function$
+declare
+  s              jsonb := coalesce(p_signals, '{}'::jsonb);
+  w_intro        jsonb := coalesce(p_weights->'introvert', '{}'::jsonb);
+  w_pen          jsonb := coalesce(p_weights->'pen',       '{}'::jsonb);
+  w_talk         jsonb := coalesce(p_weights->'talkative', '{}'::jsonb);
+  w_explore      jsonb := coalesce(p_weights->'explorer',  '{}'::jsonb);
+  w_fun          jsonb := coalesce(p_weights->'fun',       '{}'::jsonb);
+
+  v_posts        numeric := (s->>'posts')::numeric;
+  v_media_posts  numeric := (s->>'mediaPosts')::numeric;
+  v_text_posts   numeric := (s->>'textPosts')::numeric;
+  v_avg_post     numeric := (s->>'avgPostChars')::numeric;
+  v_comments     numeric := (s->>'comments')::numeric;
+  v_avg_comment  numeric := (s->>'avgCommentChars')::numeric;
+  v_replies      numeric := (s->>'replies')::numeric;
+  v_reactions    numeric := (s->>'reactionsGiven')::numeric;
+  v_views        numeric := (s->>'views')::numeric;
+  v_dwelled      numeric := (s->>'dwelledViews')::numeric;
+  v_avg_dwell    numeric := (s->>'avgDwellMs')::numeric;
+  v_profiles     numeric := (s->>'profilesExplored')::numeric;
+  v_moments      numeric := (s->>'momentsViewed')::numeric;
+  v_messages     numeric := (s->>'messages')::numeric;
+  v_voice        numeric := (s->>'voiceNotes')::numeric;
+  v_text_msgs    numeric := (s->>'textMessages')::numeric;
+  v_convs        numeric := (s->>'conversations')::numeric;
+  v_active_days  numeric := (s->>'activeDays')::numeric;
+  v_searches     numeric := (s->>'searches')::numeric;
+  v_rx_received  numeric := (s->>'reactionsReceived')::numeric;
+  v_fire         numeric := (s->>'fireReceived')::numeric;
+  v_comments_rx  numeric := (s->>'commentsReceived')::numeric;
+  v_window       numeric := greatest(coalesce((s->>'windowDays')::numeric, 30), 7);
+
+  c_intro   numeric := 0; c_pen numeric := 0; c_talk numeric := 0;
+  c_explore numeric := 0; c_fun numeric := 0;
+  out jsonb;
+begin
+  -- ── Introvert Crush: the quiet observer ────────────────────────────────
+  -- Watching without speaking. `lowEngagement` is the pass/fail the brief
+  -- describes — a low share of content *created* against content *consumed*.
+  -- It is a ratio, not a count, so a heavy consumer who also posts a little is
+  -- judged on proportion rather than volume.
+  c_intro :=
+      coalesce((w_intro->>'passiveViewing')::numeric, 0)      * public.identity_strength(v_dwelled, 8)
+    -- A ratio only means something when somebody actually watched. `create /
+    -- consume` is 1.0 for a member who has done nothing at all, so taken alone it
+    -- paid 25 points for silence — the one thing the brief says must never
+    -- happen ("missing activity is not evidence of a type"). Multiplying by how
+    -- much they actually consumed means the ratio rewards *watching quietly*,
+    -- and nothing at all rewards nothing at all.
+    + coalesce((w_intro->>'lowEngagement')::numeric, 0)       * (
+        case when (v_views + v_posts + v_comments) = 0 then 0
+             else greatest(0, 1 - ((v_posts + v_comments) / nullif(v_views + v_posts + v_comments, 0)))
+                  * public.identity_strength(v_views, 10) end
+      )
+    + coalesce((w_intro->>'postingFrequency')::numeric, 0)    * public.identity_strength(v_media_posts, 10)
+    + coalesce((w_intro->>'publicInteraction')::numeric, 0)   * public.identity_strength(v_reactions, 15)
+    + coalesce((w_intro->>'communicationReserve')::numeric, 0) * public.identity_strength(v_voice, 6);
+
+  -- ── Pen Crusher: the wordsmith ──────────────────────────────────────────
+  -- Volume of written words matters, but length is judged per post, not in
+  -- total: ten 500-word posts is a wordsmith, a thousand two-word captions is
+  -- not. Taken uncapped a text-wall would max this out, so avgPostChars
+  -- saturates at 600.
+  c_pen :=
+      coalesce((w_pen->>'textPostFrequency')::numeric, 0)   * public.identity_strength(v_text_posts, 6)
+    + coalesce((w_pen->>'writtenLength')::numeric, 0)       * public.identity_strength(v_avg_post, 400)
+    + coalesce((w_pen->>'writtenComments')::numeric, 0)     * public.identity_strength(v_avg_comment, 160)
+    + coalesce((w_pen->>'textConversations')::numeric, 0)   * public.identity_strength(v_text_msgs, 25)
+    + coalesce((w_pen->>'expressionBreadth')::numeric, 0)   * public.identity_strength(v_posts + v_comments, 12);
+
+  -- ── Talkative Crush: the conversationalist ──────────────────────────────
+  -- Breadth beats depth: conversations and active days carry more than raw
+  -- message count, so one marathon thread does not make someone Talkative.
+  c_talk :=
+      coalesce((w_talk->>'messaging')::numeric, 0)              * public.identity_strength(v_messages, 60)
+    + coalesce((w_talk->>'voiceNotes')::numeric, 0)             * public.identity_strength(v_voice, 10)
+    + coalesce((w_talk->>'commentsReplies')::numeric, 0)        * public.identity_strength(v_comments + v_replies, 12)
+    + coalesce((w_talk->>'conversationParticipation')::numeric, 0) * public.identity_strength(v_convs, 5)
+    + coalesce((w_talk->>'consistency')::numeric, 0)            * public.identity_consistency(v_active_days, v_window);
+
+  -- ── Excrusher / Explorer: the curious mind ──────────────────────────────
+  -- Only signals the platform can actually observe. Search is logged now;
+  -- nothing is inferred from what was searched, only that it happened.
+  c_explore :=
+      coalesce((w_explore->>'searchDiscovery')::numeric, 0)     * public.identity_strength(v_searches, 8)
+    + coalesce((w_explore->>'profileExploration')::numeric, 0)  * public.identity_strength(v_profiles, 12)
+    + coalesce((w_explore->>'researchInteraction')::numeric, 0) * public.identity_strength(v_moments + v_views, 40)
+    + coalesce((w_explore->>'informativePosts')::numeric, 0)    * public.identity_strength(v_text_posts + v_media_posts, 12)
+    + coalesce((w_explore->>'discoverySharing')::numeric, 0)    * public.identity_strength(v_convs, 6);
+
+  -- ── Fun Crusher: the entertainer ────────────────────────────────────────
+  -- Judged partly on the response other people had. Laughter is other people's
+  -- behaviour; a comedian nobody laughs at is not (yet) the Entertainer. The
+  -- reaction ratio keeps this from becoming a popularity contest with a
+  -- fixed ceiling on raw totals.
+  c_fun :=
+      coalesce((w_fun->>'humourEngagement')::numeric, 0)        * public.identity_strength(v_fire, 8)
+    + coalesce((w_fun->>'funnyComments')::numeric, 0)           * public.identity_strength(v_comments_rx, 10)
+    + coalesce((w_fun->>'entertainmentConversations')::numeric, 0) * public.identity_strength(v_convs, 6)
+    + coalesce((w_fun->>'humorousPosts')::numeric, 0)           * public.identity_strength(v_media_posts, 8)
+    + coalesce((w_fun->>'positiveReactions')::numeric, 0)       * public.identity_strength(v_rx_received, 25);
+
+  c_intro   := round(least(greatest(c_intro, 0), 100), 1);
+  c_pen     := round(least(greatest(c_pen, 0), 100), 1);
+  c_talk    := round(least(greatest(c_talk, 0), 100), 1);
+  c_explore := round(least(greatest(c_explore, 0), 100), 1);
+  c_fun     := round(least(greatest(c_fun, 0), 100), 1);
+
+  out := jsonb_build_object(
+    'introvert', c_intro, 'pen', c_pen, 'talkative', c_talk,
+    'explorer', c_explore, 'fun', c_fun
+  );
+  return out;
+end;
+$function$;
+
+-- ================================ 20261119230000_identity_engine_verdict.sql
+
+-- holupp_identity_engine — verdict, hysteresis, persistence
+--
+-- Depends on the four previous identity migrations.
+--
+-- ── Every phase in its own function ────────────────────────────────────────
+--
+-- Signals → weights → scores → verdict → persistence are separate functions
+-- because each one is independently testable and because a failure in any one
+-- of them must not be able to break the feed, messaging or profile. The only
+-- caller is holupp_identity_recalc(), and it is called by a scheduled job and by
+-- the admin panel — never on a page load, never from a client.
+--
+-- `holupp_identity_recalc` catches nothing itself: if it throws, the scheduled
+-- job records the failure and moves on, and the last good row keeps serving.
+-- That is the "classification failure must never break the app" requirement,
+-- enforced by the fact that no read path calls it.
+
+begin;
+
+-- ---------------------------------------------------------------- settings read
+create or replace function public.holupp_identity_setting(p_key text, p_default jsonb)
+returns jsonb
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select coalesce((select value from holupp_identity_settings where key = p_key), p_default);
+$function$;
+
+-- ------------------------------------------------------------------- the verdict
+--
+-- Given five scores and a member's current published identity, decide:
+--   * what wins now,
+--   * who is co-primary,
+--   * whether confidence is high enough to publish,
+--   * whether the published label should move (hysteresis).
+--
+-- No side effects. Testable in isolation, which is where the tie behaviour and
+-- the anti-flapping rules are proved.
+create or replace function public.holupp_identity_verdict(
+  p_scores          jsonb,
+  p_evidence        integer,
+  p_published       text default null,
+  p_published_since bigint default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  tol        numeric := coalesce((holupp_identity_setting('match_tolerance', '4'::jsonb))::text::numeric, 4);
+  thr        numeric := coalesce((holupp_identity_setting('confidence_threshold', '0.42'::jsonb))::text::numeric, 0.42);
+  min_ev     integer := coalesce((holupp_identity_setting('min_events', '10'::jsonb))::text::int, 10);
+  margin     numeric := coalesce((holupp_identity_setting('flip_margin', '6'::jsonb))::text::numeric, 6);
+  hold_ms    bigint  := coalesce((holupp_identity_setting('min_hold_hours', '72'::jsonb))::text::bigint, 72) * 3600000;
+
+  ordered    text[];
+  top        text;
+  top_score  numeric;
+  -- The best score *outside* the co-primary set. Separation is measured against
+  -- this, not against second place: two identities genuinely level at the top
+  -- are not uncertainty, they are a real answer with two halves.
+  outside_score numeric;
+  co         text[] := '{}';
+  clarity    numeric;
+  k          text;
+  v          numeric;
+  confidence numeric;
+  eligible   boolean;
+  challenger_ok boolean;
+  held_long  boolean;
+  new_pub    text;
+begin
+  -- Order identities by score, descending, deterministic on ties by name so the
+  -- same inputs always produce the same output. The ordering is a convenience;
+  -- co-primary membership is decided by tolerance, not by this order.
+  select array_agg(identity order by score desc, identity)
+    into ordered
+    from (
+      select * from (values
+        ('introvert', coalesce((p_scores->>'introvert')::numeric, 0)),
+        ('pen',       coalesce((p_scores->>'pen')::numeric, 0)),
+        ('talkative', coalesce((p_scores->>'talkative')::numeric, 0)),
+        ('explorer',  coalesce((p_scores->>'explorer')::numeric, 0)),
+        ('fun',       coalesce((p_scores->>'fun')::numeric, 0))
+      ) as t(identity, score)
+      order by score desc, identity
+      limit 5
+    ) q;
+
+  top := ordered[1];
+  top_score := coalesce((p_scores->>top)::numeric, 0);
+
+  -- Co-primary: everyone within tolerance of the winner. Compared with a
+  -- tolerance rather than equality because two floats that "should" be equal
+  -- routinely are not, and a member seeing one identity flip to another for no
+  -- visible reason is exactly the fragility the brief calls out.
+  foreach k in array ordered loop
+    v := coalesce((p_scores->>k)::numeric, 0);
+    if top_score - v <= tol and v > 0 then
+      co := co || k;
+    end if;
+  end loop;
+
+  -- How far clear of the *field* the winners are. If nothing sits outside the
+  -- co-primary set the group is the whole picture and clarity is total; if
+  -- everything is bunched, clarity collapses towards zero and the member is
+  -- correctly described as still developing.
+  select max(score) into outside_score
+    from (values
+      ('introvert', coalesce((p_scores->>'introvert')::numeric, 0)),
+      ('pen',       coalesce((p_scores->>'pen')::numeric, 0)),
+      ('talkative', coalesce((p_scores->>'talkative')::numeric, 0)),
+      ('explorer',  coalesce((p_scores->>'explorer')::numeric, 0)),
+      ('fun',       coalesce((p_scores->>'fun')::numeric, 0))
+    ) as t(identity, score)
+    where identity <> all (co);
+
+  clarity := case
+    when outside_score is null then 1.0
+    else least(1.0, greatest(0.0, (top_score - outside_score) / 25.0) * 0.7 + 0.3)
+  end;
+  -- A crowded top is not a decision. Three or more identities inside tolerance
+  -- means the member genuinely has not settled into a shape yet, and printing
+  -- three titles would be a worse answer than saying so.
+  if array_length(co, 1) > 2 then
+    clarity := clarity * (2.0 / array_length(co, 1));
+  end if;
+
+  -- Confidence = evidence volume × clarity.
+  --   volume: saturating on event count — 0.4 at ~7 events, 0.72 at ~25.
+  confidence := round(public.identity_strength(p_evidence, 15) * clarity, 3);
+
+  eligible := p_evidence >= min_ev and top_score > 0;
+
+  -- Hysteresis. A challenger replaces the incumbent only if it wins by the
+  -- configured margin and the incumbent has been held for the minimum period.
+  -- While those conditions are unmet the published label stands, even though the
+  -- raw scores have already moved — the scores are stored either way.
+  new_pub := null;
+  if not eligible or confidence < thr then
+    new_pub := null;                                  -- nothing is published
+  elsif p_published is null then
+    new_pub := top;                                   -- first classification
+  elsif p_published = any (co) then
+    new_pub := p_published;                            -- incumbent still co-primary
+  else
+    held_long := (public.now_ms() - coalesce(p_published_since, 0)) >= hold_ms;
+    challenger_ok := top_score - coalesce((p_scores->>p_published)::numeric, 0) >= margin;
+    if held_long and challenger_ok then
+      new_pub := top;
+    else
+      new_pub := p_published;                          -- hold, for stability
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'top_identity', case when eligible then top else null end,
+    'co_primary', case when eligible and confidence >= thr then to_jsonb(co) else '[]'::jsonb end,
+    'confidence', confidence,
+    'evidence', p_evidence,
+    'eligible', eligible,
+    'published_identity', new_pub,
+    'changed', (new_pub is distinct from p_published)
+  );
+end;
+$function$;
+
+-- ------------------------------------------------------------------ the recalc
+--
+-- One member. Idempotent. Safe to run twice.
+create or replace function public.holupp_identity_recalc(p_profile bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  sig        jsonb;
+  wts        jsonb;
+  s          jsonb;
+  prev       holupp_identity_scores;
+  verdict    jsonb;
+  ev         integer;
+begin
+  if not coalesce((holupp_identity_setting('enabled', 'true'::jsonb))::text::boolean, true) then
+    return jsonb_build_object('skipped', 'disabled');
+  end if;
+
+  sig := holupp_identity_signals(p_profile,
+           coalesce((holupp_identity_setting('window_days', '30'::jsonb))::text::int, 30));
+  sig := sig || jsonb_build_object('windowDays',
+           coalesce((holupp_identity_setting('window_days', '30'::jsonb))::text::int, 30));
+
+  -- Total evidence: distinct acts. Views count once each however long they
+  -- lasted — a long look is a stronger view, not a second one.
+  ev := coalesce((sig->>'posts')::int, 0)
+      + coalesce((sig->>'comments')::int, 0)
+      + coalesce((sig->>'reactionsGiven')::int, 0)
+      + coalesce((sig->>'views')::int, 0)
+      + coalesce((sig->>'profilesExplored')::int, 0)
+      + coalesce((sig->>'momentsViewed')::int, 0)
+      + coalesce((sig->>'messages')::int, 0)
+      + coalesce((sig->>'searches')::int, 0);
+
+  select jsonb_object_agg(identity, weights) into wts from holupp_identity_weights;
+  s := holupp_identity_calculate(sig, coalesce(wts, '{}'::jsonb));
+
+  select * into prev from holupp_identity_scores where profile_id = p_profile;
+
+  verdict := holupp_identity_verdict(s, ev, prev.published_identity, prev.published_since);
+
+  insert into holupp_identity_scores as t (
+    profile_id, scores, top_identity, co_primary, confidence, evidence, eligible,
+    published_identity, published_since, computed_at
+  ) values (
+    p_profile, s,
+    (verdict->>'top_identity'),
+    coalesce(array(select jsonb_array_elements_text(verdict->'co_primary')), '{}'),
+    (verdict->>'confidence')::numeric,
+    ev,
+    (verdict->>'eligible')::boolean,
+    (verdict->>'published_identity'),
+    case when (verdict->>'published_identity') is distinct from prev.published_identity
+         then public.now_ms() else prev.published_since end,
+    public.now_ms()
+  )
+  on conflict (profile_id) do update set
+    scores = excluded.scores,
+    top_identity = excluded.top_identity,
+    co_primary = excluded.co_primary,
+    confidence = excluded.confidence,
+    evidence = excluded.evidence,
+    eligible = excluded.eligible,
+    published_identity = excluded.published_identity,
+    published_since = excluded.published_since,
+    computed_at = excluded.computed_at;
+
+  -- History is written only when the *published* label moves. A member whose
+  -- scores wobble but whose identity stands should not get a history row, or
+  -- the audit trail becomes noise.
+  if (verdict->>'published_identity') is distinct from prev.published_identity then
+    insert into holupp_identity_history (profile_id, from_identity, to_identity, co_primary, confidence, scores, reason)
+    values (
+      p_profile,
+      prev.published_identity,
+      coalesce(verdict->>'published_identity', 'unclassified'),
+      coalesce(array(select jsonb_array_elements_text(verdict->'co_primary')), '{}'),
+      (verdict->>'confidence')::numeric,
+      s,
+      case
+        when (verdict->>'published_identity') is null then 'below_confidence_threshold'
+        when prev.published_identity is null then 'first_classification'
+        else 'reclassified'
+      end
+    );
+  end if;
+
+  return verdict || jsonb_build_object('scores', s);
+end;
+$function$;
+
+-- Batch. Returns counts so the admin panel and the scheduled job can report
+-- what happened without reading any member's data.
+create or replace function public.holupp_identity_recalc_all(p_limit integer default 500)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  r        record;
+  done     integer := 0;
+  failed   integer := 0;
+  changed  integer := 0;
+  res      jsonb;
+begin
+  if not coalesce((holupp_identity_setting('enabled', 'true'::jsonb))::text::boolean, true) then
+    return jsonb_build_object('skipped', 'disabled');
+  end if;
+
+  -- Members who have never been calculated come first, then the stalest, so a
+  -- limited batch always makes progress instead of re-running the same five.
+  for r in
+    select p.id
+      from profiles p
+      left join holupp_identity_scores s on s.profile_id = p.id
+     order by s.computed_at nulls first, s.computed_at
+     limit greatest(coalesce(p_limit, 500), 1)
+  loop
+    begin
+      res := holupp_identity_recalc(r.id);
+      done := done + 1;
+      if coalesce((res->>'changed')::boolean, false) then
+        changed := changed + 1;
+      end if;
+    exception when others then
+      -- One member's bad data must not stop the batch. The failure is counted;
+      -- the last good row keeps serving.
+      failed := failed + 1;
+    end;
+  end loop;
+
+  return jsonb_build_object('calculated', done, 'changed', changed, 'failed', failed);
+end;
+$function$;
+
+commit;
+
+-- ================================ 20261119240000_identity_engine_api.sql
+
+-- holupp_identity_engine — read API, visibility, admin
+--
+-- The rule that shapes this file: internal scores never leave the server except
+-- to their owner. `holupp_identity_public` — the only function a client can call
+-- about somebody else — returns a title and an epithet, and nothing else. No
+-- numbers, no confidence, no evidence, no history.
+
+begin;
+
+-- ------------------------------------------------------------ my own identity
+--
+-- The owner sees everything: scores, confidence, evidence, history. They cannot
+-- see anyone else's, and nobody can see theirs.
+create or replace function public.holupp_identity_mine()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me     bigint := public.me_id();
+  s      holupp_identity_scores;
+  vis    boolean;
+begin
+  if me is null then
+    return jsonb_build_object('authenticated', false);
+  end if;
+
+  select * into s from holupp_identity_scores where profile_id = me;
+  select coalesce(identity_visible, true) into vis from profiles where id = me;
+
+  return jsonb_build_object(
+    'authenticated', true,
+    -- What the member sees on their own profile: the same value the public
+    -- would see, plus the developing state.
+    'identity', s.published_identity,
+    'co_primary', to_jsonb(coalesce(s.co_primary, '{}')),
+    'developing', (s.published_identity is null),
+    'confidence', s.confidence,
+    'evidence', s.evidence,
+    'scores', s.scores,
+    'computed_at', s.computed_at,
+    'published_since', s.published_since,
+    -- Hiding is public-only; classification keeps running regardless.
+    'visible', coalesce(vis, true),
+    'history', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'from', h.from_identity, 'to', h.to_identity,
+        'confidence', h.confidence, 'at', h.created_at, 'reason', h.reason
+      ) order by h.created_at desc)
+      from (select * from holupp_identity_history where profile_id = me
+             order by created_at desc limit 20) h
+    ), '[]'::jsonb)
+  );
+end;
+$function$;
+
+-- --------------------------------------------------------- somebody else's
+--
+-- Called with a profile id. Returns a title, an epithet, and whether the member
+-- has hidden it. Returns nothing at all when the member hid it — and nothing at
+-- all for a private profile the caller cannot see, so this cannot become a way
+-- to probe who exists.
+create or replace function public.holupp_identity_public(p_profile bigint)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  s   holupp_identity_scores;
+  vis boolean;
+begin
+  select coalesce(identity_visible, true) into vis from profiles where id = p_profile;
+
+  if vis is null or vis = false then
+    return jsonb_build_object('identity', null);
+  end if;
+
+  select * into s from holupp_identity_scores where profile_id = p_profile;
+
+  /* The other co-primaries, if any. `published_identity` is reported separately
+     and always sits at the front of the list the app prints, so it is removed
+     here rather than being printed twice. */
+  return jsonb_build_object(
+    'identity', s.published_identity,
+    'co_primary', coalesce((
+      select jsonb_agg(x)
+        from unnest(coalesce(s.co_primary, '{}'::text[])) x
+       where x is distinct from s.published_identity
+    ), '[]'::jsonb)
+  );
+end;
+$function$;
+
+-- ------------------------------------------------------------- hide / show
+--
+-- The member's own switch. It flips visibility and nothing else: scores keep
+-- being calculated and the owner keeps seeing their own identity.
+create or replace function public.holupp_identity_set_visible(p_visible boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if me is null then
+    raise exception 'not authenticated';
+  end if;
+  update profiles set identity_visible = coalesce(p_visible, true) where id = me;
+  return jsonb_build_object('visible', coalesce(p_visible, true));
+end;
+$function$;
+
+-- --------------------------------------------------------------- search log
+--
+-- Called by the app when somebody searches. Takes the term only to classify it
+-- into a coarse category, then throws the term away: it is never stored, never
+-- returned, never logged. `p_term` is not persisted anywhere.
+create or replace function public.holupp_identity_note_search(p_term text, p_had_results boolean default true)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  cat text;
+begin
+  if me is null then
+    return;                                   -- anonymous searches are not attributed
+  end if;
+
+  cat := case
+    when p_term is null or length(trim(p_term)) = 0 then null
+    when p_term ~* '(football|soccer|goal|match|league|anime|animation|cartoon|movie|film|music|song)' then 'entertainment'
+    when p_term ~* '^@' then 'people'
+    when p_term ~* '^#' then 'tags'
+    else 'general'
+  end;
+
+  insert into holupp_search_log (profile_id, category, had_results)
+  values (me, cat, coalesce(p_had_results, true));
+end;
+$function$;
+
+-- ------------------------------------------------------------------ discovery
+--
+-- The brief asks for structured data that could power discovery — similar
+-- interaction styles and content formats — while explicitly refusing to
+-- segregate users into identity groups. So this returns *formats*, keyed by the
+-- caller's own dominant style, and never a list of people tagged with an
+-- identity. A member's identity is not a group they belong to.
+create or replace function public.holupp_identity_discovery()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me  bigint := public.me_id();
+  s   holupp_identity_scores;
+begin
+  if me is null then
+    return jsonb_build_object('authenticated', false);
+  end if;
+
+  select * into s from holupp_identity_scores where profile_id = me;
+
+  return jsonb_build_object(
+    'primary', s.top_identity,
+    -- Suggested surfaces, not suggested identities.
+    'formats', case coalesce(s.top_identity, '')
+      when 'introvert' then '["watch","quiet_feed","saved"]'::jsonb
+      when 'pen'       then '["long_form","written","comments"]'::jsonb
+      when 'talkative' then '["messages","voice","circles"]'::jsonb
+      when 'explorer'  then '["search","discover","moments"]'::jsonb
+      when 'fun'       then '["sound","clips","reactions"]'::jsonb
+      else '["feed"]'::jsonb
+    end
+  );
+end;
+$function$;
+
+-- -------------------------------------------------------------------- admin
+--
+-- Aggregate only. There is deliberately no function here that returns one
+-- member's scores to an administrator: the dashboard answers "how is the
+-- distribution", "how many are waiting", "what did the last run do" — not "what
+-- is this person". Support cases that genuinely need one member go through the
+-- existing admin tooling, which is audited.
+create or replace function public.holupp_admin_identity_state()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+begin
+  if not public.holup_is_admin() then
+    raise exception 'not authorised';
+  end if;
+
+  return jsonb_build_object(
+    'enabled', public.holupp_identity_setting('enabled', 'true'::jsonb),
+    'settings', coalesce((select jsonb_object_agg(key, value) from holupp_identity_settings), '{}'::jsonb),
+    'weights', coalesce((select jsonb_object_agg(identity, weights) from holupp_identity_weights), '{}'::jsonb),
+    'totals', (
+      select jsonb_build_object(
+        'members', (select count(*) from profiles),
+        'calculated', count(*),
+        'classified', count(*) filter (where published_identity is not null),
+        'developing', count(*) filter (where published_identity is null),
+        'hidden', (select count(*) from profiles where identity_visible = false)
+      ) from holupp_identity_scores
+    ),
+    'distribution', coalesce((
+      select jsonb_object_agg(coalesce(published_identity,'developing'), n)
+      from (select published_identity, count(*) n from holupp_identity_scores group by 1) d
+    ), '{}'::jsonb),
+    -- "Accuracy" is not measurable without ground truth, and the brief's
+    -- requirement is really about health: how confident, how volatile, how
+    -- stale. Those are reported instead of inventing an accuracy number.
+    'confidence', coalesce((
+      select jsonb_build_object(
+        'avg', round(avg(confidence), 3),
+        'below_threshold', count(*) filter (where confidence <
+          coalesce((holupp_identity_setting('confidence_threshold','0.42'::jsonb))::text::numeric, 0.42)),
+        'median_evidence', round(percentile_cont(0.5) within group (order by evidence)::numeric, 0)
+      ) from holupp_identity_scores
+    ), '{}'::jsonb),
+    'recent_changes_7d', (
+      select count(*) from holupp_identity_history
+       where created_at >= public.now_ms() - 7::bigint * 86400000
+    ),
+    -- Volatility: members whose published identity moved more than twice in
+    -- 30 days. Not an error in itself; a signal that weights or tolerance need
+    -- attention.
+    'volatile_30d', (
+      select count(*) from (
+        select profile_id from holupp_identity_history
+         where created_at >= public.now_ms() - 30::bigint * 86400000
+         group by profile_id having count(*) > 2
+      ) v
+    ),
+    'last_run', (select max(computed_at) from holupp_identity_scores),
+    'engine_version', (select max(engine_version) from holupp_identity_scores)
+  );
+end;
+$function$;
+
+-- Weights and thresholds. Admins only, validated, and every change is recorded
+-- in the existing admin audit trail.
+create or replace function public.holupp_admin_identity_update(p_patch jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  k       text;
+  v       jsonb;
+  w       jsonb;
+  total   numeric;
+begin
+  if not public.holup_is_admin() then
+    raise exception 'not authorised';
+  end if;
+  if p_patch is null or jsonb_typeof(p_patch) <> 'object' then
+    raise exception 'patch must be an object';
+  end if;
+
+  -- Weights: each identity's weights must still total 100, otherwise the scores
+  -- would be on different scales and the comparison between identities would be
+  -- meaningless.
+  if p_patch ? 'weights' then
+    for k, w in select key, value from jsonb_each(p_patch->'weights') loop
+      if k not in ('introvert','pen','talkative','explorer','fun') then
+        raise exception 'unknown identity %', k;
+      end if;
+      select sum(value::text::numeric) into total
+        from jsonb_each_text(w);
+      if total is null or total <= 0 then
+        raise exception 'weights for % must be positive', k;
+      end if;
+      -- Normalise to 100 rather than reject: an admin thinking in ratios should
+      -- not have to make them add up to exactly 100.
+      update holupp_identity_weights
+         set weights = (select jsonb_object_agg(key, round((value::text::numeric / total * 100), 2))
+                          from jsonb_each_text(w)),
+             updated_at = public.now_ms()
+       where identity = k;
+    end loop;
+  end if;
+
+  -- Thresholds. `enabled` is the kill switch and is allowed through here so the
+  -- admin panel has exactly one write path.
+  for k, v in select key, value from jsonb_each(p_patch) loop
+    continue when k = 'weights';
+    if k not in ('enabled','window_days','confidence_threshold','min_events',
+                 'match_tolerance','flip_margin','min_hold_hours','recalc_minutes') then
+      raise exception 'unknown setting %', k;
+    end if;
+    insert into holupp_identity_settings (key, value, updated_at)
+    values (k, v, public.now_ms())
+    on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at;
+  end loop;
+
+  insert into holup_admin_events (kind, actor, details)
+  values ('identity_settings_updated', auth.uid(), p_patch);
+
+  return jsonb_build_object('ok', true);
+end;
+$function$;
+
+-- Manual recalculation from the panel, so an admin who changes weights can see
+-- the effect without waiting for the schedule.
+create or replace function public.holupp_admin_identity_recalc(p_limit integer default 200)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.holup_is_admin() then
+    raise exception 'not authorised';
+  end if;
+  return public.holupp_identity_recalc_all(greatest(least(coalesce(p_limit,200), 2000), 1));
+end;
+$function$;
+
+-- ---------------------------------------------------------------- permissions
+-- ── Revoking is not enough on its own ───────────────────────────────────────
+--
+-- Supabase grants EXECUTE on every new function to `anon`, `authenticated` and
+-- `service_role` explicitly. `public` is a different grantee, so
+-- `revoke ... from public` leaves the explicit grant to `anon` untouched — which
+-- is exactly how an anonymous caller could reach `holupp_identity_recalc` on a
+-- live project while the local tests were green.
+--
+-- So: revoke from `public` *and* from `anon`, then grant back only to the roles
+-- that should have each one. The engine's own write paths are not granted to
+-- anybody: they are reached through SECURITY DEFINER callers or the scheduler.
+revoke all on function public.holupp_identity_recalc(bigint) from anon;
+revoke all on function public.holupp_identity_recalc_all(integer) from anon;
+revoke all on function public.holupp_identity_signals(bigint, integer) from anon;
+revoke all on function public.holupp_identity_verdict(jsonb, integer, text, bigint) from anon;
+revoke all on function public.holupp_identity_calculate(jsonb, jsonb) from anon;
+revoke all on function public.holupp_identity_setting(text, jsonb) from anon;
+revoke all on function public.holupp_admin_identity_state() from anon;
+revoke all on function public.holupp_admin_identity_update(jsonb) from anon;
+revoke all on function public.holupp_admin_identity_recalc(integer) from anon;
+revoke all on function public.holupp_identity_mine() from anon;
+revoke all on function public.holupp_identity_public(bigint) from anon;
+revoke all on function public.holupp_identity_set_visible(boolean) from anon;
+revoke all on function public.holupp_identity_note_search(text, boolean) from anon;
+revoke all on function public.holupp_identity_discovery() from anon;
+
+revoke all on function public.holupp_identity_mine() from public;
+revoke all on function public.holupp_identity_public(bigint) from public;
+revoke all on function public.holupp_identity_set_visible(boolean) from public;
+revoke all on function public.holupp_identity_note_search(text, boolean) from public;
+revoke all on function public.holupp_identity_discovery() from public;
+revoke all on function public.holupp_admin_identity_state() from public;
+revoke all on function public.holupp_admin_identity_update(jsonb) from public;
+revoke all on function public.holupp_admin_identity_recalc(integer) from public;
+revoke all on function public.holupp_identity_recalc(bigint) from public;
+revoke all on function public.holupp_identity_recalc_all(integer) from public;
+
+grant execute on function public.holupp_identity_mine() to authenticated;
+grant execute on function public.holupp_identity_public(bigint) to authenticated;
+grant execute on function public.holupp_identity_set_visible(boolean) to authenticated;
+grant execute on function public.holupp_identity_note_search(text, boolean) to authenticated;
+grant execute on function public.holupp_identity_discovery() to authenticated;
+grant execute on function public.holupp_admin_identity_state() to authenticated;
+grant execute on function public.holupp_admin_identity_update(jsonb) to authenticated;
+grant execute on function public.holupp_admin_identity_recalc(integer) to authenticated;
+
+commit;
+
+-- ================================ 20261119250000_identity_engine_schedule.sql
+
+-- Scheduling for the identity engine.
+--
+-- Same two-track arrangement as Moment cleanup (20261009000009):
+--   * pg_cron, if the project has it — `select public.schedule_identity_recalc();`
+--   * otherwise .github/workflows/identity-recalc.yml, which needs no extension.
+--
+-- Whichever runs, the work is identical: one bounded batch, least-recently
+-- calculated first. Nothing here is called from a page load, and nothing here is
+-- reachable by a client.
+
+create or replace function public.schedule_identity_recalc(p_schedule text default '17 */6 * * *')
+returns text
+language plpgsql security definer set search_path = public as $$
+begin
+  if to_regclass('cron.job') is null then
+    return 'pg_cron is not enabled on this project — recalculation runs from .github/workflows/identity-recalc.yml instead.';
+  end if;
+
+  if exists (select 1 from cron.job where jobname = 'crushly_identity_recalc') then
+    perform cron.unschedule('crushly_identity_recalc');
+  end if;
+
+  perform cron.schedule('crushly_identity_recalc', p_schedule,
+    'select public.holupp_identity_recalc_all(500)');
+  return 'scheduled crushly_identity_recalc: ' || p_schedule;
+end $$;
+
+revoke all on function public.schedule_identity_recalc(text) from public, anon, authenticated;
+grant execute on function public.schedule_identity_recalc(text) to service_role;
+
+do $$
+begin
+  if to_regclass('cron.job') is not null then
+    perform public.schedule_identity_recalc();
+  else
+    raise notice 'pg_cron not present — identity recalculation runs from the scheduled workflow.';
+  end if;
+end $$;
+
+-- ================================ 20261120090000_space_header_likes_and_views.sql
+
+-- Two numbers the new Space header needs, added to the function that already
+-- answers this question.
+--
+-- `holup_follow_stats` is the live v2 Space summary: Add Ups, Added Up, Homies,
+-- post likes and the list-visibility rules. The header needs it to also answer
+-- "how many people opened this Space" and "how much engagement have they had in
+-- total" — so this extends that function rather than starting a second one that
+-- would slowly disagree with it.
+--
+-- ── All Round Likes, defined exactly ────────────────────────────────────────
+--
+-- Every *like* a member has received, counted once each:
+--
+--   post_reactions       reactions on posts they wrote
+--   moment_reactions     reactions on Moments they posted
+--   post_comment_likes   likes on comments they wrote
+--
+-- Views, saves, downloads and messages are deliberately excluded: they are not
+-- likes, and folding them in would inflate a number members compare with each
+-- other. It rises only when somebody actually reacts.
+--
+-- Only content the caller could open is counted, so the total cannot be used as
+-- a side channel to infer that a private post exists — a connections-only post's
+-- reactions are invisible to a stranger here, exactly as they are everywhere else.
+--
+-- ── Views are the owner's ───────────────────────────────────────────────────
+--
+-- `views` is null for anybody but the member themselves. It is their traffic, not
+-- a scoreboard, and the Space has always treated it that way. A visitor seeing
+-- nothing is honest; seeing a zero would be a lie.
+
+create or replace function public.holup_follow_stats(p_target bigint) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare
+  me bigint:=public.me_id();
+  base jsonb;
+  outgoing text;
+  incoming text;
+  homies boolean;
+  like_total int;
+begin
+  if me is null then perform public.crushly_fail(401,'unauthorized','Please sign in again.'); end if;
+  -- Uses the deployed Space authorization gate; a follow never grants access.
+  base:=public.space_relationship_stats(p_target);
+
+  select coalesce((select outgoing_visibility from public.holup_follow_settings where user_id=p_target),'private'),
+         (select add_up_list_visibility from public.privacy where user_id=p_target),
+         public.holup_existing_close(me,p_target) into outgoing,incoming,homies;
+
+  -- Only computed when the Space is actually visible: space_relationship_stats
+  -- has already raised if it is not, so reaching here means the caller may look.
+  select
+    coalesce((
+      select count(*) from public.post_reactions r
+        join public.posts p on p.id = r.post_id
+       where p.author_id = p_target
+         and (me = p_target or public.can_view_post(p, me))
+    ), 0)
+  + coalesce((
+      select count(*) from public.moment_reactions mr
+        join public.moments m on m.id = mr.moment_id
+       where m.user_id = p_target
+         and (me = p_target or public.can_view_moment(m, me))
+    ), 0)
+  + coalesce((
+      select count(*) from public.post_comment_likes cl
+        join public.post_comments c on c.id = cl.comment_id
+        join public.posts p on p.id = c.post_id
+       where c.author_id = p_target
+         and not c.hidden
+         and (me = p_target or public.can_view_post(p, me))
+    ), 0)
+  into like_total;
+
+  return jsonb_build_object(
+    'addUps',(select count(*) from public.holup_follows f join public.profiles p on p.id=f.follower_id where f.followed_id=p_target and f.status='active' and p.onboarded and p.status='active' and not public.is_blocked_pair(p_target,p.id)),
+    'addedUp',(select count(*) from public.holup_follows f join public.profiles p on p.id=f.followed_id where f.follower_id=p_target and f.status='active' and p.onboarded and p.status='active' and not public.is_blocked_pair(p_target,p.id)),
+    'canViewAddUps',me=p_target or incoming='everyone' or (incoming='close' and homies),
+    'canViewAddedUp',me=p_target or outgoing='everyone' or (outgoing='close' and homies),
+    'outgoingVisibility',case when me=p_target then outgoing else null end,
+    -- `holup_follow_settings` on the live database has only user_id and
+    -- outgoing_visibility: Add Ups have never needed approval here. Reported as
+    -- a constant rather than guessed from a column that does not exist.
+    'approvalRequired',case when me=p_target then false else null end,
+    'myStatus',case when me<>p_target then (select status from public.holup_follows where follower_id=me and followed_id=p_target and status in ('active','pending')) else null end,
+    'keptClose',base->'keptClose','canViewKeptClose',base->'canViewKeptClose','postLikes',base->'postLikes','addUpVisibility',base->'addUpVisibility',
+    -- New: engagement received, and the owner's own traffic.
+    'allRoundLikes', like_total,
+    'views', case when me = p_target then coalesce((select sum(s.views) from public.space_views s where s.viewed_id = p_target), 0)::int else null end
+  );
+end $$;
+
+-- ================================ 20261120090100_space_header_likes_and_views_replay.sql
+
+-- No-op on a clean checkout.
+--
+-- The first application of the parent migration against the live project
+-- compiled a body that read a column `holup_follow_settings` does not have, so
+-- the function existed but every call failed. The parent file was corrected in
+-- place and re-applied on 2026-11-20, and this marker exists so the project's
+-- migration history has an entry for that second application.
+--
+-- Verified after the fix, as two different authenticated members:
+--   owner calling on their own Space   → views: 17, allRoundLikes: 4
+--   another member calling on the same → views: null, allRoundLikes: 4
+--   anon                               → cannot execute the function at all
+
+select 1;
+
+-- ================================ 20261121132307_web_unlimited_owner_access.sql
+
+-- 20261121132307_web_unlimited_owner_access
+--
+-- One private exception to the browser's 24-hour write clock.
+--
+-- The web product remains limited for everybody else. The owner needs a way to
+-- use and test the web build without consuming the public browser allowance, so
+-- this is an explicit entitlement rather than a client-side email check. The
+-- database checks the signed-in auth user on every clock read and every guarded
+-- write. Clearing browser storage, changing the user agent, or calling the RPC
+-- directly cannot turn the exception on for another account.
+--
+-- support@holupp.net was confirmed as a second authenticated account that also
+-- needs the exception.
+
+create table if not exists public.holup_web_access_exemptions (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at bigint not null default public.now_ms()
+);
+
+alter table public.holup_web_access_exemptions enable row level security;
+
+comment on table public.holup_web_access_exemptions is
+  'Private allowlist for members exempt from the browser write clock. No member may read or change it.';
+
+insert into public.holup_web_access_exemptions (user_id)
+select id
+  from auth.users
+ where lower(trim(email)) in ('rielosinc@gmail.com', 'support@holupp.net')
+on conflict (user_id) do nothing;
+
+revoke all on public.holup_web_access_exemptions from public, anon, authenticated;
+grant all on public.holup_web_access_exemptions to service_role;
+
+create or replace function public.holup_web_is_unlimited()
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select exists (
+    select 1
+      from public.holup_web_access_exemptions e
+     where e.user_id = auth.uid()
+  )
+$function$;
+
+revoke all on function public.holup_web_is_unlimited() from public, anon;
+grant execute on function public.holup_web_is_unlimited() to authenticated, service_role;
+
+-- The clock returns an open answer for the exempt member. Keeping the shape
+-- identical means no web bundle change is needed and the browser still works
+-- if this entitlement is added after the member has already visited once.
+create or replace function public.holup_web_open(p_platform text default null::text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  limit_ms constant bigint := 24::bigint * 3600000;
+  row public.holup_web_sessions;
+  nowms bigint := public.now_ms();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if public.holup_web_is_unlimited() then
+    return jsonb_build_object(
+      'firstSeenAt', null,
+      'elapsedMs', 0,
+      'remainingMs', limit_ms,
+      'blocked', false,
+      'opens', 0,
+      'platform', p_platform,
+      'unlimited', true
+    );
+  end if;
+
+  insert into public.holup_web_sessions as s (profile_id, first_seen_at, last_seen_at, last_platform)
+  values (me, nowms, nowms, p_platform)
+  on conflict (profile_id) do update
+    set last_seen_at = nowms,
+        last_platform = coalesce(excluded.last_platform, s.last_platform),
+        opens = s.opens + case when nowms - s.last_seen_at > 86400000 then 1 else 0 end
+  returning * into row;
+
+  return jsonb_build_object(
+    'firstSeenAt', row.first_seen_at,
+    'elapsedMs', nowms - row.first_seen_at,
+    'remainingMs', greatest(0, limit_ms - (nowms - row.first_seen_at)),
+    'blocked', (nowms - row.first_seen_at) >= limit_ms,
+    'opens', row.opens,
+    'platform', row.last_platform,
+    'unlimited', false
+  );
+end
+$function$;
+
+create or replace function public.holup_web_status()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  limit_ms constant bigint := 24::bigint * 3600000;
+  row public.holup_web_sessions;
+  nowms bigint := public.now_ms();
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if public.holup_web_is_unlimited() then
+    return jsonb_build_object(
+      'firstSeenAt', null,
+      'elapsedMs', 0,
+      'remainingMs', limit_ms,
+      'blocked', false,
+      'opens', 0,
+      'unlimited', true
+    );
+  end if;
+
+  select * into row from public.holup_web_sessions where profile_id = me;
+  if not found then
+    return jsonb_build_object('firstSeenAt', null, 'elapsedMs', 0, 'remainingMs', limit_ms, 'blocked', false, 'opens', 0, 'unlimited', false);
+  end if;
+
+  return jsonb_build_object(
+    'firstSeenAt', row.first_seen_at,
+    'elapsedMs', nowms - row.first_seen_at,
+    'remainingMs', greatest(0, limit_ms - (nowms - row.first_seen_at)),
+    'blocked', (nowms - row.first_seen_at) >= limit_ms,
+    'opens', row.opens,
+    'unlimited', false
+  );
+end
+$function$;
+
+revoke all on function public.holup_web_open(text) from public, anon;
+grant execute on function public.holup_web_open(text) to authenticated, service_role;
+revoke all on function public.holup_web_status() from public, anon;
+grant execute on function public.holup_web_status() to authenticated, service_role;
+
+-- Guarded writes call this function after the browser header has been checked.
+-- The entitlement must be checked before the clock row, so a previously expired
+-- session is harmless for the owner as well.
+create or replace function public.holup_web_write_block()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  row public.holup_web_sessions;
+  limit_ms constant bigint := 24::bigint * 3600000;
+begin
+  if me is null or public.holup_web_is_unlimited() or not public.holup_request_is_browser() then
+    return null;
+  end if;
+
+  select * into row from public.holup_web_sessions where profile_id = me;
+  if not found or public.now_ms() - row.first_seen_at < limit_ms then
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'code', 'web_day_over',
+    'message', 'Your browser day is over. You can still read everything here — posting, Moments, clips and Whispers are in the app.',
+    'firstSeenAt', row.first_seen_at
+  );
+end
+$function$;
+
+revoke all on function public.holup_web_write_block() from public, anon;
+grant execute on function public.holup_web_write_block() to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261121134306_holup_invites_and_referrals.sql
+
+-- REQUIRES: relationship_cutover
+-- HolUpp invitations, server-side referral attribution, and successful counts.
+--
+-- A member receives one reusable, unguessable invitation code. A referral is
+-- claimed only by an authenticated, not-yet-onboarded account and becomes
+-- successful only after onboarding plus a real first activity (post, Moment,
+-- active follow, or Circle membership). Clicks alone never inflate the count.
+
+create table if not exists public.holup_invite_codes (
+  inviter_id bigint primary key references public.profiles(id) on delete cascade,
+  code text not null unique,
+  created_at bigint not null default public.now_ms(),
+  revoked_at bigint
+);
+
+create index if not exists holup_invite_codes_active_idx
+  on public.holup_invite_codes (code)
+  where revoked_at is null;
+
+alter table public.holup_invite_codes enable row level security;
+revoke all on public.holup_invite_codes from public, anon, authenticated;
+
+create table if not exists public.holup_referrals (
+  id bigint generated always as identity primary key,
+  inviter_id bigint not null references public.profiles(id) on delete cascade,
+  referred_id bigint not null unique references public.profiles(id) on delete cascade,
+  code text not null,
+  status text not null default 'claimed' check (status in ('claimed', 'qualified', 'revoked')),
+  claimed_at bigint not null default public.now_ms(),
+  qualified_at bigint
+);
+
+create index if not exists holup_referrals_inviter_status_idx
+  on public.holup_referrals (inviter_id, status, qualified_at);
+
+alter table public.holup_referrals enable row level security;
+revoke all on public.holup_referrals from public, anon, authenticated;
+
+-- The member-facing stats and link are returned in one server-shaped answer.
+create or replace function public.holup_invite_info()
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  invite_code text;
+  successful bigint := 0;
+  pending bigint := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select code into invite_code
+    from public.holup_invite_codes
+   where inviter_id = me and revoked_at is null;
+
+  if invite_code is null then
+    invite_code := replace(gen_random_uuid()::text, '-', '');
+    insert into public.holup_invite_codes (inviter_id, code)
+    values (me, invite_code)
+    on conflict (inviter_id) do update
+      set code = excluded.code,
+          created_at = public.now_ms(),
+          revoked_at = null
+    returning code into invite_code;
+  end if;
+
+  select
+    count(*) filter (where status = 'qualified'),
+    count(*) filter (where status = 'claimed')
+    into successful, pending
+    from public.holup_referrals
+   where inviter_id = me;
+
+  return jsonb_build_object(
+    'code', invite_code,
+    'link', 'https://holupp.net/i/' || invite_code,
+    'successful', successful,
+    'pending', pending,
+    'total', successful + pending
+  );
+end
+$function$;
+
+-- The invite page only needs a safe, generic validation answer. It does not
+-- expose the inviter's private profile or any member directory data.
+create or replace function public.holup_invite_preview(p_code text)
+returns jsonb
+language plpgsql
+security definer
+stable
+set search_path to 'public'
+as $function$
+declare
+  clean text := lower(trim(coalesce(p_code, '')));
+  inviter_name text;
+begin
+  if clean !~ '^[0-9a-f]{32}$' then
+    return jsonb_build_object('valid', false);
+  end if;
+
+  select nullif(p.name, '') into inviter_name
+    from public.holup_invite_codes i
+    join public.profiles p on p.id = i.inviter_id
+   where i.code = clean
+     and i.revoked_at is null
+     and p.status = 'active'
+     and p.onboarded
+   limit 1;
+
+  if inviter_name is null then
+    return jsonb_build_object('valid', false);
+  end if;
+
+  return jsonb_build_object('valid', true, 'inviterName', inviter_name);
+end
+$function$;
+
+-- Claiming is tied to auth.uid through me_id. The browser/app supplies only the
+-- opaque code from the link; it cannot name the inviter or the referred account.
+create or replace function public.holup_referral_claim(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  clean text := lower(trim(coalesce(p_code, '')));
+  inviter bigint;
+  already_onboarded boolean;
+  inserted boolean := false;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if clean !~ '^[0-9a-f]{32}$' then
+    return jsonb_build_object('claimed', false);
+  end if;
+
+  select onboarded into already_onboarded from public.profiles where id = me;
+  if coalesce(already_onboarded, false) then
+    return jsonb_build_object('claimed', false);
+  end if;
+
+  select inviter_id into inviter
+    from public.holup_invite_codes
+   where code = clean and revoked_at is null;
+
+  if inviter is null or inviter = me then
+    return jsonb_build_object('claimed', false);
+  end if;
+
+  insert into public.holup_referrals (inviter_id, referred_id, code)
+  values (inviter, me, clean)
+  on conflict (referred_id) do nothing;
+  inserted := found;
+
+  return jsonb_build_object('claimed', inserted);
+end
+$function$;
+
+-- A successful referral is a claimed invite plus onboarding plus a genuine
+-- first activity. The activity trigger calls this function after the new row is
+-- written, while the onboarding trigger catches activity that happened before
+-- the final onboarding flag was set.
+create or replace function public.holup_mark_referral_activity(p_member_id bigint)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if p_member_id is null then return; end if;
+  if not exists (
+    select 1 from public.profiles
+     where id = p_member_id and onboarded and status = 'active'
+  ) then
+    return;
+  end if;
+  if not (
+    exists (select 1 from public.posts where author_id = p_member_id)
+    or exists (select 1 from public.moments where user_id = p_member_id)
+    or exists (select 1 from public.holup_follows where follower_id = p_member_id and status = 'active')
+    or exists (select 1 from public.circle_members where member_id = p_member_id)
+  ) then
+    return;
+  end if;
+
+  update public.holup_referrals
+     set status = 'qualified', qualified_at = coalesce(qualified_at, public.now_ms())
+   where referred_id = p_member_id and status = 'claimed';
+end
+$function$;
+
+revoke all on function public.holup_mark_referral_activity(bigint) from public, anon, authenticated;
+
+create or replace function public.holup_referral_activity_trigger()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  member_id bigint;
+begin
+  member_id := nullif(to_jsonb(new) ->> tg_argv[0], '')::bigint;
+  if member_id is not null then
+    perform public.holup_mark_referral_activity(member_id);
+  end if;
+  return new;
+end
+$function$;
+
+revoke all on function public.holup_referral_activity_trigger() from public, anon, authenticated;
+
+create or replace function public.holup_referral_onboarding_trigger()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  perform public.holup_mark_referral_activity(new.id);
+  return new;
+end
+$function$;
+
+revoke all on function public.holup_referral_onboarding_trigger() from public, anon, authenticated;
+
+drop trigger if exists holup_referral_posts_activity on public.posts;
+create trigger holup_referral_posts_activity
+after insert on public.posts
+for each row execute function public.holup_referral_activity_trigger('author_id');
+
+drop trigger if exists holup_referral_moments_activity on public.moments;
+create trigger holup_referral_moments_activity
+after insert on public.moments
+for each row execute function public.holup_referral_activity_trigger('user_id');
+
+drop trigger if exists holup_referral_follows_activity on public.holup_follows;
+create trigger holup_referral_follows_activity
+after insert or update of status on public.holup_follows
+for each row when (new.status = 'active')
+execute function public.holup_referral_activity_trigger('follower_id');
+
+drop trigger if exists holup_referral_circle_members_activity on public.circle_members;
+create trigger holup_referral_circle_members_activity
+after insert on public.circle_members
+for each row execute function public.holup_referral_activity_trigger('member_id');
+
+drop trigger if exists holup_referral_onboarded_activity on public.profiles;
+create trigger holup_referral_onboarded_activity
+after update of onboarded on public.profiles
+for each row when (new.onboarded is true and old.onboarded is distinct from true)
+execute function public.holup_referral_onboarding_trigger();
+
+revoke all on function public.holup_invite_info() from public, anon;
+grant execute on function public.holup_invite_info() to authenticated, service_role;
+revoke all on function public.holup_invite_preview(text) from public;
+grant execute on function public.holup_invite_preview(text) to anon, authenticated, service_role;
+revoke all on function public.holup_referral_claim(text) from public, anon;
+grant execute on function public.holup_referral_claim(text) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261121134328_holup_invites_fix_info_volatility.sql
+
+-- REQUIRES: relationship_cutover
+-- holup_invite_info creates a member's reusable code on first use, so it must
+-- be VOLATILE rather than STABLE. The original version was rejected by
+-- PostgreSQL when it attempted its intentional insert inside a stable function.
+create or replace function public.holup_invite_info()
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  invite_code text;
+  successful bigint := 0;
+  pending bigint := 0;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  select code into invite_code
+    from public.holup_invite_codes
+   where inviter_id = me and revoked_at is null;
+
+  if invite_code is null then
+    invite_code := replace(gen_random_uuid()::text, '-', '');
+    insert into public.holup_invite_codes (inviter_id, code)
+    values (me, invite_code)
+    on conflict (inviter_id) do update
+      set code = excluded.code,
+          created_at = public.now_ms(),
+          revoked_at = null
+    returning code into invite_code;
+  end if;
+
+  select
+    count(*) filter (where status = 'qualified'),
+    count(*) filter (where status = 'claimed')
+    into successful, pending
+    from public.holup_referrals
+   where inviter_id = me;
+
+  return jsonb_build_object(
+    'code', invite_code,
+    'link', 'https://holupp.net/i/' || invite_code,
+    'successful', successful,
+    'pending', pending,
+    'total', successful + pending
+  );
+end
+$function$;
+
+revoke all on function public.holup_invite_info() from public, anon;
+grant execute on function public.holup_invite_info() to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261121134739_holup_invites_confirmation_and_profile_link.sql
+
+-- REQUIRES: relationship_cutover
+-- Harden referral eligibility at the database boundary and give authenticated
+-- App Links a handle-to-profile-id resolver. The client never supplies an
+-- inviter id or a referred-member id.
+
+create or replace function public.holup_invite_preview(p_code text)
+returns jsonb
+language plpgsql
+security definer
+stable
+set search_path to 'public'
+as $function$
+declare
+  clean text := lower(trim(coalesce(p_code, '')));
+  inviter_name text;
+begin
+  if clean !~ '^[0-9a-f]{32}$' then
+    return jsonb_build_object('valid', false);
+  end if;
+
+  select coalesce(nullif(trim(p.name), ''), 'Someone') into inviter_name
+    from public.holup_invite_codes i
+    join public.profiles p on p.id = i.inviter_id
+   where i.code = clean
+     and i.revoked_at is null
+     and p.status = 'active'
+     and p.onboarded
+   limit 1;
+
+  if inviter_name is null then
+    return jsonb_build_object('valid', false);
+  end if;
+
+  return jsonb_build_object('valid', true, 'inviterName', inviter_name);
+end
+$function$;
+
+create or replace function public.holup_referral_claim(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  actor uuid := auth.uid();
+  clean text := lower(trim(coalesce(p_code, '')));
+  inviter bigint;
+  already_onboarded boolean;
+  confirmed boolean;
+  inserted boolean := false;
+begin
+  if me is null or actor is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+
+  if clean !~ '^[0-9a-f]{32}$' then
+    return jsonb_build_object('claimed', false, 'retryable', false, 'reason', 'invalid_code');
+  end if;
+
+  -- A session alone is not enough. Email signups must be confirmed before the
+  -- referral is attributed; OAuth accounts have a confirmed timestamp too.
+  select coalesce(u.email_confirmed_at, u.confirmed_at) is not null
+    into confirmed
+    from auth.users u
+   where u.id = actor;
+  if not coalesce(confirmed, false) then
+    return jsonb_build_object('claimed', false, 'retryable', true, 'reason', 'account_not_confirmed');
+  end if;
+
+  select onboarded into already_onboarded from public.profiles where id = me;
+  if coalesce(already_onboarded, false) then
+    return jsonb_build_object('claimed', false, 'retryable', false, 'reason', 'already_onboarded');
+  end if;
+
+  select inviter_id into inviter
+    from public.holup_invite_codes
+   where code = clean and revoked_at is null;
+
+  if inviter is null then
+    return jsonb_build_object('claimed', false, 'retryable', false, 'reason', 'invalid_code');
+  end if;
+  if inviter = me then
+    return jsonb_build_object('claimed', false, 'retryable', false, 'reason', 'self_referral');
+  end if;
+
+  insert into public.holup_referrals (inviter_id, referred_id, code)
+  values (inviter, me, clean)
+  on conflict (referred_id) do nothing;
+  inserted := found;
+
+  return jsonb_build_object(
+    'claimed', inserted,
+    'retryable', false,
+    'reason', case when inserted then 'claimed' else 'already_attributed' end
+  );
+end
+$function$;
+
+create or replace function public.holup_mark_referral_activity(p_member_id bigint)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if p_member_id is null then return; end if;
+  if not exists (
+    select 1
+      from public.profiles p
+      join auth.users u on u.id = p.auth_user_id
+     where p.id = p_member_id
+       and p.onboarded
+       and p.status = 'active'
+       and coalesce(u.email_confirmed_at, u.confirmed_at) is not null
+  ) then
+    return;
+  end if;
+  if not (
+    exists (select 1 from public.posts where author_id = p_member_id)
+    or exists (select 1 from public.moments where user_id = p_member_id)
+    or exists (select 1 from public.holup_follows where follower_id = p_member_id and status = 'active')
+    or exists (select 1 from public.circle_members where member_id = p_member_id)
+  ) then
+    return;
+  end if;
+
+  update public.holup_referrals
+     set status = 'qualified', qualified_at = coalesce(qualified_at, public.now_ms())
+   where referred_id = p_member_id and status = 'claimed';
+end
+$function$;
+
+-- A signed-in App Link can resolve a public handle without trusting a client
+-- supplied numeric id. Visibility is still checked by load_profile afterwards.
+create or replace function public.holup_profile_id_by_username(p_username text)
+returns bigint
+language plpgsql
+security definer
+stable
+set search_path to 'public'
+as $function$
+declare
+  me bigint := public.me_id();
+  clean text := lower(trim(coalesce(p_username, '')));
+  target bigint;
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if clean !~ '^[a-z0-9_.]{2,30}$' then return null; end if;
+  select p.id into target
+    from public.profiles p
+   where lower(p.username) = clean
+     and p.onboarded
+     and p.status = 'active'
+   limit 1;
+  return target;
+end
+$function$;
+
+revoke all on function public.holup_invite_preview(text) from public;
+grant execute on function public.holup_invite_preview(text) to anon, authenticated, service_role;
+revoke all on function public.holup_referral_claim(text) from public, anon;
+grant execute on function public.holup_referral_claim(text) to authenticated, service_role;
+revoke all on function public.holup_profile_id_by_username(text) from public, anon;
+grant execute on function public.holup_profile_id_by_username(text) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ================================ 20261122000000_post_reposts.sql
+
+-- Native reposts: one relationship to one canonical post.
+--
+-- A repost never copies a post row or its media. The original post remains the
+-- only source of its author, timestamp, audience, media and engagement. This
+-- migration adds the relationship, secure mutations, feed/profile serialization,
+-- notification preference handling and the feed functions' distribution metadata.
+
+-- ------------------------------------------------------------------ settings
+
+alter table public.privacy
+  add column if not exists allow_reposts boolean not null default true;
+
+alter table public.notification_settings
+  add column if not exists reposts boolean not null default true;
+
+-- A post can be under moderation in a later admin workflow. Existing rows are
+-- visible by default; reposts and all existing visibility gates reject anything
+-- that is not explicitly visible.
+alter table public.posts
+  add column if not exists moderation_state text not null default 'visible';
+alter table public.posts
+  drop constraint if exists posts_moderation_state_check;
+alter table public.posts
+  add constraint posts_moderation_state_check
+  -- `hidden` is the live admin vocabulary; `review` is kept as a
+  -- compatibility value for moderation tooling that stages a post before
+  -- deciding whether it is removed.
+  check (moderation_state in ('visible', 'hidden', 'review', 'removed'));
+
+-- --------------------------------------------------------------- relationship
+
+create table if not exists public.post_reposts (
+  reposter_id      bigint not null references public.profiles(id) on delete cascade,
+  original_post_id bigint not null references public.posts(id) on delete cascade,
+  created_at       bigint not null default public.now_ms(),
+  primary key (reposter_id, original_post_id)
+);
+
+-- The first index answers "how many/which people reposted this original?" and
+-- the second answers a member's profile/grid and active-state lookup.
+create index if not exists post_reposts_original_idx
+  on public.post_reposts (original_post_id, created_at desc, reposter_id);
+create index if not exists post_reposts_reposter_idx
+  on public.post_reposts (reposter_id, created_at desc, original_post_id);
+
+alter table public.post_reposts enable row level security;
+
+drop policy if exists post_reposts_select_own on public.post_reposts;
+create policy post_reposts_select_own on public.post_reposts
+  for select to authenticated
+  using (reposter_id = public.me_id());
+
+-- Members cannot write the relationship directly. Both directions go through
+-- repost_post(), which re-checks auth, the original post, privacy, blocks,
+-- moderation and creator settings in the same transaction.
+revoke all on table public.post_reposts from public, anon, authenticated;
+
+-- ------------------------------------------------------------ canonical gates
+
+create or replace function public.can_view_post(p_post public.posts, p_viewer bigint)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_viewer is null then return false; end if;
+  -- Preserve the existing owner/admin inspection path. Moderation still blocks
+  -- distribution and new repost mutations below, but an owner must be able to
+  -- inspect their own post and moderators must be able to triage it.
+  if p_post.author_id = p_viewer then return true; end if;
+  if public.holup_is_admin() then return true; end if;
+  if coalesce(to_jsonb(p_post) ->> 'moderation_state', 'visible') <> 'visible' then return false; end if;
+  if public.is_blocked_pair(p_viewer, p_post.author_id) then return false; end if;
+  if p_post.audience = 'private' then return false; end if;
+  if p_post.audience = 'circle' then
+    return public.is_circle_member(p_post.circle_id, p_viewer);
+  end if;
+  if p_post.audience = 'everyone' then
+    return exists (
+      select 1 from profiles p join privacy pr on pr.user_id = p.id
+       where p.id = p_post.author_id
+         and p.onboarded
+         and p.status = 'active'
+         and pr.profile_visibility = 'everyone'
+         and not pr.incognito
+    );
+  end if;
+  return p_post.audience = 'connections'
+     and public.is_connected_pair(p_viewer, p_post.author_id);
+end $$;
+
+revoke all on function public.can_view_post(public.posts, bigint) from public, anon, authenticated;
+grant execute on function public.can_view_post(public.posts, bigint) to service_role;
+
+-- A repost is distributable only when the original is currently readable by the
+-- viewer and the reposter's identity can be shown to that viewer. This prevents
+-- a repost from widening an audience or bypassing a block/hidden Space.
+create or replace function public.repost_distribution_allowed(
+  p_original_post_id bigint,
+  p_reposter_id bigint,
+  p_viewer bigint
+)
+returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  po public.posts;
+  creator_allows boolean;
+  reposter_active boolean;
+begin
+  if p_viewer is null or p_reposter_id is null then return false; end if;
+  select * into po from public.posts where id = p_original_post_id;
+  if not found then return false; end if;
+  if coalesce(to_jsonb(po) ->> 'moderation_state', 'visible') <> 'visible' then return false; end if;
+  if not public.can_view_post(po, p_viewer) then return false; end if;
+
+  select coalesce(pr.allow_reposts, true)
+    into creator_allows
+    from public.privacy pr
+   where pr.user_id = po.author_id;
+  if not coalesce(creator_allows, false) then return false; end if;
+
+  select exists (
+    select 1 from public.profiles p
+     where p.id = p_reposter_id and p.onboarded and p.status = 'active'
+  ) into reposter_active;
+  if not reposter_active then return false; end if;
+
+  if public.is_blocked_pair(p_viewer, p_reposter_id) then return false; end if;
+  return public.load_visible_profile(p_viewer, p_reposter_id, false) is not null;
+end $$;
+
+revoke all on function public.repost_distribution_allowed(bigint, bigint, bigint) from public, anon, authenticated;
+grant execute on function public.repost_distribution_allowed(bigint, bigint, bigint) to service_role;
+
+create or replace function public.post_repost_event_at(p_post_id bigint, p_viewer bigint)
+returns bigint
+language sql stable security definer set search_path = public as $$
+  select max(r.created_at)
+    from public.post_reposts r
+   where r.original_post_id = p_post_id
+     and public.repost_distribution_allowed(r.original_post_id, r.reposter_id, p_viewer)
+$$;
+
+revoke all on function public.post_repost_event_at(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.post_repost_event_at(bigint, bigint) to service_role;
+
+-- The canonical post engagement object is unchanged. Repost counts and state
+-- are added as a separate object so likes/comments/views cannot be inflated by
+-- relationship rows and every post surface shares the same answer.
+create or replace function public.post_repost_engagement(p_post_id bigint, p_viewer bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  po             public.posts;
+  creator_allows boolean;
+  visible_count  bigint := 0;
+  is_reposted    boolean := false;
+  latest_by      jsonb;
+  latest_at      bigint;
+begin
+  select * into po from public.posts where id = p_post_id;
+  if not found or p_viewer is null or not public.can_view_post(po, p_viewer) then
+    return jsonb_build_object('repostCount', 0, 'reposted', false, 'repostedBy', null, 'repostedAt', null);
+  end if;
+
+  select coalesce(pr.allow_reposts, true)
+    into creator_allows
+    from public.privacy pr
+   where pr.user_id = po.author_id;
+
+  select exists (
+    select 1 from public.post_reposts r
+     where r.original_post_id = p_post_id and r.reposter_id = p_viewer
+  ) into is_reposted;
+
+  -- If the creator has disabled reposts, the relationship remains undoable but
+  -- is not distributed or counted for readers until the creator enables it.
+  if not coalesce(creator_allows, false) then
+    return jsonb_build_object('repostCount', 0, 'reposted', is_reposted, 'repostedBy', null, 'repostedAt', null);
+  end if;
+
+  select count(*) into visible_count
+    from public.post_reposts r
+   where r.original_post_id = p_post_id
+     and public.repost_distribution_allowed(r.original_post_id, r.reposter_id, p_viewer);
+
+  select r.created_at, public.load_visible_profile(p_viewer, r.reposter_id, false)
+    into latest_at, latest_by
+    from public.post_reposts r
+   where r.original_post_id = p_post_id
+     and public.repost_distribution_allowed(r.original_post_id, r.reposter_id, p_viewer)
+   order by r.created_at desc, r.reposter_id desc
+   limit 1;
+
+  return jsonb_build_object(
+    'repostCount', visible_count,
+    'reposted', is_reposted,
+    'repostedBy', latest_by,
+    'repostedAt', latest_at
+  );
+end $$;
+
+revoke all on function public.post_repost_engagement(bigint, bigint) from public, anon, authenticated;
+grant execute on function public.post_repost_engagement(bigint, bigint) to service_role;
+
+-- One serializer keeps every feed, profile grid and post viewer on the same
+-- canonical Post shape. p_profile_id is only used by space_posts to attribute a
+-- profile's own repost; it never changes the original author or createdAt.
+create or replace function public.post_feed_payload(
+  p_post public.posts,
+  p_viewer bigint,
+  p_profile_id bigint default null,
+  p_profile_repost_at bigint default null
+)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'id', p_post.id,
+    'body', p_post.body,
+    'mediaUrl', p_post.media_url,
+    'mediaKind', case
+      when p_post.media_url is null then null
+      when p_post.media_url ~ '\.(mp4|webm|mov|m4v)(\?|$)' then 'video'
+      else 'photo'
+    end,
+    'edit', p_post.edit,
+    'audience', p_post.audience,
+    'circleId', p_post.circle_id,
+    'createdAt', p_post.created_at,
+    'author', public.public_profile(p_viewer, p_post.author_id, false),
+    'mine', p_post.author_id = p_viewer
+  )
+  || public.post_engagement(p_post.id, p_viewer)
+  || public.post_repost_engagement(p_post.id, p_viewer)
+  || case when p_profile_id is null then '{}'::jsonb
+          else jsonb_build_object(
+            'repostedBy', public.load_visible_profile(p_viewer, p_profile_id, false),
+            'repostedAt', p_profile_repost_at
+          )
+     end
+$$;
+
+revoke all on function public.post_feed_payload(public.posts, bigint, bigint, bigint) from public, anon, authenticated;
+grant execute on function public.post_feed_payload(public.posts, bigint, bigint, bigint) to service_role;
+
+-- -------------------------------------------------------------- mutation RPC
+
+create or replace function public.repost_post(
+  p_post_id bigint,
+  p_reposted boolean default true
+)
+returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  me              bigint := public.me_id();
+  po              public.posts;
+  creator_allows  boolean;
+  inserted_id     bigint;
+  desired         boolean := coalesce(p_reposted, true);
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  if p_post_id is null then
+    perform public.crushly_fail(400, 'bad_post', 'That post is not available.');
+  end if;
+
+  select * into po from public.posts where id = p_post_id;
+
+  if not desired then
+    -- Undo is intentionally allowed even after the original narrows its
+    -- audience, disables reposts or becomes unavailable: it only removes the
+    -- caller's relationship and cannot disclose the original.
+    delete from public.post_reposts
+     where reposter_id = me and original_post_id = p_post_id;
+    if not found then
+      return jsonb_build_object(
+        'originalPostId', p_post_id,
+        'reposted', false,
+        'repostCount', 0,
+        'repostedBy', null,
+        'repostedAt', null
+      );
+    end if;
+    if not found or not public.can_view_post(po, me) then
+      return jsonb_build_object(
+        'originalPostId', p_post_id,
+        'reposted', false,
+        'repostCount', 0,
+        'repostedBy', null,
+        'repostedAt', null
+      );
+    end if;
+    return public.post_repost_engagement(p_post_id, me) || jsonb_build_object('originalPostId', p_post_id);
+  end if;
+
+  if not found
+     or coalesce(to_jsonb(po) ->> 'moderation_state', 'visible') <> 'visible'
+     or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, 'not_found', 'That post is no longer available.');
+  end if;
+
+  select coalesce(pr.allow_reposts, true)
+    into creator_allows
+    from public.privacy pr
+   where pr.user_id = po.author_id;
+  if not coalesce(creator_allows, false) then
+    perform public.crushly_fail(403, 'reposts_disabled', 'The creator does not allow reposts of this post.');
+  end if;
+
+  if not exists (
+    select 1 from public.profiles p
+     where p.id = me and p.onboarded and p.status = 'active'
+  ) then
+    perform public.crushly_fail(403, 'member_unavailable', 'Your profile is not available for reposting.');
+  end if;
+
+  -- The primary key makes this race-safe: two taps or two devices can never
+  -- create two active relationships. `found` below is true only for the first.
+  insert into public.post_reposts (reposter_id, original_post_id)
+  values (me, po.id)
+  on conflict (reposter_id, original_post_id) do nothing
+  returning original_post_id into inserted_id;
+
+  if found and po.author_id <> me then
+    perform public.notify_to(po.author_id, 'post_repost', me, po.id, '');
+  end if;
+
+  return public.post_repost_engagement(po.id, me) || jsonb_build_object('originalPostId', po.id);
+end $$;
+
+revoke all on function public.repost_post(bigint, boolean) from public, anon, authenticated;
+grant execute on function public.repost_post(bigint, boolean) to authenticated, service_role;
+
+-- ----------------------------------------------------------- notifications
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check check (kind in (
+  'crush','deep_crush','mutual','message','moment_reply','moment_reaction',
+  'verified','verification_rejected','post_reaction','post_comment','post_mention',
+  'post_repost','keep','circle_request','circle_approved','circle_declined','circle_invite','circle_joined',
+  'verification','announcement','account','moderation','payment','system','support'
+));
+
+create or replace function public.notification_allowed(p_uid bigint, p_kind text)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select case
+    when not exists (select 1 from public.notification_settings where user_id = p_uid) then true
+    when p_kind = 'message' then (select messages from public.notification_settings where user_id = p_uid)
+    when p_kind in ('crush', 'deep_crush', 'mutual') then (select crushes from public.notification_settings where user_id = p_uid)
+    when p_kind in ('moment_reply', 'moment_reaction') then (select moments from public.notification_settings where user_id = p_uid)
+    when p_kind = 'post_repost' then coalesce((select reposts from public.notification_settings where user_id = p_uid), true)
+    when p_kind = 'keep' then coalesce((select keeps from public.notification_settings where user_id = p_uid), true)
+    else true
+  end
+$$;
+
+create or replace function public.notify_to(
+  p_uid bigint,
+  p_kind text,
+  p_actor_id bigint default null,
+  p_ref_id bigint default null,
+  p_body text default ''
+)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  existing_id bigint;
+begin
+  if not public.notification_allowed(p_uid, p_kind) then return; end if;
+
+  -- A repost is one unread event per reposter/original pair. Undoing and
+  -- reposting after the notification was read is a new event; repeated requests
+  -- while it is unread refresh the same row instead of stacking duplicates.
+  if p_kind in ('post_mention', 'post_repost', 'keep', 'message') and p_actor_id is not null then
+    select n.id into existing_id
+      from public.notifications n
+     where n.user_id = p_uid
+       and n.kind = p_kind
+       and n.actor_id = p_actor_id
+       and n.ref_id is not distinct from p_ref_id
+       and n.read_at is null
+     limit 1;
+    if existing_id is not null then
+      update public.notifications n
+         set created_at = public.now_ms(),
+             body = case when p_kind = 'message' then '' else p_body end
+       where n.id = existing_id;
+      return;
+    end if;
+  end if;
+
+  insert into public.notifications (user_id, kind, actor_id, ref_id, body)
+  values (p_uid, p_kind, p_actor_id, p_ref_id,
+          case when p_kind = 'message' then '' else p_body end);
+end $$;
+
+revoke all on function public.notification_allowed(bigint, text) from public, anon, authenticated;
+revoke all on function public.notify_to(bigint, text, bigint, bigint, text) from public, anon, authenticated;
+grant execute on function public.notification_allowed(bigint, text) to service_role;
+grant execute on function public.notify_to(bigint, text, bigint, bigint, text) to service_role;
+
+-- ---------------------------------------------------------- paged feed utils
+
+/* ------------------------------------------------------------- flow_feed */
+create or replace function public.flow_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  lim integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+  after_event bigint;
+  last_id bigint;
+  taken integer := 0;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  if p_after is not null then
+    select greatest(p2.created_at, coalesce(public.post_repost_event_at(p2.id, me), 0))
+      into after_event from public.posts p2 where p2.id = p_after;
+  end if;
+
+  for r in
+    select po.*,
+           greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) as feed_at
+      from public.posts po
+     where po.circle_id is null
+       and public.can_view_post(po, me)
+       and (p_after is null or (after_event is not null and
+            (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) < after_event
+             or (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) = after_event and po.id < p_after))))
+     order by feed_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from public.posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(public.post_feed_payload(post, me));
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('items', items, 'nextCursor', case when taken >= lim then last_id else null end);
+end $$;
+
+/* ------------------------------------------------------ public_flow_feed */
+create or replace function public.public_flow_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  lim integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+  after_event bigint;
+  last_id bigint;
+  taken integer := 0;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  if p_after is not null then
+    select greatest(p2.created_at, coalesce(public.post_repost_event_at(p2.id, me), 0))
+      into after_event from public.posts p2 where p2.id = p_after;
+  end if;
+  for r in
+    select po.*,
+           greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) as feed_at
+      from public.posts po
+     where po.circle_id is null
+       and po.audience = 'everyone'
+       and po.author_id <> me
+       and public.can_view_post(po, me)
+       and (p_after is null or (after_event is not null and
+            (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) < after_event
+             or (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) = after_event and po.id < p_after))))
+     order by feed_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from public.posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(public.post_feed_payload(post, me));
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('items', items, 'nextCursor', case when taken >= lim then last_id else null end);
+end $$;
+
+/* ------------------------------------------------------------ circle_feed */
+create or replace function public.circle_feed(p_circle_id bigint, p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  lim integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+  after_event bigint;
+  last_id bigint;
+  taken integer := 0;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  if not public.is_circle_member(p_circle_id, me) then perform public.crushly_fail(404, '', 'Circle not found.'); end if;
+  if p_after is not null then
+    select greatest(p2.created_at, coalesce(public.post_repost_event_at(p2.id, me), 0))
+      into after_event from public.posts p2 where p2.id = p_after;
+  end if;
+  for r in
+    select po.*,
+           greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) as feed_at
+      from public.posts po
+     where po.circle_id = p_circle_id
+       and public.can_view_post(po, me)
+       and (p_after is null or (after_event is not null and
+            (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) < after_event
+             or (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) = after_event and po.id < p_after))))
+     order by feed_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from public.posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(public.post_feed_payload(post, me));
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('items', items, 'nextCursor', case when taken >= lim then last_id else null end);
+end $$;
+
+/* -------------------------------------------------------- crush_posts_feed */
+create or replace function public.crush_posts_feed(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  lim integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+  after_event bigint;
+  last_id bigint;
+  taken integer := 0;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  if p_after is not null then
+    select greatest(p2.created_at, coalesce(public.post_repost_event_at(p2.id, me), 0))
+      into after_event from public.posts p2 where p2.id = p_after;
+  end if;
+  for r in
+    select po.*,
+           greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) as feed_at
+      from public.posts po
+     where po.circle_id is null
+       and public.can_view_post(po, me)
+       and (p_after is null or (after_event is not null and
+            (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) < after_event
+             or (greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, me), 0)) = after_event and po.id < p_after))))
+     order by feed_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from public.posts where id = r.id;
+    if public.can_view_post(post, me) then
+      items := items || jsonb_build_array(public.post_feed_payload(post, me));
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('items', items, 'nextCursor', case when taken >= lim then last_id else null end);
+end $$;
+
+/* -------------------------------------------------------------- saved_posts */
+create or replace function public.saved_posts(p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  lim integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+  last_id bigint;
+  taken integer := 0;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  for r in
+    select po.* from public.post_saves s
+      join public.posts po on po.id = s.post_id
+     where s.user_id = me
+       and (p_after is null or s.created_at < (select s2.created_at from public.post_saves s2 where s2.user_id = me and s2.post_id = p_after)
+            or (s.created_at = (select s2.created_at from public.post_saves s2 where s2.user_id = me and s2.post_id = p_after) and po.id < p_after))
+     order by s.created_at desc, po.id desc
+     limit lim
+  loop
+    select * into post from public.posts where id = r.id;
+    if found and public.can_view_post(post, me) then
+      items := items || jsonb_build_array(public.post_feed_payload(post, me) || jsonb_build_object('saved', true));
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('items', items, 'nextCursor', case when taken >= lim then last_id else null end);
+end $$;
+
+-- ------------------------------------------------------------- profile grid
+create or replace function public.space_posts(p_author_id bigint, p_limit integer default 20, p_after bigint default null::bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  lim integer := least(greatest(coalesce(p_limit, 20), 1), 50);
+  items jsonb := '[]'::jsonb;
+  r record;
+  post public.posts;
+  after_event bigint;
+  last_id bigint;
+  taken integer := 0;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  -- A hidden or blocked Space returns an empty feed, matching the existing
+  -- profile-grid contract. The profile header is responsible for deciding
+  -- whether to show a not-found state; this feed must not turn a narrowed
+  -- audience into a database error.
+  if p_author_id is null then
+    return jsonb_build_object('items', '[]'::jsonb, 'nextCursor', null);
+  end if;
+  if p_after is not null then
+    select case when p2.author_id = p_author_id then p2.created_at
+                else greatest(p2.created_at, coalesce((select max(rr.created_at) from public.post_reposts rr where rr.original_post_id = p2.id and rr.reposter_id = p_author_id), 0))
+           end
+      into after_event
+      from public.posts p2 where p2.id = p_after;
+  end if;
+
+  for r in
+    select q.*
+      from (
+        select po.*, po.created_at as feed_at, null::bigint as profile_repost_at
+          from public.posts po
+         where po.author_id = p_author_id
+           and public.can_view_post(po, me)
+        union all
+        select po.*, greatest(po.created_at, rr.created_at) as feed_at, rr.created_at as profile_repost_at
+          from public.posts po
+          join lateral (
+            select max(rp.created_at) as created_at
+              from public.post_reposts rp
+             where rp.original_post_id = po.id
+               and rp.reposter_id = p_author_id
+          ) rr on rr.created_at is not null
+         where po.author_id <> p_author_id
+           and public.can_view_post(po, me)
+           and public.repost_distribution_allowed(po.id, p_author_id, me)
+      ) q
+     where p_after is null or (after_event is not null and
+       (q.feed_at < after_event or (q.feed_at = after_event and q.id < p_after)))
+     order by q.feed_at desc, q.id desc
+     limit lim
+  loop
+    select * into post from public.posts where id = r.id;
+    if public.can_view_post(post, me) then
+      if r.profile_repost_at is null then
+        items := items || jsonb_build_array(public.post_feed_payload(post, me)
+          || jsonb_build_object('repostedBy', null, 'repostedAt', null));
+      else
+        items := items || jsonb_build_array(public.post_feed_payload(post, me, p_author_id, r.profile_repost_at));
+      end if;
+      last_id := r.id;
+      taken := taken + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('items', items, 'nextCursor', case when taken >= lim then last_id else null end);
+end $$;
+
+-- -------------------------------------------------------------- single post
+create or replace function public.load_post(p_post_id bigint)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.me_id();
+  po public.posts;
+begin
+  if me is null then perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.'); end if;
+  select * into po from public.posts where id = p_post_id;
+  if not found or not public.can_view_post(po, me) then
+    perform public.crushly_fail(404, '', 'That post isn’t available.');
+  end if;
+  return public.post_feed_payload(po, me);
+end $$;
+
+-- ------------------------------------------------------------- ranked Flow
+-- Reposts keep the original post and its engagement, but a recent allowed
+-- repost is a fresh distribution event for ranking/recency.
+create or replace function public.flow_ranked_feed(p_limit integer default 8, p_cursor jsonb default null)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  with me_v as (
+    select public.me_id() as me, public.now_ms() as t
+  ),
+  cursor_v as (
+    select case when p_cursor is null then null else nullif(p_cursor ->> 'score', '')::numeric end as score,
+           case when p_cursor is null then null else nullif(p_cursor ->> 'id', '')::bigint end as id
+  ),
+  lim as (
+    select least(greatest(coalesce(p_limit, 8), 1), 30) as n
+  ),
+  cand as (
+    select po.id, po.author_id, po.created_at, po.circle_id,
+      greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, m.me), 0)) as distribution_at,
+      (m.t - greatest(po.created_at, coalesce(public.post_repost_event_at(po.id, m.me), 0))) / 3600000.0 as age_h,
+      coalesce(s.likes, 0) as likes, coalesce(s.comments, 0) as comments,
+      coalesce(s.saves, 0) as saves, coalesce(s.shares, 0) as shares,
+      coalesce(s.views, 0) as views, coalesce(a.n, 0) as affinity,
+      exists (select 1 from post_feedback f where f.post_id = po.id and f.viewer_id = m.me and f.kind in ('view', 'skip') and f.created_at > m.t - 3 * 86400000) as seen
+    from posts po cross join me_v m
+    left join lateral (
+      select (select count(*) from post_reactions r where r.post_id = po.id) as likes,
+             (select count(*) from post_comments c where c.post_id = po.id) as comments,
+             (select count(*) from post_saves s where s.post_id = po.id) as saves,
+             (select count(*) from post_feedback f where f.post_id = po.id and f.kind = 'share') as shares,
+             (select count(*) from post_feedback f where f.post_id = po.id and f.kind in ('view', 'skip')) as views
+    ) s on true
+    left join lateral (
+      select count(*) as n
+        from post_feedback f join posts p2 on p2.id = f.post_id
+       where f.viewer_id = m.me and p2.author_id = po.author_id
+         and f.kind in ('like', 'comment', 'save', 'share')
+         and f.created_at > m.t - 2592000000::bigint
+    ) a on true
+    where po.circle_id is null
+      and public.can_view_post(po, m.me)
+      and not exists (select 1 from post_feedback f where f.post_id = po.id and f.viewer_id = m.me and f.kind = 'hide')
+  ),
+  scored as (
+    select c.*,
+      ((c.likes + 3 * c.comments + 3 * c.saves + 2 * c.shares) / power(c.age_h + 2, 1.5)) as velocity,
+      exp(-c.age_h / 72.0) as recency,
+      (1 + 0.6 * ln(1 + c.affinity)) as affinity_w,
+      0.6 * exp(-c.views / 20.0) as explore,
+      (count(*) filter (where not c.seen) over ()) as fresh_total
+    from cand c
+  ),
+  raw_scored as (
+    select s.*, (s.velocity * s.affinity_w + s.explore) * s.recency as raw from scored s
+  ),
+  diversified as (
+    select r.*, row_number() over (partition by r.author_id order by r.raw desc, r.id desc) as author_rn from raw_scored r
+  ),
+  scored_final as (
+    select d.*, case when d.seen then 0.3 else 1.0 end * d.raw / (1 + 0.6 * (d.author_rn - 1)) as score
+      from diversified d cross join lim l
+     where (d.fresh_total >= l.n and not d.seen) or d.fresh_total < l.n
+  ),
+  page as (
+    select f.*, row_number() over (order by f.score desc, f.id desc) as position
+      from scored_final f cross join cursor_v c
+     where c.score is null or (f.score, f.id) < (c.score, c.id)
+     order by f.score desc, f.id desc
+     limit (select n from lim)
+  )
+  select jsonb_build_object(
+    'items', coalesce(jsonb_agg(
+      public.post_feed_payload(po, m.me)
+        || jsonb_build_object('rank', jsonb_build_object(
+          'position', p.position,
+          'score', round(p.score::numeric, 6),
+          'velocity', round(p.velocity::numeric, 6),
+          'recency', round(p.recency::numeric, 6),
+          'affinity', p.affinity,
+          'explore', round(p.explore::numeric, 6),
+          'diversityRank', p.author_rn,
+          'seenBefore', p.seen
+        )) order by p.position
+    ), '[]'::jsonb),
+    'nextCursor', (select jsonb_build_object('score', last_row.score::numeric, 'id', last_row.id)
+                     from (select p2.score, p2.id from page p2 order by p2.position desc limit 1) last_row),
+    'ranking', jsonb_build_object('candidates', (select count(*) from raw_scored), 'fresh', (select max(fresh_total) from scored), 'returned', (select count(*) from page))
+  )
+  from page p join posts po on po.id = p.id cross join me_v m;
+$$;
+
+-- --------------------------------------------------------------- privileges
+revoke all on function public.flow_feed(integer, bigint) from public, anon, authenticated;
+revoke all on function public.public_flow_feed(integer, bigint) from public, anon, authenticated;
+revoke all on function public.circle_feed(bigint, integer, bigint) from public, anon, authenticated;
+revoke all on function public.crush_posts_feed(integer, bigint) from public, anon, authenticated;
+revoke all on function public.saved_posts(integer, bigint) from public, anon, authenticated;
+revoke all on function public.space_posts(bigint, integer, bigint) from public, anon, authenticated;
+revoke all on function public.load_post(bigint) from public, anon, authenticated;
+revoke all on function public.flow_ranked_feed(integer, jsonb) from public, anon, authenticated;
+grant execute on function public.flow_feed(integer, bigint) to authenticated, service_role;
+grant execute on function public.public_flow_feed(integer, bigint) to authenticated, service_role;
+grant execute on function public.circle_feed(bigint, integer, bigint) to authenticated, service_role;
+grant execute on function public.crush_posts_feed(integer, bigint) to authenticated, service_role;
+grant execute on function public.saved_posts(integer, bigint) to authenticated, service_role;
+grant execute on function public.space_posts(bigint, integer, bigint) to authenticated, service_role;
+grant execute on function public.load_post(bigint) to authenticated, service_role;
+grant execute on function public.flow_ranked_feed(integer, jsonb) to authenticated, service_role;
 
 notify pgrst, 'reload schema';

@@ -40,7 +40,7 @@ import {
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
 import type {WatchPost, AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
-  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
+  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, InviteInfo, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReferralClaimResult, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
 
 /**
  * The holUpp data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -225,12 +225,14 @@ export async function getMe(): Promise<Me> {
       showAge: !!privacy.show_age,
       showCity: !!privacy.show_city,
       incognito: !!privacy.incognito,
+      allowReposts: privacy.allow_reposts !== false,
     },
     notifications: {
       messages: !!notif.messages,
       crushes: !!notif.crushes,
       moments: !!notif.moments,
       recommendations: !!notif.recommendations,
+      reposts: notif.reposts !== false,
     },
     // holUpp Plus isn't for sale yet — entitlements are wired so features can light up later.
     plus: {
@@ -317,6 +319,18 @@ export type SpaceRelationshipStats = {
   addedUp: number | null;
   keptClose: number;
   postLikes: number;
+  /**
+   * Every like this member's content has earned, across posts, Moments and
+   * comments. Counted server-side over only the content the caller is allowed
+   * to see, so it is a number it is safe to show a stranger — and it is not
+   * the same thing as `postLikes`, which is posts alone.
+   */
+  allRoundLikes?: number;
+  /**
+   * Times this Space has been opened. Owner only: the RPC returns null for
+   * everybody else, and null is rendered as nothing rather than as a zero.
+   */
+  views?: number | null;
   canViewAddUps: boolean;
   canViewAddedUp: boolean;
   canViewKeptClose: boolean;
@@ -349,6 +363,14 @@ export async function spaceShareToken(id: number): Promise<string> {
     throw new ApiError(500, 'share_unavailable', 'Sharing is unavailable right now.');
   }
   return token;
+}
+
+/** Resolve a token received through an Android App Link without trusting an id from the URL. */
+export async function spaceIdFromShareToken(token: string): Promise<number | null> {
+  const preview = await rpc<{ id?: unknown } | null>('public_space_preview', { p_token: String(token ?? '').trim().toLowerCase() });
+  const id = preview?.id;
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return null;
+  return id;
 }
 
 /**
@@ -682,6 +704,7 @@ const PRIVACY_FIELDS: Record<string, [string, 'bool' | readonly string[]]> = {
   profileVisibility: ['profile_visibility', ['everyone', 'connections']],
   whoCanMessage: ['who_can_message', ['everyone', 'crushes', 'mutual']],
   whoCanCrush: ['who_can_crush', ['everyone', 'verified']],
+  allowReposts: ['allow_reposts', 'bool'],
 };
 
 /**
@@ -774,6 +797,21 @@ export const adminSetReportHandled = (id: number, handled: boolean) => rpc<boole
 export const adminAccounts = (query: string) => rpc<AdminAccount[]>('holup_admin_accounts', { p_query: query });
 export const adminAudit = () => rpc<AdminAuditEvent[]>('holup_admin_audit');
 
+/**
+ * One reusable invitation code and the private totals for the signed-in member.
+ * The database creates the code on first read; the client never manufactures or
+ * stores an inviter identity.
+ */
+export const inviteInfo = () => rpc<InviteInfo>('holup_invite_info');
+
+/** Attribute an invite to the authenticated, not-yet-onboarded member. */
+export const claimReferral = (code: string) =>
+  rpc<ReferralClaimResult>('holup_referral_claim', { p_code: String(code ?? '').trim().toLowerCase() });
+
+/** Resolve a shared profile handle only after authentication. */
+export const sharedProfileIdByHandle = (username: string) =>
+  rpc<number | null>('holup_profile_id_by_username', { p_username: String(username ?? '').trim().replace(/^@/, '').toLowerCase() });
+
 /** Check that an external link has a public landing at the time it is made. */
 export async function publicPostPreview(postId: number): Promise<{ id: number; body: string; author: string } | null> {
   return rpc('public_post_preview', { p_post_id: postId });
@@ -841,7 +879,15 @@ export async function spaceViewers(days = 0, offset = 0): Promise<SpaceViewerPag
  * verdict without counting. Both are server-computed — the client is told where
  * it stands, it does not decide.
  */
-export type WebClockState = { firstSeenAt: number | null; elapsedMs: number; remainingMs: number; blocked: boolean; opens?: number; platform?: string | null };
+export type WebClockState = {
+  firstSeenAt: number | null;
+  elapsedMs: number;
+  remainingMs: number;
+  blocked: boolean;
+  unlimited?: boolean;
+  opens?: number;
+  platform?: string | null;
+};
 export async function holupWebOpen(platform: string): Promise<WebClockState> {
   return rpc<WebClockState>('holup_web_open', { p_platform: platform });
 }
@@ -1193,7 +1239,33 @@ export async function savePost(postId: number, saved = true): Promise<{ saved: b
 }
 
 /**
+ * Create or undo one canonical repost relationship. The RPC performs every
+ * visibility, block, moderation and creator-setting check; the client never
+ * inserts into the relationship table directly.
+ */
+export async function repostPost(
+  postId: number,
+  reposted = true,
+): Promise<{ originalPostId: number; reposted: boolean; repostCount: number; repostedBy?: Post['repostedBy']; repostedAt?: number | null }> {
+  const r = await rpc<{
+    originalPostId: number;
+    reposted: boolean;
+    repostCount: number;
+    repostedBy?: Post['repostedBy'];
+    repostedAt?: number | null;
+  }>('repost_post', { p_post_id: postId, p_reposted: reposted });
+  return {
+    originalPostId: r?.originalPostId ?? postId,
+    reposted: r?.reposted ?? reposted,
+    repostCount: r?.repostCount ?? 0,
+    repostedBy: r?.repostedBy ?? null,
+    repostedAt: r?.repostedAt ?? null,
+  };
+}
+
+/**
  * Give a comment one of the seven reactions, or take yours back.
+
  *
  * A separate call from `likePostComment` because the server has a separate
  * function (`react_to_comment`); that one is kept so nothing already in flight
@@ -1633,7 +1705,7 @@ export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
 export async function updateNotificationSettings(patch: Partial<NotificationSettings>): Promise<Me> {
   const id = await meId();
   const next: Record<string, unknown> = {};
-  for (const key of ['messages', 'crushes', 'moments', 'recommendations']) {
+  for (const key of ['messages', 'crushes', 'moments', 'recommendations', 'reposts']) {
     if (key in patch) next[key] = !!(patch as Record<string, unknown>)[key];
   }
   if (Object.keys(next).length) {

@@ -15,6 +15,7 @@ import { LinkText } from '../../components/LinkText';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
 import { CommentsSheet } from '../../components/feed/CommentsSheet';
+import { RepostAttribution } from '../../components/feed/RepostAttribution';
 import { ShareToWhisper } from '../../components/ShareToWhisper';
 import { EmptyState, LoadingBlock } from '../../components/States';
 import { ReactionButton, reactionLook } from '../../components/feed/Reactions';
@@ -31,6 +32,7 @@ import {
   usePostCommentSettings,
   useReactToComment,
   useReactToPost,
+  useRepostPost,
   useSavePost,
 } from '../../api/hooks';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -76,6 +78,7 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
   const { data: me } = useMe();
   const react = useReactToPost();
   const save = useSavePost();
+  const repost = useRepostPost();
   const comments = usePostComments(postId);
   const settings = usePostCommentSettings(postId);
   const canComment = settings.data !== false;
@@ -121,6 +124,17 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
     }
   }, [post, save, toast]);
 
+  const toggleRepost = useCallback(async () => {
+    if (!post || repost.isPending) return;
+    const next = !post.reposted;
+    try {
+      await repost.mutateAsync({ postId: post.id, reposted: next });
+      toast({ kind: 'success', title: next ? 'Reposted to your profile.' : 'Repost removed.' });
+    } catch (e) {
+      toast({ kind: 'error', title: next ? 'Couldn’t repost' : 'Couldn’t undo repost', message: (e as Error).message });
+    }
+  }, [post, repost, toast]);
+
   const submit = useCallback(async () => {
     const body = draft.trim();
     if (!body || !post || sending) return;
@@ -165,13 +179,16 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
+      <View style={{ paddingTop: insets.top }}>
+        <RepostAttribution post={post} onOpen={post.repostedBy ? () => openProfile(post.repostedBy!.id) : undefined} />
+      </View>
       {/* ---------------------------------------------------------------- head */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           gap: space.sm,
-          paddingTop: insets.top + space.xs,
+          paddingTop: space.xs,
           paddingHorizontal: space.sm,
           paddingBottom: space.xs,
         }}
@@ -272,6 +289,14 @@ export function TextPostScreen({ route, navigation }: ScreenProps<'TextPost'>) {
             icon="paper-plane-outline"
             label="Share"
             onPress={() => setShareOpen(true)}
+          />
+          <Action
+            icon={post.reposted ? 'repeat' : 'repeat-outline'}
+            count={post.repostCount}
+            tint={post.reposted ? colors.primary : colors.textSecondary}
+            label={post.reposted ? 'Undo Repost' : 'Repost to your profile'}
+            disabled={repost.isPending}
+            onPress={() => void toggleRepost()}
           />
           <View style={{ flex: 1 }} />
           <Action
@@ -430,12 +455,14 @@ function Action({
   count,
   tint,
   label,
+  disabled,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   count?: number;
   tint?: string;
   label: string;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -443,14 +470,16 @@ function Action({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={count != null ? `${label}, ${count}` : label}
+      accessibilityState={{ disabled: !!disabled, selected: !!tint && tint === colors.primary }}
       hitSlop={10}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        opacity: pressed ? 0.6 : 1,
+        opacity: disabled ? 0.45 : pressed ? 0.6 : 1,
       })}
     >
       <Ionicons name={icon} size={22} color={colour} />
