@@ -79,5 +79,6 @@
     "Five identities, and you can be two at once: Introvert Crush, Pen Crusher, Talkative Crush, Excrusher, Fun Crusher.",
     "New here? It says your identity is still developing, which is the truth. It appears once there is enough to go on.",
     "You can hide it from other people. It keeps working either way."
-  ]
+  ],
+  "1.0.145": "A visitor's Space shows the Homies count once, as the Homies pill, instead of also repeating it as a number in the stats row; the owner's own Space keeps the number."
 }
