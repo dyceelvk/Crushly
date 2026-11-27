@@ -229,6 +229,12 @@ export async function getMe(): Promise<Me> {
       crushes: !!notif.crushes,
       moments: !!notif.moments,
       recommendations: !!notif.recommendations,
+      // Announcement preferences are service-message channels, so older rows
+      // created before the channel split remain opted in until the member turns
+      // one off explicitly.
+      announcementInApp: notif.announcement_in_app !== false,
+      announcementPush: notif.announcement_push !== false,
+      announcementEmail: notif.announcement_email !== false,
     },
     // holUpp Plus isn't for sale yet — entitlements are wired so features can light up later.
     plus: {
@@ -1525,8 +1531,16 @@ export async function updatePrivacy(patch: Partial<Privacy>): Promise<Me> {
 export async function updateNotificationSettings(patch: Partial<NotificationSettings>): Promise<Me> {
   const id = await meId();
   const next: Record<string, unknown> = {};
-  for (const key of ['messages', 'crushes', 'moments', 'recommendations']) {
+  for (const key of ['messages', 'crushes', 'moments', 'recommendations'] as const) {
     if (key in patch) next[key] = !!(patch as Record<string, unknown>)[key];
+  }
+  const announcementKeys = {
+    announcementInApp: 'announcement_in_app',
+    announcementPush: 'announcement_push',
+    announcementEmail: 'announcement_email',
+  } as const;
+  for (const [camel, snake] of Object.entries(announcementKeys)) {
+    if (camel in patch) next[snake] = !!(patch as Record<string, unknown>)[camel];
   }
   if (Object.keys(next).length) {
     unwrap(await supabase.from('notification_settings').update(next).eq('user_id', id));
@@ -1575,6 +1589,43 @@ async function invokeFunction<T>(name: string, body: Record<string, unknown> = {
     throw new ApiError(status, message || (res.error as Error).message);
   }
   return res.data as T;
+}
+
+export type RielAiAnswer = {
+  answer: string;
+  suggestReport: boolean;
+  topic?: string;
+};
+
+/**
+ * Help-only member assistant. The edge function uses approved product content,
+ * receives only the member's question, and does not receive profile, Whisper,
+ * administrator, or Control Centre data.
+ */
+export async function askRielAi(question: string): Promise<RielAiAnswer> {
+  const clean = str(question, 'Question', { required: true, max: 2000 });
+  const result = await invokeFunction<RielAiAnswer & { error?: string }>('riel-ai', { question: clean });
+  if (!result?.answer) throw new ApiError(502, result?.error || 'RielAi could not answer right now.');
+  return { answer: result.answer, suggestReport: result.suggestReport === true, topic: result.topic };
+}
+
+export type SupportTicket = { id: number; status: string };
+
+/** Explicit handoff to human support. This stores the member-authored report,
+ * not a hidden RielAi transcript. */
+export async function createSupportTicket(input: {
+  category: 'report_problem' | 'feedback' | 'account' | 'safety' | 'other';
+  subject: string;
+  body: string;
+  source?: string;
+}): Promise<SupportTicket> {
+  const subject = str(input.subject, 'Subject', { required: true, max: 160 });
+  const body = str(input.body, 'Description', { required: true, max: 12000 });
+  const result = await rpc<{ ok?: boolean; id?: number; status?: string }>('holup_support_ticket_create', {
+    p: { category: input.category, subject, body, source: input.source || 'app' },
+  });
+  if (!result?.id) throw new ApiError(502, 'The support request was not created. Please try again.');
+  return { id: Number(result.id), status: String(result.status || 'open') };
 }
 
 export async function startDiditVerification(newSession = false): Promise<{ url: string; sessionId: string }> {

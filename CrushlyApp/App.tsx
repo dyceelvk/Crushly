@@ -24,6 +24,11 @@ import { ApiError } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { CaptchaHost } from './src/components/CaptchaHost';
 import { WebNotice, webGateActive } from './src/components/WebGate';
+import { SoundAlerts } from './src/components/SoundAlerts';
+import { AlertTapHandler } from './src/components/AlertTapHandler';
+import { navigationRef } from './src/navigation/ref';
+import { startBackgroundAlerts } from './src/lib/backgroundAlerts';
+import { loadSoundSetting } from './src/lib/sound';
 
 ExpoSplash.preventAutoHideAsync().catch(() => {});
 
@@ -89,6 +94,23 @@ function Shell() {
     SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
   }, [colors.bg]);
 
+  // The member's sound switch is read once, at start, so the first chime already
+  // respects it — a setting that only takes effect after you visit it is a bug.
+  useEffect(() => {
+    void loadSoundSetting();
+  }, []);
+
+  /*
+   * The background check that puts a Whisper in the shade while holUpp is closed.
+   * Registered only once there is somebody signed in — a task with nothing to
+   * check is just battery. Android will not run it more often than about every
+   * 15 minutes, and Notification settings claims nothing faster than that.
+   */
+  useEffect(() => {
+    if (status !== 'ready' && status !== 'onboarding') return;
+    void startBackgroundAlerts();
+  }, [status]);
+
   // Transparent screen transitions and modals reveal the app canvas beneath
   // them. Keep the browser page itself in the selected scheme too; otherwise
   // the first frame of a fade can expose the browser's default white page.
@@ -116,7 +138,7 @@ function Shell() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'holUpp' }}>
+      <NavigationContainer ref={navigationRef} theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking} documentTitle={{ formatter: () => 'holUpp' }}>
         <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
         <MemberActionsProvider>
           {/* A render error unmounts the tree and leaves a white page. The boundary
@@ -124,6 +146,10 @@ function Shell() {
           <ErrorBoundary>
             <SharedPostIntent />
             <SharedSpaceIntent />
+            {/* One chime for something that arrived, and none for anything
+                already on screen: see src/lib/sound.ts for the rules. */}
+            <SoundAlerts enabled={status === 'ready' || status === 'onboarding'} />
+            <AlertTapHandler />
             <RootNavigator fontsReady={fontsReady} />
           </ErrorBoundary>
         </MemberActionsProvider>

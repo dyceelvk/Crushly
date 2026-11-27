@@ -76,6 +76,8 @@ export function SafetyScreen({ navigation }: ScreenProps<'Safety'>) {
       </Group>
 
       <Group title="Learn">
+        <ListRow title="Ask RielAi" subtitle="Get safety and product guidance" icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('RielAi')} />
+        <ListRow title="Report a problem" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} />
         <ListRow title="Dating safety tips" icon="bulb-outline" iconTone="gold" onPress={() => navigation.navigate('Info', { page: 'safety-tips' })} />
         <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
         <ListRow title="Contact our safety team" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} last />

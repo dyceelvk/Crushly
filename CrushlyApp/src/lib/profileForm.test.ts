@@ -37,7 +37,15 @@ const me = (over: Partial<Me['profile']> = {}, lifestyle: Record<string, unknown
       profileVisibility: 'everyone', whoCanMessage: 'crushes', whoCanCrush: 'everyone',
       showAge: true, showCity: true, incognito: false,
     },
-    notifications: { messages: true, crushes: true, moments: true, recommendations: false },
+    notifications: {
+      messages: true,
+      crushes: true,
+      moments: true,
+      recommendations: false,
+      announcementInApp: true,
+      announcementPush: true,
+      announcementEmail: true,
+    },
     plus: { active: false, interested: false, deepCrushesLeft: 3, deepCrushesPerDay: 3 },
   }) as Me;
 

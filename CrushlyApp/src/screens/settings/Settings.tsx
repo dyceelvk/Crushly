@@ -145,6 +145,8 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       </Group>
 
       <Group title="Support">
+        <ListRow title="Ask RielAi" subtitle="Quick answers about using holUpp" icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('RielAi')} />
+        <ListRow title="Report a problem" subtitle="Send product or account details to support" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} />
         <ListRow title="Help center" icon="help-circle-outline" onPress={() => navigation.navigate('Info', { page: 'help' })} />
         <ListRow title="Contact us" icon="mail-outline" onPress={() => navigation.navigate('Info', { page: 'contact' })} />
         <ListRow title="Community guidelines" icon="people-outline" onPress={() => navigation.navigate('Info', { page: 'guidelines' })} />
@@ -342,11 +344,14 @@ export function NotificationSettingsScreen() {
   return (
     <Screen>
       <Header title="Notification settings" back />
-      <Group footer="These control your in-app notification center. Push notifications arrive in a future update.">
+      <Group footer="You can turn off optional HolUpp announcement channels here. Safety and account-critical messages may still need to reach you.">
         <ListRow title="Whispers" subtitle="New Whispers from your Connections" icon="chatbubble-outline" toggle={{ value: n.messages, onChange: set('messages') }} />
         <ListRow title="Add ups" subtitle="Add ups, Big Ups and people who added back" icon="heart-outline" toggle={{ value: n.crushes, onChange: set('crushes') }} />
         <ListRow title="Moments" subtitle="Replies and reactions to your Moments" icon="aperture-outline" toggle={{ value: n.moments, onChange: set('moments') }} />
-        <ListRow title="Discoveries" subtitle="Occasional suggestions of people worth knowing" icon="compass-outline" toggle={{ value: n.recommendations, onChange: set('recommendations') }} last />
+        <ListRow title="Discoveries" subtitle="Occasional suggestions of people worth knowing" icon="compass-outline" toggle={{ value: n.recommendations, onChange: set('recommendations') }} />
+        <ListRow title="In-app announcements" subtitle="New versions and notices in your HolUpp inbox" icon="megaphone-outline" toggle={{ value: n.announcementInApp, onChange: set('announcementInApp') }} />
+        <ListRow title="Push announcements" subtitle="Only on devices with notification permission" icon="phone-portrait-outline" toggle={{ value: n.announcementPush, onChange: set('announcementPush') }} />
+        <ListRow title="Email announcements" subtitle="Product updates sent to your account email" icon="mail-outline" toggle={{ value: n.announcementEmail, onChange: set('announcementEmail') }} last />
       </Group>
     </Screen>
   );

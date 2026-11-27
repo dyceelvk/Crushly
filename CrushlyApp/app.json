@@ -3,7 +3,7 @@
     "name": "holUpp",
     "slug": "crushly",
     "scheme": "crushly",
-    "version": "1.0.113",
+    "version": "1.0.129",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 113
+      "versionCode": 129
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -57,6 +57,14 @@
         "expo-audio",
         {
           "microphonePermission": "holUpp uses your microphone for voice calls and voice messages."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#E8B54B",
+          "defaultChannel": "holup-foreground"
         }
       ],
       "expo-font",
@@ -92,7 +100,9 @@
       ],
       "./plugins/withCall",
       "./plugins/withLocalDraftsBackup",
-      "./plugins/withLargeHeap"
+      "./plugins/withLargeHeap",
+      "expo-background-task",
+      "./plugins/withNotificationSounds"
     ]
   }
 }

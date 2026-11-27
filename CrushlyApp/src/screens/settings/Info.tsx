@@ -128,7 +128,7 @@ const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }>
   },
 };
 
-export function InfoScreen({ route }: ScreenProps<'Info'>) {
+export function InfoScreen({ route, navigation }: ScreenProps<'Info'>) {
   const { colors } = useTheme();
   const key = route.params.page;
   const page = PAGES[key] ?? PAGES.help;
@@ -156,10 +156,18 @@ export function InfoScreen({ route }: ScreenProps<'Info'>) {
           </View>
         ))}
       </View>
+      {route.params.page === 'help' ? (
+        <View style={{ gap: space.sm, marginTop: space.xl }}>
+          <Button title="Ask RielAi" icon="sparkles-outline" onPress={() => navigation.navigate('RielAi')} />
+          <Button title="Report a problem" variant="secondary" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} />
+        </View>
+      ) : null}
       {route.params.page === 'contact' ? (
         <View style={{ gap: space.sm, marginTop: space.xl }}>
-          <Button title="Email support" icon="mail-outline" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
-          <Button title="Email the safety team" variant="secondary" icon="shield-outline" onPress={() => Linking.openURL(`mailto:${SAFETY_EMAIL}`)} />
+          <Button title="Ask RielAi" icon="sparkles-outline" onPress={() => navigation.navigate('RielAi')} />
+          <Button title="Report a problem" variant="secondary" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} />
+          <Button title="Email support" variant="ghost" icon="mail-outline" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
+          <Button title="Email the safety team" variant="ghost" icon="shield-outline" onPress={() => Linking.openURL(`mailto:${SAFETY_EMAIL}`)} />
         </View>
       ) : null}
       <View style={{ marginTop: space.xl, gap: space.sm }}>

@@ -10,7 +10,7 @@ import { Txt } from './Txt';
 import { useToast } from './Toast';
 
 /** Real directional Add Up; a pending request is never presented as a follow. */
-export function FollowButton({ id, name, compact = false }: {id: number; name: string; compact?: boolean}) {
+export function FollowButton({ id, name, compact = false, wide = false }: {id: number; name: string; compact?: boolean; wide?: boolean}) {
   const me = useMe();
   const qc = useQueryClient();
   const { colors } = useTheme();
@@ -34,7 +34,7 @@ export function FollowButton({ id, name, compact = false }: {id: number; name: s
   const label = stats.isError ? 'Retry Add Up' : status === 'active' ? 'Added Up' : status === 'pending' ? 'Request sent' : 'Add Up';
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${name}`} disabled={stats.isLoading || change.isPending}
     onPress={() => stats.isError ? void stats.refetch() : change.mutate()}
-    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, paddingHorizontal:compact ? 9 : 16, paddingVertical:compact ? 7 : 10, borderRadius:10, backgroundColor: status ? colors.elevated : colors.primary, opacity: stats.isLoading || change.isPending ? 0.6 : 1}}>
+    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, paddingHorizontal:compact ? 9 : 16, paddingVertical:compact ? 7 : 10, borderRadius:10, backgroundColor: status ? colors.elevated : colors.primary, opacity: stats.isLoading || change.isPending ? 0.6 : 1, ...(wide ? { flex: 1, alignSelf: 'stretch' as const } : {})}}>
     {stats.isLoading || change.isPending ? <ActivityIndicator size="small" color={status ? colors.text : '#fff'} /> : status ? <Ionicons name="checkmark" size={15} color={colors.text} /> : <CrushIcon size={15} color="#fff" />}
     <Txt variant="smallStrong" style={{color: status ? colors.text : '#fff'}}>{label}</Txt>
   </Pressable>;

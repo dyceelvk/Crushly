@@ -89,6 +89,8 @@ export type RootStackParamList = {
   Account: undefined;
   NotificationSettings: undefined;
   Appearance: undefined;
+  RielAi: undefined;
+  Support: { source?: 'riel_ai' | 'settings' } | undefined;
   Info: { page: InfoPage };
 };
 

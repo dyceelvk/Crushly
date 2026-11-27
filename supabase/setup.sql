@@ -105,11 +105,14 @@ create table if not exists public.privacy (
 );
 
 create table if not exists public.notification_settings (
-  user_id          bigint primary key references public.profiles(id) on delete cascade,
-  messages         boolean not null default true,
-  crushes          boolean not null default true,
-  moments          boolean not null default true,
-  recommendations  boolean not null default false
+  user_id             bigint primary key references public.profiles(id) on delete cascade,
+  messages            boolean not null default true,
+  crushes             boolean not null default true,
+  moments             boolean not null default true,
+  recommendations     boolean not null default false,
+  announcement_in_app boolean not null default true,
+  announcement_push   boolean not null default true,
+  announcement_email  boolean not null default true
 );
 
 create table if not exists public.crushes (

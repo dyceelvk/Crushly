@@ -495,7 +495,15 @@ export type Preferences = {
   verifiedOnly: boolean;
 };
 
-export type NotificationSettings = { messages: boolean; crushes: boolean; moments: boolean; recommendations: boolean };
+export type NotificationSettings = {
+  messages: boolean;
+  crushes: boolean;
+  moments: boolean;
+  recommendations: boolean;
+  announcementInApp: boolean;
+  announcementPush: boolean;
+  announcementEmail: boolean;
+};
 
 export type VerificationStatus = 'none' | 'pending' | 'verified' | 'rejected';
 
