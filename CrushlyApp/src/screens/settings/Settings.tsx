@@ -116,6 +116,11 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <ListRow title="People you’ve cut off" icon="ban-outline" onPress={() => navigation.navigate('BlockedUsers')} last />
       </Group>
 
+      <Group title="Support">
+        <ListRow title="Ask RielAi" subtitle="Quick answers about using holUpp" icon="sparkles-outline" iconTone="gold" onPress={() => navigation.navigate('RielAi')} />
+        <ListRow title="Report a problem" subtitle="Send product or account details to support" icon="flag-outline" onPress={() => navigation.navigate('Support', { source: 'settings' })} last />
+      </Group>
+
       {/* One section, not two both called "App". The version and the update
           status belong with the rest of the app settings; the footer below used
           to state the version a second time. */}

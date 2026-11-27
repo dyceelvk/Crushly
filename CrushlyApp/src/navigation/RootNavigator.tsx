@@ -62,6 +62,7 @@ import { SafetyScreen, PrivacyScreen } from '../screens/settings/Safety';
 import { VerificationScreen } from '../screens/settings/Verification';
 import { PlusScreen } from '../screens/settings/Plus';
 import { InfoScreen } from '../screens/settings/Info';
+import { RielAiScreen, SupportScreen } from '../screens/settings/Support';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<TabParamList>();
@@ -260,6 +261,8 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
           <Stack.Screen name="Appearance" component={AppearanceScreen} />
           <Stack.Screen name="Info" component={InfoScreen} />
+          <Stack.Screen name="RielAi" component={RielAiScreen} />
+          <Stack.Screen name="Support" component={SupportScreen} />
           <Stack.Group screenOptions={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'slide_from_bottom' }}>
             <Stack.Screen name="Filters" component={FiltersScreen} />
           <Stack.Screen name="MomentComposer" component={MomentComposerScreen} />

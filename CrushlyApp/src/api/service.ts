@@ -1757,6 +1757,43 @@ async function invokeFunction<T>(name: string, body: Record<string, unknown> = {
   return res.data as T;
 }
 
+export type RielAiAnswer = {
+  answer: string;
+  suggestReport: boolean;
+  topic?: string;
+};
+
+/**
+ * Help-only member assistant. The edge function uses approved product content,
+ * receives only the member's question, and does not receive profile, Whisper,
+ * administrator, or Control Centre data.
+ */
+export async function askRielAi(question: string): Promise<RielAiAnswer> {
+  const clean = str(question, 'Question', { required: true, max: 2000 });
+  const result = await invokeFunction<RielAiAnswer & { error?: string }>('riel-ai', { question: clean });
+  if (!result?.answer) throw new ApiError(502, result?.error || 'RielAi could not answer right now.');
+  return { answer: result.answer, suggestReport: result.suggestReport === true, topic: result.topic };
+}
+
+export type SupportTicket = { id: number; status: string };
+
+/** Explicit handoff to human support. This stores the member-authored report,
+ * not a hidden RielAi transcript. */
+export async function createSupportTicket(input: {
+  category: 'report_problem' | 'feedback' | 'account' | 'safety' | 'other';
+  subject: string;
+  body: string;
+  source?: string;
+}): Promise<SupportTicket> {
+  const subject = str(input.subject, 'Subject', { required: true, max: 160 });
+  const body = str(input.body, 'Description', { required: true, max: 12000 });
+  const result = await rpc<{ ok?: boolean; id?: number; status?: string }>('holup_support_ticket_create', {
+    p: { category: input.category, subject, body, source: input.source || 'app' },
+  });
+  if (!result?.id) throw new ApiError(502, 'The support request was not created. Please try again.');
+  return { id: Number(result.id), status: String(result.status || 'open') };
+}
+
 export async function startDiditVerification(newSession = false): Promise<{ url: string; sessionId: string }> {
   const d = await invokeFunction<{ url?: string; session_id?: string; error?: string }>('didit-session', { newSession });
   if (!d?.url) throw new ApiError(502, d?.error || 'Couldn’t start verification — try again.');

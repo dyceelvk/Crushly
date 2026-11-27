@@ -96,6 +96,8 @@ export type RootStackParamList = {
   NotificationSettings: undefined;
   Appearance: undefined;
   Info: { page: InfoPage };
+  RielAi: undefined;
+  Support: { source?: 'riel_ai' | 'settings' } | undefined;
 };
 
 export type ScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;
