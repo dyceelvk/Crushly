@@ -394,15 +394,107 @@ async function r2Put(env: Env, path: string, contentType: string, bytes: ArrayBu
   return true;
 }
 
-async function r2Get(env: Env, path: string): Promise<Response | null> {
-  const bucket = env.MEDIA;
-  if (!bucket) return null;
-  const object = await bucket.get(path);
-  if (!object || !object.body) return null;
-  const headers = new Headers();
-  if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
-  if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
-  return new Response(object.body, { status: 200, headers });
+/**
+ * Parse a `Range: bytes=start-end` header into an offset/length pair.
+ * Returns null when there is no range or the header is malformed.
+ */
+function parseRange(rangeHeader: string | null, size: number): { offset: number; length: number } | null {
+  if (!rangeHeader) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!m) return null;
+  const [, startStr, endStr] = m;
+  if (startStr === '' && endStr === '') return null;
+  let start: number;
+  let end: number;
+  if (startStr === '') {
+    // Suffix range: last N bytes.
+    const suffix = Number(endStr);
+    if (!Number.isFinite(suffix) || suffix <= 0) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(startStr);
+    end = endStr === '' ? size - 1 : Math.min(Number(endStr), size - 1);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end) return null;
+  return { offset: start, length: end - start + 1 };
+}
+
+/**
+ * Read a file from R2 or B2, honouring an optional `Range` header.
+ *
+ * Browsers require range support for `<video>` playback: without
+ * `Accept-Ranges: bytes` and 206 responses the media element refuses to
+ * stream, and the viewer sees a black box or a frozen first frame.
+ *
+ * R2's `get()` accepts a native `range` option and returns a sliced body.
+ * B2 honours the `Range` header on its download endpoint. Both already
+ * produce the correct sliced bytes, so we forward the header and then
+ * assemble a response with the headers the client expects.
+ */
+async function serveMedia(
+  env: Env,
+  path: string,
+  rangeHeader: string | null,
+): Promise<Response | null> {
+  for (const store of READ_ORDER) {
+    let upstream: Response | null = null;
+    if (store === 'r2') {
+      const bucket = env.MEDIA;
+      if (!bucket) continue;
+      const object = await bucket.get(path, rangeHeader ? { range: rangeHeader } : undefined);
+      if (!object || !object.body) continue;
+      const headers = new Headers();
+      if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
+      if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+      headers.set('Accept-Ranges', 'bytes');
+      upstream = new Response(object.body, {
+        status: rangeHeader ? 206 : 200,
+        headers,
+      });
+    } else {
+      const auth = await b2Auth(env);
+      const answer = await b2Download(env, auth, path, rangeHeader);
+      if (answer.ok) {
+        const headers = new Headers(answer.headers);
+        headers.set('Accept-Ranges', 'bytes');
+        upstream = new Response(answer.body, {
+          status: rangeHeader ? 206 : 200,
+          headers,
+        });
+      }
+    }
+    if (upstream) return upstream;
+  }
+  return null;
+}
+
+/**
+ * Read a file for a full-body download (the `/d/` route): no range support,
+ * just the raw bytes with a fixed content type and no-store caching.
+ */
+async function readFull(env: Env, path: string): Promise<Response | null> {
+  for (const store of READ_ORDER) {
+    let upstream: Response | null = null;
+    if (store === 'r2') {
+      const bucket = env.MEDIA;
+      if (!bucket) continue;
+      const object = await bucket.get(path);
+      if (!object || !object.body) continue;
+      const headers = new Headers();
+      if (object.httpMetadata?.contentType) headers.set('Content-Type', object.httpMetadata.contentType);
+      if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+      upstream = new Response(object.body, { status: 200, headers });
+    } else {
+      const auth = await b2Auth(env);
+      const answer = await b2Download(env, auth, path);
+      if (answer.ok) {
+        upstream = new Response(answer.body, { status: 200, headers: answer.headers });
+      }
+    }
+    if (upstream) return upstream;
+  }
+  return null;
 }
 
 async function r2Delete(env: Env, path: string): Promise<boolean> {
@@ -442,11 +534,13 @@ async function b2Upload(env: Env, path: string, contentType: string, bytes: Arra
 }
 
 /** Private bucket, so the download carries the account token. */
-function b2Download(env: Env, auth: B2Auth, path: string): Promise<Response> {
+function b2Download(env: Env, auth: B2Auth, path: string, rangeHeader?: string | null): Promise<Response> {
+  const headers: Record<string, string> = { Authorization: auth.token };
+  if (rangeHeader) headers.Range = rangeHeader;
   return fetch(`${auth.downloadUrl}/file/${encodeURIComponent(env.B2_BUCKET)}/${path
     .split('/')
     .map(encodeURIComponent)
-    .join('/')}`, { headers: { Authorization: auth.token } });
+    .join('/')}`, { headers });
 }
 
 async function b2Delete(env: Env, path: string): Promise<boolean> {
@@ -960,26 +1054,7 @@ export default {
        * which the app can only report as "that clip isn't available to save".
        * Every clip posted since the move was unsaveable.
        */
-      let upstream: Response | null = null;
-      for (const store of READ_ORDER) {
-        if (store === 'r2') {
-          upstream = await r2Get(env, copy.data.path);
-        } else {
-          /*
-           * A B2 that is unreachable, unconfigured or out of allowance must not
-           * turn "no copy yet" into a 500: R2 has already been asked, and the
-           * answer below is the one a member can act on.
-           */
-          try {
-            const auth = await b2Auth(env);
-            const answer = await b2Download(env, auth, copy.data.path);
-            upstream = answer.ok ? answer : null;
-          } catch {
-            upstream = null;
-          }
-        }
-        if (upstream) break;
-      }
+      const upstream = await readFull(env, copy.data.path);
       if (!upstream) {
         return fail(404, 'The saved copy of this clip isn’t ready yet. Try again in a minute.', origin);
       }
@@ -1029,21 +1104,22 @@ export default {
       }
       // Public files are the same for everybody, so they are cached like any other
       // shareable asset — but under the public URL, never under a member's token.
-      let upstream: Response | null = null;
-      for (const store of READ_ORDER) {
-        if (store === 'r2') upstream = await r2Get(env, path);
-        else {
-          const auth = await b2Auth(env);
-          const answer = await b2Download(env, auth, path);
-          upstream = answer.ok ? answer : null;
-        }
-        if (upstream) break;
-      }
+      const rangeHeader = request.headers.get('Range');
+      const upstream = await serveMedia(env, path, rangeHeader);
       if (!upstream) return fail(404, 'That file isn’t available.', origin);
       const headers = new Headers(upstream.headers);
+      const size = Number(headers.get('Content-Length')) || 0;
+      const parsed = parseRange(rangeHeader, size);
+      if (parsed) {
+        headers.set('Content-Range', `bytes ${parsed.offset}-${parsed.offset + parsed.length - 1}/${size}`);
+        headers.set('Content-Length', String(parsed.length));
+      }
       for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v);
       headers.set('Cache-Control', mediaCacheControl(path, true));
-      return new Response(request.method === 'HEAD' ? null : upstream.body, { status: 200, headers });
+      return new Response(request.method === 'HEAD' ? null : upstream.body, {
+        status: parsed ? 206 : 200,
+        headers,
+      });
     }
 
     if (!(await memberId(env, token))) return fail(401, 'That session has expired — sign in again.', origin);
@@ -1116,16 +1192,8 @@ export default {
        * keep opening. Once the old keys age out, B2 simply stops answering and
        * this loop gets one iteration shorter without a code change.
        */
-      let upstream: Response | null = null;
-      for (const store of READ_ORDER) {
-        if (store === 'r2') upstream = await r2Get(env, path);
-        else {
-          const auth = await b2Auth(env);
-          const answer = await b2Download(env, auth, path);
-          upstream = answer.ok ? answer : null;
-        }
-        if (upstream) break;
-      }
+      const rangeHeader = request.headers.get('Range');
+      const upstream = await serveMedia(env, path, rangeHeader);
       if (!upstream) return fail(404, 'That file isn’t available.', origin);
 
       const response = withHeaders(new Response(upstream.body, upstream), path, verdict.data.cacheable === true);
