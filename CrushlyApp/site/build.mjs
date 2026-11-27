@@ -43,7 +43,7 @@ const WORKER = 'https://crushly-media.dyceelvk.workers.dev';
  * fails to deploy because a worker was briefly down is a worse outcome than a
  * version number that the page's own JavaScript immediately corrects.
  */
-const RELEASE = { version: '1.0.106', size: '94 MB' };
+const RELEASE = { version: '1.0.145', size: '97 MB' };
 
 const MARK = `<svg viewBox="0 0 401 286" role="img" aria-label="holUpp" xmlns="http://www.w3.org/2000/svg"><circle cx="116.5" cy="126" r="100.5" fill="#FF8C8A"/><circle cx="274" cy="159" r="110" fill="#F764AB"/><circle cx="216.5" cy="159.5" r="38.5" fill="#361333"/></svg>`;
 
