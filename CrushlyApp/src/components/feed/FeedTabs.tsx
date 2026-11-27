@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../Txt';
 import { useSwipeTabs } from '../SwipeTabs';
 import { useTheme } from '../../theme/ThemeProvider';
-import { CrushIcon } from '../Logo';
 import { space, stroke } from '../../theme/tokens';
 
 /**
@@ -182,26 +181,33 @@ export function FeedTabs({
   );
 }
 
-/** Short 60ms icon sequence, with a long still interval and reduced-motion opt-out. */
+/**
+ * The magnifier on the feed strip.
+ *
+ * It is a search icon and stays one: a slow, quiet breathing pulse — the
+ * opacity fades between full and half and comes back — on a 3.2-second
+ * cycle. Nothing else changes. The icon cycling through people, aperture,
+ * heart, a hashtag and the crush mark every 60 ms was a carnival of
+ * decorations where a single, patient icon belongs, and it read as a
+ * broken control rather than a live one.
+ */
 function SearchGlyph({ size, color }: { size: number; color: string }) {
   const { reduceMotion } = useTheme();
-  const [index, setIndex] = useState(0);
+  const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (reduceMotion) { setIndex(0); return; }
-    let tick: ReturnType<typeof setInterval> | undefined;
-    const burst = () => {
-      let next = 0;
-      tick = setInterval(() => {
-        next += 1;
-        setIndex(next % 6);
-        if (next >= 6 && tick) { clearInterval(tick); tick = undefined; }
-      }, 60);
-    };
-    const cycle = setInterval(burst, 8000);
-    return () => { clearInterval(cycle); if (tick) clearInterval(tick); };
-  }, [reduceMotion]);
-  const icons = ['search', 'people-outline', 'aperture-outline', 'heart-outline', null, null] as const;
-  const icon = icons[index];
-  if (index === 5) return <Txt style={{ fontSize: size, lineHeight: size + 2, color, fontWeight: '700' }}>#</Txt>;
-  return icon ? <Ionicons name={icon} size={size} color={color} /> : <CrushIcon size={size} color={color} />;
+    if (reduceMotion) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.5, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reduceMotion, pulse]);
+  return (
+    <Animated.View style={{ opacity: pulse }}>
+      <Ionicons name="search" size={size} color={color} />
+    </Animated.View>
+  );
 }
