@@ -2,10 +2,10 @@
   "version": "1.0.146",
   "versionCode": 146,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.145-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.145/holUpp-1.0.145-RielOS.apk",
-  "notes": "A visitor's Space shows the Homies count once, as the Homies pill, instead of also repeating it as a number in the stats row; the owner's own Space keeps the number.",
+  "file": "holUpp-1.0.146-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.146/holUpp-1.0.146-RielOS.apk",
+  "notes": "Profile page matches the reference layout: owner stats row carries 4 tiles (Add Ups, Added Up, Homies, Likes) with the Views tile removed; visitors see the Homies count as a tappable pill in the pill row. Media Worker serves HTTP Range requests correctly for video.",
   "bytes": 101843970,
-  "sha256": "8589b2d9f66788130cf7037afb6527264729aaf75f184ced78b64856671ca6c8",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.145/holUpp-1.0.145-RielOS.apk"
+  "sha256": "6e6bf3051e1cf7802f427bb2c45bcd932805fbb6376b09ddb6f8bb8cc3f1b461",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.146/holUpp-1.0.146-RielOS.apk"
 }
