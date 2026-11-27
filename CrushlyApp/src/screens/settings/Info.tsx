@@ -128,7 +128,7 @@ const PAGES: Record<InfoPage, { title: string; intro: string; blocks: Block[] }>
   },
 };
 
-export function InfoScreen({ route }: ScreenProps<'Info'>) {
+export function InfoScreen({ navigation, route }: ScreenProps<'Info'>) {
   const { colors } = useTheme();
   const key = route.params.page;
   const page = PAGES[key] ?? PAGES.help;
