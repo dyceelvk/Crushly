@@ -538,10 +538,13 @@ export function SpaceScreen({
                 {[p.username ? `@${p.username}` : null, p.city, p.pronouns].filter(Boolean).join('  ·  ')}
               </Txt>
 
-              {/* The numbers, as prose. Four of them, evenly spaced, each one
-                  its own door: Add Ups, Added Up, Homies and the likes their
-                  content has earned. On your own Space the fifth is the traffic
-                  this page has had, and it is yours alone.
+              {/* The numbers, as prose. On your own Space, four of them, evenly
+                  spaced, each one its own door: Add Ups, Added Up, Homies and
+                  the likes their content has earned. On somebody else's Space
+                  the Homies number is not a second door to the same list the
+                  Homies pill below already opens — a visitor sees three numbers,
+                  Add Ups, Added Up and Likes, and reaches the Homies list from
+                  the pill that says Homies.
 
                   They are evenly spaced rather than tucked together because
                   four numbers with four words under them is already a row; the
@@ -569,7 +572,7 @@ export function SpaceScreen({
                       <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 10.5 }}>Added Up</Txt>
                     </Pressable>
                   ) : null}
-                  {homies.data ? (
+                  {mine && homies.data ? (
                     <Pressable
                       style={{ flex: 1, minWidth: 0 }}
                       onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }}
