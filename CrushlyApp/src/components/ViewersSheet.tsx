@@ -29,7 +29,7 @@ export function ViewersSheet({ kind, id, visible, onClose, reactions = [] }: { k
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <BottomSheet visible={visible} onClose={onClose} swipeToClose={kind === 'moment'} title={kind === 'moment' ? 'Moment activity' : 'Views'} subtitle="Only you can see who viewed this.">
-      {kind === 'moment' ? <><Txt variant="bodyStrong">{typeof query.data?.pages[0]?.count === 'number' ? `${query.data.pages[0].count} views` : 'Views'}</Txt><Txt variant="bodyStrong" style={{ marginTop: space.md }}>Reactions</Txt>{reactions.length ? reactions.map((r, i) => <Txt key={`${r.userId}-${i}`}>{r.kind === 'crush' ? 'Crush' : MOMENT_REACTIONS.find(x => x.key === r.kind)?.emoji ?? r.kind} {r.name}</Txt>) : <Txt color="textSecondary">No reactions yet.</Txt>}<Txt variant="bodyStrong" style={{ marginTop: space.md }}>Viewers</Txt></> : null}
+      {kind === 'moment' ? <><Txt variant="bodyStrong">{typeof query.data?.pages[0]?.count === 'number' ? `${query.data.pages[0].count} ${query.data.pages[0].count === 1 ? 'view' : 'views'}` : 'Views'}</Txt><Txt variant="bodyStrong" style={{ marginTop: space.md }}>Reactions</Txt>{reactions.length ? reactions.map((r, i) => <Txt key={`${r.userId}-${i}`}>{r.kind === 'crush' ? 'Crush' : MOMENT_REACTIONS.find(x => x.key === r.kind)?.emoji ?? r.kind} {r.name}</Txt>) : <Txt color="textSecondary">No reactions yet.</Txt>}<Txt variant="bodyStrong" style={{ marginTop: space.md }}>Viewers</Txt></> : null}
       {query.isLoading ? <ActivityIndicator color={colors.primary} /> : query.isError ? (
         <View style={{ gap: space.sm }}><Txt color="textSecondary">Couldn’t load viewers.</Txt><Button title="Try again" onPress={() => void query.refetch()} /></View>
       ) : items.length === 0 ? <Txt color="textSecondary">No views yet.</Txt> : (
@@ -53,10 +53,10 @@ export function PostViews({ post, light = false }: { post: Post; light?: boolean
   const { colors } = useTheme();
   if (post.viewCount == null) return null;
   const color = light ? '#FFFFFF' : colors.textSecondary;
-  const contents = <><Ionicons name="eye-outline" size={16} color={color} /><Txt variant="caption" style={{ color }}>{formatCount(post.viewCount)} views</Txt></>;
+  const contents = <><Ionicons name="eye-outline" size={16} color={color} /><Txt variant="caption" style={{ color }}>{formatCount(post.viewCount)} {post.viewCount === 1 ? 'view' : 'views'}</Txt></>;
   return <>
-    {post.mine ? <Pressable accessibilityRole="button" accessibilityLabel={`${post.viewCount} views, see viewers`} onPress={() => setVisible(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: space.sm, paddingVertical: 4 }}>{contents}</Pressable>
-      : <View accessible accessibilityLabel={`${post.viewCount} views`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: space.sm, paddingVertical: 4 }}>{contents}</View>}
+    {post.mine ? <Pressable accessibilityRole="button" accessibilityLabel={`${post.viewCount} ${post.viewCount === 1 ? 'view' : 'views'}, see viewers`} onPress={() => setVisible(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: space.sm, paddingVertical: 4 }}>{contents}</Pressable>
+      : <View accessible accessibilityLabel={`${post.viewCount} ${post.viewCount === 1 ? 'view' : 'views'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: space.sm, paddingVertical: 4 }}>{contents}</View>}
     {post.mine ? <ViewersSheet kind="post" id={post.id} visible={visible} onClose={() => setVisible(false)} /> : null}
   </>;
 }

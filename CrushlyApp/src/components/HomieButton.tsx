@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { ActivityIndicator, Animated, Pressable, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { homieStatus, requestHomie, respondHomie, withdrawHomie } from '../api/service';
 import { useMe } from '../api/hooks';
@@ -10,7 +11,7 @@ import { Txt } from './Txt';
 /**
  * The Homie control, and the only relationship control that asks permission.
  *
- * It is one thing: a 🫂 button labelled "Homie". There is no "Add a Homie"
+ * It is one thing: a people-icon button labelled "Homie". There is no "Add a Homie"
  * sentence beside it and no second verb — adding somebody up is a different
  * button elsewhere, and it never waits for an answer. Tapping this one sends a
  * request; the other person's tap is what makes it true.
@@ -134,7 +135,9 @@ export function HomieButton({ id, name }: { id: number; name: string }) {
       {busy ? (
         <ActivityIndicator size="small" color={colors.gold} />
       ) : (
-        <Animated.Text style={{ fontSize: 16, transform: [{ scale: pulse }] }}>🫂</Animated.Text>
+        <Animated.View style={{ transform: [{ scale: pulse }] }}>
+          <Ionicons name="people" size={16} color={pending ? colors.textSecondary : colors.gold} />
+        </Animated.View>
       )}
       <Txt variant="smallStrong" color={pending ? 'textSecondary' : 'gold'}>
         {pending ? 'Requested' : 'Homie'}

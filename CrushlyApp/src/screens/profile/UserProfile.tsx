@@ -772,6 +772,7 @@ export function SpaceScreen({
                 loadingMore={posts.isFetchingNextPage}
                 failed={posts.isError}
                 name={p.name}
+                mine={mine}
                 onRetry={() => void posts.refresh()}
                 /*
                  * The same door rule as everywhere else: words go to the page
@@ -788,6 +789,7 @@ export function SpaceScreen({
               <SpaceMoments
                 moments={p.moments}
                 name={p.name}
+                mine={mine}
                 onOpen={(momentId) => navigation.navigate('MomentViewer', { userId: p.id, mine, momentId })}
               />
             ) : null}
@@ -1029,6 +1031,7 @@ function SpacePosts({
   loadingMore,
   failed,
   name,
+  mine,
   onRetry,
   onOpen,
 }: {
@@ -1037,6 +1040,7 @@ function SpacePosts({
   loadingMore?: boolean;
   failed: boolean;
   name: string;
+  mine?: boolean;
   onRetry: () => void;
   onOpen: (post: Post) => void;
 }) {
@@ -1071,7 +1075,7 @@ function SpacePosts({
       <EmptyState
         icon="crush"
         title="Nothing shared yet"
-        message={`${name} hasn’t shared anything yet. What they share lands here.`}
+        message={mine ? 'You haven’t shared anything yet. What you share lands here.' : `${name} hasn’t shared anything yet. What they share lands here.`}
       />
     );
   }
@@ -1316,14 +1320,14 @@ function SpaceCircleRow({
 }
 
 /** Their Moments, in the same pebble grid the Moments tab uses. */
-function SpaceMoments({ moments, name, onOpen }: { moments: MomentSummary[]; name: string; onOpen: (momentId: number) => void }) {
+function SpaceMoments({ moments, name, mine, onOpen }: { moments: MomentSummary[]; name: string; mine?: boolean; onOpen: (momentId: number) => void }) {
   const { colors } = useTheme();
   const { contentWidth, gutter } = useLayout();
   const cols = 3;
   const gap = 10;
   const w = (contentWidth - gutter * 2 - gap * (cols - 1)) / cols;
   if (!moments.length) {
-    return <EmptyState icon="aperture-outline" title="No Moments right now" message={`${name} hasn’t shared a glimpse today. They disappear after 24 hours.`} />;
+    return <EmptyState icon="aperture-outline" title="No Moments right now" message={mine ? 'You haven’t shared a glimpse today. Moments disappear after 24 hours.' : `${name} hasn’t shared a glimpse today. They disappear after 24 hours.`} />;
   }
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>

@@ -71,7 +71,7 @@ export function CaptchaHost() {
 
     const host = document.createElement('div');
     host.setAttribute('data-holupp-captcha', '');
-    host.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;';
+    host.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;border-radius:8px;overflow:hidden;';
     document.body.appendChild(host);
 
     let widgetId: string | null = null;

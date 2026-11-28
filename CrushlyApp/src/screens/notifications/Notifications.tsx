@@ -14,7 +14,7 @@ import { useAppSettings, useMarkNotificationsRead, useNotifications } from '../.
 import type { AppNotification } from '../../api/types';
 import { useTheme } from '../../theme/ThemeProvider';
 import { space } from '../../theme/tokens';
-import { timeAgo } from '../../lib/format';
+import { timeAgoLong } from '../../lib/format';
 import { MOMENT_REACTIONS } from '../../lib/catalog';
 import { circleNotificationText, circleRoute } from '../../lib/circleNotifications';
 import { fromHolup, notificationCategory, type NotificationCategory } from '../../lib/notificationCategories';
@@ -256,7 +256,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
               <Pressable
                 onPress={() => open(n)}
                 accessibilityRole="button"
-                accessibilityLabel={`${n.read ? '' : 'New. '}${t.title} ${t.detail ?? ''}. ${timeAgo(n.createdAt)} ago`}
+                accessibilityLabel={`${n.read ? '' : 'New. '}${t.title} ${t.detail ?? ''}. ${timeAgoLong(n.createdAt)}`}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 })}
               >
                 <Pressable
@@ -308,7 +308,7 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
                     <Txt variant="small" color="gold" style={{ marginTop: 6 }}>{n.linkLabel || 'Open'}</Txt>
                   ) : null}
                   <Txt variant="caption" color="textMuted" style={{ marginTop: 2 }}>
-                    {timeAgo(n.createdAt)} ago
+                    {timeAgoLong(n.createdAt)}
                   </Txt>
                 </View>
                 {!n.read ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.crush }} accessibilityElementsHidden /> : null}

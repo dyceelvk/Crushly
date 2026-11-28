@@ -358,6 +358,7 @@ export function MomentsScreen() {
   const mine = data?.mine.moments ?? [];
   const connections = (data?.others ?? []).filter((g) => g.user.mutual);
   const nearby = (data?.others ?? []).filter((g) => !g.user.mutual);
+  const totalMomentViews = mine.reduce((n, m) => n + (m.viewCount || 0), 0);
 
   return (
     <ScrollView
@@ -400,7 +401,7 @@ export function MomentsScreen() {
           <Txt variant="subheading">Your Moment</Txt>
           <Txt variant="small" color="textSecondary" style={{ marginTop: 2 }}>
             {mine.length
-              ? `${mine.length} active · ${mine.reduce((n, m) => n + (m.viewCount || 0), 0)} views`
+              ? `${mine.length} active · ${totalMomentViews} ${totalMomentViews === 1 ? 'view' : 'views'}`
               : 'Share what you’re up to. It disappears in 24 hours.'}
           </Txt>
         </View>
