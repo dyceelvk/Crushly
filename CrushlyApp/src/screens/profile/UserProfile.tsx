@@ -7,7 +7,7 @@ import { ActivityIndicator, Modal, NativeScrollEvent, NativeSyntheticEvent, Plat
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Wordmark } from '../../components/Logo';
+
 import { FollowButton } from '../../components/FollowButton';
 import { HomieButton } from '../../components/HomieButton';
 import { IdentitySection } from '../../components/IdentityCard';
@@ -946,9 +946,10 @@ export function SpaceScreen({
           ) : (
             <View style={{ width: 44, height: 44 }} />
           )}
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Wordmark size={20} />
-          </View>
+          {/* The wordmark used to sit here. The Space is somebody's page, not
+              an ad for the app — the bar keeps just the way back and the
+              actions, and the name lives in the identity block below. */}
+          <View style={{ flex: 1 }} />
           {mine ? (
             <IconButton icon="eye-outline" variant={scrolled || !hasBanner ? 'surface' : 'glass'} label="See who opened your Space" onPress={() => navigation.navigate('SpaceViewers')} />
           ) : null}
