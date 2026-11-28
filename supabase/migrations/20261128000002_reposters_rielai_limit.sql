@@ -53,12 +53,12 @@ create or replace function public.flow_suggestions(p_limit integer default 8)
 returns jsonb language sql stable security definer set search_path to 'public' as $fn$
 with src as (
   select lower(coalesce(p.body, '')) as b from posts p
-   where p.created_at > public.now_ms() - 7 * 86400000
+   where p.created_at > public.now_ms() - 30 * 86400000::bigint
      and p.circle_id is null
      and public.can_view_post(p, public.me_id())
   union all
   select lower(coalesce(c.body, '')) from post_comments c join posts p on p.id = c.post_id
-   where c.created_at > public.now_ms() - 7 * 86400000 and not c.hidden
+   where c.created_at > public.now_ms() - 30 * 86400000::bigint and not c.hidden
      and public.can_view_post(p, public.me_id())
 ), words as (
   select w from src, lateral regexp_split_to_table(src.b, '[^a-z]{2,}') as w
