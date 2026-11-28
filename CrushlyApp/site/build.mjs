@@ -884,7 +884,7 @@ function downloadPage() {
             <dt>Version</dt><dd data-release="version">${RELEASE.version}</dd>
             <dt>File size</dt><dd data-release="bytes">${RELEASE.size}</dd>
             <dt>Minimum Android</dt><dd>8.0 (Oreo)</dd>
-            <dt>Released</dt><dd data-release="date">13 November 2026</dd>
+            <dt>Released</dt><dd data-release="date">28 November 2026</dd>
             <dt>Price</dt><dd>Free</dd>
             <dt>File</dt><dd>holUpp-&lt;version&gt;-RielOS.apk</dd>
           </dl>
