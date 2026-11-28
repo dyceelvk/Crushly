@@ -1,0 +1,13 @@
+{
+  "version": "1.0.147",
+  "versionCode": 147,
+  "date": "2026-11-28",
+  "notes": [
+    "Video posts fixed: clips now actually load and play instead of showing an empty post.",
+    "New profile layout: your numbers sit beside your picture, under your name, with your bio right below.",
+    "Lighter, easier-to-read profile screen.",
+    "RielAi answers your questions with real AI help (still product-help only, still private).",
+    "Clip player polish: tap to pause, hold the picture to pause, hold the right edge to fast-forward at 2x.",
+    "The Space top bar no longer shows the app wordmark over somebody's page."
+  ]
+}
