@@ -39,7 +39,7 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 147
+      "versionCode": 149
     },
     "web": {
       "favicon": "./assets/favicon.png",
