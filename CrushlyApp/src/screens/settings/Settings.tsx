@@ -10,6 +10,7 @@ import { Txt } from '../../components/Txt';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { ListRow, Group } from '../../components/ListRow';
+import { storage } from '../../lib/storage';
 import { BottomSheet, ConfirmSheet } from '../../components/BottomSheet';
 import { Avatar } from '../../components/Photo';
 import { useProfileTap } from '../../lib/useProfileTap';
@@ -41,7 +42,7 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const { data: me } = useMe();
   const { data: isAdmin } = useIsHolupAdmin();
   const { signOut } = useAuth();
-  const { appearance } = useTheme();
+  const { appearance, colors } = useTheme();
   const toast = useToast();
   const [confirmOut, setConfirmOut] = useState(false);
   /* "Who owns holUpp?" — the question, answered on the screen it is asked from. */
@@ -51,6 +52,17 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const company = companyRow();
   const visit = visitCompanyRow();
   const [busy, setBusy] = useState(false);
+  /* Privacy-by-default notice (2026-11-28): the platform used to show age,
+     city, distance and zodiac unless a member found the switches. They are
+     hidden now — this says so once, then gets out of the way. */
+  const [privacyNotice, setPrivacyNotice] = useState<boolean | null>(null);
+  useEffect(() => {
+    storage.get('privacy-defaults-notice-2026-11-28').then((v) => setPrivacyNotice(v !== 'seen'));
+  }, []);
+  const dismissPrivacyNotice = () => {
+    setPrivacyNotice(false);
+    void storage.set('privacy-defaults-notice-2026-11-28', 'seen');
+  };
   const version = Constants.expoConfig?.version ?? '1.0.0';
   const versionCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
   // Asked against our own Worker, never against GitHub: a member should never
@@ -92,6 +104,34 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   return (
     <Screen>
       <Header title="Settings" back />
+      {privacyNotice ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Privacy defaults changed. Review your switches."
+          onPress={() => navigation.navigate('Privacy')}
+          style={({ pressed }) => ({
+            marginHorizontal: 16, marginTop: 12, marginBottom: 4, padding: 14, borderRadius: 14,
+            borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+            flexDirection: 'row', gap: 12, alignItems: 'flex-start', opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Ionicons name="eye-off-outline" size={20} color={colors.primary} style={{ marginTop: 2 }} />
+          <View style={{ flex: 1 }}>
+            <Txt variant="smallStrong">Your private details are now hidden</Txt>
+            <Txt variant="small" color="textMuted" style={{ marginTop: 4 }}>
+              Age, city, distance and zodiac no longer show on your profile until you turn them on. The switches live in Privacy &amp; visibility.
+            </Txt>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Got it"
+              onPress={dismissPrivacyNotice}
+              style={{ marginTop: 10, alignSelf: 'flex-start', paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: colors.primarySoft }}
+            >
+              <Txt variant="smallStrong" color="primary">Got it</Txt>
+            </Pressable>
+          </View>
+        </Pressable>
+      ) : null}
       {isAdmin ? <Group title="Administration"><ListRow title="holUpp admin" subtitle="Features and announcements" icon="settings-outline" onPress={() => navigation.navigate('Admin')} last /></Group> : null}
       <Group title="Account">
         <ListRow title="Account & security" subtitle={me?.email} icon="person-circle-outline" onPress={() => navigation.navigate('Account')} />

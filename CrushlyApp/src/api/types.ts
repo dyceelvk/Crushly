@@ -494,6 +494,8 @@ export type Privacy = {
   whoCanMessage: 'everyone' | 'crushes' | 'mutual';
   whoCanCrush: 'everyone' | 'verified';
   showAge: boolean;
+  /** The zodiac is a birth-sign: shown only when the member asks for it. */
+  showZodiac: boolean;
   showCity: boolean;
   incognito: boolean;
   /** Whether this member allows other members to repost their posts. */

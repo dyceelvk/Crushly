@@ -122,9 +122,10 @@ export function PrivacyScreen({ navigation }: ScreenProps<'Privacy'>) {
         <ListRow title="Incognito" subtitle="Only people you Crush on can see you" icon="glasses-outline" iconTone="gold" value="Plus" toggle={{ value: p.incognito, onChange: (v) => set({ incognito: v }) }} last />
       </Group>
 
-      <Group title="What others see" footer="Your exact location is never shown. Distance is always rounded.">
+      <Group title="What others see" footer="These start hidden — they show only when you turn them on. Your exact location is never shown, and distance is always rounded.">
         <ListRow title="Show approximate distance" icon="navigate-outline" toggle={{ value: p.showDistance, onChange: (v) => set({ showDistance: v }) }} />
         <ListRow title="Show my age" icon="calendar-outline" toggle={{ value: p.showAge, onChange: (v) => set({ showAge: v }) }} />
+        <ListRow title="Show my zodiac" subtitle="Your star sign" icon="moon-outline" toggle={{ value: p.showZodiac, onChange: (v) => set({ showZodiac: v }) }} />
         <ListRow title="Show my city" icon="business-outline" toggle={{ value: p.showCity, onChange: (v) => set({ showCity: v }) }} />
         <ListRow title="Show when I’m online" subtitle="If off, you won’t see others’ status either" icon="radio-button-on-outline" toggle={{ value: p.showOnline, onChange: (v) => set({ showOnline: v }) }} />
         {/* Being seen online and being timestamped are different disclosures: a
