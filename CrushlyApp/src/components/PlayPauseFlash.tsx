@@ -57,6 +57,7 @@ export function PlayPauseFlash({
   const scale = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const first = useRef(true);
+  const tapped = useRef(false);
 
   useEffect(() => {
     // No flash on mount: a video that starts playing should not announce itself
@@ -66,6 +67,13 @@ export function PlayPauseFlash({
       opacity.setValue(0);
       return;
     }
+
+    // Only a tap flashes the disc. Play/pause also changes when a feed hands a
+    // clip over to the next card while scrolling, and flashing on every
+    // transition turned the feed into a strobe. The state still updates; the
+    // flash is a press echo, not a status light.
+    if (!tapped.current) return;
+    tapped.current = false;
 
     const useNative = Platform.OS !== 'web';
     if (reduced) {
@@ -94,6 +102,7 @@ export function PlayPauseFlash({
   /** A tap on the disc must not also reach the card underneath it. */
   const press = (e?: { stopPropagation?: () => void }) => {
     e?.stopPropagation?.();
+    tapped.current = true;
     onPress();
   };
 

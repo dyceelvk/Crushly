@@ -176,6 +176,12 @@ export type SoundAccount = {
   videoCount: number;
 };
 
+/** One person who reposted a post, with the moment they did. */
+export type Reposter = {
+  author: Profile;
+  at: number;
+};
+
 /** One page of a sound: who owns it, how much is on it, and the clips you may see. */
 export type SoundPage = {
   sound: {

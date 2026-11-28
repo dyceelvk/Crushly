@@ -548,6 +548,16 @@ export function useFlow(limit = 20) {
  * `keys.flow` is shared with the timeline hook on purpose: posting a post
  * invalidates both, so a new post appears at the top of whichever feed is open.
  */
+/** What the week is talking about — terms for the box line above the videos. */
+export function useFlowSuggestions(): { term: string }[] {
+  const query = useQuery({
+    queryKey: ['flowSuggestions'],
+    queryFn: () => service.flowSuggest(),
+    staleTime: 120_000,
+  });
+  return query.data ?? [];
+}
+
 export function useRankedFlow(limit = 8) {
   const query = useInfiniteQuery({
     queryKey: [...keys.flow, 'ranked', limit],
@@ -795,10 +805,15 @@ export function useRepostPost() {
  * accumulate now, in the order the server ranked them.
  */
 export function useCrushesFeed(limit = 20) {
+  /* The Crush feed is algorithmic now: `flow_ranked_feed` scores every post by
+     engagement velocity (comments count triple), affinity with the authors you
+     actually interact with, recency, an explore bonus for the unseen, and a
+     per-author diversity brake. The cursor moved from a bare id to the score
+     the ranking produced, so paging stays honest through the new order. */
   const query = useInfiniteQuery({
     queryKey: [...keys.crushesFeed, limit],
-    initialPageParam: null as number | null,
-    queryFn: ({ pageParam }) => service.crushesFeed(limit, pageParam),
+    initialPageParam: null as FlowCursor | null,
+    queryFn: ({ pageParam }) => service.rankedFlow(limit, pageParam),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     /*
      * Crushes is everyone's posts, so it changes without this member doing

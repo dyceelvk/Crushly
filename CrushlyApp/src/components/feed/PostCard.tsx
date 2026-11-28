@@ -287,7 +287,7 @@ export function PostCard({
                 alt={`Post by ${authorName}`}
               />
             )}
-            <SoundDisc sound={p.sound} playing={active} bottom={10} right={10} />
+            <SoundDisc sound={p.sound} playing={active} bottom={58} right={10} />
           </View>
         ) : null}
       </Pressable>

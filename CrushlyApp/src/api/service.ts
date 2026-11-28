@@ -40,7 +40,7 @@ import {
   RELATIONSHIP_INTENTIONS as catalogRelationshipIntentions,
 } from '../lib/catalog';
 import type {WatchPost, AppUpdate, AppNotification, Badges, BlockedMember, Circle, CircleListPage, CircleMember, CircleMessage, CircleMessageKind, CircleMessagesPage, CircleSpace, CircleSummary, CircleHighlight, CircleJoinRequest, CirclePreview, DiscoverCircle,
-  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, InviteInfo, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReferralClaimResult, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, PeerPresence} from './types';
+  CircleInvitation, CircleManage, CircleInviteCandidate, CircleJoinPolicy, CircleStanding, CloseOne, ConversationDetail, ConversationSummary, CrushesResponse, CrushResult, DiscoverPage, FlowPage, FullProfile, InviteInfo, KeepState, Me, Message, Moment, MomentAuthor, MomentsFeed, Post, PostComment, Preferences, Privacy, ReferralClaimResult, ReplyQuote, NotificationSettings, Profile, ReactionKind, MomentStyle, SearchResults, SearchCategory, SearchFilters, FlowCursor, RankedFlowPage, PostLiker, SoundPage, Reposter, PeerPresence} from './types';
 
 /**
  * The holUpp data layer — a 1:1 port of the retired Express API onto Supabase.
@@ -1352,6 +1352,30 @@ export async function loadPost(postId: number): Promise<Post> {
  */
 export async function soundPage(soundId: number, limit = 24): Promise<SoundPage> {
   return rpc<SoundPage>('sound_page', { p_sound_id: soundId, p_limit: limit });
+}
+
+/** Who reposted a post — every name, with the moment they did it. */
+export async function postReposters(postId: number, limit = 50): Promise<Reposter[]> {
+  return rpc<Reposter[]>('post_reposters', { p_post_id: postId, p_limit: limit });
+}
+
+/** Terms the week's posts and comments keep using — the box line's slideshow. */
+export async function flowSuggest(limit = 8): Promise<{ term: string }[]> {
+  return rpc<{ term: string }[]>('flow_suggestions', { p_limit: limit });
+}
+
+/** Keep this chat for good: without a backup, its messages expire at 30 days. */
+export async function backUpChat(conversationId: number): Promise<void> {
+  const me = await meId();
+  const { error } = await supabase
+    .from('chat_backups')
+    .upsert({ conversation_id: conversationId, user_id: me }, { onConflict: 'conversation_id,user_id' });
+  if (error) throw error;
+}
+
+/** Sweep a conversation's expired, unbacked messages — permanent, media included. */
+export async function purgeExpiredMessages(conversationId: number): Promise<number> {
+  return rpc<number>('purge_expired_messages', { p_conversation_id: conversationId });
 }
 
 /** Put somebody else's sound on a clip of your own. */

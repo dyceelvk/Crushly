@@ -12,6 +12,7 @@ import { Button } from '../../components/Button';
 import { PostCard } from '../../components/feed/PostCard';
 import { CrushClipCard } from '../../components/feed/CrushClipCard';
 import { MomentCircles } from '../../components/MomentCircle';
+import { FlowSuggestBox } from '../../components/FlowSuggestBox';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
 import { useCrushesFeed } from '../../api/hooks';
@@ -162,6 +163,8 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       stickyHeaderIndices={[0]}
       ListHeaderComponent={
         <View style={{ marginHorizontal: -space.md, backgroundColor: colors.bg }}>
+          {/* The box line: terms the week keeps using, sliding one to the next. */}
+          <FlowSuggestBox />
           {/* Smaller than a profile row's 74 dp: this is a strip of faces above a
               column of posts, not the posts' equal. See MomentCircle. */}
           <MomentCircles size={58} />

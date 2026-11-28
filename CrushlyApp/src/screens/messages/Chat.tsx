@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { backUpChat, purgeExpiredMessages } from '../../api/service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { Txt } from '../../components/Txt';
@@ -246,6 +247,13 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
   useEffect(() => {
     if (conv && (!conv.canSend || conv.closed)) void callRef.current?.hangup().catch(() => {});
   }, [conv?.canSend, conv?.closed]);
+
+  /* Chats are not kept by default. Opening a conversation sweeps the messages
+     past their 30 days — permanently, media queued for the bucket purge —
+     unless somebody backed the chat up. One quiet call, like a light switch. */
+  useEffect(() => {
+    void purgeExpiredMessages(conversationId).catch(() => undefined);
+  }, [conversationId]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
@@ -533,6 +541,18 @@ export function ChatScreen({ route, navigation }: ScreenProps<'Chat'>) {
               />
             </View>
           </Pressable>
+          <IconButton
+            icon="cloud-upload-outline"
+            label="Back up this chat"
+            onPress={async () => {
+              try {
+                await backUpChat(conversationId);
+                toast({ kind: 'success', title: 'Chat backed up', message: 'This conversation is kept on holUpp for good now.' });
+              } catch (e) {
+                toast({ kind: 'error', title: 'Couldn’t back up', message: (e as Error).message });
+              }
+            }}
+          />
           {callsEnabled ? <IconButton icon="call-outline" variant="gold" label="Start voice call" onPress={startCall} disabled={!canSend || recording || callState !== 'idle'} /> : null}
           <IconButton
             icon="ellipsis-horizontal"

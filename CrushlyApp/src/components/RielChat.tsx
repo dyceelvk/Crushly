@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from './Txt';
-import { Input } from './Input';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, space } from '../theme/tokens';
 import * as service from '../api/service';
@@ -115,12 +114,13 @@ export function RielChat({
           </View>
         ) : null}
       </ScrollView>
-      <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end', paddingTop: space.sm }}>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end', paddingTop: space.xs }}>
         <View style={{ flex: 1 }}>
-          <Input
+          <TextInput
             value={input}
             onChangeText={setInput}
             placeholder="Message RielAi…"
+            placeholderTextColor={colors.textMuted}
             accessibilityLabel="Message RielAi"
             multiline
             maxLength={2000}
@@ -128,6 +128,19 @@ export function RielChat({
             returnKeyType="send"
             onSubmitEditing={() => {
               void send();
+            }}
+            style={{
+              minHeight: 38,
+              maxHeight: 92,
+              paddingVertical: 8,
+              paddingHorizontal: 14,
+              borderRadius: 19,
+              backgroundColor: colors.elevated,
+              borderWidth: 1,
+              borderColor: colors.border,
+              color: colors.text,
+              fontSize: 14,
+              lineHeight: 19,
             }}
           />
         </View>
@@ -139,9 +152,9 @@ export function RielChat({
           accessibilityRole="button"
           accessibilityLabel="Send to RielAi"
           style={({ pressed }) => ({
-            width: 46,
-            height: 46,
-            borderRadius: 23,
+            width: 38,
+            height: 38,
+            borderRadius: 19,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: busy || input.trim().length < 1 ? colors.elevated : colors.primary,

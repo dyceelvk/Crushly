@@ -142,15 +142,18 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
             </View>
           </Pressable>
 
+          {/* The right corner belongs to the sound disc and the volume key, so
+              the words and the controls row stop 84 short of the edge — no
+              control ever drawn over another. */}
           {!post.mine && post.audience === 'everyone' ? <View style={{alignSelf:'flex-start',marginTop:6}}><FollowButton id={post.author.id} name={post.author.name} compact /></View> : null}
           <PostViews post={post} light />
           {post.body ? (
-            <Txt variant="body" numberOfLines={2} color="#FFFFFF" style={{ marginTop: 6 }}>
+            <Txt variant="body" numberOfLines={2} color="#FFFFFF" style={{ marginTop: 6, paddingRight: 84 }}>
               {post.body}
             </Txt>
           ) : null}
 
-          <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm }}>
+          <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, paddingRight: 84 }}>
             {/* Same control as Flow: the holUpp mark at rest, filled once you
                 have crushed, and a hold that floats the seven faces. It was a
                 heart here, which is the one shape the owner has rejected. */}
