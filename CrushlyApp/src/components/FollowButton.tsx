@@ -1,6 +1,7 @@
 import React from 'react';
-import { ActivityIndicator, Pressable } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { followMember, followStatus, unfollowMember } from '../api/service';
 import { useMe } from '../api/hooks';
@@ -10,7 +11,7 @@ import { Txt } from './Txt';
 import { useToast } from './Toast';
 
 /** Real directional Add Up; a pending request is never presented as a follow. */
-export function FollowButton({ id, name, compact = false, full = false }: {id: number; name: string; compact?: boolean; full?: boolean}) {
+export function FollowButton({ id, name, compact = false, full = false, variant = 'default' }: {id: number; name: string; compact?: boolean; full?: boolean; variant?: 'default' | 'hero'}) {
   const me = useMe();
   const qc = useQueryClient();
   const { colors } = useTheme();
@@ -32,14 +33,50 @@ export function FollowButton({ id, name, compact = false, full = false }: {id: n
   // Space carries the connection controls. Nothing to offer, so offer nothing.
   if (stats.data?.connected) return null;
   const label = stats.isError ? 'Retry Add Up' : status === 'active' ? 'Added Up' : status === 'pending' ? 'Request sent' : 'Add Up';
+  const busy = stats.isLoading || change.isPending;
+  const inner = (
+    <>
+      {busy ? <ActivityIndicator size="small" color={status ? colors.text : '#fff'} /> : status ? <Ionicons name="checkmark" size={15} color={colors.text} /> : <CrushIcon size={15} color="#fff" />}
+      <Txt variant={variant === 'hero' ? 'bodyStrong' : 'smallStrong'} style={{ color: status ? colors.text : '#fff', fontSize: variant === 'hero' ? 15.5 : undefined }}>{label}</Txt>
+    </>
+  );
+  /* `hero` is the profile mock-up's main act: a wide gradient pill that owns
+     the row. Pressed states keep their plain shapes — once an Add Up exists the
+     button is a fact, not an invitation, and the gradient stands down. */
+  if (variant === 'hero') {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label} ${name}`}
+        disabled={busy}
+        onPress={() => stats.isError ? void stats.refetch() : change.mutate()}
+        style={{ flex: 1, borderRadius: 16, overflow: 'hidden', opacity: busy ? 0.6 : 1 }}
+      >
+        {status ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 16, backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.borderStrong }}>
+            {inner}
+          </View>
+        ) : (
+          <LinearGradient
+            colors={[colors.primary, colors.crushDeep]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 16 }}
+          >
+            {inner}
+          </LinearGradient>
+        )}
+      </Pressable>
+    );
+  }
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${name}`} disabled={stats.isLoading || change.isPending}
     onPress={() => stats.isError ? void stats.refetch() : change.mutate()}
     /* `full` is the Space header's main action: a pill that fills the row
        beside the circular controls, at the same height as the owner's Edit
        Space. Without it the button keeps its natural width, which is right in
        a list row and wrong as the one thing a visitor came to press. */
-    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, paddingHorizontal:compact ? 9 : 16, paddingVertical:full ? 13 : compact ? 7 : 10, borderRadius:full ? 999 : 10, backgroundColor: status ? colors.elevated : colors.primary, opacity: stats.isLoading || change.isPending ? 0.6 : 1}}>
-    {stats.isLoading || change.isPending ? <ActivityIndicator size="small" color={status ? colors.text : '#fff'} /> : status ? <Ionicons name="checkmark" size={15} color={colors.text} /> : <CrushIcon size={15} color="#fff" />}
+    style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, paddingHorizontal:compact ? 9 : 16, paddingVertical:full ? 13 : compact ? 7 : 10, borderRadius:full ? 999 : 10, backgroundColor: status ? colors.elevated : colors.primary, opacity: busy ? 0.6 : 1}}>
+    {busy ? <ActivityIndicator size="small" color={status ? colors.text : '#fff'} /> : status ? <Ionicons name="checkmark" size={15} color={colors.text} /> : <CrushIcon size={15} color="#fff" />}
     <Txt variant="smallStrong" style={{color: status ? colors.text : '#fff'}}>{label}</Txt>
   </Pressable>;
 }

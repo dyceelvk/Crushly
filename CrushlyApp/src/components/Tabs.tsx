@@ -32,16 +32,29 @@ export type TabItem<T extends string> = {
   count?: number;
 };
 
+/**
+ * 'feed' is the brightening row used across the app.
+ *
+ * 'accent' is the profile's Space row, as the profile mock-up draws it: the
+ * active tab speaks in the brand pink and carries a solid pink rule under the
+ * label, the inactive tabs stay quiet, and the four tabs are spread evenly
+ * across the width instead of bunched left. Same control, same gesture — only
+ * the voice changes.
+ */
+export type TabsVariant = 'feed' | 'accent';
+
 export function Tabs<T extends string>({
   tabs,
   active,
   onChange,
   accessibilityLabel,
+  variant = 'feed',
 }: {
   tabs: TabItem<T>[];
   active: T;
   onChange: (id: T) => void;
   accessibilityLabel?: string;
+  variant?: TabsVariant;
 }) {
   const { colors, reduceMotion } = useTheme();
   const { width } = useWindowDimensions();
@@ -56,7 +69,11 @@ export function Tabs<T extends string>({
        page usually wins, so the tab you could not see was also the tab you could
        not reach. Now the row fits: tabs shrink, labels stay on one line, and
        every tab in the list is on the screen and tappable at any size. */
-    <View {...swipe.panHandlers} style={{ flexDirection: 'row', gap: 20 }} accessibilityLabel={accessibilityLabel}>
+    <View
+      {...swipe.panHandlers}
+      style={{ flexDirection: 'row', gap: variant === 'accent' ? 4 : 20, ...(variant === 'accent' ? { justifyContent: 'space-between' } : null) }}
+      accessibilityLabel={accessibilityLabel}
+    >
       {tabs.map((t) => (
         <Tab
           key={t.id}
@@ -67,6 +84,7 @@ export function Tabs<T extends string>({
           color={colors.text}
           muted={colors.textSecondary}
           ms={dur(DUR.label, reduceMotion)}
+          variant={variant}
         />
       ))}
     </View>
@@ -81,6 +99,7 @@ function Tab({
   color,
   muted,
   ms,
+  variant = 'feed',
 }: {
   label: string;
   count?: number;
@@ -89,6 +108,7 @@ function Tab({
   color: string;
   muted: string;
   ms: number;
+  variant?: TabsVariant;
 }) {
   const { colors } = useTheme();
   // One value per tab, animated rather than swapped, because a colour that
@@ -107,6 +127,7 @@ function Tab({
     return () => a.stop();
   }, [active, lit, ms]);
 
+  const accent = variant === 'accent';
   return (
     <Pressable
       onPress={onPress}
@@ -114,14 +135,15 @@ function Tab({
       accessibilityState={{ selected: active }}
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       hitSlop={8}
-      style={{ paddingVertical: 6, flexShrink: 1, minWidth: 0 }}
+      style={{ paddingVertical: 6, flexShrink: 1, minWidth: 0, ...(accent ? { flex: 1, alignItems: 'center' } : null) }}
     >
-      <Animated.View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, opacity: lit.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
+      <View style={{ alignItems: 'center' }}>
+      <Animated.View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, opacity: accent ? 1 : lit.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
         <Text
           style={{
             fontFamily: fonts.medium,
             fontSize: 15,
-            color,
+            color: accent ? (active ? colors.crush : colors.textMuted) : color,
           }}
           numberOfLines={1}
           adjustsFontSizeToFit
@@ -155,20 +177,25 @@ function Tab({
         importantForAccessibility="no-hide-descendants"
         style={{
           marginTop: 5,
-          height: 2,
+          height: accent ? 3 : 2,
           borderRadius: 2,
           overflow: 'hidden',
           opacity: lit,
           transform: [{ scaleX: lit.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) }],
         }}
       >
-        <LinearGradient
-          colors={[colors.gold, colors.crush]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={{ flex: 1, borderRadius: 2 }}
-        />
+        {accent ? (
+          <View style={{ flex: 1, borderRadius: 2, backgroundColor: colors.crush }} />
+        ) : (
+          <LinearGradient
+            colors={[colors.gold, colors.crush]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ flex: 1, borderRadius: 2 }}
+          />
+        )}
       </Animated.View>
+      </View>
     </Pressable>
   );
 }
