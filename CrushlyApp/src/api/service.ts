@@ -1366,6 +1366,7 @@ export async function setRepostThought(postId: number, thought: string): Promise
 
 /** What each video is about right now — one trending term per post. */
 export type FlowSuggestion = { postId: number; term: string };
+export type TrendTerm = { term: string; score: number; mentions: number };
 
 /** Terms the week's posts and comments keep using — one per video. */
 export async function flowSuggest(limit = 24): Promise<FlowSuggestion[]> {
@@ -2611,4 +2612,19 @@ export function noteSearch(term: string, hadResults: boolean): void {
   } catch {
     /* never the member's problem */
   }
+}
+
+/** What HolUpp is talking about right now — posts, comments, the words on the
+ *  videos and what people search, weighted by how fast they move. Empty most of
+ *  the time; the gate is the feature. This is where the suggestion chip leads:
+ *  somewhere moving, not just back at the video you are already on. */
+export function trendTerms(limit = 12): Promise<TrendTerm[]> {
+  return rpc<TrendTerm[]>('holupp_trends', { p_limit: limit });
+}
+
+/** What this member keeps doing, looking for, posting and talking about —
+ *  including in private chats. Returned as interest terms only; no chat text
+ *  is ever stored or shown. The personalisation half of the feed. */
+export function interestTerms(limit = 12): Promise<TrendTerm[]> {
+  return rpc<TrendTerm[]>('user_interest_profile', { p_limit: limit });
 }

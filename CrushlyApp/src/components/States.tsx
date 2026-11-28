@@ -113,10 +113,12 @@ export function Skeleton({ style }: { style?: StyleProp<ViewStyle> }) {
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (reduceMotion) return;
+    // Slow and even, like light moving over a surface — the old two-step
+    // blink read as cheap and rushed next to the rest of the app.
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
-        Animated.timing(pulse, { toValue: 0, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(pulse, { toValue: 1, duration: 1100, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(pulse, { toValue: 0, duration: 1100, useNativeDriver: Platform.OS !== 'web' }),
       ]),
     );
     loop.start();

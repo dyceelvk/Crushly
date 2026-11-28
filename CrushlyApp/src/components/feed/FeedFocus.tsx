@@ -63,9 +63,24 @@ export function useFeedFocus() {
   }, []);
 
   const recompute = useCallback(() => {
-    const next = activeIdAt(buildBoxes(), scrollY.current, viewportH.current);
+    const boxes = buildBoxes();
+    const next = activeIdAt(boxes, scrollY.current, viewportH.current);
     // Same card: no render. This runs several times a second while scrolling.
-    setActiveId((prev) => (prev === next ? prev : next));
+    //
+    // A gap in the boxes — rows still measuring, a page still appending — must
+    // not drop the clip that is still on the focus line. That pause-then-play
+    // flap is exactly the stutter the last videos in the feed used to show the
+    // moment loadOlder pulled in more rows. Keep the previous clip while its box
+    // still covers the line; anything off the line still stops.
+    setActiveId((prev) => {
+      if (prev === next) return prev;
+      if (next === null && prev !== null && viewportH.current > 0) {
+        const box = boxes.find((b) => b.id === prev);
+        const line = scrollY.current + viewportH.current * FOCUS_LINE;
+        if (box && line >= box.y && line <= box.y + box.height) return prev;
+      }
+      return next;
+    });
   }, [buildBoxes]);
 
   /**

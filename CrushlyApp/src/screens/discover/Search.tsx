@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useInterestTerms } from '../../api/hooks';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Txt } from '../../components/Txt';
@@ -56,6 +57,7 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
   const swipe = useSwipeTabs({ options: tabs.map((item) => item.id), value: tab, onChange: setTab, width: contentWidth });
   const [selectedPlace, setSelectedPlace] = useState('');
   const [recents, setRecents] = useState<string[]>([]);
+  const interests = useInterestTerms();
   const [menu, setMenu] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [draft, setDraft] = useState<FilterDraft>(initial);
@@ -124,6 +126,16 @@ export function SearchScreen({ route }: { route?: { params?: { q?: string } } })
       {!asked ? <>
         {recents.length ? <View style={{ marginTop: space.md }}><View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Txt variant="label" color="textSecondary">RECENT</Txt><Pressable onPress={() => { setRecents([]); storage.remove(RECENT_KEY); }} accessibilityRole="button" accessibilityLabel="Clear recent searches"><Txt variant="caption" color="textMuted">Clear</Txt></Pressable></View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: space.sm }}>{recents.map((word) => <View key={word} style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 8, height: 36, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}><Pressable onPress={() => { setText(word); setQuery(word); setSelectedPlace(''); remember(word); }} accessibilityRole="button" accessibilityLabel={`Search again for ${word}`}><Txt variant="small" numberOfLines={1} style={{ maxWidth: 160 }}>{word}</Txt></Pressable><Pressable onPress={() => forget(word)} accessibilityRole="button" accessibilityLabel={`Remove ${word} from recent searches`} style={{ paddingLeft: 10, paddingVertical: 8 }}><Ionicons name="close" size={15} color={colors.textMuted} /></Pressable></View>)}</View></View> : null}
+        {interests.length ? <View style={{ marginTop: space.lg }}>
+          <Txt variant="label" color="textSecondary">YOU MAY LIKE</Txt>
+          <Txt variant="caption" color="textMuted" style={{ marginTop: 4, marginBottom: 8 }}>From what you search, post, watch and talk about</Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{interests.map((t) => (
+            <Pressable key={t.term} onPress={() => { setText(t.term); setQuery(t.term); setTab('top'); setSelectedPlace(''); remember(t.term); }} accessibilityRole="button" accessibilityLabel={`Search for ${t.term}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 36, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+              <Ionicons name="sparkles-outline" size={15} color={colors.primary} />
+              <Txt variant="small" numberOfLines={1}>{t.term}</Txt>
+            </Pressable>
+          ))}</View>
+        </View> : null}
         {trends.data?.length ? <View style={{ marginTop: space.lg }}>
           <Txt variant="label" color="textSecondary">TRENDING ON POSTS</Txt>
           <Txt variant="caption" color="textMuted" style={{ marginTop: 4, marginBottom: 8 }}>From posts and comments you can see · past 7 days</Txt>

@@ -72,11 +72,16 @@ export function CommentsSheet({
   visible,
   onClose,
   onOpenAuthor,
+  searchTerm,
+  onSearchTrend,
 }: {
   post: Post | null;
   visible: boolean;
   onClose: () => void;
   onOpenAuthor?: (authorId: number) => void;
+  /** The trend line, only when this clip has one — never on every video. */
+  searchTerm?: string | null;
+  onSearchTrend?: () => void;
 }) {
   const { colors } = useTheme();
   const NOIR = {
@@ -473,6 +478,20 @@ export function CommentsSheet({
           </View>
 
           {/* -------------------------------------------------------------- body */}
+          {tab === 'comments' && searchTerm ? (
+            <Pressable
+              onPress={onSearchTrend}
+              accessibilityRole="button"
+              accessibilityLabel={`Search HolUpp for ${searchTerm}`}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: NOIR.divider }}
+            >
+              <Ionicons name="search" size={16} color={NOIR.muted} />
+              <Txt style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14.5, color: NOIR.text }} numberOfLines={1}>
+                Search: {searchTerm}
+              </Txt>
+              <Ionicons name="trending-up" size={15} color={NOIR.muted} />
+            </Pressable>
+          ) : null}
           <View {...tabSwipe.panHandlers} style={{ flex: 1 }}>{tab === 'comments' ? commentsTab : likesTab}</View>
 
           {/* ---------------------------------------------------------- composer */}

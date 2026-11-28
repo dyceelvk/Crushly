@@ -121,6 +121,9 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       windowSize={7}
       initialNumToRender={3}
       maxToRenderPerBatch={4}
+      /* Batch a touch slower so rows mount in one frame wave — the default
+         cadence stuttered on the way to the end of the feed. */
+      updateCellsBatchingPeriod={50}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
       refreshControl={

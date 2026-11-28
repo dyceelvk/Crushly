@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import * as service from './service';
 import { pagesToItems } from '../lib/paging';
-import type { SendDraft } from './service';
+import type { SendDraft, TrendTerm } from './service';
 import { liveMomentUserIds } from '../lib/profileTap';
 import { openWhisperLive, type WhisperLive, type WhisperLiveStatus } from '../lib/whisperLive';
 import { applyUpTo } from '../lib/messageStatus';
@@ -1871,4 +1871,16 @@ export function useRespondCircleInvitation() {
       service.respondCircleInvitation(input.invitationId, input.accept),
     onSuccess: (_r, input) => refreshCircleSurfaces(qc, input.circleId),
   });
+}
+
+/** What HolUpp is talking about right now (3-day velocity). Often empty. */
+export function useTrendTerms(): TrendTerm[] {
+  const q = useQuery({ queryKey: ['holupp', 'trend-terms'], queryFn: () => service.trendTerms(), staleTime: 60_000 });
+  return q.data ?? [];
+}
+
+/** What this member is into, from what they do — searches, posts, comments, chats. */
+export function useInterestTerms(): TrendTerm[] {
+  const q = useQuery({ queryKey: ['holupp', 'interest-terms'], queryFn: () => service.interestTerms(), staleTime: 60_000 });
+  return q.data ?? [];
 }

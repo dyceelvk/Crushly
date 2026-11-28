@@ -78,11 +78,20 @@ export function CrushClipCard({ post, active, suggest }: { post: Post; active: b
             onPress={() => navigation.navigate('Search', { q: suggest })}
             accessibilityRole="button"
             accessibilityLabel={`Search for ${suggest}`}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(10,10,12,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', maxWidth: 240 }}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 6,
+              paddingHorizontal: 13, paddingVertical: 7, borderRadius: 999,
+              backgroundColor: 'rgba(12,12,16,0.62)', borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.24)', maxWidth: 260,
+              /* One soft shadow — depth without the heavy blur that costs
+                 frames mid-scroll. */
+              shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8,
+              shadowOffset: { width: 0, height: 3 }, elevation: 3,
+            }}
           >
             <Ionicons name="search" size={13} color="#FFFFFF" />
             <Txt variant="caption" color="#FFFFFF" numberOfLines={1}>
-              {suggest}
+              Search: {suggest}
             </Txt>
           </Pressable>
         </View>
@@ -220,7 +229,13 @@ export function CrushClipCard({ post, active, suggest }: { post: Post; active: b
         </View>
       </View>
 
-      <CommentsSheet post={post} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      <CommentsSheet
+        post={post}
+        visible={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        searchTerm={suggest}
+        onSearchTrend={() => { if (suggest) navigation.navigate('Search', { q: suggest }); }}
+      />
       <ShareToWhisper visible={shareOpen} post={post} onClose={() => setShareOpen(false)} />
     </View>
   );

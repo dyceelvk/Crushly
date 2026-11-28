@@ -365,13 +365,16 @@ export function EditedClip({
       // One clip holds the sound. Claiming it pauses every other clip that is
       // already playing, so a feed cannot talk over itself.
       takeFocus(player);
-      player.play();
+      // Only reach for the player when the answer actually changed. A repeat
+      // play() on a clip that is already going re-claims the sound and can drop
+      // a frame — the stutter the tail of the feed used to show.
+      if (!player.playing) player.play();
       setPlaying(true);
-      if (look.music && !muted) musicPlayer?.play();
+      if (look.music && !muted) { if (!musicPlayer?.playing) musicPlayer?.play(); }
       else musicPlayer?.pause();
     } else {
       releaseFocus(player);
-      player.pause();
+      if (player.playing) player.pause();
       setPlaying(false);
       musicPlayer?.pause();
     }
