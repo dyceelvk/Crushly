@@ -1,5 +1,4 @@
 {
-  "1.0.147": "The profile page now matches the reference layout and is easier on the eye. Videos pause with a flash when tapped, play at double speed while you hold the fast-forward button, and pause when you hold the picture. Riel, the HolUpp assistant, answers your questions in Support, and location detection is more private: the app works out your region and never your network address.",
   "1.0.64": "Every request now has a deadline: 15 seconds for a question, 5 minutes for an upload, and then it says the connection failed instead of spinning forever.",
   "1.0.65": "Crushes now shows what Crushly is posting, not just the people you have added up with — and a new post reaches the feed without a restart.",
   "1.0.66": "Crushes now shows everything Crushly publishes, and Notifications only speaks about people: add ups, Keep Closes, Crushes, comments and mentions — never a private Whisper.",
@@ -68,7 +67,6 @@
   "1.0.130": "A letter you can start. The Control Centre inbox could answer mail and could not begin it; there is now a New message button, a compose screen with To, Cc, Bcc, Subject and a Link button, and a Send from choice between support@holupp.net and info@rielincos.com.",
   "1.0.132": "The website now opens on the room instead of a pop-up. A visitor sees public posts and can search before making an account — football, animation and entertainment lead, and when there is none of that yet holUpp's own posts stand in. Sign-up now adds Up to every official account you tick, and checks with the server that it landed.",
   "1.0.133": "A video longer than a minute no longer gets refused. It opens the editor — Trim, Text, Filters, Adjust, Speed, Crop, Stickers, Sound — and the trim says the clip is longer than a post can carry so you pick the minute you want. The rest stays on your phone.",
-  "1.0.144": "Repost is now available across Flow, post viewers, profiles and notifications, with the original post and its privacy settings kept intact; Android also carries the current update channel and push handling.",
   "1.0.143": "The Android package restores the full signing history, so members on 1.0.141 and 1.0.142 can update in place without uninstalling; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
   "1.0.142": "The Android package now uses the standard release signing schemes for wider Xiaomi and Android installer compatibility; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
   "1.0.141": "Android updates now carry the trusted signing history from earlier holUpp builds, so members can update without uninstalling; onboarding still ends with Stay close to HolUpp and server-confirmed official Add Ups.",
@@ -81,5 +79,7 @@
     "New here? It says your identity is still developing, which is the truth. It appears once there is enough to go on.",
     "You can hide it from other people. It keeps working either way."
   ],
+  "1.0.147": "The profile page now matches the reference layout and is easier on the eye. Videos pause with a flash when tapped, play at double speed while you hold the fast-forward button, and pause when you hold the picture. Riel, the HolUpp assistant, answers your questions in Support, and location detection is more private: the app works out your region and never your network address.",
+  "1.0.144": "Repost is now available across Flow, post viewers, profiles and notifications, with the original post and its privacy settings kept intact; Android also carries the current update channel and push handling.",
   "1.0.145": "A visitor's Space shows the Homies count once, as the Homies pill, instead of also repeating it as a number in the stats row; the owner's own Space keeps the number."
 }
