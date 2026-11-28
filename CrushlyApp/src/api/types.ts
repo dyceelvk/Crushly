@@ -165,6 +165,15 @@ export type PostSound = {
   id: number;
   title: string;
   ownerId: number;
+  /** Who made the sound — drawn on the spinning cover. */
+  ownerName?: string;
+  ownerAvatar?: string | null;
+};
+
+/** One account that used a sound, with how many of its clips sit on it. */
+export type SoundAccount = {
+  author: Profile;
+  videoCount: number;
 };
 
 /** One page of a sound: who owns it, how much is on it, and the clips you may see. */
@@ -176,6 +185,10 @@ export type SoundPage = {
     postCount: number;
     owner: Profile;
   };
+  /** The sound in three numbers: clips, accounts (each counted once) and crushes. */
+  stats?: { videos: number; accounts: number; crushes: number };
+  /** Accounts that used the sound — one entry per account, with its clip count. */
+  accounts?: SoundAccount[];
   items: Post[];
 };
 

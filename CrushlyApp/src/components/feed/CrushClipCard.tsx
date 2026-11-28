@@ -9,6 +9,7 @@ import { Txt } from '../Txt';
 import { Avatar } from '../Photo';
 import { VerifiedBadge } from '../Badges';
 import { EditedClip } from '../EditedClip';
+import { SoundDisc } from '../SoundDisc';
 import { CommentsSheet } from './CommentsSheet';
 import { ReactionButton } from './Reactions';
 import { ShareToWhisper } from '../ShareToWhisper';
@@ -89,15 +90,18 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
           maxHeight={560}
           accessibilityLabel={`Clip by ${authorName}`}
           cornerControl={
-            <Pressable
-              onPress={(event) => { event.stopPropagation(); setMuted(value => !value); }}
-              accessibilityRole="button"
-              accessibilityLabel={muted ? `Unmute ${authorName}’s clip` : `Mute ${authorName}’s clip`}
-              accessibilityState={{ selected: !muted }}
-              style={({ pressed }) => ({ position: 'absolute', right: 10, bottom: 10, width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10,10,12,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', opacity: pressed ? 0.75 : 1 })}
-            >
-              <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#FFFFFF" />
-            </Pressable>
+            <>
+              <SoundDisc sound={post.sound} playing={active && !commentsOpen && !shareOpen} bottom={10} right={10} />
+              <Pressable
+                onPress={(event) => { event.stopPropagation(); setMuted(value => !value); }}
+                accessibilityRole="button"
+                accessibilityLabel={muted ? `Unmute ${authorName}’s clip` : `Mute ${authorName}’s clip`}
+                accessibilityState={{ selected: !muted }}
+                style={({ pressed }) => ({ position: 'absolute', right: 14, bottom: 64, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10,10,12,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', opacity: pressed ? 0.75 : 1 })}
+              >
+                <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={16} color="#FFFFFF" />
+              </Pressable>
+            </>
           }
         />
       </Pressable>

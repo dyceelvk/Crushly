@@ -48,6 +48,7 @@ import {
 import type { Post, ReactionKind } from '../../api/types';
 import { REACTION_KINDS } from '../../api/types';
 import { EditedClip } from '../../components/EditedClip';
+import { SoundDisc } from '../../components/SoundDisc';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -708,6 +709,9 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
             </View>
           </>
         )}
+        {/* The spinning record: the sound this clip is under, at the thumb's
+            corner, turning while the picture moves. */}
+        <SoundDisc sound={post.sound} playing={playing} bottom={150} right={16} />
       </Pressable>
 
       {/* Scrims so the words are readable over any frame. */}

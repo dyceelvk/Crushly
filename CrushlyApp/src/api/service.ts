@@ -1787,13 +1787,20 @@ export type RielAiAnswer = {
 };
 
 /**
- * Help-only member assistant. The edge function uses approved product content,
- * receives only the member's question, and does not receive profile, Whisper,
- * administrator, or Control Centre data.
+ * Chat with RielAi. A conversational companion — it can talk about growing on
+ * holUpp, ideas, life, anything; it receives only the conversation the chat
+ * hands over, and never profile, Whisper, administrator or Control Centre data.
  */
-export async function askRielAi(question: string): Promise<RielAiAnswer> {
+export async function askRielAi(
+  question: string,
+  history?: { role: 'member' | 'riel'; text: string }[],
+): Promise<RielAiAnswer> {
   const clean = str(question, 'Question', { required: true, max: 2000 });
-  const result = await invokeFunction<RielAiAnswer & { error?: string }>('riel-ai', { question: clean });
+  const messages = (history ?? [])
+    .slice(-14)
+    .map((m) => ({ role: m.role === 'member' ? 'user' : 'assistant', content: String(m.text ?? '').slice(0, 2000) }));
+  messages.push({ role: 'user', content: clean });
+  const result = await invokeFunction<RielAiAnswer & { error?: string }>('riel-ai', { question: clean, messages });
   if (!result?.answer) throw new ApiError(502, result?.error || 'RielAi could not answer right now.');
   return { answer: result.answer, suggestReport: result.suggestReport === true, topic: result.topic };
 }

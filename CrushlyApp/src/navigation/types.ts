@@ -80,6 +80,7 @@ export type RootStackParamList = {
     | undefined;
   /** A sound: its owner, how many clips are on it, and the clips. */
   Sound: { soundId: number };
+  ShareToMoment: { postId: number; mediaUrl?: string | null; mediaKind?: 'photo' | 'video' | null; body?: string; authorName: string };
   PostViewer: { postId: number };
   /** A post with no picture: words, their comments, and a field to answer in. */
   TextPost: { postId: number };

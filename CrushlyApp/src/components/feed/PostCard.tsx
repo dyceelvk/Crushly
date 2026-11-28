@@ -30,6 +30,7 @@ import { useTrackPostView } from '../../lib/useTrackPostView';
 import { PostViews } from '../ViewersSheet';
 import { RepostAttribution } from './RepostAttribution';
 import { formatCount, spokenCount } from '../../lib/counts';
+import { SoundDisc } from '../SoundDisc';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -286,6 +287,7 @@ export function PostCard({
                 alt={`Post by ${authorName}`}
               />
             )}
+            <SoundDisc sound={p.sound} playing={active} bottom={10} right={10} />
           </View>
         ) : null}
       </Pressable>

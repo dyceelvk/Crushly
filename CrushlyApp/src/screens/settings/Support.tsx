@@ -25,7 +25,7 @@ export function RielAiScreen({ navigation }: ScreenProps<'RielAi'>) {
   const [lines, setLines] = useState<ChatLine[]>([
     {
       role: 'riel',
-      text: 'Hi, I’m RielAi. Ask me how a holUpp feature works, where to find a setting, or what to do next. I only use approved help information — I cannot see your private conversations or anyone else’s account.',
+      text: 'Hey, I’m Riel 👋 Ask me anything — how holUpp works, how to grow your Space, what to post, or just what’s on your mind. I can’t see your private stuff, so what you say here stays between us.',
     },
   ]);
 
@@ -41,7 +41,7 @@ export function RielAiScreen({ navigation }: ScreenProps<'RielAi'>) {
     setLines((current) => [...current, { role: 'member', text: question }]);
     setBusy(true);
     try {
-      const answer = await service.askRielAi(question);
+      const answer = await service.askRielAi(question, lines);
       setLines((current) => [...current, { role: 'riel', text: answer.answer, suggestReport: answer.suggestReport }]);
     } catch (error) {
       toast({ kind: 'error', title: 'RielAi is unavailable', message: error instanceof Error ? error.message : 'Try again or report the problem to support.' });
@@ -63,7 +63,7 @@ export function RielAiScreen({ navigation }: ScreenProps<'RielAi'>) {
       >
         <View style={{ padding: space.md, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
           <Txt variant="small" color="textSecondary">
-            RielAi is for product help only. It cannot access Control Centre tools, credentials, private Whispers, other members’ data, or shared administrator chats.
+            Riel is holUpp’s own AI mate — chat about anything: growth, content, dating, the app. It has no access to your private Whispers, your account details, or anyone else’s data.
           </Txt>
         </View>
         {lines.map((line, index) => (
@@ -89,10 +89,10 @@ export function RielAiScreen({ navigation }: ScreenProps<'RielAi'>) {
       </ScrollView>
       <View style={{ gap: space.sm, paddingTop: space.sm }}>
         <Input
-          label="Your question"
+          label="Your message"
           value={input}
           onChangeText={setInput}
-          placeholder="How do I change who can message me?"
+          placeholder="How do I blow up on holUpp?"
           multiline
           maxLength={2000}
           showCount
@@ -100,7 +100,7 @@ export function RielAiScreen({ navigation }: ScreenProps<'RielAi'>) {
           returnKeyType="send"
           onSubmitEditing={() => { void ask(); }}
         />
-        <Button title={busy ? 'RielAi is thinking…' : 'Ask RielAi'} icon="sparkles-outline" loading={busy} disabled={input.trim().length < 2} onPress={() => { void ask(); }} />
+        <Button title={busy ? 'Riel is typing…' : 'Send'} icon="sparkles-outline" loading={busy} disabled={input.trim().length < 2} onPress={() => { void ask(); }} />
         <Button title="Need human support?" variant="ghost" size="sm" full={false} onPress={() => navigation.navigate('Support', { source: 'riel_ai' })} />
       </View>
     </Screen>

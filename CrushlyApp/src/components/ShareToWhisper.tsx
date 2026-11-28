@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, Share, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/types';
 import { Txt } from './Txt';
 import { Avatar } from './Photo';
 import { BottomSheet } from './BottomSheet';
@@ -42,6 +45,7 @@ export function ShareToWhisper({
 }) {
   const { colors } = useTheme();
   const toast = useToast();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const list = useConversations();
   const send = useSendMessage();
   const toMoment = useSharePostToMoment();
@@ -159,13 +163,17 @@ export function ShareToWhisper({
   const shareToMoment = async () => {
     if (!post || toMoment.isPending) return;
     haptic.tap();
-    try {
-      await toMoment.mutateAsync({ postId: post.id });
-      setSharedToMoment(true);
-      toast({ kind: 'success', title: 'In your Moment', message: 'A nine-second preview, with their name under it.' });
-    } catch (e) {
-      toast({ kind: 'error', title: 'Couldn’t share it', message: (e as Error).message });
-    }
+    /* Not an instant share anymore: the editor first — preview the card, add
+       words or emoji, and the send happens there. */
+    setSharedToMoment(true);
+    onClose();
+    navigation.navigate('ShareToMoment', {
+      postId: post.id,
+      mediaUrl: post.mediaUrl ?? null,
+      mediaKind: post.mediaKind ?? null,
+      body: post.body ?? '',
+      authorName: post.author.name,
+    });
   };
 
   const save = async () => {

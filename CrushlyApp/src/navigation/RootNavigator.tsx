@@ -42,6 +42,7 @@ import { PostViewerScreen } from '../screens/flow/PostViewer';
 import { TextPostScreen } from '../screens/flow/TextPost';
 import { SavedPostsScreen } from '../screens/flow/SavedPosts';
 import { SoundScreen } from '../screens/flow/SoundScreen';
+import { ShareToMomentScreen } from '../screens/moments/ShareToMoment';
 import { MomentComposerScreen } from '../screens/moments/MomentComposer';
 import { VideoTrimScreen } from '../screens/common/VideoTrimScreen';
 import { CreatePostScreen } from '../screens/common/CreatePostScreen';
@@ -239,6 +240,7 @@ export function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="SavedPosts" component={SavedPostsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="CrushList" component={CrushesScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Sound" component={SoundScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+          <Stack.Screen name="ShareToMoment" component={ShareToMomentScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           <Stack.Screen name="Moments" component={MomentsScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
           <Stack.Screen name="Search" component={SearchScreen} options={{ animation: reduceMotion ? 'none' : 'slide_from_bottom' }} />

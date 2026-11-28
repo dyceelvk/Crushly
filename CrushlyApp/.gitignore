@@ -45,3 +45,4 @@ yarn-error.*
 # sandbox snapshot (dist/ and build/ are excluded from them).
 web-dist/
 .seo-test-dist/
+modules/*/android/build/

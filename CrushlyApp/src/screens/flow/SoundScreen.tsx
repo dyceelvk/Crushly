@@ -51,6 +51,8 @@ export function SoundScreen() {
   const query = useSoundPage(soundId);
   const sound = query.data?.sound;
   const items: Post[] = query.data?.items ?? [];
+  const stats = query.data?.stats;
+  const accounts = query.data?.accounts ?? [];
 
   // Two columns with a hairline gutter — the same rhythm the search grid uses,
   // so the app's grids read as one idea rather than three.
@@ -122,6 +124,20 @@ export function SoundScreen() {
                 <Txt style={{ fontSize: 12.5, color: noir.textMuted, marginTop: 2 }}>
                   {sound.postCount === 1 ? '1 post' : `${formatCount(sound.postCount)} posts`}
                 </Txt>
+                {stats ? (
+                  <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
+                    {([
+                      [formatCount(stats.videos), stats.videos === 1 ? 'video' : 'videos'],
+                      [formatCount(stats.accounts), stats.accounts === 1 ? 'account' : 'accounts'],
+                      [formatCount(stats.crushes), stats.crushes === 1 ? 'crush' : 'crushes'],
+                    ] as const).map(([n, label]) => (
+                      <View key={label} style={{ alignItems: 'flex-start' }}>
+                        <Txt style={{ fontFamily: fonts.bold, fontSize: 15, color: noir.text }}>{n}</Txt>
+                        <Txt style={{ fontSize: 11, color: noir.textMuted, marginTop: 1 }}>{label}</Txt>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             </View>
 
@@ -140,11 +156,41 @@ export function SoundScreen() {
             >
               <Txt style={{ fontFamily: fonts.bold, fontSize: 15, color: '#FFFFFF' }}>Use this sound</Txt>
             </Pressable>
+
+            {/* Who is on this sound: one card per account, no matter how many
+                times they used it — and the number of clips they actually made
+                with it, said plainly on the card. */}
+            {accounts.length ? (
+              <View style={{ marginTop: space.lg }}>
+                <Txt style={{ fontFamily: fonts.semibold, fontSize: 13, color: noir.textSecondary, marginBottom: space.sm }}>
+                  {accounts.length === 1 ? '1 account on this sound' : `${formatCount(accounts.length)} accounts on this sound`}
+                </Txt>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.md, paddingRight: space.md }}>
+                  {accounts.map((a) => (
+                    <Pressable
+                      key={a.author.id}
+                      onPress={() => openProfile(a.author.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${a.author.name}, ${a.videoCount} ${a.videoCount === 1 ? 'video' : 'videos'} with this sound`}
+                      style={{ width: 86, alignItems: 'center' }}
+                    >
+                      <Avatar uri={a.author.photos?.[0]?.url} name={a.author.name} size={62} ring="muted" />
+                      <Txt numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 12, color: noir.text, marginTop: 6 }}>
+                        {a.author.name}
+                      </Txt>
+                      <Txt style={{ fontSize: 11, color: noir.textMuted, marginTop: 1 }}>
+                        {a.videoCount} {a.videoCount === 1 ? 'video' : 'videos'}
+                      </Txt>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </View>
     ),
-    [insets.top, me, navigation, noir, query.isLoading, sound, useSound],
+    [accounts, insets.top, me, navigation, noir, query.isLoading, sound, stats, useSound],
   );
 
   if (query.error) {

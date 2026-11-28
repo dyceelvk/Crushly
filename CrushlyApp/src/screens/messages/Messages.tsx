@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Txt } from '../../components/Txt';
 import { useSwipeTabs } from '../../components/SwipeTabs';
+import { RielChat } from '../../components/RielChat';
 import { Input } from '../../components/Input';
 import { Avatar } from '../../components/Photo';
 import { VerifiedBadge } from '../../components/Badges';
@@ -30,7 +31,7 @@ export function MessagesScreen() {
    * the people you have chosen to keep near — which is the same question (who do
    * I talk to) and had no business being a separate room in a menu.
    */
-  const [segment, setSegment] = useState<'whispers' | 'close'>(route.params?.tab === 'close' ? 'close' : 'whispers');
+  const [segment, setSegment] = useState<'whispers' | 'rielai' | 'close'>(route.params?.tab === 'close' ? 'close' : 'whispers');
   useEffect(() => {
     if (route.params?.tab) setSegment(route.params.tab === 'close' ? 'close' : 'whispers');
   }, [route.params?.tab]);
@@ -38,7 +39,7 @@ export function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { contentWidth, gutter } = useLayout();
-  const swipe = useSwipeTabs({ options: ['whispers', 'close'] as const, value: segment, onChange: setSegment, width: contentWidth });
+  const swipe = useSwipeTabs({ options: ['whispers', 'rielai', 'close'] as const, value: segment, onChange: setSegment, width: contentWidth });
   const { data, isLoading, isError, error, refetch, isRefetching } = useConversations();
   const { data: crushes } = useCrushes();
   const open = useOpenConversation();
@@ -90,6 +91,7 @@ export function MessagesScreen() {
       <View style={{ flexDirection: 'row', gap: 8, marginTop: space.sm }}>
         {([
           ['whispers', 'Whispers'],
+          ['rielai', 'RielAi'],
           ['close', 'Homies'],
         ] as const).map(([key, label]) => {
           const on = segment === key;
@@ -132,7 +134,7 @@ export function MessagesScreen() {
       />
       ) : null}
 
-      {filteredFresh.length ? (
+      {filteredFresh.length && segment !== 'rielai' ? (
         <View style={{ marginTop: space.xl }}>
           <Txt variant="label" color="gold" style={{ marginBottom: space.sm }}>
             They added back
@@ -150,12 +152,12 @@ export function MessagesScreen() {
         </View>
       ) : null}
 
-      {filteredConvs.length ? (
+      {filteredConvs.length && segment !== 'rielai' ? (
         <Txt variant="label" color="textSecondary" style={{ marginTop: space.xl, marginBottom: space.xs }}>
           Whispers
         </Txt>
       ) : null}
-      {isLoading
+      {isLoading && segment !== 'rielai'
         ? Array.from({ length: 5 }).map((_, i) => (
             <View key={i} style={{ flexDirection: 'row', gap: 14, alignItems: 'center', paddingVertical: 12 }}>
               <Skeleton style={{ width: 56, height: 56, borderRadius: 28 }} />
@@ -168,6 +170,19 @@ export function MessagesScreen() {
         : null}
     </View>
   );
+
+  if (segment === 'rielai') {
+    return (
+      <View {...swipe.panHandlers} style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={{ paddingTop: insets.top, paddingHorizontal: gutter, width: '100%', maxWidth: contentWidth, alignSelf: 'center', flex: 1 }}>
+          {header}
+          <View style={{ flex: 1 }}>
+            <RielChat testID="riel-chat" onReport={() => navigation.navigate('Support', { source: 'riel_ai' })} />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (segment === 'close') {
     return (
