@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
   const question = String(body.question ?? history.filter((m) => m.role === 'user').pop()?.content ?? '').trim();
   if (!question) return json({ error: 'question required' }, 400);
 
-  const key = Deno.env.get('GROQ_API_KEY');
+  const key = Deno.env.get('GROQ_API_KEY') ?? Deno.env.get('GROK_KEY') ?? Deno.env.get('GROK_API_KEY');
   if (key) {
     try {
       const controller = new AbortController();
@@ -151,6 +151,10 @@ Deno.serve(async (req) => {
           messages: [
             { role: 'system', content: SYSTEM },
             ...history,
+            // The question that just came in. Earlier versions sent the history
+            // and forgot this — so Riel answered the *previous* message and the
+            // question went unanswered.
+            { role: 'user', content: question },
           ],
         }),
       });
