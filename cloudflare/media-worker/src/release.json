@@ -1,11 +1,11 @@
 {
- "version": "1.0.149",
- "versionCode": 149,
- "minVersionCode": 3,
- "file": "holUpp-1.0.149-RielOS.apk",
- "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.149/holUpp-1.0.149-RielOS.apk",
- "notes": "Search suggestions ride each clip in Flow, TikTok-style. Repost thoughts drift slowly under the reposter's name. Stickers are real GIF stickers. The crash on opening a video from the posts feed is gone, the sound disc lives only in Flow and never sits under a button, and a sound page lists only the videos that actually use it.",
- "bytes": 101942946,
- "sha256": "9adf6f8569b993f50d60c23bf969737cb2188e67c65bf4fbb876b24969f7ceb8",
- "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.149/holUpp-1.0.149-RielOS.apk"
+  "version": "1.0.150",
+  "versionCode": 150,
+  "minVersionCode": 3,
+  "file": "holUpp-1.0.150-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.150/holUpp-1.0.150-RielOS.apk",
+  "notes": "1.0.150: trend-gated search suggestions that lead to what HolUpp is actually talking about, personalised from what you do and search, the TikTok-style search line in comments, feed playback stability at the end of the list, and a polish pass on the interface.",
+  "bytes": 101942946,
+  "sha256": "9adf6f8569b993f50d60c23bf969737cb2188e67c65bf4fbb876b24969f7ceb8",
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.150/holUpp-1.0.150-RielOS.apk"
 }

@@ -103,6 +103,7 @@
       "./plugins/withLargeHeap",
       "expo-background-task",
       "./plugins/withNotificationSounds"
-    ]
+    ],
+    "versionCode": 150
   }
 }
