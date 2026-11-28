@@ -1,11 +1,11 @@
 {
-  "version": "1.0.148",
+  "version": "1.0.149",
   "versionCode": 147,
   "minVersionCode": 3,
-  "file": "holUpp-1.0.148-RielOS.apk",
-  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.148/holUpp-1.0.148-RielOS.apk",
+  "file": "holUpp-1.0.149-RielOS.apk",
+  "releaseUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.149/holUpp-1.0.149-RielOS.apk",
   "notes": "The profile page now matches the reference layout and is scaled down to fit. Videos pause with a flash when tapped, play at double speed while you hold fast-forward, and pause when you hold the picture. Riel, the HolUpp assistant, answers questions in Support. Location detection is tighter: the app learns only your region summary, never your network address, and your city is never overwritten.",
   "bytes": 101856258,
   "sha256": "b382f58a582fab93cfc195f2f3e6d6057d5df3bd96a67014040c80a30eb42719",
-  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.148/holUpp-1.0.148-RielOS.apk"
+  "publicUrl": "https://github.com/dyceelvk/holupp-releases/releases/download/android-1.0.149/holUpp-1.0.149-RielOS.apk"
 }

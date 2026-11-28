@@ -26,6 +26,32 @@ type Frame = { width: number; height: number };
  * everybody else sees. The video itself is never touched; everything here is
  * layered on top of it.
  */
+/**
+ * A caption must read against the surface it sits on. When the ink and the
+ * surface agree in lightness — dark words on a dark grade, light words on a
+ * light one — the ink flips to its positive opposite (every channel reversed),
+ * so a black caption never disappears into a dark "Noir" grade. The flip works
+ * both ways: positively readable, oppositely coloured.
+ */
+function inkLuminance(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim());
+  if (!m) return 1;
+  const n = parseInt(m[1], 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+}
+
+function oppositeInk(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim());
+  if (!m) return hex;
+  const inv = 0xffffff ^ (parseInt(m[1], 16) & 0xffffff);
+  return `#${inv.toString(16).padStart(6, '0')}`;
+}
+
+export function readableInk(ink: string, surfaceDark: boolean): string {
+  const l = inkLuminance(ink);
+  return surfaceDark ? (l < 0.45 ? oppositeInk(ink) : ink) : l > 0.62 ? oppositeInk(ink) : ink;
+}
+
 export function VideoEditCanvas({
   player,
   edit,
@@ -245,7 +271,7 @@ export function VideoEditCanvas({
             onMove={(nx, ny) => onMoveCaption?.(c.id, nx, ny)}
             beginDrag={beginDrag}
             render={() => (
-              <CaptionChip caption={c} opacity={a.opacity} scale={a.scale} frame={frame.current} />
+              <CaptionChip caption={c} opacity={a.opacity} scale={a.scale} frame={frame.current} surfaceDark={grade.veils.some((v: { color: string; opacity: number }) => inkLuminance(v.color) < 0.45 && v.opacity >= 0.15)} />
             )}
           />
         );
@@ -255,6 +281,7 @@ export function VideoEditCanvas({
 }
 
 function CaptionChip({
+  surfaceDark = false,
   caption: c,
   opacity,
   scale,
@@ -264,9 +291,12 @@ function CaptionChip({
   opacity: number;
   scale: number;
   frame: Frame;
+  /** True when the grade under the words is dark — the ink flips to read. */
+  surfaceDark?: boolean;
 }) {
   const fontSize = (frame.height || 300) * c.size;
   const plate = c.style === 'box';
+  const ink = readableInk(c.color, plate || surfaceDark === true);
   return (
     <View
       style={{
@@ -283,7 +313,7 @@ function CaptionChip({
         style={{
           fontSize,
           lineHeight: fontSize * 1.22,
-          color: c.color,
+          color: ink,
           fontWeight: c.bold ? '800' : '500',
           textAlign: 'center',
           // The outline is four offset shadows: RN has no text stroke, and this
