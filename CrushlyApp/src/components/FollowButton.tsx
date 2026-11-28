@@ -37,7 +37,7 @@ export function FollowButton({ id, name, compact = false, full = false, variant 
   const inner = (
     <>
       {busy ? <ActivityIndicator size="small" color={status ? colors.text : '#fff'} /> : status ? <Ionicons name="checkmark" size={15} color={colors.text} /> : <CrushIcon size={15} color="#fff" />}
-      <Txt variant={variant === 'hero' ? 'bodyStrong' : 'smallStrong'} style={{ color: status ? colors.text : '#fff', fontSize: variant === 'hero' ? 15.5 : undefined }}>{label}</Txt>
+        <Txt variant={variant === 'hero' ? 'bodyStrong' : 'smallStrong'} style={{ color: status ? colors.text : '#fff', fontSize: variant === 'hero' ? 14 : undefined }}>{label}</Txt>
     </>
   );
   /* `hero` is the profile mock-up's main act: a wide gradient pill that owns
@@ -50,10 +50,10 @@ export function FollowButton({ id, name, compact = false, full = false, variant 
         accessibilityLabel={`${label} ${name}`}
         disabled={busy}
         onPress={() => stats.isError ? void stats.refetch() : change.mutate()}
-        style={{ flex: 1, borderRadius: 16, overflow: 'hidden', opacity: busy ? 0.6 : 1 }}
+        style={{ flex: 1, borderRadius: 13, overflow: 'hidden', opacity: busy ? 0.6 : 1 }}
       >
         {status ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 16, backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.borderStrong }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 13, backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.borderStrong }}>
             {inner}
           </View>
         ) : (
@@ -61,7 +61,7 @@ export function FollowButton({ id, name, compact = false, full = false, variant 
             colors={[colors.primary, colors.crushDeep]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 16 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 13 }}
           >
             {inner}
           </LinearGradient>

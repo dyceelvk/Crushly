@@ -106,9 +106,10 @@ const styles = StyleSheet.create({
   },
   title: {
     ...type.title,
-    // Fraunces is the display face; the title is the one line on the page that
-    // earns it.
+    // Fraunces is the display face, and the title is the line that earns it —
+    // but at a size that stays calm beside the face row above (it was 24).
     fontFamily: fonts.display,
+    fontSize: 17,
   },
   toggle: {
     marginTop: space.sm,

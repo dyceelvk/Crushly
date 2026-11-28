@@ -111,7 +111,7 @@ function asFullProfile(me: Me, moments: MomentSummary[]): FullProfile {
 }
 
 /** Diameter of the round face beside the name, as the mock-up draws it. */
-const FACE = 104;
+const FACE = 90;
 
 /**
  * Whose Moments have been opened from their picture this session.
@@ -167,7 +167,7 @@ function Fact({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; la
  */
 export function SpaceScreen({
   memberId,
-  mine = false,
+  mine: mineProp = false,
   onBack,
 }: {
   memberId?: number;
@@ -184,6 +184,12 @@ export function SpaceScreen({
   // One query per reader, never both. `enabled` rather than a conditional hook,
   // so the ordering of hooks is the same on both paths.
   const meQ = useMe();
+  /* Your own Space is yours however you arrived: the Space tab passes mine, but
+     a shared link (?space=<you>) lands here as a visitor. Resolve it against the
+     session so the owner view — Edit Profile, your empty copy, the owner menu —
+     is what renders, instead of a visitor view whose Add Up button refuses to
+     draw (you cannot follow yourself). */
+  const mine = mineProp || (meQ.data?.id != null && meQ.data.id === id);
   const otherQ = useUser(id, !mine);
   const query = mine ? meQ : otherQ;
 
@@ -492,27 +498,69 @@ export function SpaceScreen({
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md, marginTop: space.xs }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1, fontSize: 24 }}>
+                <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1, fontSize: 21 }}>
                   {p.name}
                 </Txt>
-                <VerifiedBadge size={18} tier={p.badgeTier ?? (p.verified ? 'verified' : 'none')} />
+                <VerifiedBadge size={16} tier={p.badgeTier ?? (p.verified ? 'verified' : 'none')} />
               </View>
-              {p.username ? (
-                <Txt variant="small" color="textSecondary" numberOfLines={1} style={{ marginTop: 2 }}>
-                  @{p.username}
+              {p.username || p.pronouns ? (
+                <Txt variant="small" color="textSecondary" numberOfLines={1} style={{ marginTop: 1, fontSize: 11.5 }}>
+                  {[p.username ? `@${p.username}` : '', p.pronouns ?? ''].filter(Boolean).join(' · ')}
                 </Txt>
               ) : null}
-              {p.pronouns ? (
-                <Txt variant="small" color="textMuted" numberOfLines={1} style={{ marginTop: 1 }}>
-                  {p.pronouns}
-                </Txt>
+              {/* The numbers: Add Ups, Added Up and Likes — each its own door —
+                  on one light row beside the face. All Round Likes is posts +
+                  Moments + comments, falling back to post likes on backends
+                  without the wider count. */}
+              {relationship.data ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 6, paddingVertical: 5, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border }}>
+                  <Pressable
+                    style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
+                    onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}
+                  >
+                    <Txt variant="bodyStrong" style={{ fontSize: 15 }}>{formatCount(relationship.data.addUps)}</Txt>
+                    <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 9.5, marginTop: 1 }}>Add Ups</Txt>
+                  </Pressable>
+                  <View style={{ width: 1, height: 20, backgroundColor: colors.border }} />
+                  {typeof relationship.data.addedUp === 'number' ? (
+                    <Pressable
+                      style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
+                      onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}
+                    >
+                      <Txt variant="bodyStrong" style={{ fontSize: 15 }}>{formatCount(relationship.data.addedUp)}</Txt>
+                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 9.5, marginTop: 1 }}>Added Up</Txt>
+                    </Pressable>
+                  ) : null}
+                  <View style={{ width: 1, height: 20, backgroundColor: colors.border }} />
+                  {typeof (relationship.data.allRoundLikes ?? relationship.data.postLikes) === 'number' ? (
+                    <View
+                      style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
+                      accessibilityLabel={
+                        typeof relationship.data.allRoundLikes === 'number'
+                          ? `${relationship.data.allRoundLikes} likes received across posts, Moments and comments`
+                          : `${relationship.data.postLikes} post likes`
+                      }
+                    >
+                      <Txt variant="bodyStrong" style={{ fontSize: 15 }}>{formatCount((relationship.data.allRoundLikes ?? relationship.data.postLikes)!)}</Txt>
+                      <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 9.5, marginTop: 1 }}>Likes</Txt>
+                    </View>
+                  ) : null}
+                </View>
+              ) : relationship.isError ? (
+                <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()} style={{ marginTop: 6 }}>
+                  <Txt variant="small" color="textSecondary">Tap to retry</Txt>
+                </Pressable>
               ) : null}
               {p.bio ? (
-                <View style={{ marginTop: space.sm }}>
-                  <Txt variant="body" numberOfLines={showFullBio ? undefined : 3}><LinkText text={p.bio} bare /></Txt>
+                <View style={{ marginTop: 6 }}>
+                  <Txt variant="body" numberOfLines={showFullBio ? undefined : 2} style={{ fontSize: 12.5, lineHeight: 17 }}><LinkText text={p.bio} bare /></Txt>
                   {p.bio.length > 80 ? (
                     <Pressable onPress={() => setShowFullBio((open) => !open)} accessibilityRole="button" accessibilityLabel={showFullBio ? 'Show less bio' : 'Show full bio'}>
-                      <Txt variant="small" color="gold">{showFullBio ? 'Show less' : 'Show more'}</Txt>
+                      <Txt variant="small" color="gold" style={{ fontSize: 11 }}>{showFullBio ? 'Show less' : 'Show more'}</Txt>
                     </Pressable>
                   ) : null}
                 </View>
@@ -548,60 +596,8 @@ export function SpaceScreen({
             </Pressable>
           </View>
 
-          {/* ── The numbers ─────────────────────────────────────────────────
-              Three, as the mock-up draws them: Add Ups, Added Up and Likes,
-              each its own door (the Likes number explains itself in About),
-              spread across the row with hairlines between. The Homies count
-              lives beside the Homie pill below, and who opened the Space lives
-              behind the eye at the top — so the row stays three clean columns.
-
-              All Round Likes: posts + Moments + comments. On a backend older
-              than the one that counts all three the field is absent and this
-              falls back to post likes, so the row is never empty and never
-              claims a number it cannot back. */}
-          {relationship.data ? (
-            <View style={{ flexDirection: 'row', alignItems: 'stretch', marginTop: space.lg, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <Pressable
-                style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
-                onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addUps'); }}
-                accessibilityRole="button"
-                accessibilityLabel={`${relationship.data.addUps} Add Ups. View people`}
-              >
-                <Txt variant="bodyStrong" style={{ fontSize: 19 }}>{formatCount(relationship.data.addUps)}</Txt>
-                <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 11, marginTop: 2 }}>Add Ups</Txt>
-              </Pressable>
-              <View style={{ width: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-              {typeof relationship.data.addedUp === 'number' ? (
-                <Pressable
-                  style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
-                  onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('addedUp'); }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${relationship.data.addedUp} Added Up. View people`}
-                >
-                  <Txt variant="bodyStrong" style={{ fontSize: 19 }}>{formatCount(relationship.data.addedUp)}</Txt>
-                  <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 11, marginTop: 2 }}>Added Up</Txt>
-                </Pressable>
-              ) : null}
-              <View style={{ width: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-              {typeof (relationship.data.allRoundLikes ?? relationship.data.postLikes) === 'number' ? (
-                <View
-                  style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
-                  accessibilityLabel={
-                    typeof relationship.data.allRoundLikes === 'number'
-                      ? `${relationship.data.allRoundLikes} likes received across posts, Moments and comments`
-                      : `${relationship.data.postLikes} post likes`
-                  }
-                >
-                  <Txt variant="bodyStrong" style={{ fontSize: 19 }}>{formatCount((relationship.data.allRoundLikes ?? relationship.data.postLikes)!)}</Txt>
-                  <Txt variant="caption" color="textSecondary" numberOfLines={1} style={{ fontSize: 11, marginTop: 2 }}>Likes</Txt>
-                </View>
-              ) : null}
-            </View>
-          ) : relationship.isError ? (
-            <Pressable accessibilityRole="button" onPress={() => void relationship.refetch()} style={{ marginTop: space.lg }}>
-              <Txt variant="small" color="textSecondary">Tap to retry</Txt>
-            </Pressable>
-          ) : null}
+          {/* The numbers live in the identity block now: beside the face, under
+              the name — the mock-up's compact row, not a band across the page. */}
 
           {/* ── One action row ───────────────────────────────────────────────
               The mock-up's row: the main act as a wide rounded button, and one
@@ -615,25 +611,25 @@ export function SpaceScreen({
                 onPress={() => navigation.navigate('EditProfile')}
                 accessibilityRole="button"
                 accessibilityLabel="Edit your profile"
-                style={{ flex: 1, backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 16, paddingVertical: 15, alignItems: 'center' }}
+                style={{ flex: 1, backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 13, paddingVertical: 12, alignItems: 'center' }}
               >
-                <Txt variant="bodyStrong" style={{ fontSize: 15.5 }}>Edit Profile</Txt>
+                <Txt variant="bodyStrong" style={{ fontSize: 14 }}>Edit Profile</Txt>
               </Pressable>
             ) : p.crush.mutual ? (
               <Pressable
                 onPress={message}
                 accessibilityRole="button"
                 accessibilityLabel={`Whisper ${p.name}`}
-                style={{ flex: 1, borderRadius: 16, overflow: 'hidden' }}
+                style={{ flex: 1, borderRadius: 13, overflow: 'hidden' }}
               >
                 <LinearGradient
                   colors={[colors.primary, colors.crushDeep]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 16 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 13 }}
                 >
-                  <Ionicons name="chatbubble-outline" size={17} color="#fff" />
-                  <Txt variant="bodyStrong" style={{ color: '#fff', fontSize: 15.5 }}>Whisper</Txt>
+                  <Ionicons name="chatbubble-outline" size={16} color="#fff" />
+                  <Txt variant="bodyStrong" style={{ color: '#fff', fontSize: 14 }}>Whisper</Txt>
                 </LinearGradient>
               </Pressable>
             ) : (
@@ -664,7 +660,7 @@ export function SpaceScreen({
                 onPress={() => { setListOpenSequence(n => n + 1); setRelationshipList('keptClose'); }}
                 accessibilityRole="button"
                 accessibilityLabel="Your Homies. View people"
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.card }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.card }}
               >
                 <Ionicons name="people" size={15} color={colors.text} />
                 <Txt variant="smallStrong">Homie</Txt>

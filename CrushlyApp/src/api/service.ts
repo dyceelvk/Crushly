@@ -24,7 +24,7 @@ import {
 } from './client';
 import { backendFromProbe, isMissingFunctionError } from '../lib/relationshipFallback';
 import { callMessageMeta } from '../lib/callChannel';
-import { MEDIA_BASE_URL } from '../lib/mediaHost';
+import { MEDIA_BASE_URL, isVideoPath } from '../lib/mediaHost';
 import { ageFromBirthdate } from '../lib/format';
 import { clampMemberAge, isMemberAgeEligible, MINIMUM_MEMBER_AGE } from '../lib/minimumAge';
 import { MOMENT_CLIP_SECONDS } from '../lib/momentClip';
@@ -75,11 +75,32 @@ const unwrap = <T>(res: { data: T | null; error: unknown }): T => {
   return res.data as T;
 };
 
+/**
+ * Clips are labelled by the payload's `mediaKind`, and one bad regex in
+ * `post_feed_payload` labelled every mp4 a photo — the feed then drew a video
+ * with an image decoder and showed an empty box. The database is fixed, but a
+ * client must not trust a label it can check: an object carrying a media URL
+ * whose path says clip becomes a clip here, whatever the payload claimed.
+ */
+function fixClipKinds(value: unknown, depth = 0): void {
+  if (!value || typeof value !== 'object' || depth > 6) return;
+  if (Array.isArray(value)) {
+    for (const item of value) fixClipKinds(item, depth + 1);
+    return;
+  }
+  const rec = value as Record<string, unknown>;
+  if (typeof rec.mediaUrl === 'string' && 'mediaKind' in rec && rec.mediaKind !== 'video' && isVideoPath(rec.mediaUrl)) {
+    rec.mediaKind = 'video';
+  }
+  for (const item of Object.values(rec)) fixClipKinds(item, depth + 1);
+}
+
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   requireConfig();
   try {
     const { data, error } = await supabase.rpc(fn, args);
     if (error) throw toApiError(error);
+    fixClipKinds(data);
     return data as T;
   } catch (e) {
     throw e instanceof ApiError ? e : toApiError(e);
