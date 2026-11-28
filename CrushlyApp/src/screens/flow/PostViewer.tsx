@@ -49,6 +49,8 @@ import type { Post, ReactionKind } from '../../api/types';
 import { REACTION_KINDS } from '../../api/types';
 import { EditedClip } from '../../components/EditedClip';
 import { SoundDisc } from '../../components/SoundDisc';
+import { Float } from '../../components/Float';
+import { useFlowSuggestions } from '../../api/hooks';
 import { mediaUrl } from '../../api/client';
 import { mediaSource } from '../../lib/mediaHost';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -632,6 +634,8 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
 
   const covered = commentsOpen || shareOpen || moreOpen || editOpen || confirmDelete;
   const playing = active && !covered;
+  const suggestions = useFlowSuggestions();
+  const suggestTerm = suggestions.find((sp) => sp.postId === post.id)?.term ?? null;
   const kinds = post.reactionKinds ?? {};
   const totalReactions = (Object.values(kinds) as number[]).reduce((a, b) => a + b, 0) || post.likeCount;
   const topKinds = REACTION_KINDS.filter((k) => (kinds[k] ?? 0) > 0).slice(0, 3);
@@ -712,6 +716,17 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
         {/* The spinning record: the sound this clip is under, at the thumb's
             corner, turning while the picture moves. */}
         <SoundDisc sound={post.sound} playing={playing} bottom={150} right={16} />
+        {suggestTerm ? (
+          <Pressable
+            onPress={() => navigation.navigate('Search', { q: suggestTerm })}
+            accessibilityRole="button"
+            accessibilityLabel={`Search for ${suggestTerm}`}
+            style={{ position: 'absolute', top: insets.top + 56, right: 16, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(10,10,12,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', maxWidth: 180 }}
+          >
+            <Ionicons name="search" size={12} color="#FFFFFF" />
+            <Txt variant="caption" color="#FFFFFF" numberOfLines={1}>{suggestTerm}</Txt>
+          </Pressable>
+        ) : null}
       </Pressable>
 
       {/* Scrims so the words are readable over any frame. */}
@@ -879,6 +894,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
 
         {/* Who reacted, and with what — the count becomes a breakdown. */}
         {topKinds.length > 0 ? (
+          <Float distance={2.5} duration={3800}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, marginTop: 10 }}>
             {/* Overlapping discs with the app's own icon set in them. The emoji
                 version sat next to an Ionicons heart in the rail and read as two
@@ -903,6 +919,7 @@ function PostViewerPage({ postId, navigation, active, fallback }: { postId: numb
               {formatCount(totalReactions)} reacted
             </Txt>
           </View>
+          </Float>
         ) : null}
 
         {post.edit?.look?.music ? (

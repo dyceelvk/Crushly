@@ -12,10 +12,9 @@ import { Button } from '../../components/Button';
 import { PostCard } from '../../components/feed/PostCard';
 import { CrushClipCard } from '../../components/feed/CrushClipCard';
 import { MomentCircles } from '../../components/MomentCircle';
-import { FlowSuggestBox } from '../../components/FlowSuggestBox';
 import { Measured, useFeedFocus } from '../../components/feed/FeedFocus';
 import { useLayout } from '../../components/Layout';
-import { useCrushesFeed } from '../../api/hooks';
+import { useCrushesFeed, useFlowSuggestions } from '../../api/hooks';
 import { shownPosts } from '../../lib/features';
 import { space } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -56,6 +55,8 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
   const insets = useSafeAreaInsets();
   const { contentWidth } = useLayout();
   const feed = useCrushesFeed();
+  const suggestions = useFlowSuggestions();
+  const suggestMap = new Map(suggestions.map((s) => [s.postId, s.term]));
   // Which card is in front of the reader — the only one whose clip plays.
   const focus = useFeedFocus();
 
@@ -163,8 +164,6 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
       stickyHeaderIndices={[0]}
       ListHeaderComponent={
         <View style={{ marginHorizontal: -space.md, backgroundColor: colors.bg }}>
-          {/* The box line: terms the week keeps using, sliding one to the next. */}
-          <FlowSuggestBox />
           {/* Smaller than a profile row's 74 dp: this is a strip of faces above a
               column of posts, not the posts' equal. See MomentCircle. */}
           <MomentCircles size={58} />
@@ -175,7 +174,7 @@ export function CrushesFeed({ embedded = true }: { embedded?: boolean }) {
           {/* A clip is the card; a photograph and a written post keep the card
               they were designed for. See CrushClipCard. */}
           {item.mediaKind === 'video' && item.mediaUrl ? (
-            <CrushClipCard post={item} active={item.id === focus.activeId} />
+            <CrushClipCard post={item} active={item.id === focus.activeId} suggest={suggestMap.get(item.id) ?? null} />
           ) : (
             <PostCard post={item} active={item.id === focus.activeId} />
           )}

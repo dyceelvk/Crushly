@@ -44,7 +44,7 @@ import type { RootStackParamList } from '../../navigation/types';
  * Other actions such as picking and the full post are available in Flow: tapping the
  * picture opens the post, where the full rail lives.
  */
-export function CrushClipCard({ post, active }: { post: Post; active: boolean }) {
+export function CrushClipCard({ post, active, suggest }: { post: Post; active: boolean; suggest?: string | null }) {
   useTrackPostView(post.id, active, post.mine);
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -70,6 +70,21 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
 
   return (
     <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
+      {/* What is trending around this clip, right now — one term per video,
+          above the picture. It is a door into Search, not a caption. */}
+      {suggest ? (
+        <Pressable
+          onPress={() => navigation.navigate('Search', { q: suggest })}
+          accessibilityRole="button"
+          accessibilityLabel={`Search for ${suggest}`}
+          style={{ position: 'absolute', top: 10, left: 10, zIndex: 20, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(10,10,12,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', maxWidth: '58%' }}
+        >
+          <Ionicons name="search" size={12} color="#FFFFFF" />
+          <Txt variant="caption" color="#FFFFFF" numberOfLines={1}>
+            {suggest}
+          </Txt>
+        </Pressable>
+      ) : null}
       <Pressable
         onPress={open}
         accessibilityRole="button"
@@ -153,7 +168,9 @@ export function CrushClipCard({ post, active }: { post: Post; active: boolean })
             </Txt>
           ) : null}
 
-          <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: space.sm, paddingRight: 84 }}>
+          {/* flexWrap so the controls step to a second line instead of ever
+              running under the sound disc's corner. */}
+          <View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.lg, marginTop: space.sm, paddingRight: 96 }}>
             {/* Same control as Flow: the holUpp mark at rest, filled once you
                 have crushed, and a hold that floats the seven faces. It was a
                 heart here, which is the one shape the owner has rejected. */}

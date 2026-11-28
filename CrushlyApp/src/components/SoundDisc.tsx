@@ -63,7 +63,7 @@ export function SoundDisc({
       accessibilityRole="button"
       accessibilityLabel={`Open sound: ${sound.title}`}
       hitSlop={8}
-      style={{ position: 'absolute', bottom, right, width: size, height: size }}
+      style={{ position: 'absolute', bottom, right, width: size, height: size, zIndex: 30 }}
     >
       <Animated.View
         style={{

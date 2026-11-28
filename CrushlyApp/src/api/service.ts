@@ -1364,9 +1364,12 @@ export async function setRepostThought(postId: number, thought: string): Promise
   return rpc('set_repost_thought', { p_post_id: postId, p_thought: thought });
 }
 
-/** Terms the week's posts and comments keep using — the box line's slideshow. */
-export async function flowSuggest(limit = 8): Promise<{ term: string }[]> {
-  return rpc<{ term: string }[]>('flow_suggestions', { p_limit: limit });
+/** What each video is about right now — one trending term per post. */
+export type FlowSuggestion = { postId: number; term: string };
+
+/** Terms the week's posts and comments keep using — one per video. */
+export async function flowSuggest(limit = 24): Promise<FlowSuggestion[]> {
+  return rpc<FlowSuggestion[]>('flow_suggestions', { p_limit: limit });
 }
 
 /** Keep this chat for good: without a backup, its messages expire at 30 days. */

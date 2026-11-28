@@ -21,7 +21,9 @@ import { LinkText } from '../LinkText';
 import { useToast } from '../Toast';
 import { Suggestions } from '../Suggestions';
 import { useMentionInput } from '../useMentionInput';
-import { STICKERS, stickerBody, stickerGlyph } from '../../lib/stickers';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'react-native';
+import { STICKERS, stickerBody, stickerSource } from '../../lib/stickers';
 import { DeleteSheet } from '../DeleteSheet';
 import { useProfileTap } from '../../lib/useProfileTap';
 import {
@@ -294,10 +296,8 @@ export function CommentsSheet({
               marginTop: 3,
             }}
           >
-            {comment.hidden ? 'This comment was removed.' : stickerGlyph(comment.body) ? (
-              <Txt accessibilityLabel="Sticker" style={{ fontSize: 42, lineHeight: 52 }}>
-                {stickerGlyph(comment.body)}
-              </Txt>
+            {comment.hidden ? 'This comment was removed.' : stickerSource(comment.body) ? (
+              <Image accessibilityLabel="Sticker" source={stickerSource(comment.body)!} style={{ width: 112, height: 112 }} resizeMode="contain" />
             ) : (
               <LinkText text={comment.body} bare onBeforeOpenLink={onClose} />
             )}
@@ -532,7 +532,7 @@ export function CommentsSheet({
                       accessibilityLabel={`Send ${s.name} sticker`}
                       style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: NOIR.field }}
                     >
-                      <Txt style={{ fontSize: 24 }}>{s.glyph}</Txt>
+                      <Image source={s.source} style={{ width: 40, height: 40 }} resizeMode="contain" accessibilityLabel={`${s.name} sticker`} />
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -592,7 +592,7 @@ export function CommentsSheet({
                     accessibilityState={{ expanded: stickerOpen }}
                     style={{ width: 34, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Ionicons name="pricetag-outline" size={19} color={stickerOpen ? NOIR.accent : NOIR.secondary} />
+                    <MaterialCommunityIcons name="sticker-emoji" size={23} color={stickerOpen ? NOIR.accent : NOIR.secondary} />
                   </Pressable>
                 </View>
 

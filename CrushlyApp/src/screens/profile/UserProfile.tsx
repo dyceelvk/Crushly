@@ -471,7 +471,6 @@ export function SpaceScreen({
             cover at all — the wash is the backdrop — so a Space without a
             banner starts straight on the name, with no empty band and no hard
             line across the gradient. */}
-        {hasBanner || bannerPending ? (
         <View style={{ width: heroW, height: heroH, alignSelf: 'center', position: 'relative', overflow: 'hidden', backgroundColor: '#0A0710' }}>
           {bannerPending ? (
             <Skeleton style={{ width: heroW, height: heroH, borderRadius: 0 }} />
@@ -480,11 +479,20 @@ export function SpaceScreen({
               <Image source={mediaSource(mediaUrl(bannerUrl))} style={{ width: heroW, height: heroH }} contentFit="cover" cachePolicy="none" accessibilityLabel={`${p.name}’s Space banner`} />
               <LinearGradient pointerEvents="none" colors={[`${colors.bg}00`, `${colors.bg}18`, `${colors.bg}85`, colors.bg]} locations={[0, 0.32, 0.72, 1]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: Math.min(heroH * 0.48, 150) }} />
             </>
-          ) : null}
+          ) : hasBanner ? null : (
+            <LinearGradient
+              colors={
+                colors.scheme === 'dark'
+                  ? ['rgba(122,64,140,0.85)', 'rgba(140,80,170,0.55)', 'rgba(237,89,175,0.32)', 'rgba(11,7,12,0.10)']
+                  : ['rgba(255,170,150,0.92)', 'rgba(255,159,197,0.72)', 'rgba(214,168,240,0.52)', 'rgba(255,248,248,0.12)']
+              }
+              locations={[0, 0.35, 0.7, 1]}
+              style={{ width: '100%', height: '100%' }}
+            />
+          )}
         </View>
-        ) : null}
 
-        <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter, paddingTop: hasBanner || bannerPending ? space.sm : insets.top + 64 }}>
+        <View style={{ width: '100%', maxWidth: contentWidth, alignSelf: 'center', paddingHorizontal: gutter, paddingTop: space.sm }}>
           {/* ── The identity block ───────────────────────────────────────────
               The mock-up's arrangement: the words own the left of the row —
               name, handle, pronouns, bio — and the face sits on the right,
@@ -495,7 +503,7 @@ export function SpaceScreen({
               Moments behind it — so the ring keeps its meaning: coloured when
               there is something unwatched, quiet once watched, absent when
               there is nothing to open. */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md, marginTop: space.xs }}>
+          <View style={{ flexDirection: 'column-reverse', alignItems: 'flex-start', gap: space.md, marginTop: -52 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1, fontSize: 21 }}>

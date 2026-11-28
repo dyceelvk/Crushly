@@ -548,8 +548,8 @@ export function useFlow(limit = 20) {
  * `keys.flow` is shared with the timeline hook on purpose: posting a post
  * invalidates both, so a new post appears at the top of whichever feed is open.
  */
-/** What the week is talking about — terms for the box line above the videos. */
-export function useFlowSuggestions(): { term: string }[] {
+/** What the week is talking about — one trending term per video. */
+export function useFlowSuggestions(): { postId: number; term: string }[] {
   const query = useQuery({
     queryKey: ['flowSuggestions'],
     queryFn: () => service.flowSuggest(),
