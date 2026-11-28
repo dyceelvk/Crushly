@@ -1,6 +1,20 @@
 name: Mirror current Android release
 on:
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run id whose APK artifact to mirror'
+        required: true
+        type: string
+      artifact:
+        description: 'Artifact name to download'
+        required: false
+        type: string
+        default: holUpp-rotated-unreleased-candidate
+      version:
+        description: 'Version to mirror (must match release.json)'
+        required: true
+        type: string
 permissions:
   contents: read
   actions: read
@@ -12,18 +26,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: Crushly-Android-test-APK
-          run-id: 42468784802
+          name: ${{ inputs.artifact }}
+          run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
           path: mirror-apk
-      - name: Verify and mirror published 1.0.81
+      - name: Verify against release.json and mirror
         env:
           B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
         run: |
           set -euo pipefail
-          p=$(find mirror-apk -name 'Crushly-1.0.81-Android9plus.apk' | head -1)
-          test -n "$p"
-          test "$(sha256sum "$p" | cut -d' ' -f1)" = ea24264e8ad48de58050b35c095ce119688a630d105e782cd779304ff053ee68
+          p=$(find mirror-apk -name '*.apk' | head -1)
+          test -n "$p" || { echo "::error::no APK in run ${{ inputs.run_id }}"; exit 1; }
+          python3 - "$p" <<'PY'
+          import hashlib, json, sys
+          p = sys.argv[1]
+          r = json.load(open('cloudflare/media-worker/src/release.json'))
+          data = open(p, 'rb').read()
+          sha = hashlib.sha256(data).hexdigest()
+          ok = r.get('version') == '${{ inputs.version }}' and sha == r.get('sha256') and len(data) == r.get('bytes')
+          print('release.json matches:' if ok else 'MISMATCH:', r.get('version'), sha, len(data))
+          sys.exit(0 if ok else 1)
+          PY
           python3 .github/scripts/mirror-android-apk.py "$p"
