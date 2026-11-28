@@ -1359,6 +1359,11 @@ export async function postReposters(postId: number, limit = 50): Promise<Reposte
   return rpc<Reposter[]>('post_reposters', { p_post_id: postId, p_limit: limit });
 }
 
+/** Your repost, your thought. Repost first; the thought rides under the label. */
+export async function setRepostThought(postId: number, thought: string): Promise<unknown> {
+  return rpc('set_repost_thought', { p_post_id: postId, p_thought: thought });
+}
+
 /** Terms the week's posts and comments keep using — the box line's slideshow. */
 export async function flowSuggest(limit = 8): Promise<{ term: string }[]> {
   return rpc<{ term: string }[]>('flow_suggestions', { p_limit: limit });

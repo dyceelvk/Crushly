@@ -637,6 +637,19 @@ export function SpaceScreen({
                 <FollowButton id={p.id} name={p.name} variant="hero" />
               </View>
             )}
+            {/* The bubble the members asked for: Whisper, right here beside
+                share — not only inside the three-dots menu. */}
+            {!mine ? (
+              <IconButton
+                icon="chatbubble-outline"
+                size={52}
+                iconSize={22}
+                variant="surface"
+                label={`Whisper ${p.name}`}
+                onPress={message}
+                style={{ borderRadius: 16 }}
+              />
+            ) : null}
             <IconButton
               icon="share-outline"
               size={52}

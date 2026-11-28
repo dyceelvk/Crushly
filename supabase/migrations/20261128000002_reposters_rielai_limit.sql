@@ -114,3 +114,23 @@ begin
   end loop;
   return v;
 end $fn$;
+
+-- Repost thoughts: what the reposter says rides under the label, not as a
+-- caption and not as a comment.
+alter table public.post_reposts add column if not exists thought text;
+create or replace function public.set_repost_thought(p_post_id bigint, p_thought text)
+returns jsonb language plpgsql security definer set search_path to 'public' as $fn$
+declare
+  me bigint := public.me_id();
+  v text := left(btrim(coalesce(p_thought, '')), 240);
+begin
+  if me is null then
+    perform public.crushly_fail(401, 'unauthorized', 'Please sign in again.');
+  end if;
+  update public.post_reposts set thought = nullif(v, '')
+   where original_post_id = p_post_id and reposter_id = me;
+  if not found then
+    perform public.crushly_fail(404, 'not_your_repost', 'Repost this first, then add your thought.');
+  end if;
+  return jsonb_build_object('postId', p_post_id, 'thought', nullif(v, ''));
+end $fn$;

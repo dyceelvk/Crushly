@@ -1419,6 +1419,8 @@ export function useSendMessage() {
  * failure mode for a Whisper. It is a safety net, not the mechanism: while the
  * channel is live, new messages land in well under a second.
  */
+import { loadCachedMessages, mergeCached, saveCachedMessages, tombstoneMessage } from '../lib/chatStore';
+
 export function useChat(conversationId: number) {
   const qc = useQueryClient();
   const { data: me } = useMe();
@@ -1495,8 +1497,10 @@ export function useChat(conversationId: number) {
     setLoading(true);
     setError(null);
     try {
+      const cached = await loadCachedMessages<Message>(me?.id ?? null, conversationId);
+      if (cached.length) setMessages(cached);
       const res = await service.getMessages(conversationId, { limit: 40 });
-      setMessages(res.items);
+      setMessages(mergeCached(cached, res.items));
       setHasMore(res.hasMore);
       lastIdRef.current = res.items.length ? res.items[res.items.length - 1].id : 0;
       void markDelivered(lastIdRef.current);
@@ -1506,11 +1510,18 @@ export function useChat(conversationId: number) {
     } finally {
       setLoading(false);
     }
-  }, [conversationId, markDelivered, markRead]);
+  }, [conversationId, markDelivered, markRead, me?.id]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  /* The phone's copy, kept in step — what "messages don't expire on the APK"
+     actually means: they live here until the app goes or another phone signs
+     in, and the server is only the relay. */
+  useEffect(() => {
+    void saveCachedMessages(me?.id ?? null, conversationId, messages);
+  }, [messages, conversationId, me?.id]);
 
   /** One incremental fetch. Used by the channel, the poll and the reconnect. */
   const catchUp = useCallback(async () => {
@@ -1739,7 +1750,12 @@ export function useChat(conversationId: number) {
     loadingMore,
     send,
     discard,
-    remove,
+    remove: async (id: number) => {
+      // Deleted means deleted: tombstone the id so no cached copy can ever
+      // bring it back.
+      await tombstoneMessage(me?.id ?? null, conversationId, id);
+      return remove(id);
+    },
     react,
     typing,
     recording,

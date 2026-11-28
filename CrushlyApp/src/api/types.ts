@@ -134,6 +134,8 @@ export type Post = {
   repostCount?: number;
   /** The member whose repost distributed this original into the current surface. */
   repostedBy?: Profile | null;
+  /** The thought riding under the latest repost — a repost thought, not a caption. */
+  repostThought?: string | null;
   /** When that distribution relationship was created; the post's createdAt remains original. */
   repostedAt?: number | null;
   /** The sound this clip is under, when it has one. */
@@ -176,10 +178,11 @@ export type SoundAccount = {
   videoCount: number;
 };
 
-/** One person who reposted a post, with the moment they did. */
+/** One person who reposted a post, with the moment they did — and their thought. */
 export type Reposter = {
   author: Profile;
   at: number;
+  thought?: string | null;
 };
 
 /** One page of a sound: who owns it, how much is on it, and the clips you may see. */

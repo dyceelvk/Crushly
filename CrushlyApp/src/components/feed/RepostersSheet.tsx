@@ -79,6 +79,11 @@ export function RepostersSheet({
                 <Txt variant="bodyStrong" numberOfLines={1}>
                   {r.author.name}
                 </Txt>
+                {r.thought ? (
+                  <Txt variant="caption" color="textSecondary" numberOfLines={2} style={{ fontStyle: 'italic' }}>
+                    💬 {r.thought}
+                  </Txt>
+                ) : null}
                 <Txt variant="caption" color="textMuted">
                   {timeAgo(r.at)}
                 </Txt>

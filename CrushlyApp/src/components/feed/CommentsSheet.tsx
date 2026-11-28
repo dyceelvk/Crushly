@@ -21,6 +21,7 @@ import { LinkText } from '../LinkText';
 import { useToast } from '../Toast';
 import { Suggestions } from '../Suggestions';
 import { useMentionInput } from '../useMentionInput';
+import { STICKERS, stickerBody, stickerGlyph } from '../../lib/stickers';
 import { DeleteSheet } from '../DeleteSheet';
 import { useProfileTap } from '../../lib/useProfileTap';
 import {
@@ -165,6 +166,22 @@ export function CommentsSheet({
 
   const postAuthorId = post?.author.id;
 
+  /* Stickers are ours, not the members': one shelf, one tap, no uploads. */
+  const [stickerOpen, setStickerOpen] = useState(false);
+  const sendSticker = useCallback(async (code: string) => {
+    if (sending || !canComment) return;
+    setSending(true);
+    try {
+      await send.mutateAsync({ body: stickerBody(code), parentId: replyTo?.id ?? null });
+      setReplyTo(null);
+      setStickerOpen(false);
+    } catch (error) {
+      toast({ kind: 'error', title: 'Sticker not sent', message: (error as Error).message });
+    } finally {
+      setSending(false);
+    }
+  }, [sending, canComment, send, replyTo, toast]);
+
   const submit = useCallback(async () => {
     const body = draft.trim();
     if (!body || sending || !canComment) return;
@@ -277,7 +294,13 @@ export function CommentsSheet({
               marginTop: 3,
             }}
           >
-            {comment.hidden ? 'This comment was removed.' : <LinkText text={comment.body} bare onBeforeOpenLink={onClose} />}
+            {comment.hidden ? 'This comment was removed.' : stickerGlyph(comment.body) ? (
+              <Txt accessibilityLabel="Sticker" style={{ fontSize: 42, lineHeight: 52 }}>
+                {stickerGlyph(comment.body)}
+              </Txt>
+            ) : (
+              <LinkText text={comment.body} bare onBeforeOpenLink={onClose} />
+            )}
           </Txt>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 7 }}>
@@ -499,6 +522,22 @@ export function CommentsSheet({
                 </View>
               ) : null}
 
+              {stickerOpen ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 8, alignItems: 'center' }}>
+                  {STICKERS.map((s) => (
+                    <Pressable
+                      key={s.code}
+                      onPress={() => void sendSticker(s.code)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Send ${s.name} sticker`}
+                      style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: NOIR.field }}
+                    >
+                      <Txt style={{ fontSize: 24 }}>{s.glyph}</Txt>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 16, paddingTop: 10 }}>
                 <Avatar uri={me?.profile?.photos?.[0]?.url} name={me?.profile?.name ?? 'You'} size={34} />
                 <View
@@ -545,6 +584,15 @@ export function CommentsSheet({
                     style={{ width: 34, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <Ionicons name="happy-outline" size={20} color={emojiOpen ? NOIR.accent : NOIR.secondary} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setStickerOpen((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Stickers"
+                    accessibilityState={{ expanded: stickerOpen }}
+                    style={{ width: 34, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Ionicons name="pricetag-outline" size={19} color={stickerOpen ? NOIR.accent : NOIR.secondary} />
                   </Pressable>
                 </View>
 
