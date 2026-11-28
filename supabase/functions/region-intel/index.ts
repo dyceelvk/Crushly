@@ -200,7 +200,7 @@ Deno.serve(async (req, info) => {
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
   const { data: profile } = await admin
-    .from('profiles').select('id, country_code, country_source').eq('auth_user_id', user.id).maybeSingle();
+    .from('profiles').select('id, country_code, country_source, city').eq('auth_user_id', user.id).maybeSingle();
   if (!profile) return json({ error: 'profile not found' }, 404);
 
   const { data: role } = await admin.rpc('holup_admin_role');
@@ -391,8 +391,13 @@ Deno.serve(async (req, info) => {
   if (detected) {
     const source = profile.country_source ?? null;
     if (!profile.country_code || source === 'inferred' || source === null) {
+      /* A city the member typed stands. The IP's city only fills an empty
+         field — detection updates the country, and never replaces what a
+         person chose for themselves. */
+      const patch: Record<string, unknown> = { country_code: detected, country_source: 'inferred' };
+      if (!profile.city) patch.city = geo.city ?? null;
       await admin.from('profiles')
-        .update({ country_code: detected, city: geo.city ?? null, country_source: 'inferred' })
+        .update(patch)
         .eq('id', profile.id);
     }
   }
@@ -439,13 +444,16 @@ Deno.serve(async (req, info) => {
     }
   }
 
+  /* What leaves this function is the member's own region summary and nothing
+     else. The resolved address itself, the header chain it came from, the
+     network operator and the provider's internals stay on this side of the
+     line: they are recorded in holup_network_records for the audited admin
+     lookups, and a client that never receives them cannot leak them. */
   return json({
     identified: geo.identified,
-    ip, via, provider: geo.provider, cached: geo.source === 'cache',
     country: geo.countryCode, countryName,
     continent: continentCode, continentName, subregion: subregionName,
-    region: geo.region, city: geo.city, timezone: geo.timezone,
-    asn: geo.asn, isp: geo.isp, confidence: geo.confidence,
+    region: geo.region, city: geo.city,
     region_status: status,
     selected_country_code: selected,
     detected_country_code: detected,
